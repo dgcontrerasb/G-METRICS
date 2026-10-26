@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Shield, Key, X, Lock, Check, Copy, UserCheck, RefreshCw, Smartphone, MessageCircle, Power, Sparkles, Database, Users, Search, Unlock, Download, BarChart2, Printer, CheckCircle2, Trophy, Zap } from 'lucide-react';
+import { Shield, Key, X, Lock, Check, Copy, UserCheck, RefreshCw, Smartphone, MessageCircle, Power, Sparkles, Database, Users, Search, Unlock, Download, BarChart2, Printer, CheckCircle2, Trophy } from 'lucide-react';
 import { createLicenseToken, getOrCreateDeviceId, saveActiveLicense, verifyLicenseToken, clearActiveLicense } from '../services/licenseService';
 import { AccuracyEvaluatorService, OverallAccuracySummary } from '../services/accuracyEvaluatorService';
-import { AdminStressTestPanel } from './AdminStressTestPanel';
 
 interface AdminLicenseModalProps {
   isOpen: boolean;
@@ -40,7 +39,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
   });
   const [pinError, setPinError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'USERS' | 'AUDIT' | 'STRESS' | 'CONFIG'>('USERS');
+  const [activeTab, setActiveTab] = useState<'USERS' | 'AUDIT' | 'CONFIG'>('USERS');
 
   // Supabase User Management State
   const [appUsersList, setAppUsersList] = useState<SupabaseUserItem[]>([]);
@@ -913,17 +912,6 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
               <span>Eficiencia (+EV)</span>
             </button>
             <button
-              onClick={() => setActiveTab('STRESS')}
-              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
-                activeTab === 'STRESS'
-                  ? 'border-amber-400 text-amber-300 bg-amber-500/10'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <span>Carga (100 Usu.)</span>
-            </button>
-            <button
               onClick={() => setActiveTab('CONFIG')}
               className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
                 activeTab === 'CONFIG'
@@ -1566,11 +1554,6 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
 
               {/* TAB 2: AUDIT & ALGORITHM ACCURACY */}
               {activeTab === 'AUDIT' && <AuditTabContent />}
-
-              {/* TAB 3: CONTROLLED 100-USER CONCURRENCY & LOAD SIMULATOR */}
-              {activeTab === 'STRESS' && (
-                <AdminStressTestPanel adminPin={activeServerPin || pinInput} />
-              )}
             </div>
           </div>
       </div>
