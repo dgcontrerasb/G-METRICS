@@ -1,0 +1,1033 @@
+import React, { useState, useMemo } from 'react';
+import { Check, ExternalLink, Sparkles, Calculator, ChevronDown, ChevronUp, Ticket } from 'lucide-react';
+import { MatchFixture, MatchAnalysis } from '../types';
+import { getSoccerDidacticAdvice } from '../services/didacticService';
+import { useParlay } from '../context/ParlayContext';
+import { CountryFlag } from './CountryFlag';
+
+interface FriendlyPredictionCardProps {
+  fixture: MatchFixture;
+  analysis: MatchAnalysis;
+  onOpenSimulator?: (fixture: MatchFixture) => void;
+  isSelected?: boolean;
+  onToggleSelect?: (fixtureId: string) => void;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
+  onOpenDetail?: (fixture: MatchFixture, analysis: MatchAnalysis) => void;
+  viewMode?: 'SIMPLE' | 'EXPERT';
+  mobileLightweight?: boolean;
+  isRecentlyUpdated?: boolean;
+}
+
+export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = React.memo(({
+  fixture,
+  analysis,
+  onOpenSimulator,
+  isSelected = false,
+  onToggleSelect,
+  isExpanded,
+  onToggleExpand,
+  onOpenDetail,
+  viewMode = 'SIMPLE',
+  mobileLightweight = false,
+  isRecentlyUpdated = false
+}) => {
+  const { dixonColes, goalsMarket, cornersMarket, refereeCards, verdict } = analysis;
+
+  const [localExpanded, setLocalExpanded] = useState<boolean>(false);
+  const expanded = isExpanded !== undefined ? isExpanded : localExpanded;
+
+  const handleToggleExpand = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (onOpenDetail) {
+      onOpenDetail(fixture, analysis);
+      return;
+    }
+    if (onToggleExpand) {
+      onToggleExpand();
+    } else {
+      setLocalExpanded((prev) => !prev);
+    }
+  };
+
+  // Selección predeterminada basada en la opción de mayor probabilidad del modelo
+  const defaultSelection = useMemo<'1' | 'X' | '2'>(() => {
+    if (dixonColes.pHomeWin >= dixonColes.pDraw && dixonColes.pHomeWin >= dixonColes.pAwayWin) return '1';
+    if (dixonColes.pAwayWin >= dixonColes.pHomeWin && dixonColes.pAwayWin >= dixonColes.pDraw) return '2';
+    return 'X';
+  }, [dixonColes.pHomeWin, dixonColes.pDraw, dixonColes.pAwayWin]);
+
+  // Estado local para la calculadora de Valor Esperado (+EV) y Kelly
+  const [selectedBetSide, setSelectedBetSide] = useState<'1' | 'X' | '2'>(defaultSelection);
+  const [inputOdds, setInputOdds] = useState<string>('');
+
+  // Cálculo matemático en tiempo real de EV y Kelly Fraccional (25%)
+  const evMetrics = useMemo(() => {
+    const oddsNum = parseFloat(inputOdds);
+    if (isNaN(oddsNum) || oddsNum <= 1) {
+      return { evPercent: null, kellyStake: null, isPositive: false };
+    }
+
+    let prob = dixonColes.pHomeWin / 100;
+    if (selectedBetSide === 'X') prob = dixonColes.pDraw / 100;
+    if (selectedBetSide === '2') prob = dixonColes.pAwayWin / 100;
+
+    // EV = (P * (Cuota - 1)) - (1 - P)
+    const ev = (prob * (oddsNum - 1)) - (1 - prob);
+    const evPercent = (ev * 100).toFixed(1);
+    const isPositive = ev > 0;
+
+    // Criterio de Kelly al 25% (Quarter Kelly)
+    let kellyStake = 0;
+    if (isPositive) {
+      const fullKelly = ((prob * oddsNum) - 1) / (oddsNum - 1);
+      kellyStake = Math.max(0, fullKelly * 0.25 * 100);
+    }
+
+    return {
+      evPercent,
+      kellyStake: kellyStake.toFixed(1),
+      isPositive
+    };
+  }, [inputOdds, selectedBetSide, dixonColes]);
+
+  // Favorite team label
+  let favoriteTeam = 'Empate o muy parejo';
+  if (dixonColes.pHomeWin >= dixonColes.pAwayWin + 8) {
+    favoriteTeam = fixture.homeTeam.name;
+  } else if (dixonColes.pAwayWin >= dixonColes.pHomeWin + 8) {
+    favoriteTeam = fixture.awayTeam.name;
+  }
+
+  // Most likely exact score
+  const mostLikelyScore = dixonColes.mostLikelyScores[0]?.score || '1-1';
+  const mostLikelyScorePct = dixonColes.mostLikelyScores[0]
+    ? dixonColes.mostLikelyScores[0].probability.toFixed(1)
+    : '11.0';
+
+  const bttsAnswer = goalsMarket.bttsYes >= 52 ? 'Sí, ambos marcan' : 'Poco probable';
+
+  // H2H statistics summary
+  const h2h = fixture.h2h || {
+    totalMatches: 5,
+    homeWins: 2,
+    draws: 1,
+    awayWins: 2
+  };
+
+  // Live score direct link (Universal live match tracker)
+  const liveScoreUrl = (() => {
+    const home = fixture.homeTeam.name;
+    const away = fixture.awayTeam.name;
+    return `https://www.google.com/search?q=${encodeURIComponent(`${home} vs ${away} marcador en vivo`)}`;
+  })();
+
+  // Value bet opportunity check
+  const isValueBet = Boolean(analysis.marketOdds?.valueBetDetected);
+
+  // Consejo y semáforo didáctico para principiantes
+  const didacticAdvice = useMemo(() => {
+    return getSoccerDidacticAdvice(fixture, analysis);
+  }, [fixture, analysis]);
+
+  const topSafePick = verdict.topSafePick;
+  const homeShort = fixture.homeTeam.shortName || fixture.homeTeam.name;
+  const awayShort = fixture.awayTeam.shortName || fixture.awayTeam.name;
+
+  const { isPickInParlay, togglePick } = useParlay();
+  const inParlay = isPickInParlay(fixture.id);
+
+  return (
+    <div
+      className={`relative rounded-2xl bg-slate-950/40 backdrop-blur-md border transition-all duration-300 overflow-hidden shadow-2xl ${
+        isRecentlyUpdated
+          ? 'ring-2 ring-emerald-400 border-emerald-400 bg-emerald-950/30 shadow-[0_0_20px_rgba(16,185,129,0.5)] animate-pulse'
+          : isSelected
+          ? 'ring-2 ring-emerald-400/80 border-emerald-400/60 shadow-emerald-500/10'
+          : isValueBet
+          ? 'border-amber-400/50 shadow-amber-500/10 ring-1 ring-amber-400/30'
+          : 'border-slate-700/30 hover:border-slate-600/50 hover:bg-slate-950/50'
+      }`}
+    >
+      <div className="flex flex-col">
+        {/* 1. Header: Competición y Hora Colombia */}
+        <div className="px-4 py-2.5 bg-slate-900/40 border-b border-slate-800/40 backdrop-blur-sm flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            {fixture.league.flag && fixture.league.flag.startsWith('http') ? (
+              <img
+                src={fixture.league.flag}
+                alt={fixture.league.country || fixture.league.name}
+                className="w-4 h-3 object-cover rounded shadow-xs inline-block shrink-0 border border-slate-700/50"
+                loading="lazy"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            ) : (
+              <CountryFlag country={fixture.league.country || fixture.league.name} fallbackEmoji={fixture.league.flag} size="xs" />
+            )}
+            <span className="font-semibold text-slate-100 tracking-wide uppercase text-[11px]">
+              {fixture.league.name}
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className="text-slate-400 text-[11px] truncate">{fixture.league.round}</span>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            {isRecentlyUpdated && (
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-400 text-black font-mono font-black text-[10px] uppercase tracking-tight animate-bounce shadow-md flex items-center gap-1">
+                <span>⚡</span>
+                <span>¡Marcador Actualizado!</span>
+              </span>
+            )}
+            <div className="flex items-center gap-2 text-xs flex-wrap font-mono tabular-nums">
+              {fixture.status === 'IN_PLAY' ? (
+                fixture.currentScore?.isHalfTime ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold text-[10px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                    <span>DESCANSO · 45'</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30 font-bold animate-pulse text-[10px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                    <span>EN VIVO {fixture.currentScore?.minute ? `· ${fixture.currentScore.minute}'` : ''}</span>
+                  </span>
+                )
+              ) : (
+                <span className="flex items-center gap-1.5 font-semibold text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  {fixture.time}
+                </span>
+              )}
+              <span className="text-slate-600">·</span>
+              <span className="text-slate-400">{fixture.date}</span>
+              {fixture.derbyOrRivalry && (
+                <>
+                  <span className="text-slate-600">·</span>
+                  <span className="px-1.5 py-0.5 rounded text-amber-300 bg-amber-500/15 border border-amber-500/30 font-bold uppercase text-[9px] tracking-wider">Clásico</span>
+                </>
+              )}
+              {isValueBet && (
+                <>
+                  <span className="text-slate-600">·</span>
+                  <span className="inline-flex items-center gap-1 text-amber-300 font-bold text-[10px] tracking-wider uppercase bg-amber-500/15 px-2 py-0.5 rounded-full border border-amber-400/40 animate-pulse">
+                    <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+                    +EV +{analysis.marketOdds?.valueEdgePercent}%
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Quick Live Timeline Button for Live Matches */}
+            {fixture.status === 'IN_PLAY' && onOpenDetail && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenDetail(fixture, analysis);
+                }}
+                type="button"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 transition-all cursor-pointer"
+                title="Ver Minuto a Minuto histórico en vivo"
+              >
+                <span>⏱️</span>
+                <span>Minuto a Minuto</span>
+              </button>
+            )}
+
+            {/* Quick Parlay Ticket button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePick({
+                  id: `${fixture.id}_${topSafePick?.label || 'OVER_15'}`,
+                  fixtureId: fixture.id,
+                  sport: 'SOCCER',
+                  matchTitle: `${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`,
+                  homeTeamName: fixture.homeTeam.name,
+                  awayTeamName: fixture.awayTeam.name,
+                  matchDate: fixture.date,
+                  matchTime: fixture.time,
+                  marketKey: topSafePick?.label || 'OVER_15',
+                  selectionLabel: topSafePick?.label || 'Más de 1.5 Goles',
+                  referenceOdd: Number((topSafePick?.fairOdd || 1.35).toFixed(2)),
+                  userOdd: Number((topSafePick?.fairOdd || 1.35).toFixed(2)),
+                  probability: topSafePick?.probability || 75,
+                  isEV: isValueBet
+                });
+              }}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                inParlay
+                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
+                  : 'bg-slate-900/60 hover:bg-slate-800 text-amber-400 hover:text-amber-300 border border-slate-700/50'
+              }`}
+              title={inParlay ? 'Quitar del boleto de combinadas' : 'Añadir al boleto de combinadas'}
+              aria-label={inParlay ? 'Quitar del boleto' : 'Añadir al boleto'}
+            >
+              <Ticket className="w-3 h-3" />
+              <span>{inParlay ? 'En Boleto' : '+ Boleto'}</span>
+            </button>
+
+            {onToggleSelect && (
+              <button
+                onClick={() => onToggleSelect(fixture.id)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-emerald-500 text-slate-950 font-bold shadow-sm'
+                    : 'bg-slate-900/60 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/50'
+                }`}
+                title={isSelected ? 'Quitar de mi selección' : 'Seleccionar este partido'}
+              >
+                <Check className={`w-3 h-3 ${isSelected ? 'stroke-[3]' : 'text-slate-400'}`} />
+                <span>{isSelected ? 'Listo' : 'Elegir'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 2. Face-off: Equipos y Escudos (Clickeable para desplegar) */}
+        <div
+          onClick={handleToggleExpand}
+          className="relative p-3.5 sm:p-5 overflow-hidden cursor-pointer hover:bg-white/[0.02] transition-colors"
+          title={expanded ? 'Clic para contraer' : 'Clic para ver análisis completo'}
+        >
+          <div className="relative z-10 grid grid-cols-12 items-center gap-2 sm:gap-4">
+            {/* Local */}
+            <div className="col-span-5 flex items-center justify-end gap-2 sm:gap-3 text-right min-w-0">
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-mono text-emerald-400/90 font-semibold tracking-wider uppercase mb-0.5">
+                  Local · #{fixture.homeTeam.rank}
+                </div>
+                <h3 className="font-sans text-xs sm:text-sm md:text-base font-semibold text-slate-100 tracking-tight leading-snug line-clamp-2" title={fixture.homeTeam.name}>
+                  {fixture.homeTeam.name}
+                </h3>
+                <div className="mt-0.5 hidden sm:flex items-center justify-end gap-1.5 text-[10px] text-slate-400 font-mono tracking-tight">
+                  <span className="text-slate-300">
+                    {fixture.homeTeam.avgShotsOnTarget} tiros arco · ~{cornersMarket.lambdaHomeCorners} córners
+                  </span>
+                </div>
+              </div>
+
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-900/60 border border-slate-800/80 p-2 flex items-center justify-center shrink-0 shadow-inner backdrop-blur-xs">
+                <img
+                  src={fixture.homeTeam.logo}
+                  alt={fixture.homeTeam.name}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                  className="w-7 h-7 sm:w-8 sm:h-8 object-contain"
+                />
+              </div>
+            </div>
+
+            {/* VS o Marcador En Vivo */}
+            <div className="col-span-2 text-center flex flex-col items-center justify-center">
+              {fixture.status === 'IN_PLAY' && fixture.currentScore ? (
+                <div className="flex flex-col items-center px-2.5 py-1 rounded-xl bg-slate-900/80 border border-emerald-500/40 shadow-sm backdrop-blur-xs">
+                  <span className="text-base sm:text-lg font-bold font-mono tracking-tight tabular-nums text-emerald-400">
+                    {fixture.currentScore.home} - {fixture.currentScore.away}
+                  </span>
+                  {fixture.currentScore.isHalfTime ? (
+                    <span className="text-[9px] font-mono tabular-nums text-amber-400 font-bold uppercase tracking-wider">
+                      DESCANSO
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-mono tabular-nums text-rose-400 font-bold animate-pulse">
+                      {fixture.currentScore.minute}'
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="w-7 h-7 rounded-lg bg-slate-900/50 border border-slate-800/60 flex items-center justify-center text-[10px] font-mono font-bold tracking-widest text-slate-400 shadow-inner backdrop-blur-xs">
+                    VS
+                  </div>
+                  <span className="text-[10px] font-mono tracking-tight tabular-nums font-semibold text-slate-300 mt-1 whitespace-nowrap">
+                    {fixture.time}
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Visitante */}
+            <div className="col-span-5 flex items-center justify-start gap-2.5 sm:gap-3 text-left min-w-0">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-900/60 border border-slate-800/80 p-2 flex items-center justify-center shrink-0 shadow-inner backdrop-blur-xs">
+                <img
+                  src={fixture.awayTeam.logo}
+                  alt={fixture.awayTeam.name}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                  className="w-7 h-7 sm:w-8 sm:h-8 object-contain"
+                />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-mono text-cyan-400/90 font-semibold tracking-wider uppercase mb-0.5">
+                  Visitante · #{fixture.awayTeam.rank}
+                </div>
+                <h3 className="font-sans text-xs sm:text-sm md:text-base font-semibold text-slate-100 tracking-tight leading-snug line-clamp-2" title={fixture.awayTeam.name}>
+                  {fixture.awayTeam.name}
+                </h3>
+                <div className="mt-0.5 hidden sm:flex items-center justify-start gap-1.5 text-[10px] text-slate-400 font-mono tracking-tight">
+                  <span className="text-slate-300">
+                    {fixture.awayTeam.avgShotsOnTarget} tiros arco · ~{cornersMarket.lambdaAwayCorners} córners
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Resumen Compacto Multi-Mercado y Guía para Principiantes */}
+        <div className="px-3.5 sm:px-4 py-3 border-t border-slate-800/40 bg-slate-950/30 backdrop-blur-sm space-y-3">
+          {/* Bloque Principal: La Jugada Más Segura del Partido (Gradiente Direccional Integrado) */}
+          <div className="rounded-xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border-l-2 border-emerald-500 p-3 sm:p-3.5 backdrop-blur-sm shadow-xs transition-all">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-emerald-400">
+                  {didacticAdvice.badgeLabel}
+                </span>
+                {topSafePick && (
+                  <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                    topSafePick.riskLevel === 'Riesgo Bajo'
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                      : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                  }`}>
+                    {topSafePick.riskLevel}
+                  </span>
+                )}
+              </div>
+              <span className="text-[11px] text-emerald-300 font-mono tracking-tight tabular-nums font-semibold bg-slate-900/60 px-2.5 py-0.5 rounded-full border border-slate-700/40 shadow-inner">
+                {didacticAdvice.payoutExample}
+              </span>
+            </div>
+
+            <div className="pt-0.5">
+              <p className="text-xs sm:text-sm font-semibold text-slate-100 leading-snug">
+                {didacticAdvice.headline}
+              </p>
+              <p className="text-xs text-slate-300/80 leading-relaxed mt-0.5 font-normal">
+                {didacticAdvice.plainExplanation}
+              </p>
+            </div>
+          </div>
+
+          {/* Tablero de los 4 Mercados Más Seguros del Partido (Micro-Tarjetas de Cristal Grid) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-center">
+            {/* Caja 1: Jugada #1 Más Factible del Partido (Anillo Perimetral Interno Elegante) */}
+            <div className="bg-slate-900/30 backdrop-blur-sm rounded-xl p-3 border border-emerald-500/30 ring-1 ring-emerald-500/20 bg-emerald-500/5 flex flex-col justify-between transition-all duration-200 hover:border-emerald-500/50">
+              <span className="text-[10px] text-emerald-400 font-mono font-bold uppercase tracking-wider">
+                ⭐ #1 Más Probable
+              </span>
+              <span className="font-sans text-xs sm:text-sm font-medium text-slate-100 truncate mt-1" title={topSafePick?.label}>
+                {topSafePick?.label || favoriteTeam}
+              </span>
+              <span className="text-xs font-mono tracking-tight tabular-nums font-semibold text-emerald-300 mt-0.5">
+                {topSafePick?.probability || Math.max(dixonColes.pHomeWin, dixonColes.pAwayWin)}% prob. · @{topSafePick?.fairOdd.toFixed(2)}
+              </span>
+              <span className="text-[10px] text-slate-400 font-sans mt-0.5 truncate">
+                ({topSafePick?.categoryLabel || 'Mayor probabilidad'})
+              </span>
+            </div>
+
+            {/* Caja 2: Mercado de Tiros de Esquina (Córners) */}
+            <div className="bg-slate-900/30 backdrop-blur-sm rounded-xl p-3 border border-slate-800/40 flex flex-col justify-between transition-all duration-200 hover:border-slate-700/60">
+              <span className="text-[10px] text-slate-400 font-mono font-semibold uppercase tracking-wider">
+                🚩 Tiros de Esquina
+              </span>
+              <span className="font-sans text-xs sm:text-sm font-medium text-amber-300 mt-1 truncate">
+                {cornersMarket.recommendedLine.replace('Tiros de Esquina', 'Córners')}
+              </span>
+              <span className="text-xs font-mono tracking-tight tabular-nums text-slate-200 font-semibold mt-0.5">
+                {cornersMarket.recommendedProb}% prob.
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono tracking-tight mt-0.5">
+                {fixture.liveStats
+                  ? `En vivo: ${fixture.liveStats.home.corners + fixture.liveStats.away.corners} (${fixture.liveStats.home.corners}-${fixture.liveStats.away.corners}) · Proy ~${cornersMarket.expectedTotalCorners}`
+                  : `(${cornersMarket.expectedTotalCorners} esp: ${cornersMarket.lambdaHomeCorners}+${cornersMarket.lambdaAwayCorners})`}
+              </span>
+            </div>
+
+            {/* Caja 3: Mercado de Tarjetas Amarillas */}
+            <div className="bg-slate-900/30 backdrop-blur-sm rounded-xl p-3 border border-slate-800/40 flex flex-col justify-between transition-all duration-200 hover:border-slate-700/60">
+              <span className="text-[10px] text-slate-400 font-mono font-semibold uppercase tracking-wider">
+                🟨 Tarjetas Partido
+              </span>
+              <span className="font-sans text-xs sm:text-sm font-medium text-yellow-300 mt-1 truncate">
+                {refereeCards.recommendedCardPick.replace(' en el partido', '')}
+              </span>
+              <span className="text-xs font-mono tracking-tight tabular-nums text-slate-200 font-semibold mt-0.5">
+                {refereeCards.recommendedCardProb}% prob.
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono tracking-tight mt-0.5">
+                {fixture.liveStats
+                  ? `En vivo: ${fixture.liveStats.home.yellowCards + fixture.liveStats.away.yellowCards} 🟨 (${fixture.liveStats.home.yellowCards}-${fixture.liveStats.away.yellowCards}) · Proy ~${refereeCards.expectedYellowCards}`
+                  : `(~${refereeCards.expectedYellowCards} esp: ${refereeCards.expectedHomeYellows}+${refereeCards.expectedAwayYellows})`}
+              </span>
+            </div>
+
+            {/* Caja 4: Goles Seguros y Doble Oportunidad */}
+            <div className="bg-slate-900/30 backdrop-blur-sm rounded-xl p-3 border border-slate-800/40 flex flex-col justify-between transition-all duration-200 hover:border-slate-700/60">
+              <span className="text-[10px] text-slate-400 font-mono font-semibold uppercase tracking-wider">
+                🛡️ Goles / Doble Op.
+              </span>
+              <span className="font-sans text-xs sm:text-sm font-medium text-cyan-300 mt-1 truncate">
+                {goalsMarket.over15 >= Math.max(goalsMarket.doubleChance1X, goalsMarket.doubleChanceX2)
+                  ? '+1.5 Goles Totales'
+                  : goalsMarket.doubleChance1X >= goalsMarket.doubleChanceX2
+                  ? `1X (${homeShort} o Emp)`
+                  : `X2 (${awayShort} o Emp)`}
+              </span>
+              <span className="text-xs font-mono tracking-tight tabular-nums text-slate-200 font-semibold mt-0.5">
+                {Math.max(goalsMarket.over15, goalsMarket.doubleChance1X, goalsMarket.doubleChanceX2)}% prob.
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono tracking-tight mt-0.5">
+                (Marcador: {mostLikelyScore} · {goalsMarket.bttsYes}% BTTS)
+              </span>
+            </div>
+          </div>
+
+          {/* Botón Principal Desplegable */}
+          <div className="mt-3 flex items-center justify-between gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleToggleExpand}
+              className={`flex-1 py-2 px-4 rounded-xl border text-xs font-mono font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm backdrop-blur-xs ${
+                expanded
+                  ? 'bg-slate-900/60 border-emerald-500/40 text-emerald-300 hover:bg-slate-800/80'
+                  : 'bg-slate-900/40 hover:bg-slate-800/60 border-slate-700/40 text-emerald-400'
+              }`}
+            >
+              <span>
+                {onOpenDetail
+                  ? '🔬 Ver pronósticos completos en tarjeta (+EV, Dixon-Coles, Córners, Árbitro)'
+                  : expanded
+                  ? 'Ocultar desglose de Córners, Tarjetas, Goles y +EV'
+                  : '🔬 Ver análisis completo (Córners, Tarjetas por equipo, Goles, 1X2 y +EV)'}
+              </span>
+              {onOpenDetail ? (
+                <ChevronDown className="w-4 h-4 text-emerald-400" />
+              ) : expanded ? (
+                <ChevronUp className="w-4 h-4 text-emerald-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-emerald-400" />
+              )}
+            </button>
+
+            {onOpenSimulator && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenSimulator(fixture);
+                }}
+                className="py-2 px-3 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-700/40 hover:border-emerald-500/40 text-xs font-mono font-semibold text-slate-300 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer shrink-0 backdrop-blur-xs"
+                title="Simulador Monte Carlo"
+              >
+                <Calculator className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Simular</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Sección de Análisis Detallado (Visible solo si no se usa modal externo) */}
+        {!onOpenDetail && expanded && (
+          <div className="space-y-0">
+            <div className="px-4 sm:px-5 pt-3 pb-4 space-y-3.5 border-t border-white/10">
+              {/* NUEVO: Ranking Top Mercados Más Seguros del Partido */}
+              <div className="p-3 rounded-xl bg-slate-950/50 border border-emerald-500/30 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400">
+                    🏆 Ranking de Mercados Más Factibles (Ordenados por Probabilidad Real)
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    Priorizando seguridad sobre el ganador 1X2
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {verdict.allRankedPicks.slice(0, 3).map((pick, idx) => (
+                    <div
+                      key={pick.id}
+                      className={`p-2.5 rounded-lg border flex flex-col justify-between ${
+                        idx === 0
+                          ? 'bg-emerald-950/40 border-emerald-500/50 ring-1 ring-emerald-500/20'
+                          : 'bg-slate-900/70 border-white/10'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[10px] font-bold text-slate-300">
+                          #{idx + 1} · {pick.categoryLabel}
+                        </span>
+                        <span className="text-xs font-mono tabular-nums font-black text-emerald-400">
+                          {pick.probability}%
+                        </span>
+                      </div>
+                      <div className="text-xs font-bold text-white my-1">{pick.label}</div>
+                      <div className="flex items-center justify-between text-[10px] font-mono tabular-nums text-slate-400">
+                        <span>Cuota justa @{pick.fairOdd.toFixed(2)}</span>
+                        <span className="text-emerald-300">{pick.riskLevel}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* NUEVO: Desglose de Tiros de Esquina (Córners) y Tarjetas por Equipo */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Panel Córners */}
+                <div className="p-3 rounded-xl bg-slate-950/40 border border-white/10 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-amber-300">
+                      🚩 Proyección de Tiros de Esquina
+                    </span>
+                    <span className="text-xs font-mono tabular-nums font-black text-white">
+                      {cornersMarket.expectedTotalCorners} córners esp.
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-center text-xs font-mono tabular-nums">
+                    <div className="p-1.5 rounded-lg bg-slate-900/70 border border-white/5">
+                      <span className="text-[10px] text-slate-400 block font-sans">{homeShort}</span>
+                      <span className="font-bold text-emerald-400">~{cornersMarket.lambdaHomeCorners} córners</span>
+                    </div>
+                    <div className="p-1.5 rounded-lg bg-slate-900/70 border border-white/5">
+                      <span className="text-[10px] text-slate-400 block font-sans">{awayShort}</span>
+                      <span className="font-bold text-blue-400">~{cornersMarket.lambdaAwayCorners} córners</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 text-center text-[11px] font-mono tabular-nums pt-0.5">
+                    <div className="p-1.5 rounded bg-slate-900/50 border border-white/5">
+                      <span className="text-[9px] text-slate-400 block">+7.5 Córners</span>
+                      <span className="font-bold text-emerald-300">{cornersMarket.over75}%</span>
+                    </div>
+                    <div className="p-1.5 rounded bg-slate-900/50 border border-white/5">
+                      <span className="text-[9px] text-slate-400 block">+8.5 Córners</span>
+                      <span className="font-bold text-amber-300">{cornersMarket.over85}%</span>
+                    </div>
+                    <div className="p-1.5 rounded bg-slate-900/50 border border-white/5">
+                      <span className="text-[9px] text-slate-400 block">+9.5 Córners</span>
+                      <span className="font-bold text-slate-200">{cornersMarket.over95}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Panel Tarjetas */}
+                <div className="p-3 rounded-xl bg-slate-950/40 border border-white/10 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-yellow-300">
+                      🟨 Proyección de Tarjetas ({fixture.referee?.rigor || refereeCards.rigor})
+                    </span>
+                    <span className="text-xs font-mono tabular-nums font-black text-white">
+                      ~{refereeCards.expectedYellowCards} amarillas
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-center text-xs font-mono tabular-nums">
+                    <div className="p-1.5 rounded-lg bg-slate-900/70 border border-white/5">
+                      <span className="text-[10px] text-slate-400 block font-sans">{homeShort}</span>
+                      <span className="font-bold text-yellow-300">~{refereeCards.expectedHomeYellows} amarillas</span>
+                    </div>
+                    <div className="p-1.5 rounded-lg bg-slate-900/70 border border-white/5">
+                      <span className="text-[10px] text-slate-400 block font-sans">{awayShort}</span>
+                      <span className="font-bold text-yellow-300">~{refereeCards.expectedAwayYellows} amarillas</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 text-center text-[11px] font-mono tabular-nums pt-0.5">
+                    <div className="p-1.5 rounded bg-slate-900/50 border border-white/5">
+                      <span className="text-[9px] text-slate-400 block">+3.5 Tarjetas</span>
+                      <span className="font-bold text-emerald-300">{refereeCards.over35CardsProb}%</span>
+                    </div>
+                    <div className="p-1.5 rounded bg-slate-900/50 border border-white/5">
+                      <span className="text-[9px] text-slate-400 block">+4.5 Tarjetas</span>
+                      <span className="font-bold text-amber-300">{refereeCards.over45CardsProb}%</span>
+                    </div>
+                    <div className="p-1.5 rounded bg-slate-900/50 border border-white/5">
+                      <span className="text-[9px] text-slate-400 block">-4.5 Tarjetas</span>
+                      <span className="font-bold text-slate-200">{refereeCards.under45CardsProb}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* NUEVO: Doble Oportunidad, Goles Seguros y Goles por Mitad */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs font-mono tabular-nums">
+                <div className="p-2 rounded-xl bg-slate-950/35 border border-white/10">
+                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Local o Empate (1X)</span>
+                  <span className="text-sm font-black text-emerald-400">{goalsMarket.doubleChance1X}%</span>
+                </div>
+                <div className="p-2 rounded-xl bg-slate-950/35 border border-white/10">
+                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Visita o Empate (X2)</span>
+                  <span className="text-sm font-black text-blue-400">{goalsMarket.doubleChanceX2}%</span>
+                </div>
+                <div className="p-2 rounded-xl bg-slate-950/35 border border-white/10">
+                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Más de 1.5 Goles</span>
+                  <span className="text-sm font-black text-amber-300">{goalsMarket.over15}%</span>
+                </div>
+                <div className="p-2 rounded-xl bg-slate-950/35 border border-white/10">
+                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Gol en 1.ª Mitad</span>
+                  <span className="text-sm font-black text-slate-200">{goalsMarket.firstHalfGoalProb}%</span>
+                </div>
+                <div className="p-2 rounded-xl bg-slate-950/35 border border-white/10 col-span-2 sm:col-span-1">
+                  <span className="text-[9px] text-slate-400 uppercase font-sans font-bold block">Gol en 2.ª Mitad</span>
+                  <span className="text-sm font-black text-emerald-300">{goalsMarket.secondHalfGoalProb}%</span>
+                </div>
+              </div>
+
+              {/* Fila de Probabilidades Ganador 1X2 (Local / Empate / Visitante) */}
+              <div className="grid grid-cols-3 gap-2 text-center pt-1">
+                {/* Local */}
+                <div className={`p-2 rounded-xl border backdrop-blur-md transition-all ${
+                  dixonColes.pHomeWin >= 48
+                    ? 'bg-emerald-950/35 border-emerald-500/50 shadow-sm ring-1 ring-emerald-500/20'
+                    : 'bg-slate-950/30 border-white/10'
+                }`}>
+                  <div className="text-[11px] font-bold text-slate-300">
+                    Gana {homeShort}
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-emerald-400 font-mono tabular-nums tracking-tight my-0.5">
+                    {dixonColes.pHomeWin}%
+                  </div>
+                  <div className="text-[10px] font-mono tabular-nums text-slate-400">
+                    Cuota @{(100 / Math.max(1, dixonColes.pHomeWin)).toFixed(2)}
+                  </div>
+                </div>
+
+                {/* Empate */}
+                <div className={`p-2 rounded-xl border backdrop-blur-md transition-all ${
+                  dixonColes.pDraw >= 32
+                    ? 'bg-slate-900/40 border-slate-600 shadow-sm'
+                    : 'bg-slate-950/30 border-white/10'
+                }`}>
+                  <div className="text-[11px] font-bold text-slate-300">
+                    Empate
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-slate-200 font-mono tabular-nums tracking-tight my-0.5">
+                    {dixonColes.pDraw}%
+                  </div>
+                  <div className="text-[10px] font-mono tabular-nums text-slate-400">
+                    Cuota @{(100 / Math.max(1, dixonColes.pDraw)).toFixed(2)}
+                  </div>
+                </div>
+
+                {/* Visitante */}
+                <div className={`p-2 rounded-xl border backdrop-blur-md transition-all ${
+                  dixonColes.pAwayWin >= 48
+                    ? 'bg-blue-950/35 border-blue-500/50 shadow-sm ring-1 ring-blue-500/20'
+                    : 'bg-slate-950/30 border-white/10'
+                }`}>
+                  <div className="text-[11px] font-bold text-slate-300">
+                    Gana {awayShort}
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-blue-400 font-mono tabular-nums tracking-tight my-0.5">
+                    {dixonColes.pAwayWin}%
+                  </div>
+                  <div className="text-[10px] font-mono tabular-nums text-slate-400">
+                    Cuota @{(100 / Math.max(1, dixonColes.pAwayWin)).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Barra de Progresión */}
+              <div className="space-y-0.5">
+                <div className="h-1.5 w-full rounded-full bg-slate-950/60 overflow-hidden flex shadow-inner">
+                  <div style={{ width: `${dixonColes.pHomeWin}%` }} className="bg-emerald-500 transition-all duration-500" />
+                  <div style={{ width: `${dixonColes.pDraw}%` }} className="bg-slate-500 transition-all duration-500" />
+                  <div style={{ width: `${dixonColes.pAwayWin}%` }} className="bg-blue-500 transition-all duration-500" />
+                </div>
+                <div className="flex justify-between text-[9px] font-mono tabular-nums text-slate-400 px-0.5">
+                  <span>Local {dixonColes.pHomeWin}%</span>
+                  <span>Empate {dixonColes.pDraw}%</span>
+                  <span>Visita {dixonColes.pAwayWin}%</span>
+                </div>
+              </div>
+
+              {/* 4. Resumen Directo de Resultados */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {/* Marcador Más Probable */}
+                <div className="p-2.5 rounded-xl bg-slate-950/30 backdrop-blur-md border border-white/10 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">Marcador Probable</span>
+                    <span className="text-base font-black text-white font-mono tabular-nums">{mostLikelyScore}</span>
+                  </div>
+                  <span className="text-xs font-mono tabular-nums font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                    {mostLikelyScorePct}%
+                  </span>
+                </div>
+
+                {/* Ambos Marcan */}
+                <div className="p-2.5 rounded-xl bg-slate-950/30 backdrop-blur-md border border-white/10 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">Ambos Marcan</span>
+                    <span className={`text-base font-black ${goalsMarket.bttsYes >= 50 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                      {bttsAnswer}
+                    </span>
+                  </div>
+                  <span className="text-xs font-mono tabular-nums font-bold text-slate-300 bg-white/5 px-2 py-0.5 rounded-md border border-white/10">
+                    {goalsMarket.bttsYes}%
+                  </span>
+                </div>
+
+                {/* Pronóstico Sugerido */}
+                <div className="p-2.5 rounded-xl bg-slate-950/30 backdrop-blur-md border border-white/10 flex items-center justify-between">
+                  <div className="min-w-0 pr-2">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">Jugada #1 Sugerida</span>
+                    <span className="text-xs font-bold text-emerald-300 block truncate">
+                      {topSafePick?.label || verdict.recommendedPicks[0]?.label || `Victoria ${favoriteTeam}`}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono tabular-nums font-semibold text-emerald-400 shrink-0">
+                    {topSafePick?.probability}%
+                  </span>
+                </div>
+              </div>
+
+              {/* 5. Estadísticas Clave */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {/* xG Local vs Visita */}
+                <div className="p-2 rounded-xl bg-slate-950/30 backdrop-blur-md border border-white/10 text-center">
+                  <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">xG Esperado</span>
+                  <div className="text-sm font-black font-mono tabular-nums mt-0.5 flex items-center justify-center gap-1.5">
+                    <span className="text-emerald-400">{dixonColes.lambdaHome.toFixed(2)}</span>
+                    <span className="text-slate-600">vs</span>
+                    <span className="text-blue-400">{dixonColes.lambdaAway.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Tiros a Puerta */}
+                <div className="p-2 rounded-xl bg-slate-950/30 backdrop-blur-md border border-white/10 text-center">
+                  <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">Tiros a Puerta</span>
+                  <div className="text-sm font-black font-mono tabular-nums text-white mt-0.5 flex items-center justify-center gap-1.5">
+                    <span>{fixture.homeTeam.avgShotsOnTarget}</span>
+                    <span className="text-slate-600">vs</span>
+                    <span>{fixture.awayTeam.avgShotsOnTarget}</span>
+                  </div>
+                </div>
+
+                {/* Historial Cara a Cara (H2H) */}
+                <div className="p-2 rounded-xl bg-slate-950/30 backdrop-blur-md border border-white/10 text-center">
+                  <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">
+                    H2H ({h2h.totalMatches} Partidos)
+                  </span>
+                  <div className="text-sm font-black font-mono tabular-nums mt-0.5 flex items-center justify-center gap-1.5">
+                    <span className="text-emerald-400" title={`Victorias de ${fixture.homeTeam.name}`}>{h2h.homeWins}V</span>
+                    <span className="text-slate-500">·</span>
+                    <span className="text-slate-300" title="Empates">{h2h.draws}E</span>
+                    <span className="text-slate-500">·</span>
+                    <span className="text-blue-400" title={`Victorias de ${fixture.awayTeam.name}`}>{h2h.awayWins}V</span>
+                  </div>
+                </div>
+
+                {/* Amarillas */}
+                <div className="p-2 rounded-xl bg-slate-950/30 backdrop-blur-md border border-white/10 text-center">
+                  <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">Amarillas Esperadas</span>
+                  <span className="text-sm font-black font-mono tabular-nums text-amber-400 mt-0.5 block">
+                    ~{refereeCards.expectedYellowCards} tarjetas
+                  </span>
+                </div>
+
+                {/* Árbitro Oficial */}
+                <div className="p-2 rounded-xl bg-slate-950/30 backdrop-blur-md border border-white/10 text-center col-span-2 sm:col-span-1">
+                  <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">Árbitro Oficial</span>
+                  <span className="text-xs font-semibold text-slate-200 mt-0.5 block truncate" title={fixture.referee?.name || 'Designación Oficial'}>
+                    {fixture.referee?.name || 'Designación Oficial'}
+                  </span>
+                </div>
+              </div>
+
+          {/* 6. Cuotas de Mercado y Simulación */}
+          <div className="p-2.5 rounded-xl bg-slate-950/30 backdrop-blur-md border border-white/10 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cuotas:</span>
+              <div className="flex items-center gap-1.5 font-mono font-bold text-xs">
+                {analysis.marketOdds ? (
+                  <>
+                    <span
+                      className={`px-2 py-0.5 rounded border transition-all ${
+                        analysis.marketOdds.valueSide === '1'
+                          ? 'bg-amber-500/25 border-amber-400 text-amber-300 ring-1 ring-amber-400/60 shadow-xs shadow-amber-500/40 font-black'
+                          : 'bg-slate-900/60 border-white/10 text-emerald-400'
+                      }`}
+                      title={analysis.marketOdds.valueSide === '1' ? 'Cuota con Valor Estadístico positivo' : undefined}
+                    >
+                      1: @{analysis.marketOdds.bookmakerHomeOdds.toFixed(2)}
+                      {analysis.marketOdds.valueSide === '1' && ' ★'}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded border transition-all ${
+                        analysis.marketOdds.valueSide === 'X'
+                          ? 'bg-amber-500/25 border-amber-400 text-amber-300 ring-1 ring-amber-400/60 shadow-xs shadow-amber-500/40 font-black'
+                          : 'bg-slate-900/60 border-white/10 text-slate-300'
+                      }`}
+                      title={analysis.marketOdds.valueSide === 'X' ? 'Cuota con Valor Estadístico positivo' : undefined}
+                    >
+                      X: @{analysis.marketOdds.bookmakerDrawOdds.toFixed(2)}
+                      {analysis.marketOdds.valueSide === 'X' && ' ★'}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded border transition-all ${
+                        analysis.marketOdds.valueSide === '2'
+                          ? 'bg-amber-500/25 border-amber-400 text-amber-300 ring-1 ring-amber-400/60 shadow-xs shadow-amber-500/40 font-black'
+                          : 'bg-slate-900/60 border-white/10 text-blue-400'
+                      }`}
+                      title={analysis.marketOdds.valueSide === '2' ? 'Cuota con Valor Estadístico positivo' : undefined}
+                    >
+                      2: @{analysis.marketOdds.bookmakerAwayOdds.toFixed(2)}
+                      {analysis.marketOdds.valueSide === '2' && ' ★'}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="px-2 py-0.5 rounded bg-slate-900/60 border border-white/10 text-emerald-400">1: @{(100 / Math.max(1, dixonColes.pHomeWin)).toFixed(2)}</span>
+                    <span className="px-2 py-0.5 rounded bg-slate-900/60 border border-white/10 text-slate-300">X: @{(100 / Math.max(1, dixonColes.pDraw)).toFixed(2)}</span>
+                    <span className="px-2 py-0.5 rounded bg-slate-900/60 border border-white/10 text-blue-400">2: @{(100 / Math.max(1, dixonColes.pAwayWin)).toFixed(2)}</span>
+                  </>
+                )}
+              </div>
+
+              {analysis.marketOdds?.valueBetDetected && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-gradient-to-r from-amber-500/25 via-amber-500/20 to-yellow-500/15 text-amber-300 border border-amber-400/50 shadow-xs shadow-amber-500/30">
+                  <Sparkles className="w-3 h-3 text-amber-400 shrink-0 animate-pulse" />
+                  <span>Apuesta de Valor en {analysis.marketOdds.valueSide} (+{analysis.marketOdds.valueEdgePercent}%)</span>
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto sm:ml-auto pt-1 sm:pt-0 border-t border-white/5 sm:border-t-0">
+              <a
+                href={liveScoreUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-white border border-rose-500/30 transition-all cursor-pointer group shadow-xs"
+                title="Ver marcador, incidencias y estadísticas en vivo"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping inline-block"></span>
+                <span>Marcador en Vivo</span>
+                <ExternalLink className="w-3 h-3 text-rose-400 group-hover:translate-x-0.5 transition-transform" />
+              </a>
+
+              {onOpenSimulator && (
+                <button
+                  onClick={() => onOpenSimulator(fixture)}
+                  className="text-emerald-400 hover:text-emerald-300 text-[11px] font-semibold hover:underline cursor-pointer"
+                >
+                  Simular Partido →
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 7. Módulo Interactivo: Calculadora +EV y Criterio de Kelly */}
+          <div className="p-3 rounded-xl bg-slate-950/40 backdrop-blur-md border border-white/10 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Calculator className="w-3.5 h-3.5 text-emerald-400" />
+                Calculadora +EV / Gestión Kelly
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">Quarter Kelly (25%)</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+              {/* Selector de Selección (1, X, 2) */}
+              <div className="sm:col-span-4 flex items-center gap-1 bg-slate-900/60 p-1 rounded-lg border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setSelectedBetSide('1')}
+                  className={`flex-1 py-1 text-[11px] font-bold rounded transition-colors ${
+                    selectedBetSide === '1'
+                      ? 'bg-emerald-500 text-black shadow-xs font-black'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  1 ({dixonColes.pHomeWin}%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBetSide('X')}
+                  className={`flex-1 py-1 text-[11px] font-bold rounded transition-colors ${
+                    selectedBetSide === 'X'
+                      ? 'bg-slate-300 text-black shadow-xs font-black'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  X ({dixonColes.pDraw}%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBetSide('2')}
+                  className={`flex-1 py-1 text-[11px] font-bold rounded transition-colors ${
+                    selectedBetSide === '2'
+                      ? 'bg-blue-500 text-white shadow-xs font-black'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  2 ({dixonColes.pAwayWin}%)
+                </button>
+              </div>
+
+              {/* Input de Cuota */}
+              <div className="sm:col-span-3">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="1.01"
+                  placeholder="Cuota (ej. 2.10)"
+                  value={inputOdds}
+                  onChange={(e) => setInputOdds(e.target.value)}
+                  className="w-full bg-slate-900/60 border border-white/15 focus:border-emerald-400 focus:outline-none rounded-lg px-2.5 py-1 text-xs font-mono text-white placeholder-slate-500 text-center font-bold"
+                />
+              </div>
+
+              {/* Resultados Directos: EV y Stake */}
+              <div className="sm:col-span-5 grid grid-cols-2 gap-1.5 text-center">
+                {/* Valor Esperado (+EV) */}
+                <div className={`px-2 py-1 rounded-lg border text-xs font-mono font-bold flex flex-col justify-center ${
+                  evMetrics.evPercent === null
+                    ? 'bg-slate-900/40 border-white/5 text-slate-500'
+                    : evMetrics.isPositive
+                    ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-400 ring-1 ring-emerald-500/20'
+                    : 'bg-rose-950/30 border-rose-500/30 text-rose-400'
+                }`}>
+                  <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-sans">
+                    {evMetrics.evPercent === null ? 'Valor Esperado' : evMetrics.isPositive ? '+EV (Valor)' : '-EV (Sin Valor)'}
+                  </span>
+                  <span>
+                    {evMetrics.evPercent !== null ? `${evMetrics.isPositive ? '+' : ''}${evMetrics.evPercent}%` : '—'}
+                  </span>
+                </div>
+
+                {/* Stake Sugerido (Kelly) */}
+                <div className={`px-2 py-1 rounded-lg border text-xs font-mono font-bold flex flex-col justify-center ${
+                  evMetrics.kellyStake === null
+                    ? 'bg-slate-900/40 border-white/5 text-slate-500'
+                    : evMetrics.isPositive
+                    ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                    : 'bg-slate-900/40 border-white/5 text-slate-400'
+                }`}>
+                  <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-sans">Stake Kelly</span>
+                  <span>
+                    {evMetrics.kellyStake !== null ? `${evMetrics.kellyStake}% Banca` : '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Botón Inferior para Contraer */}
+        <div className="px-4 sm:px-5 pb-4">
+          <button
+            type="button"
+            onClick={handleToggleExpand}
+            className="w-full py-2 px-4 rounded-xl bg-slate-900/50 hover:bg-slate-800/70 border border-white/10 hover:border-emerald-500/30 text-xs font-semibold text-slate-400 hover:text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+          >
+            <span>Colapsar análisis de este partido</span>
+            <ChevronUp className="w-4 h-4 text-emerald-400" />
+          </button>
+        </div>
+      </div>
+    )}
+  </div>
+</div>
+  );
+});

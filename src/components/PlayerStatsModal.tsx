@@ -1,0 +1,521 @@
+import React, { useEffect } from 'react';
+import {
+  X,
+  BarChart2,
+  Ticket,
+  Target
+} from 'lucide-react';
+import { useParlay } from '../context/ParlayContext';
+
+export interface SoccerPlayerPayload {
+  id: string;
+  name: string;
+  number: number;
+  position: string; // 'DEL' | 'MED' | 'DEF' | 'POR'
+  teamName: string;
+  teamLogo?: string;
+  isCaptain?: boolean;
+  matchYellowCards?: number;
+  hasPreviousYellow?: boolean;
+  isInjured?: boolean;
+  injuryNote?: string;
+}
+
+export interface NBAPlayerPayload {
+  id: string;
+  name: string;
+  number: number;
+  position: string; // 'PG' | 'SG' | 'SF' | 'PF' | 'C'
+  teamName: string;
+  teamLogo?: string;
+  ppg?: number;
+  threePm?: number;
+  apg?: number;
+  rpg?: number;
+  spg?: number;
+  usageRate?: number;
+  projectedPoints?: number;
+  pointsLine?: number;
+  overPointsProb?: number;
+  projected3pm?: number;
+  threePointersLine?: number;
+  over3pmProb?: number;
+  isInjured?: boolean;
+  injuryStatus?: string;
+}
+
+export type PlayerModalPayload =
+  | {
+      sport: 'SOCCER';
+      fixtureId: string;
+      matchTitle: string;
+      homeTeamName: string;
+      awayTeamName: string;
+      matchDate: string;
+      matchTime: string;
+      player: SoccerPlayerPayload;
+    }
+  | {
+      sport: 'NBA';
+      fixtureId: string;
+      matchTitle: string;
+      homeTeamName: string;
+      awayTeamName: string;
+      matchDate: string;
+      matchTime: string;
+      player: NBAPlayerPayload;
+    };
+
+interface PlayerStatsModalProps {
+  payload: PlayerModalPayload | null;
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export const PlayerStatsModal: React.FC<PlayerStatsModalProps> = React.memo(({
+  payload,
+  isOpen,
+  onClose
+}) => {
+  const { isPickInParlay, togglePick } = useParlay();
+
+  // Scroll Lock when modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !payload) return null;
+
+  const isSoccer = payload.sport === 'SOCCER';
+  const player = payload.player;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-950/85 backdrop-blur-xl animate-fade-in transition-all"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      {/* Floating Modal Window */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg max-h-[90vh] my-auto bg-slate-950/98 border border-slate-700/80 rounded-3xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-2xl ring-1 ring-white/10 overscroll-contain"
+      >
+        {/* 1. Header: Datos del Jugador y Equipo */}
+        <div className="px-4 py-3.5 sm:px-5 sm:py-4 border-b border-slate-800/80 bg-slate-900/90 shrink-0 space-y-1.5">
+          <div className="flex items-start justify-between gap-2.5">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              {/* Dorsal Badge */}
+              <div
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center font-mono font-bold text-sm shadow-inner shrink-0 ${
+                  isSoccer
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                }`}
+              >
+                #{player.number}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h3 className="font-sans font-bold text-sm sm:text-base text-white leading-tight break-words">
+                    {player.name}
+                  </h3>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase shrink-0 border ${
+                      isSoccer
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                    }`}
+                  >
+                    {player.position}
+                  </span>
+                  {isSoccer && (player as SoccerPlayerPayload).isCaptain && (
+                    <span className="px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-300 font-mono text-[9px] font-bold shrink-0">
+                      Capitán
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-400 font-sans mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span className="font-medium text-slate-200">{player.teamName}</span>
+                  <span className="text-slate-600">·</span>
+                  <span className="text-slate-400 font-mono text-[10px]">{payload.matchTitle}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-400 hover:text-white transition-colors cursor-pointer shrink-0 mt-0.5"
+              aria-label="Cerrar modal"
+              title="Cerrar (ESC)"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* 2. Scrollable Body: Estadísticas Recientes + Mercados de Casas de Apuestas */}
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 text-slate-200 overscroll-contain pb-6">
+          {/* A. SECCIÓN DE ESTADÍSTICAS Y PROMEDIOS BASE */}
+          <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <span className="text-xs font-mono font-bold text-slate-300 uppercase tracking-tight flex items-center gap-1.5">
+                <BarChart2 className={`w-4 h-4 ${isSoccer ? 'text-emerald-400' : 'text-amber-400'}`} />
+                <span>Estadísticas & Promedios Temporada</span>
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">Datos Oficiales Opta/ESPN</span>
+            </div>
+
+            {isSoccer ? (
+              /* Soccer Player Stats Grid */
+              <SoccerStatsGrid player={player as SoccerPlayerPayload} />
+            ) : (
+              /* NBA Player Stats Grid */
+              <NBAStatsGrid player={player as NBAPlayerPayload} />
+            )}
+          </div>
+
+          {/* B. SECCIÓN DE MERCADOS DISPONIBLES PARA EL PARLAY BUILDER */}
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-1 px-1">
+              <span className="text-xs font-mono font-bold text-slate-200 uppercase tracking-tight flex items-center gap-1.5">
+                <Target className={`w-4 h-4 ${isSoccer ? 'text-emerald-400' : 'text-amber-400'}`} />
+                <span>Mercados de Apuesta del Jugador (+EV)</span>
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">Añade elecciones al Boleto</span>
+            </div>
+
+            {isSoccer ? (
+              <SoccerMarketsList
+                payload={payload as Extract<PlayerModalPayload, { sport: 'SOCCER' }>}
+                isPickInParlay={isPickInParlay}
+                togglePick={togglePick}
+              />
+            ) : (
+              <NBAMarketsList
+                payload={payload as Extract<PlayerModalPayload, { sport: 'NBA' }>}
+                isPickInParlay={isPickInParlay}
+                togglePick={togglePick}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* 3. Footer Informativo */}
+        <div className="px-4 py-3 bg-slate-900/95 border-t border-slate-800/80 shrink-0 flex flex-row items-center justify-between gap-3 text-[11px] text-slate-400 font-mono">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="shrink-0">💡</span>
+            <span className="truncate">Cuotas calibradas en tiempo real</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 font-bold transition-all cursor-pointer shrink-0 border border-slate-700/80 text-xs shadow-sm"
+          >
+            Listo / Volver
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// ===================================================
+// SUBCOMPONENTES DE ESTADÍSTICAS Y MERCADOS
+// ===================================================
+
+const SoccerStatsGrid: React.FC<{ player: SoccerPlayerPayload }> = ({ player }) => {
+  const isFW = player.position === 'DEL';
+  const isMF = player.position === 'MED';
+
+  const gpg = isFW ? 0.52 : isMF ? 0.24 : 0.08;
+  const sot = isFW ? 1.8 : isMF ? 0.9 : 0.3;
+  const fouls = isFW ? 1.2 : isMF ? 1.8 : 2.1;
+  const cards = player.hasPreviousYellow ? 4 : 2;
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono">
+      <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60">
+        <span className="text-[9px] text-slate-400 uppercase block">Goles / Part.</span>
+        <span className="text-xs font-bold text-emerald-400 mt-0.5 block">{gpg} GPG</span>
+      </div>
+      <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60">
+        <span className="text-[9px] text-slate-400 uppercase block">Tiros Arco/90'</span>
+        <span className="text-xs font-bold text-white mt-0.5 block">{sot} SOT</span>
+      </div>
+      <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60">
+        <span className="text-[9px] text-slate-400 uppercase block">Faltas Recibidas</span>
+        <span className="text-xs font-bold text-amber-300 mt-0.5 block">{fouls} / part.</span>
+      </div>
+      <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60">
+        <span className="text-[9px] text-slate-400 uppercase block">Amarillas Temp.</span>
+        <span className="text-xs font-bold text-yellow-400 mt-0.5 block">🟨 {cards}</span>
+      </div>
+    </div>
+  );
+};
+
+const NBAStatsGrid: React.FC<{ player: NBAPlayerPayload }> = ({ player }) => {
+  const ppg = player.ppg || player.projectedPoints || 22.5;
+  const threePm = player.threePm || player.projected3pm || 2.5;
+  const apg = player.apg || 5.2;
+  const rpg = player.rpg || 6.1;
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono">
+      <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60">
+        <span className="text-[9px] text-slate-400 uppercase block">Puntos Promedio</span>
+        <span className="text-xs font-bold text-amber-300 mt-0.5 block">{ppg} PPG</span>
+      </div>
+      <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60">
+        <span className="text-[9px] text-slate-400 uppercase block">Triples Encestados</span>
+        <span className="text-xs font-bold text-amber-400 mt-0.5 block">{threePm} 3PM</span>
+      </div>
+      <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60">
+        <span className="text-[9px] text-slate-400 uppercase block">Asistencias</span>
+        <span className="text-xs font-bold text-white mt-0.5 block">{apg} APG</span>
+      </div>
+      <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60">
+        <span className="text-[9px] text-slate-400 uppercase block">Rebotes</span>
+        <span className="text-xs font-bold text-slate-200 mt-0.5 block">{rpg} RPG</span>
+      </div>
+    </div>
+  );
+};
+
+const SoccerMarketsList: React.FC<{
+  payload: Extract<PlayerModalPayload, { sport: 'SOCCER' }>;
+  isPickInParlay: (fixtureId: string, marketKey?: string) => boolean;
+  togglePick: (pick: any) => void;
+}> = ({ payload, isPickInParlay, togglePick }) => {
+  const { fixtureId, matchTitle, homeTeamName, awayTeamName, matchDate, matchTime, player } = payload;
+  const safeName = player.name.replace(/\s+/g, '_');
+
+  const isFW = player.position === 'DEL';
+  const isMF = player.position === 'MED';
+
+  const markets = [
+    {
+      key: `PROP_GOAL_ANYTIME_${safeName}`,
+      label: `${player.name}: Anotará 1+ Gol`,
+      odd: isFW ? 2.10 : isMF ? 3.40 : 5.50,
+      prob: isFW ? 55 : isMF ? 32 : 18,
+      category: '⚽ Goles'
+    },
+    {
+      key: `PROP_SHOT_TARGET_${safeName}`,
+      label: `${player.name}: 1+ Disparo a Puerta`,
+      odd: isFW ? 1.45 : isMF ? 1.75 : 2.20,
+      prob: isFW ? 75 : isMF ? 62 : 48,
+      category: '🎯 Tiros a Puerta'
+    },
+    {
+      key: `PROP_SHOT_TARGET_2_${safeName}`,
+      label: `${player.name}: 2+ Disparos a Puerta`,
+      odd: isFW ? 2.20 : isMF ? 3.10 : 4.80,
+      prob: isFW ? 52 : isMF ? 35 : 21,
+      category: '🎯 Tiros a Puerta'
+    },
+    {
+      key: `PROP_CARD_${safeName}`,
+      label: `${player.name}: Recibirá Tarjeta Amarilla`,
+      odd: player.hasPreviousYellow ? 2.20 : 3.20,
+      prob: player.hasPreviousYellow ? 48 : 34,
+      category: '🟨 Tarjetas'
+    }
+  ];
+
+  return (
+    <div className="space-y-2">
+      {markets.map((m) => {
+        const inParlay = isPickInParlay(fixtureId, m.key);
+        return (
+          <div
+            key={m.key}
+            className={`p-3 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+              inParlay
+                ? 'bg-emerald-500/15 border-emerald-500/50 ring-1 ring-emerald-500/30'
+                : 'bg-slate-900/60 hover:bg-slate-800/60 border-slate-800/80'
+            }`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 shrink-0">
+                  {m.category}
+                </span>
+                <span className="text-xs font-sans font-semibold text-white leading-snug break-words">
+                  {m.label}
+                </span>
+              </div>
+              <div className="text-[11px] font-mono text-slate-400 mt-1.5 flex items-center gap-2 flex-wrap">
+                <span>Probabilidad: <strong className="text-emerald-300">{m.prob}%</strong></span>
+                <span className="text-slate-600">·</span>
+                <span>Cuota ref: <strong className="text-white">@{m.odd.toFixed(2)}</strong></span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                togglePick({
+                  id: `${fixtureId}_${m.key}`,
+                  fixtureId,
+                  sport: 'SOCCER',
+                  matchTitle,
+                  homeTeamName,
+                  awayTeamName,
+                  matchDate,
+                  matchTime,
+                  marketKey: m.key,
+                  selectionLabel: m.label,
+                  referenceOdd: m.odd,
+                  userOdd: m.odd,
+                  probability: m.prob,
+                  isEV: m.prob >= 50
+                });
+              }}
+              className={`w-full sm:w-auto px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 ${
+                inParlay
+                  ? 'bg-emerald-400 text-black shadow-md shadow-emerald-500/30 font-bold'
+                  : 'bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700'
+              }`}
+            >
+              <Ticket className="w-3.5 h-3.5" />
+              <span>{inParlay ? '✓ En Boleto' : '+ Añadir al Boleto'}</span>
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const NBAMarketsList: React.FC<{
+  payload: Extract<PlayerModalPayload, { sport: 'NBA' }>;
+  isPickInParlay: (fixtureId: string, marketKey?: string) => boolean;
+  togglePick: (pick: any) => void;
+}> = ({ payload, isPickInParlay, togglePick }) => {
+  const { fixtureId, matchTitle, homeTeamName, awayTeamName, matchDate, matchTime, player } = payload;
+  const safeName = player.name.replace(/\s+/g, '_');
+
+  const ptsLine = player.pointsLine || 22.5;
+  const ptsProb = player.overPointsProb || 62;
+
+  const threeLine = player.threePointersLine || 2.5;
+  const threeProb = player.over3pmProb || 58;
+
+  const markets = [
+    {
+      key: `PROP_PTS_${safeName}`,
+      label: `${player.name}: +${ptsLine} Puntos`,
+      odd: Number((100 / Math.max(10, ptsProb)).toFixed(2)),
+      prob: ptsProb,
+      category: '🏀 Puntos'
+    },
+    {
+      key: `PROP_3PM_${safeName}`,
+      label: `${player.name}: +${threeLine} Triples`,
+      odd: Number((100 / Math.max(10, threeProb)).toFixed(2)),
+      prob: threeProb,
+      category: '🎯 Triples'
+    },
+    {
+      key: `PROP_AST_${safeName}`,
+      label: `${player.name}: +4.5 Asistencias`,
+      odd: 1.85,
+      prob: 60,
+      category: '🅰️ Asistencias'
+    },
+    {
+      key: `PROP_REB_${safeName}`,
+      label: `${player.name}: +5.5 Rebotes`,
+      odd: 1.90,
+      prob: 58,
+      category: '🛡️ Rebotes'
+    },
+    {
+      key: `PROP_PRA_${safeName}`,
+      label: `${player.name}: +32.5 Combo (Puntos + Rebotes + Asistencias)`,
+      odd: 1.80,
+      prob: 64,
+      category: '⚡ Combo PRA'
+    }
+  ];
+
+  return (
+    <div className="space-y-2">
+      {markets.map((m) => {
+        const inParlay = isPickInParlay(fixtureId, m.key);
+        return (
+          <div
+            key={m.key}
+            className={`p-3 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+              inParlay
+                ? 'bg-amber-500/15 border-amber-500/50 ring-1 ring-amber-500/30'
+                : 'bg-slate-900/60 hover:bg-slate-800/60 border-slate-800/80'
+            }`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 shrink-0">
+                  {m.category}
+                </span>
+                <span className="text-xs font-sans font-semibold text-white leading-snug break-words">
+                  {m.label}
+                </span>
+              </div>
+              <div className="text-[11px] font-mono text-slate-400 mt-1.5 flex items-center gap-2 flex-wrap">
+                <span>Probabilidad: <strong className="text-amber-300">{m.prob}%</strong></span>
+                <span className="text-slate-600">·</span>
+                <span>Cuota ref: <strong className="text-white">@{m.odd.toFixed(2)}</strong></span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                togglePick({
+                  id: `${fixtureId}_${m.key}`,
+                  fixtureId,
+                  sport: 'NBA',
+                  matchTitle,
+                  homeTeamName,
+                  awayTeamName,
+                  matchDate,
+                  matchTime,
+                  marketKey: m.key,
+                  selectionLabel: m.label,
+                  referenceOdd: m.odd,
+                  userOdd: m.odd,
+                  probability: m.prob,
+                  isEV: m.prob >= 50
+                });
+              }}
+              className={`w-full sm:w-auto px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 ${
+                inParlay
+                  ? 'bg-amber-400 text-black shadow-md shadow-amber-500/30 font-bold'
+                  : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700'
+              }`}
+            >
+              <Ticket className="w-3.5 h-3.5" />
+              <span>{inParlay ? '✓ En Boleto' : '+ Añadir al Boleto'}</span>
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+};

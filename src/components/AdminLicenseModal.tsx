@@ -1,0 +1,1944 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Shield, Key, X, Lock, Check, Copy, UserCheck, RefreshCw, Smartphone, MessageCircle, Power, Sparkles, Database, Users, Search, Unlock, Download, BarChart2, Printer, CheckCircle2, Trophy, Zap } from 'lucide-react';
+import { createLicenseToken, getOrCreateDeviceId, saveActiveLicense, verifyLicenseToken, clearActiveLicense } from '../services/licenseService';
+import { AccuracyEvaluatorService, OverallAccuracySummary } from '../services/accuracyEvaluatorService';
+import { AdminStressTestPanel } from './AdminStressTestPanel';
+
+interface AdminLicenseModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onLicenseChanged?: () => void;
+  onLogout?: () => void;
+}
+
+export interface SupabaseUserItem {
+  id: string;
+  username: string;
+  displayName?: string;
+  role: 'admin' | 'client';
+  status: 'active' | 'pending' | 'suspended' | 'expired';
+  planType: string;
+  planLabel: string;
+  createdAt: number;
+  expiresAt: number | null;
+  boundDeviceId?: string | null;
+  boundDeviceName?: string | null;
+  boundDeviceUpdatedAt?: string | null;
+  lastActiveAt?: number | null;
+  whatsappNumber?: string | null;
+  notes?: string | null;
+  daysRemaining?: number | null;
+  isExpired?: boolean;
+}
+
+export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, onClose, onLicenseChanged, onLogout }) => {
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
+    return localStorage.getItem('sportstats_admin_remember') === 'true';
+  });
+  const [pinInput, setPinInput] = useState(() => {
+    return localStorage.getItem('sportstats_admin_saved_pin') || '';
+  });
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<'USERS' | 'AUDIT' | 'STRESS' | 'CONFIG'>('USERS');
+
+  // Supabase User Management State
+  const [appUsersList, setAppUsersList] = useState<SupabaseUserItem[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [userFilter, setUserFilter] = useState<'ALL' | 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'BOUND'>('ALL');
+  const [userSearch, setUserSearch] = useState('');
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [newQuickUsername, setNewQuickUsername] = useState('');
+  const [newQuickPin, setNewQuickPin] = useState('');
+  const [newQuickName, setNewQuickName] = useState('');
+  const [newQuickDays, setNewQuickDays] = useState<number>(30);
+  const [userRenewDays, setUserRenewDays] = useState<Record<string, number>>({});
+
+  // Config & Security PIN
+  const [adminWhatsApp, setAdminWhatsApp] = useState('573213902708');
+  const [activeServerPin, setActiveServerPin] = useState(() => {
+    return (
+      sessionStorage.getItem('futbolstats_admin_pin') ||
+      localStorage.getItem('sportstats_admin_saved_pin') ||
+      ''
+    );
+  });
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [configSuccess, setConfigSuccess] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [copiedCurrentPin, setCopiedCurrentPin] = useState(false);
+
+  // Supabase Database Status & SQL Helper
+  const [supabaseConfigured, setSupabaseConfigured] = useState(false);
+  const [supabaseProject, setSupabaseProject] = useState<string | null>(null);
+  const [supabaseSqlSchema, setSupabaseSqlSchema] = useState<string | null>(null);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  // Emergency Recovery States (when PIN is forgotten)
+  const [showRecoveryMode, setShowRecoveryMode] = useState(false);
+  const [recoveryKeyInput, setRecoveryKeyInput] = useState('');
+  const [recoveryNewPin, setRecoveryNewPin] = useState('');
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoverySuccessMsg, setRecoverySuccessMsg] = useState<string | null>(null);
+
+  const buildAdminHeaders = (pin?: string, includeJson = false, idempotent = false): Record<string, string> => {
+    const headers: Record<string, string> = {};
+    if (includeJson) {
+      headers['Content-Type'] = 'application/json';
+    }
+    if (pin && pin.trim()) {
+      headers['x-admin-pin'] = pin.trim();
+    }
+    const jwt = sessionStorage.getItem('sportstats_session_jwt');
+    if (jwt) {
+      headers['Authorization'] = `Bearer ${jwt}`;
+    }
+    if (idempotent) {
+      headers['Idempotency-Key'] = `adm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+    return headers;
+  };
+
+  // Declare helpers BEFORE effects to prevent TDZ errors
+  const loadConfig = useCallback(async () => {
+    try {
+      const storedPin =
+        sessionStorage.getItem('futbolstats_admin_pin') ||
+        localStorage.getItem('sportstats_admin_saved_pin') ||
+        '';
+      const res = await fetch('/api/license/config', {
+        headers: buildAdminHeaders(storedPin)
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.adminWhatsApp) setAdminWhatsApp(data.adminWhatsApp);
+        if (data.currentPin) {
+          setActiveServerPin(data.currentPin);
+          localStorage.setItem('sportstats_admin_saved_pin', data.currentPin);
+        }
+      }
+
+      if (storedPin) {
+        fetch('/api/admin/supabase-status', {
+          headers: buildAdminHeaders(storedPin)
+        })
+          .then((r) => r.json())
+          .then((sb) => {
+            if (sb && sb.success) {
+              setSupabaseConfigured(Boolean(sb.configured));
+              setSupabaseProject(sb.supabaseProject || null);
+              if (sb.sqlSchema) setSupabaseSqlSchema(sb.sqlSchema);
+            }
+          })
+          .catch(() => {});
+      }
+    } catch {
+      // fallback
+    }
+  }, []);
+
+  const loadAppUsers = useCallback(async (pin: string) => {
+    setIsLoadingUsers(true);
+    const mergedMap = new Map<string, SupabaseUserItem>();
+
+    // 1. Cargar solicitudes o usuarios guardados en caché local del navegador
+    try {
+      const rawLocal = localStorage.getItem('sportstats_local_users_cache');
+      if (rawLocal) {
+        const parsed = JSON.parse(rawLocal);
+        if (Array.isArray(parsed)) {
+          for (const u of parsed) {
+            if (u && u.username) {
+              const sanitizedUser = { ...u };
+              delete (sanitizedUser as any).pin;
+              mergedMap.set(u.username, sanitizedUser);
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2. Consultar servidor (Supabase + base del servidor) vía cabecera x-admin-pin
+    try {
+      const res = await fetch('/api/admin/users/list', {
+        headers: buildAdminHeaders(pin)
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.users)) {
+        for (const u of data.users) {
+          if (u && u.username) {
+            const sanitizedUser = { ...u };
+            delete (sanitizedUser as any).pin;
+            mergedMap.set(u.username, sanitizedUser);
+          }
+        }
+      }
+    } catch {
+      // ignore network error, keep local cache
+    } finally {
+      const finalUsers = Array.from(mergedMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      setAppUsersList(finalUsers);
+      try {
+        localStorage.setItem('sportstats_local_users_cache', JSON.stringify(finalUsers));
+      } catch {
+        // ignore
+      }
+      setIsLoadingUsers(false);
+    }
+  }, []);
+
+  const handleCreateOrUpdateQuickUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanUser = newQuickUsername.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!cleanUser || cleanUser.length < 3) {
+      setActionFeedback('El nombre de usuario debe tener al menos 3 caracteres alfanuméricos.');
+      return;
+    }
+
+    const existingUser = appUsersList.find((u) => u.username === cleanUser);
+
+    let cleanPin = newQuickPin.trim();
+    if (!cleanPin) {
+      cleanPin = existingUser ? '[PROTECTED]' : '1234';
+    } else if (cleanPin.length < 4) {
+      setActionFeedback('Si ingresas un PIN nuevo o deseas cambiarlo, debe tener al menos 4 dígitos.');
+      return;
+    }
+
+    const currentPin = pinInput.trim() || activeServerPin || localStorage.getItem('sportstats_admin_saved_pin') || '';
+    const nowMs = Date.now();
+    const isPermanent = newQuickDays === 0;
+    const expiresAt = isPermanent ? null : nowMs + newQuickDays * 24 * 60 * 60 * 1000;
+    const planType = isPermanent ? 'PERMANENT' : (newQuickDays === 1 ? '24H' : `${newQuickDays}D`);
+    const planLabel = isPermanent 
+      ? 'Pase Permanente Vitalicio' 
+      : newQuickDays === 1 
+      ? 'Muestra 24 Horas' 
+      : `Pase ${newQuickDays} Días`;
+
+    const userPayload: SupabaseUserItem & { pin?: string } = {
+      id: existingUser?.id || `USR-${nowMs.toString(36).toUpperCase()}`,
+      username: cleanUser,
+      displayName: newQuickName.trim() || existingUser?.displayName || undefined,
+      pin: cleanPin,
+      role: existingUser?.role || 'client',
+      status: 'active',
+      planType,
+      planLabel,
+      createdAt: existingUser?.createdAt || nowMs,
+      expiresAt,
+      boundDeviceId: existingUser?.boundDeviceId || null,
+      boundDeviceName: existingUser?.boundDeviceName || null,
+      daysRemaining: isPermanent ? null : newQuickDays,
+      isExpired: false
+    };
+
+    try {
+      const rawLocal = localStorage.getItem('sportstats_local_users_cache');
+      const list = rawLocal ? JSON.parse(rawLocal) : [];
+      const safeList = Array.isArray(list) ? list : [];
+      const idx = safeList.findIndex((u: any) => u.username === cleanUser);
+      const localCopy = { ...userPayload };
+      delete localCopy.pin;
+      if (idx >= 0) {
+        safeList[idx] = { ...safeList[idx], ...localCopy };
+      } else {
+        safeList.unshift(localCopy);
+      }
+      localStorage.setItem('sportstats_local_users_cache', JSON.stringify(safeList));
+    } catch {
+      // ignore
+    }
+
+    try {
+      await fetch('/api/admin/users/upsert', {
+        method: 'POST',
+        headers: buildAdminHeaders(currentPin, true, true),
+        body: JSON.stringify({ user: userPayload })
+      });
+    } catch {
+      // ignore offline
+    }
+
+    const durationText = isPermanent ? 'Vitalicio' : newQuickDays === 1 ? 'Muestra 24 Horas' : `${newQuickDays} días`;
+    const pinNote = !newQuickPin.trim() && !existingUser ? ' (PIN inicial encriptado: 1234)' : '';
+    setNewQuickUsername('');
+    setNewQuickPin('');
+    setNewQuickName('');
+    setActionFeedback(`Cuenta @${cleanUser} activada con éxito por ${durationText}${pinNote}.`);
+    loadAppUsers(currentPin);
+    setTimeout(() => setActionFeedback(null), 4000);
+  };
+
+  const handleResetUserDevice = async (userId: string, username: string) => {
+    const currentPin = pinInput.trim() || activeServerPin || localStorage.getItem('sportstats_admin_saved_pin') || '';
+    try {
+      const rawLocal = localStorage.getItem('sportstats_local_users_cache');
+      if (rawLocal) {
+        const list = JSON.parse(rawLocal);
+        if (Array.isArray(list)) {
+          for (const u of list) {
+            if (u.id === userId || u.username === username) {
+              u.boundDeviceId = null;
+              u.boundDeviceName = null;
+            }
+          }
+          localStorage.setItem('sportstats_local_users_cache', JSON.stringify(list));
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      await fetch('/api/admin/users/reset-device', {
+        method: 'POST',
+        headers: buildAdminHeaders(currentPin, true, true),
+        body: JSON.stringify({ userId })
+      });
+    } catch {
+      // ignore
+    }
+
+    setActionFeedback(`Dispositivo desvinculado con éxito para @${username}. Ya puede registrar su nuevo equipo.`);
+    loadAppUsers(currentPin);
+    setTimeout(() => setActionFeedback(null), 4000);
+  };
+
+  const handleRenewUser = async (userId: string, username: string, addDays = 30) => {
+    const currentPin = pinInput.trim() || activeServerPin || localStorage.getItem('sportstats_admin_saved_pin') || '';
+    const nowMs = Date.now();
+    const isPermanent = Number(addDays) === 0;
+    const daysMs = Number(addDays) * 24 * 60 * 60 * 1000;
+    const planType = isPermanent ? 'PERMANENT' : (Number(addDays) === 1 ? '24H' : `${addDays}D`);
+    const planLabel = isPermanent ? 'Pase Permanente Vitalicio' : (Number(addDays) === 1 ? 'Muestra 24 Horas' : `Pase ${addDays} Días`);
+
+    try {
+      const rawLocal = localStorage.getItem('sportstats_local_users_cache');
+      if (rawLocal) {
+        const list = JSON.parse(rawLocal);
+        if (Array.isArray(list)) {
+          for (const u of list) {
+            if (u.id === userId || u.username === username) {
+              if (isPermanent) {
+                u.expiresAt = null;
+                u.daysRemaining = null;
+              } else {
+                u.expiresAt = u.expiresAt && u.expiresAt > nowMs ? u.expiresAt + daysMs : nowMs + daysMs;
+                u.daysRemaining = Math.max(0, Math.ceil((u.expiresAt - nowMs) / (24 * 60 * 60 * 1000)));
+              }
+              u.planType = planType;
+              u.planLabel = planLabel;
+              u.status = 'active';
+              u.isExpired = false;
+            }
+          }
+          localStorage.setItem('sportstats_local_users_cache', JSON.stringify(list));
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      await fetch('/api/admin/users/renew', {
+        method: 'POST',
+        headers: buildAdminHeaders(currentPin, true, true),
+        body: JSON.stringify({ userId, addDays })
+      });
+    } catch {
+      // ignore
+    }
+
+    const durationNotice = isPermanent ? 'Acceso Permanente Vitalicio' : Number(addDays) === 1 ? 'Muestra de 24 Horas' : `+${addDays} días`;
+    setActionFeedback(`Suscripción activada (${durationNotice}) para @${username}`);
+    loadAppUsers(currentPin);
+    setTimeout(() => setActionFeedback(null), 4000);
+  };
+
+  const handleToggleUserStatus = async (userId: string, currentStatus: string, username?: string) => {
+    const currentPin = pinInput.trim() || activeServerPin || localStorage.getItem('sportstats_admin_saved_pin') || '';
+    const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+
+    try {
+      const rawLocal = localStorage.getItem('sportstats_local_users_cache');
+      if (rawLocal) {
+        const list = JSON.parse(rawLocal);
+        if (Array.isArray(list)) {
+          for (const u of list) {
+            if (u.id === userId || (username && u.username === username)) {
+              u.status = newStatus;
+            }
+          }
+          localStorage.setItem('sportstats_local_users_cache', JSON.stringify(list));
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      await fetch('/api/admin/users/toggle-status', {
+        method: 'POST',
+        headers: buildAdminHeaders(currentPin, true, true),
+        body: JSON.stringify({ userId, status: newStatus })
+      });
+    } catch {
+      // ignore
+    }
+
+    setActionFeedback(
+      newStatus === 'active'
+        ? `Cuenta ${username ? `@${username}` : ''} activada con éxito.`
+        : `Cuenta ${username ? `@${username}` : ''} suspendida.`
+    );
+    loadAppUsers(currentPin);
+    setTimeout(() => setActionFeedback(null), 4000);
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      loadConfig();
+      const isRemembered = localStorage.getItem('sportstats_admin_remember') === 'true';
+      const savedPin = localStorage.getItem('sportstats_admin_saved_pin') || '';
+      if (isRemembered && savedPin) {
+        setIsAdminAuthenticated(true);
+        setActiveServerPin(savedPin);
+        loadAppUsers(savedPin);
+      }
+    } else {
+      setShowRecoveryMode(false);
+      setRecoveryKeyInput('');
+      setRecoveryError(null);
+      setRecoverySuccessMsg(null);
+    }
+  }, [isOpen, loadConfig, loadAppUsers]);
+
+  const unlockAdminDeviceAndAuthenticate = (validPinUsed: string) => {
+    localStorage.setItem('sportstats_admin_remember', 'true');
+    localStorage.setItem('sportstats_admin_saved_pin', validPinUsed);
+    sessionStorage.setItem('futbolstats_admin_pin', validPinUsed);
+    setActiveServerPin(validPinUsed);
+    setIsAdminAuthenticated(true);
+
+    // Unlock admin device permanently with VIP license
+    const devId = getOrCreateDeviceId();
+    const masterToken = createLicenseToken(devId, 'PERMANENT');
+    const check = verifyLicenseToken(masterToken.key, devId);
+    saveActiveLicense(masterToken.key, check);
+
+    loadAppUsers(validPinUsed);
+    loadConfig();
+    if (onLicenseChanged) onLicenseChanged();
+  };
+
+  // Handle Admin PIN verification against server via x-admin-pin header
+  const handleVerifyPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinError(null);
+    const pin = pinInput.trim();
+
+    if (!pin) {
+      setPinError('Ingresa tu PIN de Administrador.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/license/list', {
+        headers: buildAdminHeaders(pin)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.currentPin) {
+          setActiveServerPin(data.currentPin);
+        }
+        unlockAdminDeviceAndAuthenticate(pin);
+        return;
+      } else if (res.status === 429) {
+        const errData = await res.json().catch(() => ({}));
+        setPinError(errData.message || 'Demasiados intentos fallidos. Espera unos minutos.');
+        return;
+      } else {
+        setPinError('Código o credencial no válida.');
+      }
+    } catch {
+      if (activeServerPin && pin === activeServerPin) {
+        unlockAdminDeviceAndAuthenticate(pin);
+      } else {
+        setPinError('Error de conexión al verificar credenciales.');
+      }
+    }
+  };
+
+  const handleSendCredentialsToWhatsApp = (pinToSend: string) => {
+    const cleanPhone = (adminWhatsApp || '573213902708').replace(/[^0-9]/g, '');
+    const msg = `🔐 *Respaldo Privado de Administrador · SportStats Pro*\n\n📌 *Tu PIN Actual Activo:* ${pinToSend}\n\n_Guarda este mensaje en tu chat personal para tener siempre tu llave de acceso a la mano._`;
+    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleEmergencyRecovery = async () => {
+    setRecoveryError(null);
+    setRecoverySuccessMsg(null);
+    const cleanKey = recoveryKeyInput.trim();
+
+    if (!cleanKey) {
+      setRecoveryError('Ingresa tu clave maestra de recuperación.');
+      return;
+    }
+
+    if (recoveryNewPin.trim() && recoveryNewPin.trim().length < 4) {
+      setRecoveryError('El nuevo PIN debe tener al menos 4 caracteres.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/license/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...buildAdminHeaders(undefined, false, true) },
+        body: JSON.stringify({
+          recoveryKey: cleanKey,
+          deviceId: getOrCreateDeviceId(),
+          newPin: recoveryNewPin.trim() || undefined
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const pinToUse = recoveryNewPin.trim() || data.adminPin;
+        setActiveServerPin(pinToUse);
+        setPinInput(pinToUse);
+        sessionStorage.setItem('futbolstats_admin_pin', pinToUse);
+        localStorage.setItem('sportstats_admin_saved_pin', pinToUse);
+        unlockAdminDeviceAndAuthenticate(pinToUse);
+        setShowRecoveryMode(false);
+        setRecoveryKeyInput('');
+        setRecoveryNewPin('');
+        return;
+      } else if (res.status === 429) {
+        const errData = await res.json().catch(() => ({}));
+        setRecoveryError(errData.message || 'Demasiados intentos fallidos. Espera 15 minutos.');
+        return;
+      } else {
+        setRecoveryError('Clave de recuperación no válida.');
+        return;
+      }
+    } catch {
+      setRecoveryError('Error de conexión con el servidor al validar la clave de recuperación.');
+    }
+  };
+
+  const handleSaveConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setConfigSuccess(null);
+    setConfigError(null);
+
+    const currentPin =
+      pinInput.trim() ||
+      sessionStorage.getItem('futbolstats_admin_pin') ||
+      localStorage.getItem('sportstats_admin_saved_pin') ||
+      activeServerPin;
+
+    if (newPin && newPin.trim().length < 4) {
+      setConfigError('El nuevo PIN debe tener al menos 4 caracteres.');
+      return;
+    }
+
+    if (newPin && newPin !== confirmPin) {
+      setConfigError('El nuevo PIN y su confirmación no coinciden.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/license/config', {
+        method: 'POST',
+        headers: buildAdminHeaders(currentPin, true, true),
+        body: JSON.stringify({
+          newPin: newPin.trim() || undefined,
+          adminWhatsApp: adminWhatsApp.trim()
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        if (newPin.trim()) {
+          const updatedPin = newPin.trim();
+          setPinInput(updatedPin);
+          setActiveServerPin(updatedPin);
+          sessionStorage.setItem('futbolstats_admin_pin', updatedPin);
+          localStorage.setItem('sportstats_admin_saved_pin', updatedPin);
+          setNewPin('');
+          setConfirmPin('');
+          setConfigSuccess(`¡PIN de administrador actualizado con éxito! Tu nuevo PIN activo es: ${updatedPin}`);
+        } else {
+          setConfigSuccess('¡Configuración guardada con éxito!');
+        }
+        setTimeout(() => setConfigSuccess(null), 5000);
+      } else {
+        setConfigError(data.error || 'Error al guardar configuración');
+      }
+    } catch {
+      setConfigError('Error de conexión con el servidor.');
+    }
+  };
+
+  // Excel Export: Descarga directa de la base de usuarios en archivo Excel (.csv con BOM)
+  const handleDownloadUsersExcel = () => {
+    if (!appUsersList || appUsersList.length === 0) return;
+
+    const headers = [
+      'ID Usuario',
+      'Usuario (@)',
+      'Nombre Completo',
+      'Rol',
+      'Estado',
+      'Tipo de Plan',
+      'Nombre del Plan',
+      'Días Restantes',
+      'Fecha Creación',
+      'Fecha Vencimiento',
+      'Dispositivo Vinculado',
+      'WhatsApp / Teléfono',
+      'Última Actividad'
+    ];
+
+    const escapeCsv = (str: string | number | null | undefined) => {
+      const s = String(str ?? '');
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+
+    const rows = appUsersList.map((u) => {
+      const createdStr = u.createdAt ? new Date(u.createdAt).toLocaleString('es-CO') : '';
+      const expiresStr = u.expiresAt ? new Date(u.expiresAt).toLocaleString('es-CO') : 'Vitalicio (Sin vencimiento)';
+      const lastActiveStr = u.lastActiveAt ? new Date(u.lastActiveAt).toLocaleString('es-CO') : 'Sin actividad';
+      const daysStr = u.expiresAt === null ? 'Vitalicio' : String(u.daysRemaining ?? 0);
+      const statusLabel =
+        u.status === 'active'
+          ? 'Activo'
+          : u.status === 'suspended'
+          ? 'Suspendido'
+          : u.status === 'pending'
+          ? 'Pendiente de activación'
+          : 'Vencido';
+
+      return [
+        escapeCsv(u.id),
+        escapeCsv(`@${u.username}`),
+        escapeCsv(u.displayName || u.username),
+        escapeCsv(u.role === 'admin' ? 'Administrador' : 'Cliente'),
+        escapeCsv(statusLabel),
+        escapeCsv(u.planType || '30D'),
+        escapeCsv(u.planLabel || 'Pase 30 Días'),
+        escapeCsv(daysStr),
+        escapeCsv(createdStr),
+        escapeCsv(expiresStr),
+        escapeCsv(u.boundDeviceName || u.boundDeviceId || 'Sin vincular'),
+        escapeCsv(u.whatsappNumber || ''),
+        escapeCsv(lastActiveStr)
+      ].join(';');
+    });
+
+    // UTF-8 BOM (\uFEFF) para visualización nativa y automática en Microsoft Excel
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.download = `Listado_Usuarios_SportStats_Pro_${dateStr}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCloseModal = () => {
+    setPinError(null);
+    onClose();
+  };
+
+  const handleLogoutAdmin = () => {
+    try {
+      clearActiveLicense();
+      localStorage.removeItem('sportstats_admin_remember');
+      localStorage.removeItem('sportstats_admin_saved_pin');
+      localStorage.removeItem('sportstats_auth_user');
+      localStorage.removeItem('sportstats_client_name');
+      sessionStorage.removeItem('futbolstats_admin_pin');
+      sessionStorage.removeItem('sportstats_exp_alert_dismissed');
+    } catch {
+      // ignore storage errors
+    }
+    setIsAdminAuthenticated(false);
+    setPinInput('');
+    setActiveServerPin('');
+    setPinError(null);
+    onClose();
+    if (onLogout) {
+      onLogout();
+    } else {
+      window.location.reload();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  // STATE 1: Discrete Security Verification Box (Camouflaged - No mention of Admin Panel)
+  if (!isAdminAuthenticated) {
+    return (
+      <div
+        onClick={handleCloseModal}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="bg-[#0B111E] border border-slate-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl relative text-center"
+        >
+          <button
+            onClick={handleCloseModal}
+            type="button"
+            className="absolute top-3.5 right-3.5 w-7 h-7 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer"
+            title="Cerrar"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+
+          <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-700/80 flex items-center justify-center mx-auto mb-3.5">
+            <Lock className="w-5 h-5 text-cyan-400" />
+          </div>
+
+          <h3 className="text-base font-bold text-white tracking-tight mb-1">
+            {showRecoveryMode ? 'Recuperación de Acceso' : 'Verificación de Seguridad'}
+          </h3>
+          <p className="text-xs text-slate-400 mb-5">
+            {showRecoveryMode
+              ? 'Solicita el envío del código de recuperación a tu WhatsApp o ingresa tu clave recibida.'
+              : 'Ingresa el código de autorización para continuar.'}
+          </p>
+
+          {!showRecoveryMode ? (
+            <form onSubmit={handleVerifyPin} className="space-y-3.5">
+              <input
+                type="password"
+                value={pinInput}
+                onChange={(e) => {
+                  setPinInput(e.target.value);
+                  setPinError(null);
+                }}
+                placeholder="••••••"
+                autoFocus
+                className="w-full bg-[#070B14] border border-slate-700/80 rounded-xl px-4 py-2.5 text-center text-lg font-mono tabular-nums tracking-widest text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-400 transition"
+              />
+
+              {pinError && (
+                <div className="space-y-2">
+                  <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 py-2 px-3 rounded-lg">
+                    {pinError}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowRecoveryMode(true);
+                      setRecoveryError(null);
+                      setRecoverySuccessMsg(null);
+                    }}
+                    className="text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 underline underline-offset-2 transition cursor-pointer"
+                  >
+                    ¿Olvidaste tu código? Recuperar acceso
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition shadow-md shadow-cyan-500/20 active:scale-95 cursor-pointer"
+                >
+                  Verificar
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="space-y-3.5 text-left">
+              <button
+                type="button"
+                onClick={() => {
+                  const devId = getOrCreateDeviceId();
+                  const cleanPhone = (adminWhatsApp || '573213902708').replace(/[^0-9]/g, '');
+                  const msg = `⚠️ *Solicitud de Autorización / Recuperación · SportStats Pro*\n\nHola Administrador, se solicita verificación de seguridad para el dispositivo:\n📱 *Dispositivo:* ${devId}\n\nSi reconoces este intento, envía la clave de acceso correspondiente.`;
+                  const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+                  window.open(url, '_blank', 'noopener,noreferrer');
+                }}
+                className="w-full py-2.5 px-4 rounded-lg font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-sm shadow-emerald-600/20 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>Solicitar autorización al WhatsApp del Administrador</span>
+              </button>
+
+              <div className="pt-2 border-t border-slate-800 space-y-2.5">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Ingresa código de autorización recibido:
+                  </label>
+                  <input
+                    type="text"
+                    value={recoveryKeyInput}
+                    onChange={(e) => {
+                      setRecoveryKeyInput(e.target.value);
+                      setRecoveryError(null);
+                    }}
+                    placeholder="Código o clave de autorización"
+                    autoFocus
+                    className="w-full bg-[#0b0e14] border border-slate-700 rounded-lg px-3.5 py-2 text-center text-xs font-mono tracking-wider text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-400 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Nuevo PIN que deseas asignar (Opcional):
+                  </label>
+                  <input
+                    type="password"
+                    value={recoveryNewPin}
+                    onChange={(e) => setRecoveryNewPin(e.target.value)}
+                    placeholder="Mínimo 4 dígitos"
+                    className="w-full bg-[#0b0e14] border border-slate-700 rounded-lg px-3.5 py-2 text-center text-xs font-mono tracking-wider text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-400 transition"
+                  />
+                </div>
+              </div>
+
+              {recoveryError && (
+                <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 py-2 px-3 rounded-lg text-center">
+                  {recoveryError}
+                </div>
+              )}
+
+              {recoverySuccessMsg && (
+                <div className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 py-2 px-3 rounded-lg text-center font-semibold">
+                  {recoverySuccessMsg}
+                </div>
+              )}
+
+              <div className="space-y-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleEmergencyRecovery}
+                  className="w-full py-2.5 px-4 rounded-lg font-bold text-xs bg-emerald-500 hover:bg-emerald-400 text-black transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  <span>Verificar y Desbloquear Acceso</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRecoveryMode(false);
+                    setRecoveryKeyInput('');
+                    setRecoveryError(null);
+                  }}
+                  className="w-full py-2 px-4 rounded-lg font-semibold text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer text-center"
+                >
+                  Volver a ingresar PIN
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // STATE 2: Full Authenticated Admin Panel (Only visible after entering the valid PIN)
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+      <div className="bg-[#0C121E] border border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-2xl max-h-[95vh] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden relative">
+        {/* Top Header */}
+        <div className="p-3 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/60 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+              <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-xs sm:text-base font-black text-white flex items-center gap-2 truncate">
+                <span>Panel de Administración · SportStats Pro</span>
+              </h2>
+              <p className="text-[10px] sm:text-xs text-slate-400 truncate">
+                Genera licencias, personaliza el logo y gestiona accesos.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleCloseModal}
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0 ml-2"
+            title="Cerrar y bloquear panel"
+          >
+            <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </button>
+        </div>
+
+        {/* Authenticated Panel Content */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Pinned Responsive Tabs Bar */}
+          <div className="sticky top-0 z-20 border-b border-slate-800 bg-[#0A101C] px-2 sm:px-4 pt-1.5 pb-0 flex items-center gap-1 sm:gap-2 text-xs font-bold overflow-x-auto scrollbar-none shrink-0">
+            <button
+              onClick={() => setActiveTab('USERS')}
+              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
+                activeTab === 'USERS'
+                  ? 'border-indigo-400 text-indigo-400 bg-indigo-500/10'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden sm:inline">Usuarios ({appUsersList.length})</span>
+              <span className="inline sm:hidden">Usuarios ({appUsersList.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('AUDIT')}
+              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
+                activeTab === 'AUDIT'
+                  ? 'border-emerald-400 text-emerald-400 bg-emerald-500/10'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <BarChart2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Eficiencia (+EV)</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('STRESS')}
+              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
+                activeTab === 'STRESS'
+                  ? 'border-amber-400 text-amber-300 bg-amber-500/10'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Carga (100 Usu.)</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('CONFIG')}
+              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
+                activeTab === 'CONFIG'
+                  ? 'border-cyan-400 text-cyan-400 bg-cyan-500/10'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Shield className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Seguridad & PIN</span>
+            </button>
+
+            <button
+              onClick={handleLogoutAdmin}
+              className="ml-auto my-auto px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-white transition text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
+              title="Cerrar sesión por completo y volver a la pantalla de inicio de sesión"
+            >
+              <Power className="w-3.5 h-3.5 text-rose-400" />
+              <span>Cerrar Sesión</span>
+            </button>
+          </div>
+
+          {/* Tab Content Body (Scrollable independently) */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
+              {/* TAB 0: SUPABASE USERS */}
+              {activeTab === 'USERS' && (
+                <div className="space-y-4">
+                  {/* Feedback Toast */}
+                  {actionFeedback && (
+                    <div className="p-3 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-bold flex items-center justify-between animate-fadeIn">
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-indigo-400 shrink-0" />
+                        <span>{actionFeedback}</span>
+                      </div>
+                      <button
+                        onClick={() => setActionFeedback(null)}
+                        className="text-slate-400 hover:text-white text-xs px-2 py-0.5 rounded cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Quick Create / Activate User Form */}
+                  <form
+                    onSubmit={handleCreateOrUpdateQuickUser}
+                    className="bg-[#080D16] p-3.5 rounded-xl border border-indigo-500/30 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                        <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Crear o Activar Usuario Rápido</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Activa al instante a cualquier cliente
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                      <input
+                        type="text"
+                        value={newQuickUsername}
+                        onChange={(e) => setNewQuickUsername(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20))}
+                        placeholder="Usuario (ej. carlos99)"
+                        required
+                        className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
+                      />
+                      <input
+                        type="text"
+                        value={newQuickPin}
+                        onChange={(e) => setNewQuickPin(e.target.value)}
+                        placeholder="PIN (opcional / privado)"
+                        title="Opcional. Déjalo vacío si el cliente ya tiene su PIN personal (se mantendrá intacto) o para asignar 1234 por defecto."
+                        className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
+                      />
+                      <input
+                        type="text"
+                        value={newQuickName}
+                        onChange={(e) => setNewQuickName(e.target.value)}
+                        placeholder="Nombre (opcional)"
+                        className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
+                      />
+                      <select
+                        value={newQuickDays}
+                        onChange={(e) => setNewQuickDays(Number(e.target.value))}
+                        className="bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-400 cursor-pointer"
+                      >
+                        <option value={1}>⚡ Muestra 24 Horas</option>
+                        <option value={3}>⚡ 3 Días (Muestra)</option>
+                        <option value={7}>📅 7 Días (Semanal)</option>
+                        <option value={15}>📅 15 Días (Quincenal)</option>
+                        <option value={30}>🗓️ 30 Días (Mensual)</option>
+                        <option value={60}>🗓️ 60 Días (Bimestral)</option>
+                        <option value={90}>🗓️ 90 Días (Trimestral)</option>
+                        <option value={365}>🏆 365 Días (1 Año)</option>
+                        <option value={0}>♾️ Vitalicio (Permanente)</option>
+                      </select>
+                      <button
+                        type="submit"
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-1"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>+ Activar Días</span>
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 flex items-center gap-1.5 pt-0.5">
+                      <span className="text-amber-400 font-bold">🔒 PIN Secreto:</span> No necesitas pedirle el PIN al usuario. Si ya está registrado se conserva su PIN; si es nuevo y no se especifica, se le asigna 1234.
+                    </p>
+                  </form>
+
+                  {/* Filter & Search Bar */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-[#080D16] p-2.5 rounded-xl border border-slate-800">
+                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px] font-bold">
+                      {[
+                        { id: 'ALL', label: `Todos (${appUsersList.length})` },
+                        { id: 'ACTIVE', label: '🟢 Activos' },
+                        { id: 'BOUND', label: '📱 Vinculados' },
+                        { id: 'PENDING', label: '⏳ Pendientes' },
+                        { id: 'SUSPENDED', label: '🚫 Suspendidos' }
+                      ].map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setUserFilter(f.id as any)}
+                          className={`px-2.5 py-1.5 rounded-lg whitespace-nowrap transition cursor-pointer ${
+                            userFilter === f.id
+                              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1 sm:w-56">
+                        <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={userSearch}
+                          onChange={(e) => setUserSearch(e.target.value)}
+                          placeholder="Buscar @usuario o nombre..."
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-400"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleDownloadUsersExcel}
+                        disabled={appUsersList.length === 0}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 flex items-center gap-1.5 shrink-0 transition cursor-pointer disabled:opacity-50"
+                        title="Descargar listado completo de usuarios en archivo Excel (.csv compatible)"
+                      >
+                        <Download className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="hidden sm:inline">Descargar Excel</span>
+                        <span className="inline sm:hidden">Excel</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const p = pinInput.trim() || activeServerPin || localStorage.getItem('sportstats_admin_saved_pin') || '';
+                          loadAppUsers(p);
+                        }}
+                        className="p-1.5 rounded-lg text-xs text-slate-400 hover:text-white bg-slate-800 shrink-0 transition cursor-pointer"
+                        title="Actualizar lista de usuarios"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Users Cards List */}
+                  {isLoadingUsers && appUsersList.length === 0 ? (
+                    <div className="text-center py-12 text-slate-500 text-xs flex items-center justify-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+                      <span>Cargando usuarios desde Supabase...</span>
+                    </div>
+                  ) : appUsersList.length === 0 ? (
+                    <div className="text-center py-10 text-slate-500 text-xs bg-[#080D16] rounded-2xl border border-slate-800 p-6 space-y-2">
+                      <Users className="w-8 h-8 text-slate-600 mx-auto" />
+                      <p className="font-bold text-slate-300">No hay cuentas de usuario registradas aún</p>
+                      <p className="text-[11px] text-slate-500">
+                        Los clientes pueden registrarse directamente solicitando su cuenta o iniciando sesión desde la pantalla de bienvenida.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {appUsersList
+                        .filter((u) => {
+                          if (userFilter === 'ACTIVE' && u.status !== 'active') return false;
+                          if (userFilter === 'BOUND' && !u.boundDeviceId) return false;
+                          if (userFilter === 'PENDING' && u.status !== 'pending') return false;
+                          if (userFilter === 'SUSPENDED' && u.status !== 'suspended') return false;
+
+                          if (userSearch.trim()) {
+                            const q = userSearch.toLowerCase();
+                            const userMatch = (u.username || '').toLowerCase().includes(q);
+                            const nameMatch = (u.displayName || '').toLowerCase().includes(q);
+                            const notesMatch = (u.notes || '').toLowerCase().includes(q);
+                            const phoneMatch = (u.whatsappNumber || '').toLowerCase().includes(q);
+                            return userMatch || nameMatch || notesMatch || phoneMatch;
+                          }
+                          return true;
+                        })
+                        .map((u) => {
+                          const isSuspended = u.status === 'suspended';
+                          const isExpired = u.isExpired || (u.expiresAt ? u.expiresAt < Date.now() : false);
+                          const isBound = !!u.boundDeviceId;
+                          const daysLeft = u.daysRemaining;
+
+                          return (
+                            <div
+                              key={u.id}
+                              className={`p-4 rounded-2xl border space-y-3 text-xs transition ${
+                                isSuspended
+                                  ? 'bg-rose-950/10 border-rose-500/30'
+                                  : isExpired
+                                  ? 'bg-amber-950/10 border-amber-500/30'
+                                  : 'bg-[#080D16] border-slate-800'
+                              }`}
+                            >
+                              {/* Header Row: Username, Role, Status */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-mono font-black text-sm text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-md">
+                                    @{u.username}
+                                  </span>
+                                  {u.displayName && (
+                                    <span className="font-bold text-slate-100 text-sm">
+                                      {u.displayName}
+                                    </span>
+                                  )}
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">
+                                    {u.role === 'admin' ? '🛡️ Admin' : '👤 Cliente'}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                      isSuspended
+                                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                        : isExpired
+                                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                        : u.status === 'pending'
+                                        ? 'bg-amber-500/15 text-amber-300 border border-amber-500/25'
+                                        : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                    }`}
+                                  >
+                                    {isSuspended
+                                      ? 'Suspendido'
+                                      : isExpired
+                                      ? 'Vencido'
+                                      : u.status === 'pending'
+                                      ? 'Pendiente'
+                                      : 'Activo'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Details Grid: Plan & Device Binding */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                {/* Plan & Expiry */}
+                                <div className="bg-[#050810] p-2.5 rounded-xl border border-slate-800/60 flex flex-col justify-between">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] uppercase font-bold text-slate-400">
+                                      Plan Activo
+                                    </span>
+                                    <span className="font-bold text-slate-200">
+                                      {u.planLabel}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-slate-800/40">
+                                    <span className="text-[10px] uppercase font-bold text-slate-400">
+                                      Días Restantes
+                                    </span>
+                                    <span
+                                      className={`font-mono font-black text-xs ${
+                                        isSuspended || isExpired
+                                          ? 'text-rose-400'
+                                          : daysLeft !== null && daysLeft !== undefined && daysLeft <= 3
+                                          ? 'text-amber-400 font-bold'
+                                          : 'text-emerald-400'
+                                      }`}
+                                    >
+                                      {daysLeft === null || daysLeft === undefined
+                                        ? 'Vitalicio (Sin Fin)'
+                                        : `${daysLeft} días`}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Bound Device Info (Strict Single-Device Protection) */}
+                                <div className="bg-[#050810] p-2.5 rounded-xl border border-slate-800/60 flex flex-col justify-between">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                                      <Smartphone className="w-3 h-3 text-cyan-400" />
+                                      <span>Dispositivo Único</span>
+                                    </span>
+                                    <span
+                                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                        isBound
+                                          ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+                                          : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                      }`}
+                                    >
+                                      {isBound ? '1 Vinculado' : 'Sin Vincular'}
+                                    </span>
+                                  </div>
+
+                                  <div className="mt-2 pt-1.5 border-t border-slate-800/40 flex items-center justify-between gap-2">
+                                    {isBound ? (
+                                      <>
+                                        <div className="min-w-0">
+                                          <p className="text-[11px] font-mono text-slate-300 truncate font-semibold" title={u.boundDeviceId || ''}>
+                                            {u.boundDeviceName || u.boundDeviceId}
+                                          </p>
+                                          <span className="text-[9px] text-slate-500 block truncate">
+                                            Bloqueado a este equipo
+                                          </span>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleResetUserDevice(u.id, u.username)}
+                                          className="shrink-0 px-2 py-1 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition"
+                                          title="Permitir que el cliente inicie sesión en otro equipo"
+                                        >
+                                          <Unlock className="w-3 h-3" />
+                                          <span>Desvincular</span>
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400">
+                                        Listo para vincular al iniciar sesión
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Action Buttons Toolbar */}
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/60">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {/* Flexible Duration Selector & Apply Button */}
+                                  <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/80 rounded-lg p-0.5">
+                                    <select
+                                      value={userRenewDays[u.id] ?? 30}
+                                      onChange={(e) => setUserRenewDays((prev) => ({ ...prev, [u.id]: Number(e.target.value) }))}
+                                      className="bg-transparent text-white text-[11px] font-bold px-1.5 py-1 focus:outline-none cursor-pointer"
+                                      title="Selecciona la cantidad de días para activar o renovar"
+                                    >
+                                      <option value={1}>⚡ Muestra 24h</option>
+                                      <option value={3}>⚡ 3 Días</option>
+                                      <option value={7}>📅 7 Días</option>
+                                      <option value={15}>📅 15 Días</option>
+                                      <option value={30}>🗓️ 30 Días (Mes)</option>
+                                      <option value={60}>🗓️ 60 Días</option>
+                                      <option value={90}>🗓️ 90 Días</option>
+                                      <option value={365}>🏆 365 Días (Año)</option>
+                                      <option value={0}>♾️ Vitalicio</option>
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRenewUser(u.id, u.username, userRenewDays[u.id] ?? 30)}
+                                      className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-sm"
+                                      title="Activar o extender sin requerir PIN del usuario"
+                                    >
+                                      <UserCheck className="w-3 h-3" />
+                                      <span>{u.status === 'pending' ? '✅ Aprobar & Activar' : '+ Aplicar'}</span>
+                                    </button>
+                                  </div>
+
+                                  {/* Quick 1-Click 24h Sample Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRenewUser(u.id, u.username, 1)}
+                                    className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-bold transition cursor-pointer flex items-center gap-1"
+                                    title="Dar muestra rápida de 24 horas sin pedir PIN"
+                                  >
+                                    <span>⚡ +24h Muestra</span>
+                                  </button>
+
+                                  {/* Quick 1-Click +30 Days Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRenewUser(u.id, u.username, 30)}
+                                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold transition cursor-pointer"
+                                    title="Extender 30 días"
+                                  >
+                                    <span>+30d</span>
+                                  </button>
+
+                                  {/* Toggle Active / Suspended */}
+                                  {u.status !== 'pending' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleUserStatus(u.id, u.status, u.username)}
+                                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                                        isSuspended
+                                          ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/40'
+                                          : 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/40'
+                                      }`}
+                                    >
+                                      {isSuspended ? 'Reactivar Cuenta' : 'Suspender'}
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* Send WhatsApp notification */}
+                                {u.whatsappNumber && (
+                                  <a
+                                    href={`https://wa.me/${u.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                                      `Hola ${u.displayName || u.username}, tu cuenta de SportStats Pro (@${u.username}) está activa. Puedes ingresar desde cualquier navegador.`
+                                    )}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1 transition"
+                                  >
+                                    <MessageCircle className="w-3 h-3" />
+                                    <span>WhatsApp</span>
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 1: SEGURIDAD & PIN */}
+              {activeTab === 'CONFIG' && (
+                <div className="space-y-5">
+                  {/* Card 2: Current PIN & Emergency Master Code Backup */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-950/25 via-slate-900/70 to-slate-900/50 border border-amber-500/30 space-y-3.5">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <h4 className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Shield className="w-4 h-4 text-amber-400" />
+                        <span>Tus Credenciales Actuales & Respaldo de Emergencia</span>
+                      </h4>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-bold text-emerald-300">
+                        PIN Activo Verificado
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="bg-[#070B14] border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2">
+                        <div>
+                          <span className="block text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                            PIN Actual Activo
+                          </span>
+                          <span className="font-mono text-base font-black text-amber-300 tracking-widest">
+                            {activeServerPin || pinInput || 'Cargando...'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(activeServerPin);
+                            setCopiedCurrentPin(true);
+                            setTimeout(() => setCopiedCurrentPin(false), 2000);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                        >
+                          {copiedCurrentPin ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedCurrentPin ? 'Copiado' : 'Copiar'}</span>
+                        </button>
+                      </div>
+
+                      <div className="bg-[#070B14] border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2">
+                        <div>
+                          <span className="block text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                            Recuperación de Emergencia
+                          </span>
+                          <span className="font-mono text-xs font-bold text-cyan-300">
+                            Protegido en Servidor (ADMIN_MASTER_KEY)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Puedes enviarte un respaldo privado de tu PIN activo directamente a tu propio WhatsApp personal.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleSendCredentialsToWhatsApp(activeServerPin)}
+                        className="shrink-0 py-2 px-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Guardar en mi WhatsApp</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Card 2.5: Supabase Cloud Database Status & Quick Setup */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-teal-950/20 via-slate-900/70 to-slate-900/50 border border-teal-500/30 space-y-3.5">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <h4 className="text-xs font-black text-teal-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Database className="w-4 h-4 text-teal-400" />
+                        <span>Base de Datos en la Nube (Supabase Free)</span>
+                      </h4>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          supabaseConfigured
+                            ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
+                            : 'bg-amber-500/15 border border-amber-500/30 text-amber-300'
+                        }`}
+                      >
+                        {supabaseConfigured ? `Conectado · ${supabaseProject || 'Supabase'}` : 'Almacenamiento Local (Listo para Supabase)'}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Conectar una base de datos gratuita de <strong>Supabase</strong> permite sincronizar en la nube todos los registros de licencias, presencia de dispositivos, PIN seguro y códigos de autorización OTP de un solo uso sin exponer llaves maestras en WhatsApp ni en el navegador.
+                    </p>
+
+                    <div className="bg-[#070B14] border border-slate-800 rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-slate-200">
+                          1. Script SQL para Crear Tablas en Supabase:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (supabaseSqlSchema) {
+                              navigator.clipboard.writeText(supabaseSqlSchema);
+                              setCopiedSql(true);
+                              setTimeout(() => setCopiedSql(false), 2500);
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/40 text-teal-200 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                        >
+                          {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedSql ? '¡SQL Copiado!' : 'Copiar Script SQL'}</span>
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Copia este script y pégalo en el <strong>SQL Editor</strong> de tu proyecto en Supabase para crear las tablas con un solo clic.
+                      </p>
+                    </div>
+
+                    <div className="text-[11px] text-slate-400 space-y-1 bg-[#070B14] p-3 rounded-xl border border-slate-800">
+                      <span className="font-bold text-slate-200 block text-[10px] uppercase tracking-wider mb-1">
+                        2. Variables a configurar en tu entorno (.env / Vercel):
+                      </span>
+                      <div className="font-mono text-[10px] text-teal-300 space-y-0.5">
+                        <div>SUPABASE_URL=https://tu-proyecto.supabase.co</div>
+                        <div>SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 3: PIN & WhatsApp Form */}
+                  <form onSubmit={handleSaveConfig} className="space-y-5">
+                    <div className="p-4 rounded-2xl bg-slate-900/50 border border-slate-800 space-y-4">
+                      <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Cambiar PIN de Administrador</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Este PIN es tu llave privada y secreta para acceder a este panel (actualmente <strong>{activeServerPin}</strong>).
+                      </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                            Nuevo PIN (mínimo 4 dígitos):
+                          </label>
+                          <input
+                            type="password"
+                            value={newPin}
+                            onChange={(e) => {
+                              setNewPin(e.target.value);
+                              setConfigError(null);
+                            }}
+                            placeholder="Escribe nuevo PIN"
+                            className="w-full bg-[#080D16] border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-400 transition"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                            Confirmar Nuevo PIN:
+                          </label>
+                          <input
+                            type="password"
+                            value={confirmPin}
+                            onChange={(e) => {
+                              setConfirmPin(e.target.value);
+                              setConfigError(null);
+                            }}
+                            placeholder="Repite el nuevo PIN"
+                            className="w-full bg-[#080D16] border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-400 transition"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-900/50 border border-slate-800 space-y-3">
+                      <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Número de WhatsApp para Solicitudes</span>
+                      </h4>
+                      <input
+                        type="text"
+                        value={adminWhatsApp}
+                        onChange={(e) => setAdminWhatsApp(e.target.value)}
+                        placeholder="Ej: 573213902708"
+                        className="w-full bg-[#080D16] border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100 focus:outline-none focus:border-emerald-500 transition"
+                        required
+                      />
+                      <span className="text-[11px] text-slate-500 block">
+                        Canal oficial configurado para solicitudes de clientes
+                      </span>
+                    </div>
+
+                    {configError && (
+                      <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-bold">
+                        {configError}
+                      </div>
+                    )}
+
+                    {configSuccess && (
+                      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-400" />
+                        <span>{configSuccess}</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 transition shadow-lg shadow-amber-500/20 active:scale-95 cursor-pointer"
+                    >
+                      Guardar Cambios de PIN y WhatsApp
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* TAB 2: AUDIT & ALGORITHM ACCURACY */}
+              {activeTab === 'AUDIT' && <AuditTabContent />}
+
+              {/* TAB 3: CONTROLLED 100-USER CONCURRENCY & LOAD SIMULATOR */}
+              {activeTab === 'STRESS' && (
+                <AdminStressTestPanel adminPin={activeServerPin || pinInput} />
+              )}
+            </div>
+          </div>
+      </div>
+    </div>
+  );
+};
+
+const AuditTabContent: React.FC = () => {
+  const [summary, setSummary] = useState<OverallAccuracySummary | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [sportFilter, setSportFilter] = useState<'SOCCER' | 'NBA' | 'ALL'>('SOCCER');
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+
+    AccuracyEvaluatorService.getRealTimeAuditSummary()
+      .then((res) => {
+        if (isMounted) {
+          setSummary(res);
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleDownloadCSV = () => {
+    if (!summary) return;
+    const csvData = AccuracyEvaluatorService.exportToCSV(summary);
+    const blob = new Blob(['\uFEFF' + csvData], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    const sportName = sportFilter === 'SOCCER' ? 'Futbol' : sportFilter === 'NBA' ? 'NBA' : 'Todos';
+    link.download = `Auditoria_Eficiencia_${sportName}_SportStats_${dateStr}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrintPDF = () => {
+    window.print();
+  };
+
+  if (isLoading || !summary) {
+    return (
+      <div className="py-16 text-center space-y-3">
+        <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
+        <p className="text-xs font-mono font-bold text-slate-300">
+          Procesando partidos finalizados y recalculando efectividad del modelo Dixon-Coles & Poisson...
+        </p>
+        <span className="text-[10px] text-slate-500 block">
+          Evaluando acta oficial de la Copa Colombia, LaLiga, Premier League, Champions y NBA
+        </span>
+      </div>
+    );
+  }
+
+  // Filter Categories by Selected Sport
+  const filteredCategories = summary.metricsByCategory.filter((cat) => {
+    if (sportFilter === 'ALL') return true;
+    return cat.sport === sportFilter;
+  });
+
+  // Filter Top Leagues by Selected Sport
+  const filteredTopLeagues = summary.topLeagues.filter((l) => {
+    if (sportFilter === 'ALL') return true;
+    return l.sport === sportFilter;
+  });
+
+  // Filter Match Records by Selected Sport
+  const filteredMatches = summary.metricsByCategory
+    .filter((cat) => sportFilter === 'ALL' || cat.sport === sportFilter)
+    .flatMap((c) => c.sampleMatches);
+
+  // Compute Sport-Specific Accuracy Rate
+  const totalFilteredMatches = filteredMatches.length;
+  const totalFilteredHits = filteredMatches.filter((m) => m.isHit).length;
+  const filteredAccuracyRate =
+    totalFilteredMatches > 0
+      ? Number(((totalFilteredHits / totalFilteredMatches) * 100).toFixed(1))
+      : summary.overallAccuracyRate;
+
+  return (
+    <div className="space-y-4 font-sans text-slate-100">
+      {/* 0. Sport Switcher Bar (Futbol vs Baloncesto Separation) */}
+      <div className="grid grid-cols-3 p-1 bg-slate-950/90 rounded-2xl border border-slate-800 gap-1 text-center font-mono text-xs">
+        <button
+          type="button"
+          onClick={() => setSportFilter('SOCCER')}
+          className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${
+            sportFilter === 'SOCCER'
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span className="text-sm">⚽</span>
+          <span>Fútbol (Soccer)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSportFilter('NBA')}
+          className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${
+            sportFilter === 'NBA'
+              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span className="text-sm">🏀</span>
+          <span>Baloncesto (NBA)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSportFilter('ALL')}
+          className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${
+            sportFilter === 'ALL'
+              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-xs'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span className="text-sm">🌐</span>
+          <span>Todos ({summary.totalMatchesEvaluated})</span>
+        </button>
+      </div>
+
+      {/* 1. Metric Header Card */}
+      <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+        sportFilter === 'NBA'
+          ? 'bg-gradient-to-br from-amber-500/15 via-slate-900 to-slate-950 border-amber-500/30'
+          : 'bg-gradient-to-br from-emerald-500/15 via-slate-900 to-slate-950 border-emerald-500/30'
+      }`}>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Sparkles className={`w-4 h-4 ${sportFilter === 'NBA' ? 'text-amber-400' : 'text-emerald-400'}`} />
+            <span className={`text-xs font-mono font-bold uppercase tracking-wider ${
+              sportFilter === 'NBA' ? 'text-amber-400' : 'text-emerald-400'
+            }`}>
+              Informe Privado de Eficiencia ({sportFilter === 'SOCCER' ? '⚽ Fútbol' : sportFilter === 'NBA' ? '🏀 Baloncesto NBA' : '🌐 Consolidado'})
+            </span>
+          </div>
+          <h3 className="text-lg font-bold text-white">
+            Promedio de Efectividad {sportFilter === 'SOCCER' ? 'Fútbol' : sportFilter === 'NBA' ? 'NBA' : 'Global'}:{' '}
+            <span className={`font-mono ${sportFilter === 'NBA' ? 'text-amber-400' : 'text-emerald-400'}`}>
+              {filteredAccuracyRate}%
+            </span>
+          </h3>
+          <p className="text-xs text-slate-400">
+            {summary.dataSourceLabel || 'Evaluación en tiempo real del modelo probabilístico frente a resultados oficiales finalizados.'}
+          </p>
+        </div>
+
+        {/* Action Buttons: Download CSV / PDF */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleDownloadCSV}
+            className={`px-3.5 py-2 rounded-xl text-slate-950 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-md ${
+              sportFilter === 'NBA'
+                ? 'bg-amber-400 hover:bg-amber-300 shadow-amber-400/20'
+                : 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/20'
+            }`}
+            title="Descargar reporte en formato CSV compatible con Microsoft Excel"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Excel (CSV)</span>
+          </button>
+          <button
+            type="button"
+            onClick={handlePrintPDF}
+            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 border border-slate-700"
+            title="Imprimir o guardar como informe PDF"
+          >
+            <Printer className="w-3.5 h-3.5 text-slate-300" />
+            <span>Imprimir / PDF</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Top 5 Ligas o Torneos con Mayor Efectividad */}
+      <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-xs font-mono font-bold text-amber-300 uppercase tracking-tight flex items-center gap-1.5">
+            <Trophy className="w-4 h-4 text-amber-400" />
+            <span>
+              Top {sportFilter === 'SOCCER' ? '⚽ Ligas de Fútbol' : sportFilter === 'NBA' ? '🏀 Torneos NBA' : '5 Ligas Destacadas'}
+            </span>
+          </span>
+          <span className="text-[10px] font-mono text-slate-400">Ranking por Acierto (+EV)</span>
+        </div>
+
+        <div className="space-y-2">
+          {filteredTopLeagues.map((league, idx) => {
+            const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+            return (
+              <div
+                key={league.leagueName}
+                className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between gap-3 text-xs"
+              >
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="w-6 h-6 rounded-lg bg-slate-800 text-amber-300 font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                    {medal}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-white truncate flex items-center gap-1.5">
+                      <span>{league.leagueName}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">({league.sport === 'NBA' ? '🏀 NBA' : '⚽ Fútbol'})</span>
+                    </div>
+                    {/* Visual Progress Bar */}
+                    <div className="w-full bg-slate-800 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          league.sport === 'NBA'
+                            ? 'bg-gradient-to-r from-amber-500 to-amber-300'
+                            : 'bg-gradient-to-r from-amber-500 to-emerald-400'
+                        }`}
+                        style={{ width: `${Math.min(100, Math.max(10, league.accuracyPercentage))}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0 font-mono">
+                  <span className={`font-bold block text-sm ${league.sport === 'NBA' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {league.accuracyPercentage}%
+                  </span>
+                  <span className="text-[10px] text-slate-400 block">{league.hits}/{league.evaluatedMatches} aciertos</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. Gráfica Comparativa de Ítems Evaluados: Pronóstico Página vs Resultado Real */}
+      <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-xs font-mono font-bold text-slate-200 uppercase tracking-tight flex items-center gap-1.5">
+            <BarChart2 className="w-4 h-4 text-emerald-400" />
+            <span>
+              Gráfica Comparativa {sportFilter === 'SOCCER' ? '⚽ Mercados Fútbol' : sportFilter === 'NBA' ? '🏀 Mercados NBA' : 'Pronóstico vs Real'}
+            </span>
+          </span>
+          <span className="text-[10px] font-mono text-slate-400">Análisis xG / Poisson / Dixon-Coles</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {filteredCategories.map((m) => {
+            const targetProb = 75; // Umbral promedio proyectado por la página
+            const actualProb = m.accuracyPercentage; // Porcentaje real obtenido
+            const isNba = m.sport === 'NBA';
+
+            return (
+              <div
+                key={m.id}
+                className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2.5"
+              >
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-200">{m.categoryLabel}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                    isNba
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  }`}>
+                    {m.accuracyPercentage}% Acierto
+                  </span>
+                </div>
+
+                {/* Comparative Double Visual Bars */}
+                <div className="space-y-1.5 text-[10px] font-mono">
+                  {/* Bar 1: Pronóstico de la Página */}
+                  <div>
+                    <div className="flex items-center justify-between text-slate-400 mb-0.5">
+                      <span>Proyección Algoritmo (+EV):</span>
+                      <span className="text-amber-300 font-bold">~{targetProb}% prob.</span>
+                    </div>
+                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                      <div
+                        className="bg-amber-400 h-full rounded-full"
+                        style={{ width: `${targetProb}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Bar 2: Resultado Real Medido */}
+                  <div>
+                    <div className="flex items-center justify-between text-slate-400 mb-0.5">
+                      <span>Resultado Real Medido:</span>
+                      <span className={`font-bold ${isNba ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {actualProb}% efectividad
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${isNba ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                        style={{ width: `${actualProb}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800/80">
+                  <span>Partidos Evaluados: <strong className="text-white">{m.evaluatedMatches}</strong></span>
+                  <span>Aciertos: <strong className={isNba ? 'text-amber-300' : 'text-emerald-400'}>{m.hits}</strong></span>
+                  <span>Fallos: <strong className="text-rose-400">{m.misses}</strong></span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. Detailed Audit Table Log */}
+      <div className="p-3.5 rounded-2xl bg-slate-900/40 border border-slate-800/80 space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-xs font-mono font-bold text-slate-300 uppercase tracking-tight flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>Muestras Reales Evaluadas ({filteredMatches.length})</span>
+          </span>
+          <span className="text-[10px] text-slate-500 font-mono">Actualizado: {summary.lastUpdated}</span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs font-mono">
+            <thead>
+              <tr className="border-b border-slate-800 text-slate-400 text-[10px] uppercase">
+                <th className="py-2 px-2">Deporte</th>
+                <th className="py-2 px-2">Partido</th>
+                <th className="py-2 px-2">Mercado</th>
+                <th className="py-2 px-2">Proyección</th>
+                <th className="py-2 px-2">Resultado Real</th>
+                <th className="py-2 px-2 text-right">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 text-slate-300">
+              {filteredMatches.map((rec, i) => (
+                <tr key={i} className="hover:bg-slate-800/40 transition-colors">
+                  <td className="py-2 px-2 text-[10px] text-slate-400">{rec.sport === 'NBA' ? '🏀 NBA' : '⚽ Fútbol'}</td>
+                  <td className="py-2 px-2 font-semibold text-white">{rec.matchTitle}</td>
+                  <td className="py-2 px-2 text-slate-300">{rec.marketType}</td>
+                  <td className="py-2 px-2 text-amber-300">{rec.projectedValue}</td>
+                  <td className="py-2 px-2 text-slate-200">{rec.actualResult}</td>
+                  <td className="py-2 px-2 text-right">
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
+                      rec.isHit
+                        ? rec.sport === 'NBA'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                        : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                    }`}>
+                      {rec.isHit ? '✓ ACERTADO' : '✕ FALLADO'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
