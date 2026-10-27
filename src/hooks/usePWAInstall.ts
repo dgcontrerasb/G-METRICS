@@ -1,62 +1,152 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+const INSTALLED_STORAGE_KEY = 'sportstats_pwa_installed_v1';
+
+// Captura global temprana por si Chrome dispara beforeinstallprompt antes de que el componente monte
+let globalDeferredPrompt: BeforeInstallPromptEvent | null = null;
+const promptListeners = new Set<() => void>();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e: Event) => {
+    e.preventDefault();
+    globalDeferredPrompt = e as BeforeInstallPromptEvent;
+    promptListeners.forEach((listener) => listener());
+  });
+
+  window.addEventListener('appinstalled', () => {
+    globalDeferredPrompt = null;
+    try {
+      localStorage.setItem(INSTALLED_STORAGE_KEY, 'true');
+    } catch {
+      // Ignore storage errors in private mode
+    }
+    promptListeners.forEach((listener) => listener());
+  });
+}
+
+function checkIsInstalled(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  const isStandaloneDisplay =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches ||
+    window.matchMedia('(display-mode: minimal-ui)').matches ||
+    (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
+    document.referrer.includes('android-app://');
+
+  if (isStandaloneDisplay) {
+    try {
+      localStorage.setItem(INSTALLED_STORAGE_KEY, 'true');
+    } catch {
+      // Ignore storage errors
+    }
+    return true;
+  }
+
+  try {
+    if (localStorage.getItem(INSTALLED_STORAGE_KEY) === 'true') {
+      return true;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+
+  return false;
+}
+
 export function usePWAInstall() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(() => globalDeferredPrompt);
+  const [isInstalled, setIsInstalled] = useState<boolean>(() => checkIsInstalled());
+  const [isIOS, setIsIOS] = useState<boolean>(false);
+  const [isAndroid, setIsAndroid] = useState<boolean>(false);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
 
   useEffect(() => {
-    // Detect standalone mode (already installed)
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
-    setIsInstalled(isStandalone);
+    setIsInstalled(checkIsInstalled());
 
-    // Detect iOS devices
     const userAgent = window.navigator.userAgent.toLowerCase();
-    const isIOSDevice = /iphone|ipad|ipod/.test(userAgent);
-    setIsIOS(isIOSDevice);
+    const iosDevice = /iphone|ipad|ipod/.test(userAgent);
+    const androidDevice = /android/.test(userAgent);
+    setIsIOS(iosDevice);
+    setIsAndroid(androidDevice);
+    setIsMobile(iosDevice || androidDevice || /mobile/.test(userAgent));
 
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    const syncPromptState = () => {
+      setDeferredPrompt(globalDeferredPrompt);
+      setIsInstalled(checkIsInstalled());
     };
 
-    const handleAppInstalled = () => {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
+    promptListeners.add(syncPromptState);
+
+    const mediaQuery = window.matchMedia('(display-mode: standalone)');
+    const handleMediaChange = (e: MediaQueryListEvent) => {
+      if (e.matches) {
+        try {
+          localStorage.setItem(INSTALLED_STORAGE_KEY, 'true');
+        } catch {
+          // Ignore
+        }
+        setIsInstalled(true);
+      }
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleMediaChange);
+    }
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
+      promptListeners.delete(syncPromptState);
+      if (typeof mediaQuery.removeEventListener === 'function') {
+        mediaQuery.removeEventListener('change', handleMediaChange);
+      }
     };
   }, []);
 
-  const install = async () => {
-    if (!deferredPrompt) return false;
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
-      return true;
+  const install = useCallback(async (): Promise<'accepted' | 'dismissed' | 'unavailable'> => {
+    const activePrompt = deferredPrompt || globalDeferredPrompt;
+    if (!activePrompt) return 'unavailable';
+
+    try {
+      await activePrompt.prompt();
+      const { outcome } = await activePrompt.userChoice;
+      if (outcome === 'accepted') {
+        globalDeferredPrompt = null;
+        setDeferredPrompt(null);
+        setIsInstalled(true);
+        try {
+          localStorage.setItem(INSTALLED_STORAGE_KEY, 'true');
+        } catch {
+          // Ignore
+        }
+        return 'accepted';
+      }
+      return 'dismissed';
+    } catch {
+      return 'unavailable';
     }
-    return false;
-  };
+  }, [deferredPrompt]);
+
+  const markAsInstalledManually = useCallback(() => {
+    try {
+      localStorage.setItem(INSTALLED_STORAGE_KEY, 'true');
+    } catch {
+      // Ignore
+    }
+    setIsInstalled(true);
+  }, []);
 
   return {
-    isInstallable: !!deferredPrompt,
+    isInstallable: Boolean(deferredPrompt || globalDeferredPrompt),
     isInstalled,
     isIOS,
+    isAndroid,
+    isMobile,
     install,
+    markAsInstalledManually,
   };
 }

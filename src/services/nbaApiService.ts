@@ -1774,6 +1774,86 @@ export function convertESPNEventToNBAMatch(ev: any, dateStr: string): NBAMatchFi
       country: 'Estados Unidos'
     };
 
+    // Extract live play-by-play situation from ESPN feed when match is IN_PLAY
+    let liveSituation: NBAMatchFixture['liveSituation'] = undefined;
+    if (status === 'IN_PLAY') {
+      const sit = comp.situation;
+      const lastPlay = sit?.lastPlay;
+      const rawText = String(lastPlay?.text || lastPlay?.type?.text || '');
+      const textLower = rawText.toLowerCase();
+
+      const playTeamId = String(lastPlay?.team?.id || sit?.possession || '');
+      const isHomePlay =
+        playTeamId && String(homeComp.team?.id) === playTeamId
+          ? true
+          : playTeamId && String(awayComp.team?.id) === playTeamId
+          ? false
+          : (homeScoreNum + awayScoreNum) % 2 === 0;
+
+      const teamSide: 'HOME' | 'AWAY' = isHomePlay ? 'HOME' : 'AWAY';
+      const activeTeamObj = isHomePlay ? homeTeam : awayTeam;
+      const defaultStar = activeTeamObj.keyPlayers?.[0];
+
+      const athleteName =
+        lastPlay?.athletesInvolved?.[0]?.displayName ||
+        lastPlay?.athletesInvolved?.[0]?.shortName ||
+        defaultStar?.name ||
+        activeTeamObj.shortName;
+      const athletePos =
+        lastPlay?.athletesInvolved?.[0]?.position?.abbreviation ||
+        defaultStar?.position ||
+        'PF';
+
+      let actionKind: NonNullable<NBAMatchFixture['liveSituation']>['actionKind'] = 'SCORE_2PT';
+      let typeLabel = '2 pt anotado';
+      let statSummary = 'Tiros De 2 Puntos';
+      let pointsAdded = 2;
+
+      if (textLower.includes('three point') || textLower.includes('3-pt') || lastPlay?.scoreValue === 3) {
+        actionKind = 'SCORE_3PT';
+        typeLabel = '3 pt anotado';
+        statSummary = 'Triples Anotados (3P)';
+        pointsAdded = 3;
+      } else if (textLower.includes('free throw') || lastPlay?.scoreValue === 1) {
+        actionKind = 'SCORE_FT';
+        typeLabel = '1 pt tiro libre';
+        statSummary = 'Tiros Libres (FT)';
+        pointsAdded = 1;
+      } else if (textLower.includes('turnover') || textLower.includes('steal') || textLower.includes('bad pass')) {
+        actionKind = 'TURNOVER';
+        typeLabel = 'Pérdida de balón';
+        statSummary = 'PÉRDIDAS DE BALÓN';
+        pointsAdded = 0;
+      } else if (textLower.includes('rebound')) {
+        actionKind = 'REBOUND';
+        typeLabel = 'Rebote capturado';
+        statSummary = 'REBOTES EN JUEGO';
+        pointsAdded = 0;
+      } else if (textLower.includes('makes') || lastPlay?.scoreValue === 2 || (homeScoreNum + awayScoreNum) > 0) {
+        actionKind = 'SCORE_2PT';
+        typeLabel = '2 pt anotado';
+        statSummary = 'Tiros De 2 Puntos';
+        pointsAdded = 2;
+      } else {
+        actionKind = 'POSSESSION';
+        typeLabel = 'Posesión';
+        statSummary = 'Control de Balón';
+        pointsAdded = 0;
+      }
+
+      liveSituation = {
+        id: String(lastPlay?.id || `${ev.id}-${homeScoreNum}-${awayScoreNum}-${liveClock}`),
+        text: rawText || `${athleteName} (${typeLabel})`,
+        typeLabel,
+        actionKind,
+        teamSide,
+        playerName: athleteName,
+        playerPosition: athletePos,
+        statSummary,
+        pointsAdded
+      };
+    }
+
     return {
       id: `nba-espn-${ev.id}`,
       date: dateStr,
@@ -1791,6 +1871,7 @@ export function convertESPNEventToNBAMatch(ev: any, dateStr: string): NBAMatchFi
         away: awayScoreNum
       },
       quarters,
+      liveSituation,
       homeTeam,
       awayTeam,
       arena: {

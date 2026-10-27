@@ -44,19 +44,11 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
   const [activeTabSoccer, setActiveTabSoccer] = useState<TabSoccer>('PICKS');
   const [activeTabNBA, setActiveTabNBA] = useState<TabNBA>('PICKS');
 
-  // Strict background scroll lock on mount (prevents page body scroll behind floating modal)
+  // Lock body scroll without detaching fixed background layers
   useEffect(() => {
     if (!isOpen) return;
-    const scrollY = window.scrollY;
     const originalOverflow = document.body.style.overflow;
-    const originalPosition = document.body.style.position;
-    const originalWidth = document.body.style.width;
-    const originalTop = document.body.style.top;
-
     document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.width = '100%';
-    document.body.style.top = `-${scrollY}px`;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -65,10 +57,6 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
 
     return () => {
       document.body.style.overflow = originalOverflow;
-      document.body.style.position = originalPosition;
-      document.body.style.width = originalWidth;
-      document.body.style.top = originalTop;
-      window.scrollTo(0, scrollY);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
@@ -85,26 +73,70 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
     setActiveTabNBA('PICKS');
   }, [payload?.fixture.id, payload?.type]);
 
+  // Real-time 60-second local clock progression between 15s network syncs
+  const [liveMinuteOffset, setLiveMinuteOffset] = useState<number>(0);
+  const serverBaseMinute =
+    payload?.type === 'SOCCER' ? payload.fixture.currentScore?.minute ?? 0 : 0;
+  const isSoccerHalfTime =
+    payload?.type === 'SOCCER' ? Boolean(payload.fixture.currentScore?.isHalfTime) : false;
+
+  useEffect(() => {
+    setLiveMinuteOffset(0);
+  }, [payload?.fixture.id, serverBaseMinute, isSoccerHalfTime]);
+
+  useEffect(() => {
+    if (
+      !isOpen ||
+      !payload ||
+      payload.type !== 'SOCCER' ||
+      payload.fixture.status !== 'IN_PLAY' ||
+      isSoccerHalfTime
+    ) {
+      return;
+    }
+
+    const ticker = setInterval(() => {
+      setLiveMinuteOffset((prev) => prev + 1);
+    }, 60000);
+
+    return () => clearInterval(ticker);
+  }, [isOpen, payload, isSoccerHalfTime]);
+
   if (!isOpen || !payload) return null;
 
   const isSoccer = payload.type === 'SOCCER';
+  const effectiveSoccerFixture =
+    isSoccer && payload.fixture.status === 'IN_PLAY' && payload.fixture.currentScore && !isSoccerHalfTime
+      ? {
+          ...payload.fixture,
+          currentScore: {
+            ...payload.fixture.currentScore,
+            minute:
+              serverBaseMinute < 45
+                ? Math.min(45, serverBaseMinute + liveMinuteOffset)
+                : Math.min(90, serverBaseMinute + liveMinuteOffset)
+          }
+        }
+      : isSoccer
+      ? payload.fixture
+      : null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-xl animate-fade-in transition-all"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/45 backdrop-blur-[5px] animate-fade-in transition-opacity"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
-      {/* Floating Card Window (True bounded 4-side rounded card with bottom margin) */}
+      {/* Floating Card Window (Diffused background visible behind, zero double-blur lag) */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl h-[82vh] max-h-[640px] my-auto bg-slate-950/98 border border-slate-700/80 rounded-3xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-2xl ring-1 ring-white/10 overscroll-contain"
+        className="w-full max-w-2xl h-[86vh] max-h-[660px] my-auto bg-[#0A0E17]/95 border border-slate-700/80 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/10 overscroll-contain"
       >
         {/* 1. HEADER FIJO COMPACTO: Duelo de Equipos y Marcador Minimalista */}
         {isSoccer ? (
           <SoccerHeader
-            fixture={payload.fixture}
+            fixture={effectiveSoccerFixture || payload.fixture}
             analysis={payload.analysis}
             isSelected={isSelected}
             onToggleSelect={onToggleSelect}
@@ -121,9 +153,9 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
           />
         )}
 
-        {/* 2. TABS FIJOS SIMÉTRICOS (4 columnas para navegación completa) */}
+        {/* 2. TABS FIJOS SIMÉTRICOS */}
         <div
-          className={`p-1 bg-slate-900/80 border-b border-slate-800/80 shrink-0 text-center gap-1 ${
+          className={`p-1 bg-slate-900/90 border-b border-slate-800/80 shrink-0 text-center gap-1 ${
             isSoccer && payload.fixture.status === 'IN_PLAY'
               ? 'grid grid-cols-3'
               : 'grid grid-cols-4'
@@ -204,11 +236,11 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
         </div>
 
         {/* 3. CONTENIDO CON SCROLL INTERNO Y PADDING INFERIOR SEGURO */}
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 pb-8 space-y-3.5 text-slate-200 overscroll-contain">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 pb-6 space-y-3 text-slate-200 overscroll-contain">
           {isSoccer ? (
             <SoccerTabContent
               tab={activeTabSoccer}
-              fixture={payload.fixture}
+              fixture={effectiveSoccerFixture || payload.fixture}
               analysis={payload.analysis}
               onOpenSimulator={onOpenSimulator}
             />

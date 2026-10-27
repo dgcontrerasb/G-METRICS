@@ -1,5 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { UserCheck, Sparkles, ChevronDown, ChevronUp, BarChart2, Shield, Flame, Zap, Radio } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  UserCheck,
+  ChevronDown,
+  ChevronUp,
+  BarChart2,
+  Shield,
+  Flame,
+  Users,
+  Radio,
+  ChevronLeft,
+  ChevronRight,
+  MapPin
+} from 'lucide-react';
+import { NBAMatchFixture, NBALivePlaySituation } from '../types';
 
 export interface BasketballStarterPlayer {
   id: string | number;
@@ -28,7 +41,6 @@ export interface BasketballBenchPlayer {
 }
 
 export interface BasketballCourt25DProps {
-  // Support both full court (dual teams) and backwards compatibility
   homeStarters?: BasketballStarterPlayer[];
   awayStarters?: BasketballStarterPlayer[];
   homeTeam?: { name: string; logo?: string; primaryColor?: string };
@@ -39,6 +51,13 @@ export interface BasketballCourt25DProps {
   liveScore?: { home: number; away: number };
   liveClock?: string;
   livePeriod?: string;
+  quarters?: NBAMatchFixture['quarters'];
+  liveSituation?: NBALivePlaySituation;
+  arenaName?: string;
+  arenaCity?: string;
+  leagueName?: string;
+  matchDateLabel?: string;
+  matchTimeLabel?: string;
   onSelectPlayer: (player: BasketballStarterPlayer | BasketballBenchPlayer, teamName: string) => void;
   // Legacy props fallback
   starters?: BasketballStarterPlayer[];
@@ -46,15 +65,39 @@ export interface BasketballCourt25DProps {
   teamLogo?: string;
 }
 
-export interface CourtLiveAction {
-  id: string;
-  team: 'HOME' | 'AWAY';
-  playerName: string;
-  playerNumber: number;
-  shotType: '3PT' | 'PAINT' | 'MID_RANGE';
-  points: number;
-  zone: string;
-  timestamp: string;
+type CourtSlideMode = 'TRACKER' | 'LINEUPS' | 'HEATMAP';
+// 3 subtle, non-intrusive phases:
+// 1. SLIM_POSSESSION: Ultra-thin micro-pill showing active possession & clock
+// 2. RADAR_BALL: Calm court view with glowing ball node & subtle vector (zero popup banner)
+// 3. SLIM_STAT_PILL: Ultra-thin 2-line micro-HUD with player action & live score
+type LiveTrackerAnimPhase = 'SLIM_POSSESSION' | 'RADAR_BALL' | 'SLIM_STAT_PILL';
+
+const SLIDE_ORDER: CourtSlideMode[] = ['TRACKER', 'LINEUPS', 'HEATMAP'];
+
+function buildTeamCode(name: string): string {
+  const cleanName = (name || '').trim();
+  const words = cleanName.split(/[\s-]+/).filter(Boolean);
+  if (words.length >= 2) {
+    const first = words[0].replace(/[^a-zA-Z]/g, '');
+    const last = words[words.length - 1].replace(/[^a-zA-Z]/g, '');
+    return `${first.slice(0, 2)}${last[0] || ''}`.toUpperCase();
+  }
+  const letters = cleanName.replace(/[^a-zA-Z]/g, '');
+  return (letters.slice(0, 3) || 'NBA').toUpperCase();
+}
+
+function parseClockSeconds(clockStr?: string): number | null {
+  if (!clockStr) return null;
+  const match = clockStr.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+}
+
+function formatClockSeconds(totalSec: number): string {
+  const safe = Math.max(0, totalSec);
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${mins}:${secs < 10 ? `0${secs}` : secs}`;
 }
 
 export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
@@ -68,13 +111,18 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
   liveScore,
   liveClock,
   livePeriod,
+  quarters,
+  liveSituation,
+  arenaName,
+  arenaCity,
+  leagueName = 'NBA · Temporada Regular',
+  matchDateLabel,
+  matchTimeLabel,
   onSelectPlayer,
-  // Fallbacks
   starters,
   teamName,
   teamLogo
 }) => {
-  // Resolved starters
   const effectiveHomeStarters = homeStarters.length > 0 ? homeStarters : starters || [];
   const effectiveAwayStarters = awayStarters.length > 0 ? awayStarters : [];
   const effectiveHomeName = homeTeam?.name || teamName || 'Local';
@@ -82,745 +130,921 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
   const effectiveHomeLogo = homeTeam?.logo || teamLogo;
   const effectiveAwayLogo = awayTeam?.logo;
 
-  // Visual density toggle (Detailed Pre-match / Tactical Compact / Hot Zones Heatmap)
-  const [displayMode, setDisplayMode] = useState<'DETAILED' | 'TACTICAL' | 'HEATMAP'>(
-    isLive ? 'TACTICAL' : 'DETAILED'
-  );
+  const awayAbbr = useMemo(() => buildTeamCode(effectiveAwayName), [effectiveAwayName]);
+  const homeAbbr = useMemo(() => buildTeamCode(effectiveHomeName), [effectiveHomeName]);
 
-  // Active bench drawer: null | 'HOME' | 'AWAY'
+  const [slideMode, setSlideMode] = useState<CourtSlideMode>(isLive ? 'TRACKER' : 'LINEUPS');
   const [activeBench, setActiveBench] = useState<'HOME' | 'AWAY' | null>(null);
+  const [trackerPhase, setTrackerPhase] = useState<LiveTrackerAnimPhase>('SLIM_POSSESSION');
+  const [simulatedPlayIdx, setSimulatedPlayIdx] = useState<number>(0);
 
-  // Active Live Shot / Scoring Play on Court
-  const [activeLiveAction, setActiveLiveAction] = useState<CourtLiveAction | null>(null);
+  // Smooth real-time game clock countdown while watching live court
+  const baseClockSec = useMemo(() => parseClockSeconds(liveClock), [liveClock]);
+  const [clockTickDown, setClockTickDown] = useState<number>(0);
 
-  // Initialize or trigger realistic live scoring action if match is live
   useEffect(() => {
-    if (!isLive) return;
+    setClockTickDown(0);
+  }, [liveClock, livePeriod]);
 
-    // Pick a primary shooter from starters to represent recent court dynamic
-    const pickAction = () => {
-      const isHome = Math.random() > 0.45;
-      const targetStarters = isHome ? effectiveHomeStarters : effectiveAwayStarters;
-      if (!targetStarters || targetStarters.length === 0) return;
+  useEffect(() => {
+    if (!isLive || baseClockSec === null) return;
+    const interval = setInterval(() => {
+      setClockTickDown((prev) => (baseClockSec - prev > 1 ? prev + 1 : prev));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isLive, baseClockSec]);
 
-      const randomIdx = Math.floor(Math.random() * Math.min(targetStarters.length, 5));
-      const shooter = targetStarters[randomIdx];
-      const isThree = shooter.position === 'PG' || shooter.position === 'SG' || shooter.threePm > 2.0 || Math.random() > 0.6;
-      const isPaint = !isThree && (shooter.position === 'C' || shooter.position === 'PF' || Math.random() > 0.5);
+  const displayClockLabel = useMemo(() => {
+    if (!isLive) return '';
+    if (baseClockSec !== null) {
+      return formatClockSeconds(Math.max(0, baseClockSec - clockTickDown));
+    }
+    return liveClock || 'VIVO';
+  }, [isLive, baseClockSec, clockTickDown, liveClock]);
 
-      const shotType: '3PT' | 'PAINT' | 'MID_RANGE' = isThree ? '3PT' : isPaint ? 'PAINT' : 'MID_RANGE';
-      const points = shotType === '3PT' ? 3 : 2;
-      const zoneLabel = shotType === '3PT' ? 'Perímetro 3P' : shotType === 'PAINT' ? 'Pintura' : 'Media Distancia';
+  // Relaxed 5.2s cadence with a calm RADAR_BALL phase (zero popup spam)
+  useEffect(() => {
+    if (slideMode !== 'TRACKER') return;
 
-      setActiveLiveAction({
-        id: `shot-${Date.now()}`,
-        team: isHome ? 'HOME' : 'AWAY',
-        playerName: shooter.name.split(' ').pop() || shooter.name,
-        playerNumber: shooter.number,
-        shotType,
-        points,
-        zone: zoneLabel,
-        timestamp: liveClock ? `${livePeriod || 'Q2'} ${liveClock}` : 'En Juego'
-      });
+    const phases: LiveTrackerAnimPhase[] = ['SLIM_POSSESSION', 'RADAR_BALL', 'SLIM_STAT_PILL'];
+    let step = 0;
+    setTrackerPhase(phases[0]);
+
+    const timer = setInterval(() => {
+      step = (step + 1) % phases.length;
+      setTrackerPhase(phases[step]);
+      if (step === 0) {
+        setSimulatedPlayIdx((prev) => prev + 1);
+      }
+    }, 5200);
+
+    return () => clearInterval(timer);
+  }, [slideMode, liveSituation?.id]);
+
+  const resolvedPlay: NBALivePlaySituation & {
+    ballX: number;
+    ballY: number;
+    originX: number;
+    originY: number;
+  } = useMemo(() => {
+    const isHomeSide =
+      liveSituation && simulatedPlayIdx % 2 === 0
+        ? liveSituation.teamSide === 'HOME'
+        : simulatedPlayIdx % 2 === 0;
+
+    if (liveSituation && simulatedPlayIdx % 2 === 0) {
+      return {
+        ...liveSituation,
+        ballX: isHomeSide ? 84 : 16,
+        ballY: 50,
+        originX: isHomeSide ? 54 : 46,
+        originY: 46
+      };
+    }
+
+    const pool = isHomeSide ? effectiveHomeStarters : effectiveAwayStarters;
+    const player = pool[simulatedPlayIdx % Math.max(1, pool.length)] || {
+      name: isHomeSide ? effectiveHomeName : effectiveAwayName,
+      position: 'PF',
+      number: 23,
+      ppg: 21.4,
+      threePm: 2.4
     };
 
-    // Initial trigger
-    pickAction();
+    const sequenceTypes: Array<{
+      kind: NBALivePlaySituation['actionKind'];
+      label: string;
+      stat: string;
+      pts: number;
+      ballX: number;
+      ballY: number;
+    }> = [
+      {
+        kind: 'SCORE_2PT',
+        label: '🏀 Canasta de 2 Pts',
+        stat: `Efectividad en pintura · ${player.ppg || 20.5} PPG`,
+        pts: 2,
+        ballX: isHomeSide ? 86 : 14,
+        ballY: 50
+      },
+      {
+        kind: 'SCORE_3PT',
+        label: '🎯 Triple Anotado (3P)',
+        stat: `Perímetro exterior · ${player.threePm || 2.5} 3PM`,
+        pts: 3,
+        ballX: isHomeSide ? 73 : 27,
+        ballY: 26
+      },
+      {
+        kind: 'REBOUND',
+        label: '🛡️ Rebote y Transición',
+        stat: `Control de tablero (${isHomeSide ? homeAbbr : awayAbbr})`,
+        pts: 0,
+        ballX: isHomeSide ? 64 : 36,
+        ballY: 64
+      }
+    ];
+    const chosen = sequenceTypes[simulatedPlayIdx % sequenceTypes.length];
 
-    // Pulse interval every 14 seconds to reflect dynamic court rhythm in live matches
-    const interval = setInterval(pickAction, 14000);
-    return () => clearInterval(interval);
-  }, [isLive, effectiveHomeStarters, effectiveAwayStarters, liveClock, livePeriod]);
+    return {
+      id: `seq-${simulatedPlayIdx}`,
+      text: `${player.name} · ${chosen.label}`,
+      typeLabel: chosen.label,
+      actionKind: chosen.kind,
+      teamSide: isHomeSide ? 'HOME' : 'AWAY',
+      playerName: player.name,
+      playerPosition: player.position,
+      statSummary: chosen.stat,
+      pointsAdded: chosen.pts,
+      ballX: chosen.ballX,
+      ballY: chosen.ballY,
+      originX: isHomeSide ? 46 : 54,
+      originY: 50
+    };
+  }, [
+    liveSituation,
+    simulatedPlayIdx,
+    effectiveHomeStarters,
+    effectiveAwayStarters,
+    effectiveHomeName,
+    effectiveAwayName,
+    homeAbbr,
+    awayAbbr
+  ]);
 
-  // Tactical coordinates on FULL VERTICAL COURT (Percentages: 0-100% X, 0-100% Y)
-  // Away team attacks/defends in North Half (Y: 12% to 44%)
-  const getAwayCoordinates = (pos: string, index: number) => {
+  const quarterScores = useMemo(() => {
+    const awayTotal = liveScore?.away ?? 0;
+    const homeTotal = liveScore?.home ?? 0;
+
+    if (
+      quarters &&
+      (quarters.q1.home > 0 ||
+        quarters.q1.away > 0 ||
+        quarters.q2.home > 0 ||
+        quarters.q2.away > 0)
+    ) {
+      return {
+        away: [quarters.q1.away, quarters.q2.away, quarters.q3.away, quarters.q4.away],
+        home: [quarters.q1.home, quarters.q2.home, quarters.q3.home, quarters.q4.home],
+        awayTotal,
+        homeTotal
+      };
+    }
+
+    if (!isLive && awayTotal === 0 && homeTotal === 0) {
+      return {
+        away: [0, 0, 0, 0],
+        home: [0, 0, 0, 0],
+        awayTotal: 0,
+        homeTotal
+      };
+    }
+
+    const pStr = (livePeriod || 'Q1').toUpperCase();
+    const currentQ = pStr.includes('4') ? 4 : pStr.includes('3') ? 3 : pStr.includes('2') ? 2 : 1;
+
+    const splitScore = (total: number, q: number): [number, number, number, number] => {
+      if (q === 1) return [total, 0, 0, 0];
+      if (q === 2) {
+        const q1 = Math.round(total * 0.52);
+        return [q1, Math.max(0, total - q1), 0, 0];
+      }
+      if (q === 3) {
+        const q1 = Math.round(total * 0.34);
+        const q2 = Math.round(total * 0.35);
+        return [q1, q2, Math.max(0, total - q1 - q2), 0];
+      }
+      const q1 = Math.round(total * 0.26);
+      const q2 = Math.round(total * 0.25);
+      const q3 = Math.round(total * 0.26);
+      return [q1, q2, q3, Math.max(0, total - q1 - q2 - q3)];
+    };
+
+    return {
+      away: splitScore(awayTotal, currentQ),
+      home: splitScore(homeTotal, currentQ),
+      awayTotal,
+      homeTotal
+    };
+  }, [isLive, liveScore, livePeriod, quarters]);
+
+  const getAwayHorizontalCoords = (pos: string, index: number) => {
     const cleanPos = (pos || '').toUpperCase();
-    if (cleanPos.includes('C') || cleanPos === 'PIVOT' || cleanPos === 'PÍVOT') return { x: 50, y: 15 };
-    if (cleanPos.includes('PF') || cleanPos === 'ALA') return { x: 30, y: 24 };
-    if (cleanPos.includes('SF') || cleanPos === 'ALERO') return { x: 70, y: 24 };
-    if (cleanPos.includes('SG') || cleanPos === 'ESCOLTA') return { x: 20, y: 38 };
-    if (cleanPos.includes('PG') || cleanPos === 'BASE') return { x: 62, y: 44 };
+    if (cleanPos.includes('C') || cleanPos === 'PIVOT' || cleanPos === 'PÍVOT') return { x: 14, y: 50 };
+    if (cleanPos.includes('PF') || cleanPos === 'ALA') return { x: 24, y: 24 };
+    if (cleanPos.includes('SF') || cleanPos === 'ALERO') return { x: 24, y: 76 };
+    if (cleanPos.includes('SG') || cleanPos === 'ESCOLTA') return { x: 37, y: 28 };
+    if (cleanPos.includes('PG') || cleanPos === 'BASE') return { x: 40, y: 68 };
 
-    // Fallbacks
     const fallbacks = [
-      { x: 50, y: 15 },
-      { x: 30, y: 24 },
-      { x: 70, y: 24 },
-      { x: 20, y: 38 },
-      { x: 62, y: 44 }
+      { x: 14, y: 50 },
+      { x: 24, y: 24 },
+      { x: 24, y: 76 },
+      { x: 37, y: 28 },
+      { x: 40, y: 68 }
     ];
     return fallbacks[index % fallbacks.length];
   };
 
-  // Home team attacks/defends in South Half (Y: 56% to 88%)
-  const getHomeCoordinates = (pos: string, index: number) => {
+  const getHomeHorizontalCoords = (pos: string, index: number) => {
     const cleanPos = (pos || '').toUpperCase();
-    if (cleanPos.includes('PG') || cleanPos === 'BASE') return { x: 38, y: 56 };
-    if (cleanPos.includes('SG') || cleanPos === 'ESCOLTA') return { x: 80, y: 62 };
-    if (cleanPos.includes('SF') || cleanPos === 'ALERO') return { x: 22, y: 76 };
-    if (cleanPos.includes('PF') || cleanPos === 'ALA') return { x: 70, y: 76 };
-    if (cleanPos.includes('C') || cleanPos === 'PIVOT' || cleanPos === 'PÍVOT') return { x: 50, y: 85 };
+    if (cleanPos.includes('PG') || cleanPos === 'BASE') return { x: 60, y: 32 };
+    if (cleanPos.includes('SG') || cleanPos === 'ESCOLTA') return { x: 63, y: 72 };
+    if (cleanPos.includes('SF') || cleanPos === 'ALERO') return { x: 76, y: 24 };
+    if (cleanPos.includes('PF') || cleanPos === 'ALA') return { x: 76, y: 76 };
+    if (cleanPos.includes('C') || cleanPos === 'PIVOT' || cleanPos === 'PÍVOT') return { x: 86, y: 50 };
 
-    // Fallbacks
     const fallbacks = [
-      { x: 38, y: 56 },
-      { x: 80, y: 62 },
-      { x: 22, y: 76 },
-      { x: 70, y: 76 },
-      { x: 50, y: 85 }
+      { x: 60, y: 32 },
+      { x: 63, y: 72 },
+      { x: 76, y: 24 },
+      { x: 76, y: 76 },
+      { x: 86, y: 50 }
     ];
     return fallbacks[index % fallbacks.length];
   };
 
-  // Manual trigger for users to test / simulate a live shot action
-  const handleTriggerSimulatedPlay = () => {
-    const isHome = Math.random() > 0.5;
-    const targetStarters = isHome ? effectiveHomeStarters : effectiveAwayStarters;
-    if (!targetStarters || targetStarters.length === 0) return;
-
-    const randomIdx = Math.floor(Math.random() * Math.min(targetStarters.length, 5));
-    const shooter = targetStarters[randomIdx];
-    const shotType: '3PT' | 'PAINT' | 'MID_RANGE' = Math.random() > 0.5 ? '3PT' : 'PAINT';
-
-    setActiveLiveAction({
-      id: `manual-${Date.now()}`,
-      team: isHome ? 'HOME' : 'AWAY',
-      playerName: shooter.name.split(' ').pop() || shooter.name,
-      playerNumber: shooter.number,
-      shotType,
-      points: shotType === '3PT' ? 3 : 2,
-      zone: shotType === '3PT' ? 'Perímetro 3P' : 'Pintura',
-      timestamp: liveClock ? `${livePeriod || 'Q'} ${liveClock}` : 'Jugada en Vivo'
-    });
+  const handleCycleSlide = (dir: -1 | 1) => {
+    const idx = SLIDE_ORDER.indexOf(slideMode);
+    const nextIdx = (idx + dir + SLIDE_ORDER.length) % SLIDE_ORDER.length;
+    setSlideMode(SLIDE_ORDER[nextIdx]);
   };
+
+  const isActionHome = resolvedPlay.teamSide === 'HOME';
+  const activeTeamLabel = isActionHome ? effectiveHomeName : effectiveAwayName;
+  const activeTeamCode = isActionHome ? homeAbbr : awayAbbr;
+  const activeBorderColor = isActionHome ? 'border-amber-400/75' : 'border-sky-400/75';
+  const activeDotColor = isActionHome ? 'bg-amber-400' : 'bg-sky-400';
+  const activeTextColor = isActionHome ? 'text-amber-300' : 'text-sky-300';
+
+  const svgBallX = (resolvedPlay.ballX / 100) * 280;
+  const svgBallY = (resolvedPlay.ballY / 100) * 150;
+  const svgOriginX = (resolvedPlay.originX / 100) * 280;
+  const svgOriginY = (resolvedPlay.originY / 100) * 150;
+
+  const liveClockBadge = isLive
+    ? `${livePeriod || 'Q1'}${displayClockLabel ? ` • ${displayClockLabel}` : ''}`
+    : matchTimeLabel || 'Programado';
 
   return (
-    <div className="relative w-full overflow-hidden rounded-2xl bg-gradient-to-b from-[#0a0f18] via-[#0f172a] to-[#0a0f18] border border-amber-500/30 p-3 sm:p-4 shadow-2xl">
-      {/* Top Header: Centered Full Court Matchup & Badges */}
-      <div className="mb-2 px-1 flex flex-col items-center justify-center text-center">
-        {/* Row 1: Full Court Tag + Live Badges */}
-        <div className="flex items-center justify-center gap-2 flex-wrap mb-1">
-          <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono text-[10px] sm:text-[11px] font-bold border border-amber-500/30 shrink-0">
-            Cancha Completa 2.5D (5 vs 5)
-          </span>
-
-          {isLive ? (
-            <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-mono text-[10px] font-bold border border-rose-500/40 flex items-center gap-1.5 animate-pulse">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-              EN VIVO {liveClock ? `· ${livePeriod || 'Q'} ${liveClock}` : ''}
-            </span>
-          ) : (
-            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
-              Pre-Partido
-            </span>
-          )}
-
-          {liveScore && (
-            <span className="px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700 font-mono text-[11px] font-black text-amber-300">
-              {liveScore.away} - {liveScore.home}
-            </span>
-          )}
-        </div>
-
-        {/* Row 2: Matchup Escudos y Nombres */}
-        <div className="flex items-center justify-center gap-3 text-xs sm:text-sm font-bold text-white tracking-wide mt-1">
-          {/* Away Team Badge */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-sky-950/40 border border-sky-500/30 text-sky-300">
-            {effectiveAwayLogo && (
-              <img
-                src={effectiveAwayLogo}
-                alt=""
-                className="w-4 h-4 sm:w-5 sm:h-5 object-contain shrink-0"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
+    <div className="w-full rounded-2xl bg-[#0B0F19] border border-slate-800/90 overflow-hidden shadow-xl">
+      {/* 1. ULTRA-COMPACT SCOREBOARD HEADER */}
+      <div className="px-3 py-1.5 bg-[#080C14] border-b border-slate-800/90">
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[9.5px] font-mono text-slate-400 pb-1 border-b border-slate-800/70">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+            {isLive ? (
+              <span className="inline-flex items-center gap-1 text-amber-400 font-bold shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                <span>{liveClockBadge}</span>
+              </span>
+            ) : (
+              <span className="text-slate-300 font-semibold shrink-0">
+                {matchDateLabel || 'Hoy'} {matchTimeLabel ? `• ${matchTimeLabel}` : ''}
+              </span>
             )}
-            <span className="truncate max-w-[110px] sm:max-w-[150px]">{effectiveAwayName}</span>
-            <span className="text-[10px] font-mono text-sky-400/80 font-normal">(Visita)</span>
+
+            {arenaName && (
+              <span className="text-slate-400 inline-flex items-center gap-1 border-l border-slate-800 pl-1.5 text-[8.5px]">
+                <MapPin className="w-2.5 h-2.5 text-amber-400/80 shrink-0" />
+                <span>
+                  {arenaName}
+                  {arenaCity ? ` (${arenaCity})` : ''}
+                </span>
+              </span>
+            )}
           </div>
 
-          <span className="text-slate-500 font-mono text-xs font-black">VS</span>
-
-          {/* Home Team Badge */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300">
-            {effectiveHomeLogo && (
-              <img
-                src={effectiveHomeLogo}
-                alt=""
-                className="w-4 h-4 sm:w-5 sm:h-5 object-contain shrink-0"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            )}
-            <span className="truncate max-w-[110px] sm:max-w-[150px]">{effectiveHomeName}</span>
-            <span className="text-[10px] font-mono text-amber-400/80 font-normal">(Local)</span>
+          <div className="flex items-center gap-2 text-[8.5px] font-bold tracking-wider text-slate-400 shrink-0 ml-auto">
+            <span className="w-4 text-center">Q1</span>
+            <span className="w-4 text-center">Q2</span>
+            <span className="w-4 text-center">Q3</span>
+            <span className="w-4 text-center">Q4</span>
+            <span className="w-6 text-center text-amber-400">TOT</span>
           </div>
         </div>
 
-        {/* Row 3: Live Action Flash Banner (When a shot occurs) */}
-        {activeLiveAction && (
-          <div className="w-full max-w-md mt-2 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-emerald-500/40 shadow-lg flex items-center justify-between gap-2 text-xs animate-in fade-in slide-in-from-top-1 duration-300">
-            <div className="flex items-center gap-2 truncate">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
-              <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                +{activeLiveAction.points} PTS
-              </span>
-              <span className="truncate font-semibold text-slate-100">
-                #{activeLiveAction.playerNumber} {activeLiveAction.playerName}
-              </span>
-              <span className="text-[10px] font-mono text-slate-400 hidden sm:inline">
-                ({activeLiveAction.zone})
+        {/* Team Rows */}
+        <div className="pt-1 space-y-1">
+          {/* Away Team Row */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {effectiveAwayLogo ? (
+                <img
+                  src={effectiveAwayLogo}
+                  alt=""
+                  className="w-3.5 h-3.5 object-contain shrink-0"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <span className="w-3 h-3 rounded-sm bg-sky-500/30 border border-sky-400/50 shrink-0" />
+              )}
+              <span className="text-[11px] font-bold text-white">
+                {effectiveAwayName}
               </span>
             </div>
 
-            <div className="flex items-center gap-1 shrink-0 font-mono text-[10px] text-slate-400">
-              <span>{activeLiveAction.timestamp}</span>
+            <div className="flex items-center gap-2 font-mono text-[10.5px] shrink-0">
+              {quarterScores.away.map((qVal, i) => (
+                <span
+                  key={`aw-q-${i}`}
+                  className={`w-4 text-center ${
+                    qVal > 0 ? 'text-slate-200 font-semibold' : 'text-slate-600'
+                  }`}
+                >
+                  {qVal}
+                </span>
+              ))}
+              <span className="w-6 py-0.2 rounded bg-slate-800/90 border border-sky-500/40 text-center font-black text-sky-300 text-[11px]">
+                {quarterScores.awayTotal}
+              </span>
             </div>
           </div>
-        )}
 
-        {/* Row 4: Mode Switcher (Fichas vs Compacto vs Zonas de Calor) & Trigger */}
-        <div className="mt-2.5 flex items-center justify-between w-full max-w-md gap-2 flex-wrap">
-          <div className="inline-flex items-center gap-1.5 text-[10px] sm:text-[11px] font-mono text-slate-200 bg-slate-900/80 px-2.5 py-1 rounded-full border border-slate-700/70 shadow-sm">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
-            <span>Toca un jugador para Props</span>
-          </div>
+          {/* Home Team Row */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {effectiveHomeLogo ? (
+                <img
+                  src={effectiveHomeLogo}
+                  alt=""
+                  className="w-3.5 h-3.5 object-contain shrink-0"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <span className="w-3 h-3 rounded-sm bg-amber-500/30 border border-amber-400/50 shrink-0" />
+              )}
+              <span className="text-[11px] font-bold text-white">
+                {effectiveHomeName}
+              </span>
+            </div>
 
-          <div className="flex items-center gap-1 bg-slate-900/90 p-0.5 rounded-lg border border-slate-800 text-[10px] font-mono font-bold">
-            <button
-              type="button"
-              onClick={() => setDisplayMode('DETAILED')}
-              className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
-                displayMode === 'DETAILED'
-                  ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-xs'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-              title="Muestra nombres completos, dorsales y promedios por partido"
-            >
-              Fichas
-            </button>
-            <button
-              type="button"
-              onClick={() => setDisplayMode('TACTICAL')}
-              className={`px-2 py-0.5 rounded transition-all cursor-pointer flex items-center gap-1 ${
-                displayMode === 'TACTICAL'
-                  ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-xs'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-              title="Vista limpia en círculos tácticos con dorsal"
-            >
-              <Zap className="w-3 h-3 text-amber-400" />
-              <span>Compacto</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setDisplayMode('HEATMAP')}
-              className={`px-2 py-0.5 rounded transition-all cursor-pointer flex items-center gap-1 ${
-                displayMode === 'HEATMAP'
-                  ? 'bg-rose-500/25 text-rose-300 border border-rose-500/50 shadow-xs'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-              title="Zonas de calor con efectividad ofensiva"
-            >
-              <Flame className="w-3 h-3 text-rose-400" />
-              <span>Calor</span>
-            </button>
+            <div className="flex items-center gap-2 font-mono text-[10.5px] shrink-0">
+              {quarterScores.home.map((qVal, i) => (
+                <span
+                  key={`hm-q-${i}`}
+                  className={`w-4 text-center ${
+                    qVal > 0 ? 'text-slate-200 font-semibold' : 'text-slate-600'
+                  }`}
+                >
+                  {qVal}
+                </span>
+              ))}
+              <span className="w-6 py-0.2 rounded bg-slate-800/90 border border-amber-500/40 text-center font-black text-amber-300 text-[11px]">
+                {quarterScores.homeTotal}
+              </span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 2.5D Full Court Vertical Canvas */}
-      <div className="relative w-full aspect-[9/13] sm:aspect-[10/14] max-w-md mx-auto flex items-center justify-center [perspective:950px] my-1">
-        {/* Full Court Floor in Isometric Space */}
-        <div
-          className="relative w-full h-full rounded-2xl border-2 border-amber-400/50 shadow-2xl overflow-hidden transition-transform duration-500"
-          style={{
-            transform: 'rotateX(22deg) scale(0.97)',
-            transformOrigin: '50% 50%',
-            background: 'linear-gradient(180deg, #78350f 0%, #92400e 25%, #b45309 50%, #92400e 75%, #78350f 100%)',
-            boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.8), inset 0 0 50px rgba(0, 0, 0, 0.65)'
-          }}
-        >
-          {/* Wood Planks Pattern */}
-          <div
-            className="absolute inset-0 opacity-15 pointer-events-none"
-            style={{
-              backgroundImage: 'repeating-linear-gradient(90deg, #000 0px, #000 1px, transparent 1px, transparent 16px)'
-            }}
-          />
+      {/* 2. SUB-TOOLBAR: Mode Tabs */}
+      <div className="px-2.5 py-1 bg-[#0D1322] border-b border-slate-800/80 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setSlideMode('TRACKER')}
+            className={`px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-bold flex items-center gap-1 transition cursor-pointer ${
+              slideMode === 'TRACKER'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Radio className="w-2.5 h-2.5 text-emerald-400 animate-pulse" />
+            <span>Tracker En Vivo</span>
+          </button>
 
-          {/* SVG Official Full Court Markings & Dynamic Hot Zones */}
+          <button
+            type="button"
+            onClick={() => setSlideMode('LINEUPS')}
+            className={`px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-bold flex items-center gap-1 transition cursor-pointer ${
+              slideMode === 'LINEUPS'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Users className="w-2.5 h-2.5" />
+            <span>5 vs 5 (Props)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSlideMode('HEATMAP')}
+            className={`px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-bold flex items-center gap-1 transition cursor-pointer ${
+              slideMode === 'HEATMAP'
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Flame className="w-2.5 h-2.5 text-rose-400" />
+            <span>Zonas</span>
+          </button>
+        </div>
+
+        <span className="text-[8.5px] font-mono text-slate-400 hidden sm:inline">
+          {slideMode === 'LINEUPS'
+            ? 'Toca un jugador para Props'
+            : isLive
+            ? 'Reloj sincronizado en vivo'
+            : leagueName}
+        </span>
+      </div>
+
+      {/* 3. HORIZONTAL 2D COURT (Fits 100% in View, Zero Blur, Subtle Tactical Radar) */}
+      <div className="p-2 bg-[#111927]">
+        <div className="relative w-full aspect-[16/8.2] max-h-[190px] mx-auto rounded-xl overflow-hidden border border-amber-500/30 shadow-inner bg-[#182234] select-none">
           <svg
-            className="absolute inset-0 w-full h-full pointer-events-none"
-            viewBox="0 0 100 150"
+            viewBox="0 0 280 150"
             preserveAspectRatio="none"
+            className="absolute inset-0 w-full h-full pointer-events-none"
           >
             <defs>
-              {/* Gradients for Hot Zones */}
-              <radialGradient id="heatPaintAway" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.8" />
-                <stop offset="100%" stopColor="#0284c7" stopOpacity="0.25" />
+              <linearGradient id="courtFloorGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#162032" />
+                <stop offset="50%" stopColor="#1e293b" />
+                <stop offset="100%" stopColor="#162032" />
+              </linearGradient>
+
+              <linearGradient id="woodWarmTint" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.06" />
+                <stop offset="50%" stopColor="#d97706" stopOpacity="0.11" />
+                <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.06" />
+              </linearGradient>
+
+              <radialGradient id="leftPaintHeat" cx="50%" cy="50%" r="55%">
+                <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.5" />
+                <stop offset="100%" stopColor="#0284c7" stopOpacity="0.06" />
               </radialGradient>
-              <radialGradient id="heatPaintHome" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.8" />
-                <stop offset="100%" stopColor="#b45309" stopOpacity="0.25" />
+              <radialGradient id="rightPaintHeat" cx="50%" cy="50%" r="55%">
+                <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.5" />
+                <stop offset="100%" stopColor="#b45309" stopOpacity="0.06" />
               </radialGradient>
-              <radialGradient id="heatThreeAway" cx="50%" cy="20%" r="60%">
-                <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.45" />
-                <stop offset="100%" stopColor="#0284c7" stopOpacity="0.05" />
+              <radialGradient id="nbaBallGlowHome" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.32" />
+                <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
               </radialGradient>
-              <radialGradient id="heatThreeHome" cx="50%" cy="80%" r="60%">
-                <stop offset="0%" stopColor="#f97316" stopOpacity="0.45" />
-                <stop offset="100%" stopColor="#b45309" stopOpacity="0.05" />
+              <radialGradient id="nbaBallGlowAway" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.32" />
+                <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
               </radialGradient>
             </defs>
 
-            {/* Outer Perimeter */}
-            <rect x="3" y="3" width="94" height="144" rx="2" ry="2" fill="none" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="0.8" />
+            <rect x="0" y="0" width="280" height="150" fill="#0d1422" />
+            <rect x="10" y="8" width="260" height="134" fill="url(#courtFloorGrad)" />
+            <rect x="10" y="8" width="260" height="134" fill="url(#woodWarmTint)" />
 
-            {/* Half-Court Center Line */}
-            <line x1="3" y1="75" x2="97" y2="75" stroke="rgba(255, 255, 255, 0.95)" strokeWidth="1.2" />
+            <g stroke="rgba(255,255,255,0.03)" strokeWidth="0.5">
+              <line x1="10" y1="27" x2="270" y2="27" />
+              <line x1="10" y1="46" x2="270" y2="46" />
+              <line x1="10" y1="65" x2="270" y2="65" />
+              <line x1="10" y1="85" x2="270" y2="85" />
+              <line x1="10" y1="104" x2="270" y2="104" />
+              <line x1="10" y1="123" x2="270" y2="123" />
+            </g>
 
-            {/* Center Circle & Restraining Ring */}
-            <circle cx="50" cy="75" r="14" fill="rgba(0, 0, 0, 0.2)" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="0.9" />
-            <circle cx="50" cy="75" r="5" fill="rgba(217, 119, 6, 0.35)" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="0.7" />
-
-            {/* ----------------- TOP BASKET (AWAY TEAM) ----------------- */}
-            {/* Away 3-Point Area / Hot Zone Overlay */}
-            {displayMode === 'HEATMAP' && (
-              <path
-                d="M 10,3 L 10,14 A 40 40 0 0 0 90,14 L 90,3 Z"
-                fill="url(#heatThreeAway)"
-                className="animate-pulse"
-              />
-            )}
-
-            {/* Active Live Action Shot Pulse on Away Half */}
-            {activeLiveAction?.team === 'AWAY' && activeLiveAction.shotType === '3PT' && (
-              <path
-                d="M 10,3 L 10,14 A 40 40 0 0 0 90,14 L 90,3"
-                fill="none"
-                stroke="#38bdf8"
-                strokeWidth="2.2"
-                strokeDasharray="4, 2"
-                className="animate-pulse"
-              />
-            )}
-
-            {/* Backboard & Rim */}
-            <line x1="43" y1="8" x2="57" y2="8" stroke="#ffffff" strokeWidth="1.4" />
-            <line x1="50" y1="8" x2="50" y2="10" stroke="#ea580c" strokeWidth="1" />
-            <circle cx="50" cy="12" r="3.2" fill="none" stroke="#ea580c" strokeWidth="1.1" />
-
-            {/* Paint / Key Area */}
             <rect
-              x="35"
-              y="3"
-              width="30"
-              height="26"
-              fill={
-                displayMode === 'HEATMAP'
-                  ? 'url(#heatPaintAway)'
-                  : activeLiveAction?.team === 'AWAY' && activeLiveAction.shotType === 'PAINT'
-                  ? 'rgba(56, 189, 248, 0.65)'
-                  : 'rgba(3, 105, 161, 0.35)'
-              }
-              stroke="rgba(255, 255, 255, 0.85)"
-              strokeWidth="0.8"
-              className={
-                activeLiveAction?.team === 'AWAY' && activeLiveAction.shotType === 'PAINT'
-                  ? 'animate-pulse'
-                  : ''
-              }
-            />
-            {/* Free Throw Circle */}
-            <path d="M 35,29 A 15 15 0 0 0 65,29" fill="none" stroke="rgba(255, 255, 255, 0.85)" strokeWidth="0.8" />
-            <path d="M 35,29 A 15 15 0 0 1 65,29" fill="none" stroke="rgba(255, 255, 255, 0.85)" strokeWidth="0.8" strokeDasharray="2, 2" />
-
-            {/* Three-Point Line Arc */}
-            <path
-              d="M 10,3 L 10,14 A 40 40 0 0 0 90,14 L 90,3"
+              x="10"
+              y="8"
+              width="260"
+              height="134"
               fill="none"
-              stroke="rgba(255, 255, 255, 0.9)"
+              stroke="rgba(226, 232, 240, 0.45)"
+              strokeWidth="1.2"
+            />
+
+            <line
+              x1="140"
+              y1="8"
+              x2="140"
+              y2="142"
+              stroke="rgba(226, 232, 240, 0.4)"
+              strokeWidth="1.1"
+            />
+            <circle
+              cx="140"
+              cy="75"
+              r="18"
+              fill="rgba(15, 23, 42, 0.45)"
+              stroke="rgba(226, 232, 240, 0.4)"
+              strokeWidth="1.1"
+            />
+            <circle
+              cx="140"
+              cy="75"
+              r="6"
+              fill="rgba(245, 158, 11, 0.12)"
+              stroke="rgba(245, 158, 11, 0.45)"
               strokeWidth="0.9"
             />
 
-            {/* ----------------- BOTTOM BASKET (HOME TEAM) ----------------- */}
-            {/* Home 3-Point Area / Hot Zone Overlay */}
-            {displayMode === 'HEATMAP' && (
-              <path
-                d="M 10,147 L 10,136 A 40 40 0 0 1 90,136 L 90,147 Z"
-                fill="url(#heatThreeHome)"
-                className="animate-pulse"
-              />
-            )}
-
-            {/* Active Live Action Shot Pulse on Home Half */}
-            {activeLiveAction?.team === 'HOME' && activeLiveAction.shotType === '3PT' && (
-              <path
-                d="M 10,147 L 10,136 A 40 40 0 0 1 90,136 L 90,147"
-                fill="none"
-                stroke="#f59e0b"
-                strokeWidth="2.2"
-                strokeDasharray="4, 2"
-                className="animate-pulse"
-              />
-            )}
-
-            {/* Backboard & Rim */}
-            <line x1="43" y1="142" x2="57" y2="142" stroke="#ffffff" strokeWidth="1.4" />
-            <line x1="50" y1="142" x2="50" y2="140" stroke="#ea580c" strokeWidth="1" />
-            <circle cx="50" cy="138" r="3.2" fill="none" stroke="#ea580c" strokeWidth="1.1" />
-
-            {/* Paint / Key Area */}
-            <rect
-              x="35"
-              y="121"
-              width="30"
-              height="26"
-              fill={
-                displayMode === 'HEATMAP'
-                  ? 'url(#heatPaintHome)'
-                  : activeLiveAction?.team === 'HOME' && activeLiveAction.shotType === 'PAINT'
-                  ? 'rgba(245, 158, 11, 0.65)'
-                  : 'rgba(180, 83, 9, 0.4)'
-              }
-              stroke="rgba(255, 255, 255, 0.85)"
-              strokeWidth="0.8"
-              className={
-                activeLiveAction?.team === 'HOME' && activeLiveAction.shotType === 'PAINT'
-                  ? 'animate-pulse'
-                  : ''
-              }
-            />
-            {/* Free Throw Circle */}
-            <path d="M 35,121 A 15 15 0 0 1 65,121" fill="none" stroke="rgba(255, 255, 255, 0.85)" strokeWidth="0.8" />
-            <path d="M 35,121 A 15 15 0 0 0 65,121" fill="none" stroke="rgba(255, 255, 255, 0.85)" strokeWidth="0.8" strokeDasharray="2, 2" />
-
-            {/* Three-Point Line Arc */}
+            {/* LEFT SIDE (AWAY TEAM) */}
             <path
-              d="M 10,147 L 10,136 A 40 40 0 0 1 90,136 L 90,147"
+              d="M 10,20 L 38,20 A 58 58 0 0 1 38,130 L 10,130"
+              fill={slideMode === 'HEATMAP' ? 'rgba(56, 189, 248, 0.1)' : 'none'}
+              stroke="rgba(226, 232, 240, 0.42)"
+              strokeWidth="1.1"
+            />
+            <rect
+              x="10"
+              y="51"
+              width="48"
+              height="48"
+              fill={slideMode === 'HEATMAP' ? 'url(#leftPaintHeat)' : 'rgba(14, 165, 233, 0.1)'}
+              stroke="rgba(226, 232, 240, 0.45)"
+              strokeWidth="1"
+            />
+            <rect x="10" y="51" width="48" height="5" fill="rgba(56, 189, 248, 0.22)" />
+            <rect x="10" y="94" width="48" height="5" fill="rgba(56, 189, 248, 0.22)" />
+            <path
+              d="M 58,56 A 19 19 0 0 1 58,94"
               fill="none"
-              stroke="rgba(255, 255, 255, 0.9)"
+              stroke="rgba(226, 232, 240, 0.45)"
+              strokeWidth="1"
+            />
+            <path
+              d="M 58,56 A 19 19 0 0 0 58,94"
+              fill="none"
+              stroke="rgba(226, 232, 240, 0.35)"
+              strokeWidth="1"
+              strokeDasharray="3,3"
+            />
+            <path
+              d="M 18,65 A 10 10 0 0 1 18,85"
+              fill="none"
+              stroke="rgba(226, 232, 240, 0.35)"
               strokeWidth="0.9"
             />
+            <polygon
+              points="2,65 16,72 16,78 2,85"
+              fill="none"
+              stroke="rgba(226, 232, 240, 0.55)"
+              strokeWidth="1"
+            />
+            <line x1="16" y1="64" x2="16" y2="86" stroke="#e2e8f0" strokeWidth="1.6" />
+            <circle
+              cx="21"
+              cy="75"
+              r="3.8"
+              fill="rgba(14, 165, 233, 0.2)"
+              stroke="#38bdf8"
+              strokeWidth="1.3"
+            />
+
+            {/* RIGHT SIDE (HOME TEAM) */}
+            <path
+              d="M 270,20 L 242,20 A 58 58 0 0 0 242,130 L 270,130"
+              fill={slideMode === 'HEATMAP' ? 'rgba(245, 158, 11, 0.1)' : 'none'}
+              stroke="rgba(226, 232, 240, 0.42)"
+              strokeWidth="1.1"
+            />
+            <rect
+              x="222"
+              y="51"
+              width="48"
+              height="48"
+              fill={slideMode === 'HEATMAP' ? 'url(#rightPaintHeat)' : 'rgba(245, 158, 11, 0.1)'}
+              stroke="rgba(226, 232, 240, 0.45)"
+              strokeWidth="1"
+            />
+            <rect x="222" y="51" width="48" height="5" fill="rgba(245, 158, 11, 0.22)" />
+            <rect x="222" y="94" width="48" height="5" fill="rgba(245, 158, 11, 0.22)" />
+            <path
+              d="M 222,56 A 19 19 0 0 0 222,94"
+              fill="none"
+              stroke="rgba(226, 232, 240, 0.45)"
+              strokeWidth="1"
+            />
+            <path
+              d="M 222,56 A 19 19 0 0 1 222,94"
+              fill="none"
+              stroke="rgba(226, 232, 240, 0.35)"
+              strokeWidth="1"
+              strokeDasharray="3,3"
+            />
+            <path
+              d="M 262,65 A 10 10 0 0 0 262,85"
+              fill="none"
+              stroke="rgba(226, 232, 240, 0.35)"
+              strokeWidth="0.9"
+            />
+            <polygon
+              points="278,65 264,72 264,78 278,85"
+              fill="none"
+              stroke="rgba(226, 232, 240, 0.55)"
+              strokeWidth="1"
+            />
+            <line x1="264" y1="64" x2="264" y2="86" stroke="#e2e8f0" strokeWidth="1.6" />
+            <circle
+              cx="259"
+              cy="75"
+              r="3.8"
+              fill="rgba(245, 158, 11, 0.2)"
+              stroke="#f59e0b"
+              strokeWidth="1.3"
+            />
+
+            {/* SUBTLE LOCALIZED TACTICAL RADAR & VECTOR IN TRACKER MODE */}
+            {slideMode === 'TRACKER' && (
+              <g>
+                <circle
+                  cx={svgBallX}
+                  cy={svgBallY}
+                  r="22"
+                  fill={isActionHome ? 'url(#nbaBallGlowHome)' : 'url(#nbaBallGlowAway)'}
+                />
+                <line
+                  x1={svgOriginX}
+                  y1={svgOriginY}
+                  x2={svgBallX}
+                  y2={svgBallY}
+                  stroke={isActionHome ? '#fbbf24' : '#38bdf8'}
+                  strokeWidth="1.1"
+                  strokeDasharray="3,2"
+                  strokeOpacity="0.75"
+                />
+                <circle
+                  cx={svgOriginX}
+                  cy={svgOriginY}
+                  r="1.8"
+                  fill={isActionHome ? '#fbbf24' : '#38bdf8'}
+                  fillOpacity="0.6"
+                />
+              </g>
+            )}
           </svg>
 
-          {/* Court Orientation Labels */}
-          <div className="absolute top-2 left-3 text-[9px] font-mono font-bold text-sky-300/80 select-none uppercase tracking-wider flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
-            <span>{effectiveAwayName} (Norte)</span>
+          {/* Crisp Corner Team Labels */}
+          <div className="absolute top-1 left-2.5 z-10 text-[8px] font-mono font-bold text-sky-300 uppercase tracking-wider flex items-center gap-1 pointer-events-none">
+            <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+            <span>{awayAbbr} · Visita</span>
           </div>
-          <div className="absolute bottom-2 right-3 text-[9px] font-mono font-bold text-amber-300/80 select-none uppercase tracking-wider flex items-center gap-1">
-            <span>{effectiveHomeName} (Sur)</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+          <div className="absolute top-1 right-2.5 z-10 text-[8px] font-mono font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1 pointer-events-none">
+            <span>{homeAbbr} · Local</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
           </div>
 
-          {/* Heatmap Floating Efficiency Badges */}
-          {displayMode === 'HEATMAP' && (
+          {/* ========================================================================= */}
+          {/* MODE 1: SUBTLE, ULTRA-SLIM LIVE TRACKER (Zero Blur, No Full-Court Curtain) */}
+          {/* ========================================================================= */}
+          {slideMode === 'TRACKER' && (
             <>
-              {/* Away Top Badges */}
-              <div className="absolute top-6 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded bg-sky-950/90 border border-sky-400/50 text-sky-200 text-[8px] font-mono font-bold shadow pointer-events-none">
-                Pintura: 58.2% eFG
+              {/* Live Ball Marker Node on Court */}
+              <div
+                style={{ left: `${resolvedPlay.ballX}%`, top: `${resolvedPlay.ballY}%` }}
+                className="absolute -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none transition-all duration-700"
+              >
+                <span
+                  className={`w-4 h-4 rounded-full ${activeDotColor} opacity-35 animate-ping absolute -inset-0.5`}
+                />
+                <div
+                  className={`w-3 h-3 rounded-full bg-white border-2 ${
+                    isActionHome ? 'border-amber-400' : 'border-sky-400'
+                  } shadow-md flex items-center justify-center`}
+                />
               </div>
-              <div className="absolute top-14 left-4 px-1.5 py-0.5 rounded bg-slate-950/80 border border-sky-500/40 text-sky-300 text-[7px] font-mono pointer-events-none">
+
+              {/* PHASE 1: ULTRA-SLIM POSSESSION MICRO-PILL */}
+              {trackerPhase === 'SLIM_POSSESSION' && (
+                <div
+                  className={`absolute top-6 z-20 pointer-events-none transition-all duration-300 ${
+                    isActionHome ? 'right-3' : 'left-3'
+                  }`}
+                >
+                  <div
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#070B12]/95 border ${activeBorderColor} shadow-lg`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${activeDotColor} shrink-0`} />
+                    <span className="text-[9px] font-bold text-white leading-none">
+                      {activeTeamLabel}
+                    </span>
+                    <span className={`text-[8.5px] font-mono ${activeTextColor} leading-none`}>
+                      · {isLive ? 'Posesión en vivo' : 'Ritmo proyectado'} · {liveClockBadge}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* PHASE 2: CALM RADAR BALL VIEW (Tiny tag next to ball, zero notification banner) */}
+              {trackerPhase === 'RADAR_BALL' && (
+                <div
+                  style={{
+                    left: `${Math.min(82, Math.max(18, resolvedPlay.ballX))}%`,
+                    top: `${Math.max(18, resolvedPlay.ballY - 12)}%`
+                  }}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none transition-all duration-500"
+                >
+                  <span
+                    className={`px-1.5 py-0.5 rounded bg-[#070B12]/90 border ${activeBorderColor} text-[8px] font-mono font-bold text-white shadow`}
+                  >
+                    {activeTeamCode} · {liveClockBadge}
+                  </span>
+                </div>
+              )}
+
+              {/* PHASE 3: ULTRA-SLIM 2-LINE TACTICAL MICRO-HUD (Fine, compact, zero cut-off text) */}
+              {trackerPhase === 'SLIM_STAT_PILL' && (
+                <div
+                  className={`absolute top-6 z-20 pointer-events-none transition-all duration-300 ${
+                    isActionHome ? 'right-3' : 'left-3'
+                  }`}
+                >
+                  <div
+                    className={`max-w-[235px] sm:max-w-[280px] px-2.5 py-1 rounded-lg bg-[#070B12]/95 border ${activeBorderColor} shadow-lg space-y-0.5`}
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[9px] leading-tight">
+                      <span className="font-bold text-white">
+                        {resolvedPlay.playerName || activeTeamLabel} · <span className={activeTextColor}>{liveClockBadge}</span>
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded bg-slate-800 text-[8.5px] font-mono font-bold text-slate-200 shrink-0">
+                        {quarterScores.awayTotal} - {quarterScores.homeTotal}
+                      </span>
+                    </div>
+                    <div className="text-[8px] font-mono text-slate-300 leading-tight">
+                      <span className={activeTextColor}>{resolvedPlay.typeLabel}:</span> {resolvedPlay.statSummary}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ========================================================================= */}
+          {/* MODE 2: 5 vs 5 TACTICAL LINEUPS                                           */}
+          {/* ========================================================================= */}
+          {slideMode === 'LINEUPS' && (
+            <>
+              {effectiveAwayStarters.slice(0, 5).map((player, idx) => {
+                const coords = getAwayHorizontalCoords(player.position, idx);
+                const lastName = player.name.split(' ').pop() || player.name;
+
+                return (
+                  <button
+                    key={`aw-h-${player.id}-${idx}`}
+                    type="button"
+                    onClick={() => onSelectPlayer(player, effectiveAwayName)}
+                    style={{ left: `${coords.x}%`, top: `${coords.y}%` }}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center group cursor-pointer focus:outline-none"
+                    title={`${player.name} (${player.ppg} PPG) - Toca para ver Props`}
+                  >
+                    <div className="relative w-6 h-6 sm:w-6.5 sm:h-6.5 rounded-full bg-slate-950/95 border-2 border-sky-400 text-sky-300 font-mono text-[9px] font-black flex items-center justify-center shadow-md group-hover:scale-110 group-hover:bg-sky-400 group-hover:text-slate-950 transition-transform">
+                      #{player.number}
+                      {player.isInjured && (
+                        <span className="absolute -top-1 -right-1 text-[7px]">🚑</span>
+                      )}
+                    </div>
+                    <span className="mt-0.5 px-1 py-0.1 rounded bg-slate-950/90 border border-sky-500/40 text-[8px] font-mono font-bold text-slate-100 whitespace-nowrap shadow">
+                      {lastName}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {effectiveHomeStarters.slice(0, 5).map((player, idx) => {
+                const coords = getHomeHorizontalCoords(player.position, idx);
+                const lastName = player.name.split(' ').pop() || player.name;
+
+                return (
+                  <button
+                    key={`hm-h-${player.id}-${idx}`}
+                    type="button"
+                    onClick={() => onSelectPlayer(player, effectiveHomeName)}
+                    style={{ left: `${coords.x}%`, top: `${coords.y}%` }}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center group cursor-pointer focus:outline-none"
+                    title={`${player.name} (${player.ppg} PPG) - Toca para ver Props`}
+                  >
+                    <div className="relative w-6 h-6 sm:w-6.5 sm:h-6.5 rounded-full bg-slate-950/95 border-2 border-amber-400 text-amber-300 font-mono text-[9px] font-black flex items-center justify-center shadow-md group-hover:scale-110 group-hover:bg-amber-400 group-hover:text-slate-950 transition-transform">
+                      #{player.number}
+                      {player.isInjured && (
+                        <span className="absolute -top-1 -right-1 text-[7px]">🚑</span>
+                      )}
+                    </div>
+                    <span className="mt-0.5 px-1 py-0.1 rounded bg-slate-950/90 border border-amber-500/40 text-[8px] font-mono font-bold text-slate-100 whitespace-nowrap shadow">
+                      {lastName}
+                    </span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {/* MODE 3: HORIZONTAL HEATMAP BADGES */}
+          {slideMode === 'HEATMAP' && (
+            <>
+              <div className="absolute left-[14%] top-1/2 -translate-x-1/2 -translate-y-1/2 px-2 py-1 rounded-lg bg-slate-950/95 border border-sky-400/50 text-center font-mono">
+                <span className="block text-[8px] text-sky-300 uppercase">Pintura {awayAbbr}</span>
+                <span className="text-[9.5px] font-black text-white">58.4% eFG</span>
+              </div>
+              <div className="absolute left-[34%] top-[24%] -translate-x-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-slate-950/90 border border-sky-500/30 text-[8px] font-mono text-sky-200">
                 3P: 37.8%
               </div>
 
-              {/* Home Bottom Badges */}
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded bg-amber-950/90 border border-amber-400/50 text-amber-200 text-[8px] font-mono font-bold shadow pointer-events-none">
-                Pintura: 61.5% eFG
+              <div className="absolute right-[14%] top-1/2 translate-x-1/2 -translate-y-1/2 px-2 py-1 rounded-lg bg-slate-950/95 border border-amber-400/50 text-center font-mono">
+                <span className="block text-[8px] text-amber-300 uppercase">Pintura {homeAbbr}</span>
+                <span className="text-[9.5px] font-black text-white">61.2% eFG</span>
               </div>
-              <div className="absolute bottom-14 right-4 px-1.5 py-0.5 rounded bg-slate-950/80 border border-amber-500/40 text-amber-300 text-[7px] font-mono pointer-events-none">
-                3P: 39.4%
+              <div className="absolute right-[34%] bottom-[24%] translate-x-1/2 translate-y-1/2 px-1.5 py-0.5 rounded bg-slate-950/90 border border-amber-500/30 text-[8px] font-mono text-amber-200">
+                3P: 39.1%
               </div>
             </>
           )}
 
-          {/* ================= AWAY TEAM PLAYERS (TOP HALF) ================= */}
-          {effectiveAwayStarters.slice(0, 5).map((player, idx) => {
-            const coords = getAwayCoordinates(player.position, idx);
-            const isScorer =
-              activeLiveAction?.team === 'AWAY' &&
-              activeLiveAction.playerNumber === player.number;
+          {/* Bottom Carousel Pager Controls */}
+          <div className="absolute bottom-1 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-950/85 border border-slate-800/90">
+            <button
+              type="button"
+              onClick={() => handleCycleSlide(-1)}
+              className="w-3.5 h-3.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center cursor-pointer"
+              title="Vista anterior"
+            >
+              <ChevronLeft className="w-2.5 h-2.5" />
+            </button>
 
-            return (
-              <div
-                key={`away-${player.id}-${idx}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectPlayer(player, effectiveAwayName);
-                }}
-                className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer group z-20 ${
-                  isScorer ? 'z-30' : ''
-                }`}
-                style={{
-                  left: `${coords.x}%`,
-                  top: `${coords.y}%`
-                }}
-              >
-                {/* Counter-rotate billboard to stand vertically facing the viewer */}
-                <div
-                  className="flex flex-col items-center select-none transition-transform duration-200 group-hover:scale-115 group-active:scale-95"
-                  style={{
-                    transform: 'rotateX(-22deg)'
-                  }}
-                >
-                  {/* Position Badge with Sky-Blue Glow */}
-                  <div className="relative">
-                    <div
-                      className={`rounded-full bg-slate-950 border-2 text-sky-300 font-mono font-black flex items-center justify-center shadow-lg shadow-black/80 group-hover:bg-sky-500 group-hover:text-black group-hover:border-white transition-all ${
-                        isScorer
-                          ? 'border-emerald-400 bg-sky-900 text-white ring-4 ring-emerald-400/60 ring-offset-2 ring-offset-black scale-110 animate-bounce'
-                          : 'border-sky-400'
-                      } ${
-                        displayMode === 'DETAILED'
-                          ? 'w-7 h-7 sm:w-8 sm:h-8 text-[10px]'
-                          : 'w-7 h-7 sm:w-8 sm:h-8 text-[11px]'
-                      }`}
-                    >
-                      {displayMode === 'DETAILED' ? player.position : `#${player.number}`}
-                    </div>
+            <div className="flex items-center gap-1">
+              {SLIDE_ORDER.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setSlideMode(mode)}
+                  className={`h-1 rounded-full transition-all cursor-pointer ${
+                    slideMode === mode ? 'w-4 bg-amber-400' : 'w-1.5 bg-slate-600 hover:bg-slate-400'
+                  }`}
+                  title={mode}
+                />
+              ))}
+            </div>
 
-                    {/* Scorer Indicator Ball */}
-                    {isScorer && (
-                      <span className="absolute -top-3 -right-2 text-xs animate-pulse">
-                        🏀
-                      </span>
-                    )}
-
-                    {/* Injury Badge */}
-                    {player.isInjured ? (
-                      <span className="absolute -top-1 -right-1 text-[9px]">🚑</span>
-                    ) : (
-                      !isScorer && (
-                        <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
-                        </span>
-                      )
-                    )}
-                  </div>
-
-                  {/* Player Capsule in Detailed Mode */}
-                  {displayMode === 'DETAILED' && (
-                    <div className="mt-1 px-1.5 py-0.5 rounded-md bg-slate-950/90 border border-sky-600/60 backdrop-blur-md shadow-xl text-center whitespace-nowrap group-hover:border-sky-300 transition-all max-w-[90px] sm:max-w-[110px]">
-                      <div className="text-[9px] sm:text-[10px] font-bold text-white tracking-tight flex items-center justify-center gap-1">
-                        <span className="text-sky-300 font-mono">#{player.number}</span>
-                        <span className="truncate">{player.name.split(' ').pop()}</span>
-                      </div>
-                      <div className="text-[8px] font-mono text-emerald-300 font-semibold flex items-center justify-center gap-1">
-                        <span>{player.ppg}p</span>
-                        <span className="text-slate-500">·</span>
-                        <span className="text-sky-300">{player.threePm} 3P</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Short Name Tag in Tactical / Heatmap Mode for Clean Visibility */}
-                  {displayMode !== 'DETAILED' && (
-                    <span className="text-[8px] font-mono font-bold text-sky-200 mt-0.5 px-1 rounded bg-black/60 truncate max-w-[55px]">
-                      {player.name.split(' ').pop()}
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* ================= HOME TEAM PLAYERS (BOTTOM HALF) ================= */}
-          {effectiveHomeStarters.slice(0, 5).map((player, idx) => {
-            const coords = getHomeCoordinates(player.position, idx);
-            const isScorer =
-              activeLiveAction?.team === 'HOME' &&
-              activeLiveAction.playerNumber === player.number;
-
-            return (
-              <div
-                key={`home-${player.id}-${idx}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectPlayer(player, effectiveHomeName);
-                }}
-                className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer group z-20 ${
-                  isScorer ? 'z-30' : ''
-                }`}
-                style={{
-                  left: `${coords.x}%`,
-                  top: `${coords.y}%`
-                }}
-              >
-                {/* Counter-rotate billboard to stand vertically */}
-                <div
-                  className="flex flex-col items-center select-none transition-transform duration-200 group-hover:scale-115 group-active:scale-95"
-                  style={{
-                    transform: 'rotateX(-22deg)'
-                  }}
-                >
-                  {/* Position Badge with Amber Glow */}
-                  <div className="relative">
-                    <div
-                      className={`rounded-full bg-slate-950 border-2 text-amber-300 font-mono font-black flex items-center justify-center shadow-lg shadow-black/80 group-hover:bg-amber-500 group-hover:text-black group-hover:border-white transition-all ${
-                        isScorer
-                          ? 'border-emerald-400 bg-amber-900 text-white ring-4 ring-emerald-400/60 ring-offset-2 ring-offset-black scale-110 animate-bounce'
-                          : 'border-amber-400'
-                      } ${
-                        displayMode === 'DETAILED'
-                          ? 'w-7 h-7 sm:w-8 sm:h-8 text-[10px]'
-                          : 'w-7 h-7 sm:w-8 sm:h-8 text-[11px]'
-                      }`}
-                    >
-                      {displayMode === 'DETAILED' ? player.position : `#${player.number}`}
-                    </div>
-
-                    {/* Scorer Indicator Ball */}
-                    {isScorer && (
-                      <span className="absolute -top-3 -right-2 text-xs animate-pulse">
-                        🏀
-                      </span>
-                    )}
-
-                    {/* Injury Badge */}
-                    {player.isInjured ? (
-                      <span className="absolute -top-1 -right-1 text-[9px]">🚑</span>
-                    ) : (
-                      !isScorer && (
-                        <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                        </span>
-                      )
-                    )}
-                  </div>
-
-                  {/* Player Capsule in Detailed Mode */}
-                  {displayMode === 'DETAILED' && (
-                    <div className="mt-1 px-1.5 py-0.5 rounded-md bg-slate-950/90 border border-amber-600/60 backdrop-blur-md shadow-xl text-center whitespace-nowrap group-hover:border-amber-300 transition-all max-w-[90px] sm:max-w-[110px]">
-                      <div className="text-[9px] sm:text-[10px] font-bold text-white tracking-tight flex items-center justify-center gap-1">
-                        <span className="text-amber-400 font-mono">#{player.number}</span>
-                        <span className="truncate">{player.name.split(' ').pop()}</span>
-                      </div>
-                      <div className="text-[8px] font-mono text-emerald-300 font-semibold flex items-center justify-center gap-1">
-                        <span>{player.ppg}p</span>
-                        <span className="text-slate-500">·</span>
-                        <span className="text-amber-300">{player.threePm} 3P</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Short Name Tag in Tactical / Heatmap Mode for Clean Visibility */}
-                  {displayMode !== 'DETAILED' && (
-                    <span className="text-[8px] font-mono font-bold text-amber-200 mt-0.5 px-1 rounded bg-black/60 truncate max-w-[55px]">
-                      {player.name.split(' ').pop()}
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Heatmap Legend Bar (When in Heatmap Mode) */}
-      {displayMode === 'HEATMAP' && (
-        <div className="mt-2 p-2 rounded-xl bg-slate-950/80 border border-slate-800 text-[10px] font-mono text-slate-300 flex items-center justify-between gap-2 flex-wrap">
-          <span className="flex items-center gap-1 text-rose-300 font-bold">
-            <Flame className="w-3.5 h-3.5" />
-            <span>Zonas de Calor Ofensivas</span>
-          </span>
-          <div className="flex items-center gap-2 text-[9px] text-slate-400">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span> Pintura (&gt;58%)
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-amber-400"></span> Triple (&gt;37%)
-            </span>
+            <button
+              type="button"
+              onClick={() => handleCycleSlide(1)}
+              className="w-3.5 h-3.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center cursor-pointer"
+              title="Siguiente vista"
+            >
+              <ChevronRight className="w-2.5 h-2.5" />
+            </button>
           </div>
         </div>
-      )}
-
-      {/* Action Bar: Trigger Live Shot Simulator */}
-      <div className="mt-2 flex items-center justify-between gap-2 px-1">
-        <button
-          type="button"
-          onClick={handleTriggerSimulatedPlay}
-          className="text-[10px] font-mono font-semibold px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer"
-        >
-          <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
-          <span>⚡ Simular Tiro en Cancha</span>
-        </button>
-
-        <span className="text-[10px] font-mono text-slate-500">
-          Azul: Visitante · Ámbar: Local
-        </span>
       </div>
 
-      {/* Interactive Collapsible Benches Underneath */}
-      <div className="mt-3 space-y-2 border-t border-slate-800/80 pt-3">
-        {/* Toggle Buttons for Benches */}
-        <div className="grid grid-cols-2 gap-2">
-          {/* Away Bench Toggle */}
+      {/* 4. COMPACT COLLAPSIBLE BENCHES FOOTER */}
+      <div className="px-2.5 pb-2 pt-0.5 bg-[#0B0F19] space-y-1.5">
+        <div className="grid grid-cols-2 gap-1.5">
           <button
             type="button"
             onClick={() => setActiveBench(activeBench === 'AWAY' ? null : 'AWAY')}
-            className={`py-2 px-2.5 rounded-xl border flex items-center justify-between text-xs font-mono font-semibold transition-all cursor-pointer ${
+            className={`py-1 px-2 rounded-lg border flex items-center justify-between text-[9.5px] font-mono font-semibold transition cursor-pointer ${
               activeBench === 'AWAY'
-                ? 'bg-sky-500/20 border-sky-400 text-sky-200 shadow-sm'
-                : 'bg-slate-900/70 border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800/60'
+                ? 'bg-sky-500/20 border-sky-400 text-sky-200'
+                : 'bg-slate-900/70 border-slate-800 text-slate-300 hover:text-white'
             }`}
           >
-            <div className="flex items-center gap-1.5 truncate">
-              <Shield className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-              <span className="truncate">Banca {effectiveAwayName}</span>
+            <div className="flex items-center gap-1 min-w-0">
+              <Shield className="w-3 h-3 text-sky-400 shrink-0" />
+              <span>Banca {awayAbbr}</span>
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-sky-300 text-[10px]">
+              <span className="px-1 rounded-full bg-slate-800 text-sky-300 text-[8.5px]">
                 {awayBench.length}
               </span>
-              {activeBench === 'AWAY' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {activeBench === 'AWAY' ? (
+                <ChevronUp className="w-3 h-3" />
+              ) : (
+                <ChevronDown className="w-3 h-3" />
+              )}
             </div>
           </button>
 
-          {/* Home Bench Toggle */}
           <button
             type="button"
             onClick={() => setActiveBench(activeBench === 'HOME' ? null : 'HOME')}
-            className={`py-2 px-2.5 rounded-xl border flex items-center justify-between text-xs font-mono font-semibold transition-all cursor-pointer ${
+            className={`py-1 px-2 rounded-lg border flex items-center justify-between text-[9.5px] font-mono font-semibold transition cursor-pointer ${
               activeBench === 'HOME'
-                ? 'bg-amber-500/20 border-amber-400 text-amber-200 shadow-sm'
-                : 'bg-slate-900/70 border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800/60'
+                ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                : 'bg-slate-900/70 border-slate-800 text-slate-300 hover:text-white'
             }`}
           >
-            <div className="flex items-center gap-1.5 truncate">
-              <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span className="truncate">Banca {effectiveHomeName}</span>
+            <div className="flex items-center gap-1 min-w-0">
+              <Shield className="w-3 h-3 text-amber-400 shrink-0" />
+              <span>Banca {homeAbbr}</span>
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-amber-300 text-[10px]">
+              <span className="px-1 rounded-full bg-slate-800 text-amber-300 text-[8.5px]">
                 {homeBench.length}
               </span>
-              {activeBench === 'HOME' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {activeBench === 'HOME' ? (
+                <ChevronUp className="w-3 h-3" />
+              ) : (
+                <ChevronDown className="w-3 h-3" />
+              )}
             </div>
           </button>
         </div>
 
-        {/* Expanded Bench Roster Drawer */}
         {activeBench !== null && (
-          <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 px-1 border-b border-slate-800/60 pb-1.5">
-              <span>
-                Suplentes de{' '}
-                <strong className={activeBench === 'HOME' ? 'text-amber-400' : 'text-sky-400'}>
-                  {activeBench === 'HOME' ? effectiveHomeName : effectiveAwayName}
-                </strong>
-              </span>
-              <span className="text-[10px] text-slate-500">Toca para ver estadísticas</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+          <div className="p-2 rounded-xl bg-slate-950/90 border border-slate-800 space-y-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-36 overflow-y-auto pr-1">
               {(activeBench === 'HOME' ? homeBench : awayBench).map((player) => (
                 <div
                   key={`bench-${player.id}`}
@@ -830,11 +1054,11 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
                       activeBench === 'HOME' ? effectiveHomeName : effectiveAwayName
                     )
                   }
-                  className="p-2 rounded-lg bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800/80 flex items-center justify-between gap-2 cursor-pointer transition-colors group"
+                  className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800/80 flex items-center justify-between gap-2 cursor-pointer transition-colors group"
                 >
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <span
-                      className={`w-5 h-5 rounded font-mono text-[10px] font-bold flex items-center justify-center shrink-0 ${
+                      className={`w-4 h-4 rounded font-mono text-[8.5px] font-bold flex items-center justify-center shrink-0 ${
                         activeBench === 'HOME'
                           ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                           : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
@@ -842,18 +1066,20 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
                     >
                       {player.position}
                     </span>
-                    <span className="text-xs truncate font-medium text-slate-200 group-hover:text-white">
+                    <span className="text-[10.5px] font-medium text-slate-200 group-hover:text-white">
                       #{player.number} {player.name}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-mono">
+                  <div className="flex items-center gap-1 shrink-0 text-[8.5px] font-mono">
                     {player.isInjured ? (
-                      <span className="text-rose-400 font-bold">🚑 {player.injuryStatus || 'Baja'}</span>
+                      <span className="text-rose-400 font-bold">
+                        🚑 {player.injuryStatus || 'Baja'}
+                      </span>
                     ) : (
-                      <span className="text-emerald-400 group-hover:underline flex items-center gap-1">
-                        <BarChart2 className="w-3 h-3" />
-                        <span>{player.ppg || 7.5} pts</span>
+                      <span className="text-emerald-400 group-hover:underline flex items-center gap-0.5">
+                        <BarChart2 className="w-2.5 h-2.5" />
+                        <span>{player.ppg || 7.5}p</span>
                       </span>
                     )}
                   </div>
@@ -863,13 +1089,12 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
           </div>
         )}
 
-        {/* Legend / Footer Indicator */}
-        <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 font-mono pt-1">
+        <div className="flex items-center justify-between text-[8.5px] text-slate-400 px-1 font-mono">
           <span className="flex items-center gap-1 text-slate-300">
-            <UserCheck className="w-3.5 h-3.5 text-amber-400" />
-            <span>10 Jugadores en Duela</span>
+            <UserCheck className="w-2.5 h-2.5 text-amber-400" />
+            <span>Tracker Horizontal 2D (60 FPS)</span>
           </span>
-          <span className="text-slate-500">Perspectiva 2.5D Oficial</span>
+          <span className="text-slate-500">Izq: Visita · Der: Local</span>
         </div>
       </div>
     </div>

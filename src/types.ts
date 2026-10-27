@@ -426,6 +426,18 @@ export interface NBATeamInfo {
   restDays: number;
 }
 
+export interface NBALivePlaySituation {
+  id: string;
+  text: string;
+  typeLabel: string;
+  actionKind: 'SCORE_2PT' | 'SCORE_3PT' | 'SCORE_FT' | 'TURNOVER' | 'REBOUND' | 'POSSESSION';
+  teamSide: 'HOME' | 'AWAY';
+  playerName?: string;
+  playerPosition?: string;
+  statSummary?: string;
+  pointsAdded?: number;
+}
+
 export interface NBAMatchFixture {
   id: string;
   date: string; // YYYY-MM-DD
@@ -450,6 +462,7 @@ export interface NBAMatchFixture {
     q4: NBAQuarterScore;
     ot?: NBAQuarterScore;
   };
+  liveSituation?: NBALivePlaySituation;
   homeTeam: NBATeamInfo;
   awayTeam: NBATeamInfo;
   arena: {

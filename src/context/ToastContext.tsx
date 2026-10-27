@@ -36,42 +36,42 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ToastContext.Provider value={{ showToast, removeToast }}>
       {children}
-      {/* Toast Container rendered globally */}
-      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2.5 max-w-sm w-full px-4 pointer-events-none">
+      {/* Ultra-Slim Toast Container rendered globally (Zero cut-off text) */}
+      <div className="fixed top-2.5 right-2.5 z-[9999] flex flex-col gap-1 max-w-[260px] sm:max-w-[290px] w-full px-1.5 pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-start gap-3 rounded-2xl p-4 shadow-2xl backdrop-blur-xl border transition-all duration-300 animate-in fade-in slide-in-from-top-3 ${
+            className={`pointer-events-auto flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 shadow-lg border transition-all duration-200 animate-in fade-in slide-in-from-top-2 ${
               toast.type === 'success'
-                ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-100 shadow-emerald-950/60'
+                ? 'bg-[#06241b]/95 border-emerald-500/45 text-emerald-100'
                 : toast.type === 'warning'
-                ? 'bg-amber-950/90 border-amber-500/40 text-amber-100 shadow-amber-950/60'
+                ? 'bg-[#271a05]/95 border-amber-500/45 text-amber-100'
                 : toast.type === 'error'
-                ? 'bg-red-950/90 border-red-500/40 text-red-100 shadow-red-950/60'
-                : 'bg-slate-900/90 border-slate-700/60 text-slate-100 shadow-slate-950/60'
+                ? 'bg-[#280a0e]/95 border-red-500/45 text-red-100'
+                : 'bg-[#0A0E17]/95 border-slate-700/70 text-slate-100'
             }`}
           >
-            <div className="shrink-0 pt-0.5">
+            <div className="shrink-0">
               {toast.type === 'success' && (
-                <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/40 text-emerald-400 font-bold text-xs">✓</div>
+                <div className="w-3.5 h-3.5 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/40 text-emerald-400 font-bold text-[8.5px]">✓</div>
               )}
               {toast.type === 'warning' && (
-                <div className="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center border border-amber-500/40 text-amber-400 font-bold text-xs">!</div>
+                <div className="w-3.5 h-3.5 rounded-full bg-amber-500/20 flex items-center justify-center border border-amber-500/40 text-amber-400 font-bold text-[8.5px]">!</div>
               )}
               {toast.type === 'error' && (
-                <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center border border-red-500/40 text-red-400 font-bold text-xs">✕</div>
+                <div className="w-3.5 h-3.5 rounded-full bg-red-500/20 flex items-center justify-center border border-red-500/40 text-red-400 font-bold text-[8.5px]">✕</div>
               )}
               {toast.type === 'info' && (
-                <div className="w-6 h-6 rounded-full bg-sky-500/20 flex items-center justify-center border border-sky-500/40 text-sky-400 font-bold text-xs">i</div>
+                <div className="w-3.5 h-3.5 rounded-full bg-sky-500/20 flex items-center justify-center border border-sky-500/40 text-sky-400 font-bold text-[8.5px]">i</div>
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <h4 className="text-sm font-bold tracking-wide">{toast.title}</h4>
-              {toast.message && <p className="text-xs mt-0.5 opacity-90 leading-relaxed break-words">{toast.message}</p>}
+              <h4 className="text-[10px] font-bold tracking-tight leading-tight">{toast.title}</h4>
+              {toast.message && <p className="text-[9px] opacity-90 leading-tight mt-0.5">{toast.message}</p>}
             </div>
             <button
               onClick={() => removeToast(toast.id)}
-              className="shrink-0 opacity-60 hover:opacity-150 transition-opacity p-1 -mr-1 -mt-1 text-current"
+              className="shrink-0 opacity-60 hover:opacity-100 transition-opacity p-0.5 text-[10px] text-current cursor-pointer"
               aria-label="Cerrar notificación"
             >
               ✕

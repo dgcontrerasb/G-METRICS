@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { DetailMatchPayload } from './MatchDetailModal';
-import { getSoccerLineupData, getNBALineupData } from '../services/lineupService';
-import { UserCheck, MapPin, BarChart2, LayoutGrid, List } from 'lucide-react';
+import { getSoccerLineupData, getNBALineupData, SoccerPlayerInfo } from '../services/lineupService';
+import { UserCheck, BarChart2, LayoutGrid, List } from 'lucide-react';
 import { useParlay } from '../context/ParlayContext';
 import { PlayerStatsModal, PlayerModalPayload } from './PlayerStatsModal';
 import { BasketballCourt25D, BasketballStarterPlayer, BasketballBenchPlayer } from './BasketballCourt25D';
+import { SoccerPitch2D } from './SoccerPitch2D';
 
 interface LineupRosterTabProps {
   payload: DetailMatchPayload;
@@ -15,6 +16,7 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
   const [selectedPlayerModal, setSelectedPlayerModal] = useState<PlayerModalPayload | null>(null);
   const isSoccer = payload.type === 'SOCCER';
   const [selectedTeam, setSelectedTeam] = useState<'HOME' | 'AWAY'>('HOME');
+  const [courtViewMode, setCourtViewMode] = useState<'COURT' | 'LIST'>('COURT');
 
   if (isSoccer) {
     const soccerData = getSoccerLineupData(payload.fixture);
@@ -30,86 +32,144 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
     const currentFormation = selectedTeam === 'HOME' ? soccerData.homeFormation : soccerData.awayFormation;
     const currentCoach = selectedTeam === 'HOME' ? soccerData.homeCoach : soccerData.awayCoach;
 
+    const handleOpenPlayerFromSoccerPitch = (player: SoccerPlayerInfo, teamName: string) => {
+      setSelectedPlayerModal({
+        sport: 'SOCCER',
+        fixtureId: payload.fixture.id,
+        matchTitle: `${homeTeam.name} vs ${awayTeam.name}`,
+        homeTeamName: homeTeam.name,
+        awayTeamName: awayTeam.name,
+        matchDate: payload.fixture.date,
+        matchTime: payload.fixture.time,
+        player: {
+          id: String(player.id),
+          name: player.name,
+          number: player.number,
+          position: player.position || 'DEL',
+          teamName,
+          isCaptain: player.isCaptain,
+          matchYellowCards: player.matchYellowCards,
+          hasPreviousYellow: player.hasPreviousYellow,
+          isInjured: player.isInjured,
+          injuryNote: player.injuryNote
+        }
+      });
+    };
+
     return (
-      <div className="space-y-4 text-xs">
-        {/* Stadium & Referee Info Banner */}
-        <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-wrap items-center justify-between gap-2 shadow-sm text-[11px] text-slate-300">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span className="truncate">
-              <strong className="text-white font-semibold">{soccerData.stadiumName}</strong> ({soccerData.stadiumCity})
-            </span>
-          </div>
-          {soccerData.refereeName && (
-            <div className="flex items-center gap-1.5 text-slate-400">
-              <span>⚖️ Árbitro:</span>
-              <span className="text-amber-300 font-mono font-medium">{soccerData.refereeName}</span>
+      <div className="space-y-2.5 text-xs">
+        {/* View Mode Conmutador (Vista Cancha vs Lista por Equipo) */}
+        <div className="flex items-center justify-between p-0.5 bg-slate-900/90 rounded-xl border border-slate-800 gap-1 font-mono">
+          <button
+            type="button"
+            onClick={() => setCourtViewMode('COURT')}
+            className={`flex-1 py-1 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
+              courtViewMode === 'COURT'
+                ? 'bg-emerald-500/25 border-emerald-400 text-emerald-300 shadow-xs'
+                : 'bg-transparent border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <LayoutGrid className="w-3 h-3 shrink-0" />
+            <span>Vista Cancha</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setCourtViewMode('LIST')}
+            className={`flex-1 py-1 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
+              courtViewMode === 'LIST'
+                ? 'bg-emerald-500/25 border-emerald-400 text-emerald-300 shadow-xs'
+                : 'bg-transparent border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <List className="w-3 h-3 shrink-0" />
+            <span>Lista por Equipo</span>
+          </button>
+        </div>
+
+        {/* 2D HORIZONTAL SOCCER PITCH VIEW */}
+        {courtViewMode === 'COURT' && (
+          <SoccerPitch2D
+            fixture={payload.fixture}
+            homeStarters={soccerData.homeStarters}
+            awayStarters={soccerData.awayStarters}
+            homeSubstitutes={soccerData.homeSubstitutes}
+            awaySubstitutes={soccerData.awaySubstitutes}
+            homeFormation={soccerData.homeFormation}
+            awayFormation={soccerData.awayFormation}
+            homeCoach={soccerData.homeCoach}
+            awayCoach={soccerData.awayCoach}
+            stadiumName={soccerData.stadiumName}
+            stadiumCity={soccerData.stadiumCity}
+            refereeName={soccerData.refereeName}
+            onSelectPlayer={handleOpenPlayerFromSoccerPitch}
+          />
+        )}
+
+        {/* LIST VIEW BY TEAM */}
+        {courtViewMode === 'LIST' && (
+          <div className="space-y-3">
+            {/* Team Selector Switcher */}
+            <div className="grid grid-cols-2 p-1 bg-slate-900/90 rounded-2xl border border-slate-800 gap-1 text-center font-mono">
+              <button
+                type="button"
+                onClick={() => setSelectedTeam('HOME')}
+                className={`py-1.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold ${
+                  selectedTeam === 'HOME'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <img
+                  src={homeTeam.logo}
+                  alt=""
+                  className="w-4 h-4 object-contain shrink-0"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+                <span className="truncate">{homeTeam.name}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedTeam('AWAY')}
+                className={`py-1.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold ${
+                  selectedTeam === 'AWAY'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <img
+                  src={awayTeam.logo}
+                  alt=""
+                  className="w-4 h-4 object-contain shrink-0"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+                <span className="truncate">{awayTeam.name}</span>
+              </button>
             </div>
-          )}
-        </div>
 
-        {/* Team Selector Switcher */}
-        <div className="grid grid-cols-2 p-1 bg-slate-900/90 rounded-2xl border border-slate-800 gap-1 text-center font-mono">
-          <button
-            type="button"
-            onClick={() => setSelectedTeam('HOME')}
-            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold ${
-              selectedTeam === 'HOME'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <img
-              src={homeTeam.logo}
-              alt=""
-              className="w-4 h-4 object-contain shrink-0"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-            <span className="truncate">{homeTeam.name}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedTeam('AWAY')}
-            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold ${
-              selectedTeam === 'AWAY'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <img
-              src={awayTeam.logo}
-              alt=""
-              className="w-4 h-4 object-contain shrink-0"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-            <span className="truncate">{awayTeam.name}</span>
-          </button>
-        </div>
-
-        {/* Header: Formation & DT */}
-        <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/50 border border-slate-800/80">
-          <div className="flex items-center gap-2">
-            <img
-              src={currentLogo}
-              alt=""
-              className="w-5 h-5 object-contain"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-            <span className="font-bold text-white text-xs">{currentTeamName}</span>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-bold text-[10px] border border-emerald-500/30">
-              Esquema {currentFormation}
-            </span>
-          </div>
-          <div className="text-[11px] font-mono text-slate-400">
-            📋 {currentCoach}
-          </div>
-        </div>
+            {/* Header: Formation & DT */}
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/50 border border-slate-800/80">
+              <div className="flex items-center gap-2">
+                <img
+                  src={currentLogo}
+                  alt=""
+                  className="w-4 h-4 object-contain"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+                <span className="font-bold text-white text-xs">{currentTeamName}</span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-bold text-[10px] border border-emerald-500/30">
+                  Esquema {currentFormation}
+                </span>
+              </div>
+              <div className="text-[11px] font-mono text-slate-400">
+                📋 {currentCoach}
+              </div>
+            </div>
 
         {/* 11 Titulares (Starting XI) Grid */}
         <div className="space-y-2">
@@ -285,6 +345,8 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
             })}
           </div>
         </div>
+          </div>
+        )}
 
         {/* Player Stats & Props Modal */}
         <PlayerStatsModal
@@ -306,8 +368,6 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
   const currentStarters = selectedTeam === 'HOME' ? nbaData.homeStarters : nbaData.awayStarters;
   const currentBench = selectedTeam === 'HOME' ? nbaData.homeBench : nbaData.awayBench;
   const currentCoach = selectedTeam === 'HOME' ? nbaData.homeCoach : nbaData.awayCoach;
-
-  const [courtViewMode, setCourtViewMode] = useState<'COURT' | 'LIST'>('COURT');
 
   const handleOpenPlayerFromCourt = (starter: BasketballStarterPlayer | BasketballBenchPlayer, teamName: string) => {
     setSelectedPlayerModal({
@@ -334,49 +394,36 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
   };
 
   return (
-    <div className="space-y-4 text-xs">
-      {/* Arena Banner */}
-      <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2 shadow-sm text-[11px] text-slate-300">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <span className="truncate">
-            <strong className="text-white font-semibold">{nbaData.arenaName}</strong> ({nbaData.arenaCity})
-          </span>
-        </div>
-        <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/30">
-          BALONCESTO
-        </span>
-      </div>
-
-      {/* View Mode Conmutador (Cancha Completa vs Lista) */}
-      <div className="flex items-center justify-between p-1.5 bg-slate-900/90 rounded-2xl border border-slate-800 gap-1.5 font-mono">
+    <div className="space-y-3 text-xs">
+      {/* View Mode Conmutador (Vista Cancha vs Lista por Equipo) */}
+      <div className="flex items-center justify-between p-0.5 bg-slate-900/90 rounded-xl border border-slate-800 gap-1 font-mono">
         <button
           type="button"
           onClick={() => setCourtViewMode('COURT')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+          className={`flex-1 py-1 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
             courtViewMode === 'COURT'
               ? 'bg-amber-500/25 border-amber-400 text-amber-300 shadow-xs'
               : 'bg-transparent border-transparent text-slate-400 hover:text-white'
           }`}
         >
-          <LayoutGrid className="w-4 h-4" />
-          <span>Cancha Completa 2.5D (5 vs 5)</span>
+          <LayoutGrid className="w-3 h-3 shrink-0" />
+          <span>Vista Cancha</span>
         </button>
         <button
           type="button"
           onClick={() => setCourtViewMode('LIST')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+          className={`flex-1 py-1 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
             courtViewMode === 'LIST'
               ? 'bg-amber-500/25 border-amber-400 text-amber-300 shadow-xs'
               : 'bg-transparent border-transparent text-slate-400 hover:text-white'
           }`}
         >
-          <List className="w-4 h-4" />
+          <List className="w-3 h-3 shrink-0" />
           <span>Lista por Equipo</span>
         </button>
       </div>
 
-      {/* 2.5D FULL COURT VIEW */}
+      {/* 2D HORIZONTAL COURT VIEW */}
       {courtViewMode === 'COURT' && (
         <BasketballCourt25D
           homeStarters={nbaData.homeStarters}
@@ -389,6 +436,13 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
           liveScore={payload.fixture.currentScore}
           liveClock={payload.fixture.liveClock}
           livePeriod={payload.fixture.livePeriod}
+          quarters={payload.fixture.quarters}
+          liveSituation={payload.fixture.liveSituation}
+          arenaName={nbaData.arenaName}
+          arenaCity={nbaData.arenaCity}
+          leagueName={payload.fixture.league?.name || 'NBA · Temporada Regular'}
+          matchDateLabel={payload.fixture.date}
+          matchTimeLabel={payload.fixture.time}
           onSelectPlayer={handleOpenPlayerFromCourt}
         />
       )}

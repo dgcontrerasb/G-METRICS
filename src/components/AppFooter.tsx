@@ -2,6 +2,7 @@ import React from 'react';
 import { ActiveSport } from '../types';
 import { SportStatsLogo } from './SportStatsLogo';
 import { GuideModalTab } from './DidacticGuideModal';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export interface AppFooterProps {
   activeSport: ActiveSport;
@@ -35,6 +36,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeSport, onOpenGuideMo
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-2">
+            <PWAInstallButton variant="footer" />
             <button
               type="button"
               onClick={() => onOpenGuideModal('GLOSSARY')}

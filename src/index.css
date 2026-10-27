@@ -46,6 +46,16 @@
   --accent-cyber-border: rgba(255, 42, 95, 0.35);
 }
 
+html {
+  font-size: 14.5px;
+}
+
+@media (max-width: 640px) {
+  html {
+    font-size: 13.75px;
+  }
+}
+
 html,
 body {
   margin: 0;
@@ -89,7 +99,6 @@ input[type="text"].font-mono {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
-  transition: background-color 0.2s ease;
 }
 
 .cr7-cinematic-bg::before {
@@ -104,7 +113,6 @@ input[type="text"].font-mono {
   filter: brightness(0.6) contrast(1.2) grayscale(0.35) blur(var(--wallpaper-blur, 0px));
   pointer-events: none;
   z-index: 0;
-  transition: opacity 0.25s ease, filter 0.25s ease;
 }
 
 .cr7-cinematic-bg::after {
@@ -116,24 +124,21 @@ input[type="text"].font-mono {
   z-index: 0;
 }
 
-/* 3. Cyber-Fintech Glass Cards: Data Crystal with Tailwind v4 */
+/* 3. Cyber-Fintech Cards: Zero per-card backdrop-filter to guarantee 60fps scrolling on mobile & PC */
 .neon-running-card,
 .cyber-card {
   position: relative;
-  border-radius: 1rem;
+  border-radius: 0.875rem;
   overflow: hidden;
-  background-color: rgba(2, 6, 23, 0.45);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(51, 65, 85, 0.35);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  background-color: rgba(11, 16, 28, 0.86);
+  border: 1px solid rgba(51, 65, 85, 0.4);
+  box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.45);
+  transition: border-color 0.15s ease;
 }
 
 .neon-running-card:hover,
 .cyber-card:hover {
-  border-color: rgba(148, 163, 184, 0.3);
-  box-shadow: 0 14px 28px -5px rgba(0, 0, 0, 0.6);
+  border-color: rgba(148, 163, 184, 0.35);
 }
 
 .neon-running-card > .neon-card-inner,

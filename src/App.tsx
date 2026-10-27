@@ -602,6 +602,48 @@ export default function App() {
           };
         });
       }
+
+      // Direct telemetry refresh for the currently open live Soccer match modal
+      if (detailModalPayload?.type === 'SOCCER' && detailModalPayload.fixture.status === 'IN_PLAY') {
+        const activeFix = detailModalPayload.fixture;
+        const telemetry = await fetchMatchLiveTelemetry(activeFix);
+        if (telemetry) {
+          const nextHome =
+            typeof telemetry.homeGoals === 'number' ? telemetry.homeGoals : (activeFix.currentScore?.home ?? 0);
+          const nextAway =
+            typeof telemetry.awayGoals === 'number' ? telemetry.awayGoals : (activeFix.currentScore?.away ?? 0);
+          const nextHT =
+            telemetry.isHalfTime !== undefined ? telemetry.isHalfTime : Boolean(activeFix.currentScore?.isHalfTime);
+          const nextMin = nextHT
+            ? 45
+            : Math.max(activeFix.currentScore?.minute ?? 1, telemetry.minute ?? (activeFix.currentScore?.minute ?? 1));
+
+          const enrichedFix = sanitizeFixturePlayers({
+            ...activeFix,
+            espnEventId: telemetry.espnEventId || activeFix.espnEventId,
+            currentScore: {
+              home: nextHome,
+              away: nextAway,
+              minute: nextMin,
+              isHalfTime: nextHT,
+              statusShort: telemetry.statusShort || activeFix.currentScore?.statusShort
+            },
+            liveStats: telemetry.liveStats || activeFix.liveStats,
+            liveEvents:
+              telemetry.liveEvents && telemetry.liveEvents.length > 0 ? telemetry.liveEvents : activeFix.liveEvents,
+            liveRosters: telemetry.liveRosters || activeFix.liveRosters
+          });
+
+          clearAnalysisCacheForFixture(enrichedFix.id);
+          const enrichedAnalysis = calculateMatchAnalysis(enrichedFix);
+          setFixtures((prev) => prev.map((f) => (f.id === enrichedFix.id ? enrichedFix : f)));
+          setDetailModalPayload((prev) =>
+            prev && prev.type === 'SOCCER' && prev.fixture.id === enrichedFix.id
+              ? { type: 'SOCCER', fixture: enrichedFix, analysis: enrichedAnalysis }
+              : prev
+          );
+        }
+      }
     } else if (activeSport === 'NBA' && nbaFixtures.some((f) => f.status === 'IN_PLAY')) {
       const res = await fetchNBAFixtures(currentDate, { forceRefresh: true });
       const changedNbaIds: string[] = [];
@@ -620,15 +662,31 @@ export default function App() {
       if (changedNbaIds.length > 0) {
         triggerLiveFlashEffect(changedNbaIds);
       }
+
+      // Keep open NBA modal synchronized in real time (score, clock, quarters, liveSituation)
+      setDetailModalPayload((prev) => {
+        if (!prev || prev.type !== 'NBA') return prev;
+        const updatedNbaFix = res.fixtures.find((f) => f.id === prev.fixture.id);
+        if (!updatedNbaFix) return prev;
+        return {
+          type: 'NBA',
+          fixture: updatedNbaFix,
+          analysis: calculateNBAAnalysis(updatedNbaFix)
+        };
+      });
     }
-  }, [activeSport, currentDate, fixtures, nbaFixtures, triggerLiveFlashEffect]);
+  }, [activeSport, currentDate, fixtures, nbaFixtures, triggerLiveFlashEffect, detailModalPayload]);
 
   useEffect(() => {
+    const isModalViewingLiveMatch =
+      Boolean(detailModalPayload) && detailModalPayload?.fixture.status === 'IN_PLAY';
+    const intervalMs = isModalViewingLiveMatch ? 15000 : 45000;
+
     const interval = setInterval(() => {
       runLivePulseCheck();
-    }, 45000);
+    }, intervalMs);
     return () => clearInterval(interval);
-  }, [runLivePulseCheck]);
+  }, [runLivePulseCheck, detailModalPayload]);
 
   // Compute analyses for all upcoming matches
   const analysesMap: Record<string, MatchAnalysis> = useMemo(() => {
