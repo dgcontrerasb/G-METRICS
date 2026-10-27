@@ -115,7 +115,6 @@ function initDiskCache(): void {
         for (const [k, v] of Object.entries(parsed)) {
           if (v && typeof v === 'object' && 'timestamp' in (v as any) && 'data' in (v as any)) {
             const dataVal = (v as any).data;
-            // Do not load empty arrays from disk cache so future dates never get stuck at 0
             if (Array.isArray(dataVal) && dataVal.length === 0) {
               continue;
             }
@@ -196,13 +195,11 @@ async function runSingleFlight<T>(key: string, fn: () => Promise<T>): Promise<T>
   return promise;
 }
 
-// Helper to get active secret key from environment or .env
 function getSecretKey(keyName: string): string {
   const envVal = process.env[keyName];
   if (envVal && envVal.trim()) {
     return envVal.trim();
   }
-  // Try reading from .env if dynamically written
   try {
     const envPath = path.resolve(process.cwd(), '.env');
     if (fs.existsSync(envPath)) {
@@ -310,7 +307,6 @@ const COUNTRY_TRANSLATION_MAP: Record<string, { country: string; flag: string }>
   USA: { country: 'Estados Unidos', flag: '🇺🇸' }
 };
 
-// Normalize team names for fuzzy matching between ESPN Live Scoreboard and API-Football fixtures
 function normalizeTeamKey(name: string): string {
   return (name || '')
     .toLowerCase()
@@ -335,10 +331,6 @@ function teamsFuzzyMatch(hKey1: string, aKey1: string, hKey2: string, aKey2: str
   return homeMatch && awayMatch;
 }
 
-/**
- * Computes realistic soccer match clock accounting for 1st half stoppage (~3m) + 15m halftime break.
- * Prevents wall-clock 60-70 mins since kickoff from falsely displaying as minute 70' when the match is actually at HT (45') or 52'.
- */
 function estimateRealisticSoccerClock(
   minsSinceStart: number,
   rawStatusShort?: string,
@@ -352,7 +344,6 @@ function estimateRealisticSoccerClock(
     return { minute: 90, isHalfTime: false, statusShort: 'FT' };
   }
 
-  // If provider explicitly reported 1H or 2H with a valid elapsed minute, trust it unless it's stale 'NS'
   if ((st === '1H' || st === '2H' || st === 'ET' || st === 'LIVE') && typeof reportedElapsed === 'number' && reportedElapsed > 0) {
     return {
       minute: Math.min(90, Math.max(1, reportedElapsed)),
@@ -361,7 +352,6 @@ function estimateRealisticSoccerClock(
     };
   }
 
-  // Fallback estimation from wall-clock elapsed minutes since kickoff (accounting for 17-min HT window: 47m..64m)
   if (minsSinceStart <= 0) {
     return { minute: 1, isHalfTime: false, statusShort: 'NS' };
   }
@@ -655,10 +645,6 @@ function extractEspnScoreboardTelemetry(
   return { liveStats, liveEvents };
 }
 
-/**
- * Extracts live events (goals, yellow/red cards, substitutions, period markers) and stats
- * from an API-Football fixture object or reconciles them from the official scoreboard when granular play-by-play is absent.
- */
 function extractApiFootballLiveTelemetry(
   rawFix: any,
   overrideHomeScore?: number,
@@ -785,7 +771,6 @@ function extractApiFootballLiveTelemetry(
     }
   });
 
-  // Reconcile any goals reported on scoreboard that weren't in rawEvents array
   const htHome = rawFix?.score?.halftime?.home;
   const htAway = rawFix?.score?.halftime?.away;
   const missingHomeGoals = Math.max(0, homeScore - homeGoalsRecorded);
@@ -849,7 +834,6 @@ function extractApiFootballLiveTelemetry(
     });
   }
 
-  // Estimate proportional live stats when boxscore array is not attached
   const progressFactor = Math.min(1, Math.max(0.15, currentMin / 90));
   const existingStats = rawFix?.liveStats;
   const homeCorners = existingStats?.home?.corners ?? Math.max(1, Math.round((4.8 + (homeScore * 0.7)) * progressFactor));
@@ -857,7 +841,6 @@ function extractApiFootballLiveTelemetry(
   const finalHomeYellows = Math.max(homeYellows, existingStats?.home?.yellowCards ?? Math.floor(1.8 * progressFactor));
   const finalAwayYellows = Math.max(awayYellows, existingStats?.away?.yellowCards ?? Math.floor(2.1 * progressFactor));
 
-  // Ensure yellow card events match finalHomeYellows / finalAwayYellows
   while (homeYellows < finalHomeYellows) {
     homeYellows++;
     const ycMin = Math.min(currentMin, Math.max(14, Math.round((homeYellows / (finalHomeYellows + 1)) * currentMin)));
@@ -916,18 +899,25 @@ function extractApiFootballLiveTelemetry(
 }
 
 /**
- * Fetches ALL currently live matches worldwide from API-Football (`fixtures?live=all`)
- * coalesced with a 3-minute cache so it uses minimal quota while keeping 100% of global leagues accurate.
+ * Optimizado: No realiza llamadas externas a API-Football cuando la cuota está en riesgo.
+ * La telemetría en vivo se delega al Scoreboard de ESPN ($0 costo).
  */
 async function fetchApiFootballLiveAll(): Promise<any[]> {
-  const cacheKey = 'api_football_live_all_v1';
+  const cacheKey = 'api_football_live_all_v2';
   const cached = getCacheItem<any[]>(cacheKey);
-  if (cached && Date.now() - cached.timestamp < 3 * 60 * 1000) {
+  
+  // 1. Si la cuota ya está baja o en Quota Shield, NUNCA gastar llamadas en vivo a API-Football
+  if (quotaShieldActive || lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD) {
+    return cached?.data || [];
+  }
+
+  // 2. Caché alargada a 15 minutos para proteger drásticamente las llamadas
+  if (cached && Date.now() - cached.timestamp < 15 * 60 * 1000) {
     return cached.data;
   }
 
   const apiKey = getSecretApiKey();
-  if (!apiKey || quotaShieldActive) {
+  if (!apiKey) {
     return cached?.data || [];
   }
 
@@ -961,10 +951,6 @@ function mapEspnPosition(posAbbr: string): 'POR' | 'DEF' | 'MED' | 'DEL' {
   return 'MED';
 }
 
-/**
- * Fetches rich play-by-play summary (exact corner minutes, substitutions, yellow/red cards, boxscore & rosters)
- * from ESPN public summary endpoint ($0 cost, 35s cache per event).
- */
 async function fetchEspnMatchSummaryTelemetry(
   espnEventId: string,
   homeName: string,
@@ -976,7 +962,7 @@ async function fetchEspnMatchSummaryTelemetry(
   if (!espnEventId) return fallbackTelemetry;
   const cacheKey = `espn_summary_v2_${espnEventId}`;
   const cached = getCacheItem<{ liveStats: any; liveEvents: any[]; liveRosters?: any }>(cacheKey);
-  if (cached && Date.now() - cached.timestamp < 35 * 1000) {
+  if (cached && Date.now() - cached.timestamp < 45 * 1000) {
     return cached.data;
   }
 
@@ -1000,7 +986,6 @@ async function fetchEspnMatchSummaryTelemetry(
     const hKey = normalizeTeamKey(homeName);
     const aKey = normalizeTeamKey(awayName);
 
-    // 1. Parse authoritative Boxscore stats
     const boxTeams = Array.isArray(sumData?.boxscore?.teams) ? sumData.boxscore.teams : [];
     const homeBox =
       boxTeams.find((t: any) => {
@@ -1016,7 +1001,6 @@ async function fetchEspnMatchSummaryTelemetry(
     const homeBoxStats = Array.isArray(homeBox?.statistics) ? homeBox.statistics : [];
     const awayBoxStats = Array.isArray(awayBox?.statistics) ? awayBox.statistics : [];
 
-    // 2. Parse KeyEvents (Goals, Yellow Cards, Red Cards, Substitutions, Halftime)
     const keyEvents = Array.isArray(sumData?.keyEvents) ? sumData.keyEvents : [];
     const parsedEvents: any[] = [
       {
@@ -1142,7 +1126,6 @@ async function fetchEspnMatchSummaryTelemetry(
       });
     }
 
-    // 3. Parse exact Corner plays from commentary
     const commentary = Array.isArray(sumData?.commentary) ? sumData.commentary : [];
     commentary.forEach((c: any, idx: number) => {
       const playType = String(c?.play?.type?.type || c?.play?.type?.text || '').toLowerCase();
@@ -1245,7 +1228,6 @@ async function fetchEspnMatchSummaryTelemetry(
       elapsedMin || 45
     );
 
-    // 4. Parse official match rosters (starting XI + bench + player yellow/red cards)
     let liveRosters: any = undefined;
     const rawRosters = Array.isArray(sumData?.rosters) ? sumData.rosters : [];
     if (rawRosters.length >= 2) {
@@ -1295,10 +1277,6 @@ async function fetchEspnMatchSummaryTelemetry(
   }
 }
 
-/**
- * Fetches official upcoming/live soccer fixtures from ESPN Public Scoreboard ($0 cost, no date lock)
- * and formats them in API-Football v3 compatible schema with full real-time statistics & events.
- */
 async function fetchEspnSoccerFixtures(targetDate: string, clientTz = 'America/Bogota'): Promise<any[]> {
   const espnDateStr = targetDate.replace(/-/g, '');
   try {
@@ -1326,19 +1304,17 @@ async function fetchEspnSoccerFixtures(targetDate: string, clientTz = 'America/B
 
       const state = String(ev?.status?.type?.state || 'pre').toLowerCase();
       if (state === 'post' || ev?.status?.type?.completed === true) {
-        continue; // Exclude finished games
+        continue;
       }
 
       const matchDateObj = new Date(ev.date);
       const matchTimestampMs = matchDateObj.getTime();
       if (isNaN(matchTimestampMs)) continue;
 
-      // Exclude games that kicked off > 120 mins ago and are no longer live
       if (state !== 'in' && matchTimestampMs < now - 120 * 60 * 1000) {
         continue;
       }
 
-      // Verify local date matches targetDate in user's timezone
       let eventLocalDate = targetDate;
       try {
         eventLocalDate = new Intl.DateTimeFormat('en-CA', {
@@ -1433,7 +1409,6 @@ async function fetchEspnSoccerFixtures(targetDate: string, clientTz = 'America/B
       });
     }
 
-    // Deep-enrich up to 25 live IN_PLAY matches in parallel with ESPN Summary API (exact corner minutes, subs, rosters)
     const liveItems = mapped.filter((m) => m.fixture?.status?.short === '2H' && m.espnEventId).slice(0, 25);
     if (liveItems.length > 0) {
       await Promise.allSettled(
@@ -1668,12 +1643,10 @@ function filterActiveUpcomingFixtures(list: any[], targetDate: string, clientTz:
       ? f.fixture.timestamp * 1000
       : new Date(f.fixture?.date || 0).getTime();
 
-    // If match kicked off more than 120 minutes ago, it has finished in real time
     if (matchTime > 0 && (now - matchTime) / 60000 >= 120) {
       return false;
     }
 
-    // Ensure match date in user's local timezone belongs to targetDate
     if (matchTime > 0) {
       try {
         const localDate = new Intl.DateTimeFormat('en-CA', {
@@ -1694,8 +1667,7 @@ function filterActiveUpcomingFixtures(list: any[], targetDate: string, clientTz:
   });
 }
 
-// 0. Upcoming Matches Endpoint: STRICTLY live + upcoming matches for the requested date
-// Optimized with 25-minute TTL, single-flight coalescing, disk persistence, and ESPN $0 multi-league fallback
+// 0. Upcoming Matches Endpoint: BLINDADO PARA ALTA CONCURRENCIA
 app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
   const apiKey = getSecretApiKey();
   const requestedDate = (req.query.date as string) || '';
@@ -1709,13 +1681,13 @@ app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
   const cacheKey = `upcoming_v6_${targetDate}`;
   const cached = getCacheItem<any[]>(cacheKey);
 
-  // 25 minutes TTL for today's matches (preserves daily quota), 24 hours for other dates
-  const cacheTTL = targetDate === todayLocal ? 25 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  // TTL: 2 horas de caché para hoy (atiende a 100+ usuarios con 1 sola llamada), 24 horas para otras fechas
+  const cacheTTL = targetDate === todayLocal ? 2 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
 
   // 1. Check persistent cache: Serve immediately if fresh and non-empty
   if (cached && Array.isArray(cached.data) && cached.data.length > 0 && !query) {
     const isFresh = Date.now() - cached.timestamp < cacheTTL;
-    if ((isFresh && !force) || quotaShieldActive) {
+    if ((isFresh && (!force || quotaShieldActive)) || quotaShieldActive) {
       const activeList = filterActiveUpcomingFixtures(cached.data, targetDate, clientTz);
       if (activeList.length > 0) {
         return res.json({
@@ -1731,13 +1703,13 @@ app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
     }
   }
 
-  // 2. Single-Flight Coalescing: Try API-Football first (if key & quota available), then enrich/fallback with ESPN Official Scoreboard ($0)
+  // 2. Single-Flight Coalescing: Solo 1 llamada a la API si 50 usuarios entran juntos
   try {
     const resultList = await runSingleFlight(cacheKey, async () => {
       let upcomingOnly: any[] = [];
       const espnFixtures = await fetchEspnSoccerFixtures(targetDate, clientTz);
 
-      if (apiKey && (!quotaShieldActive || force)) {
+      if (apiKey && !quotaShieldActive) {
         try {
           const apiRes = await fetch(
             `https://v3.football.api-sports.io/fixtures?date=${targetDate}&timezone=${encodeURIComponent(clientTz)}`,
@@ -1759,7 +1731,6 @@ app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
         }
       }
 
-      // If API-Football returned fixtures, enrich any live/active matches with ESPN's real-time stats & events ($0 cost)
       if (upcomingOnly.length > 0 && espnFixtures.length > 0) {
         for (const f of upcomingOnly) {
           const hKey = normalizeTeamKey(f?.teams?.home?.name || '');
@@ -1786,8 +1757,6 @@ app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
         }
       }
 
-      // If API-Football returned 0 fixtures (e.g. Free Plan blocks +2 days 'En 2 Días' or quota reached),
-      // use real official fixtures from ESPN Multi-League Scoreboard ($0 cost)
       if (upcomingOnly.length === 0) {
         upcomingOnly = filterActiveUpcomingFixtures(espnFixtures, targetDate, clientTz);
       }
@@ -1842,7 +1811,7 @@ app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
-// 0.15 Finished Matches Audit Endpoint (Strictly FINISHED matches from Prime Colombian Bookmaker Leagues - $0 API-Football quota)
+// 0.15 Finished Matches Audit Endpoint
 app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
   const todayStr = getColombiaDateStr(0);
   const yesterdayStr = getColombiaDateStr(-1);
@@ -1891,7 +1860,6 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
             const rawUid = String(ev?.uid || '');
             const espnLeagueId = rawUid.match(/~l:(\d+)/)?.[1] || '0';
             const catalogEntry = ESPN_LEAGUE_CATALOG[espnLeagueId];
-            // Only evaluate known Prime / Colombian-bookmaker leagues with reliable boxscore telemetry
             if (!catalogEntry) continue;
 
             const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || 'Local');
@@ -1959,7 +1927,6 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
         }
       }
 
-      // Deep-enrich up to 15 completed prime matches with ESPN Summary boxscore so corners & cards are 100% real
       const topCompleted = results.slice(0, 15);
       if (topCompleted.length > 0) {
         await Promise.allSettled(
@@ -1999,7 +1966,7 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
   }
 });
 
-// 0.25 Hybrid Live Pulse Endpoint (45-second real-time scoreboard & stats sync - 0 API-Football quota consumed)
+// 0.25 Hybrid Live Pulse Endpoint (45s poll con 0% gasto de API-Football)
 app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
   const requestedDate = (req.query.date as string) || '';
   const todayColombia = getColombiaDateStr(0);
@@ -2009,7 +1976,6 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
   const pulseCacheKey = `live_pulse_v5_${espnDateStr}`;
   const cachedPulse = getCacheItem<any[]>(pulseCacheKey);
 
-  // 30-second TTL so 45-second client polling always gets fresh data while coalescing concurrent tabs
   if (cachedPulse && Date.now() - cachedPulse.timestamp < 30 * 1000) {
     return res.json({
       success: true,
@@ -2041,7 +2007,7 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
         liveRosters?: any;
       }> = [];
 
-      // 1A. Fetch API-Football global live matches (1 call = ALL live matches worldwide with exact HT, minute, goals & events!)
+      // 1A. Consultar live=all solo si está en caché; NO gastar cuota periódica aquí
       const apiLiveAll = await fetchApiFootballLiveAll();
       for (const lf of apiLiveAll) {
         const fId = String(lf?.fixture?.id || '');
@@ -2140,7 +2106,6 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
               isPost
             );
 
-            // Check if already in liveDeltas from API-Football live=all; if so, enrich it with ESPN deep telemetry
             const existingDelta = liveDeltas.find((d) => teamsFuzzyMatch(hKey, aKey, d.homeKey, d.awayKey));
             if (existingDelta) {
               existingDelta.espnEventId = espnEventId;
@@ -2172,7 +2137,6 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
             }
           }
 
-          // Deep-enrich active IN_PLAY matches with ESPN Summary (exact corner plays, substitutions & rosters)
           const activeInPlay = liveDeltas.filter((d) => d.status === 'IN_PLAY' && d.espnEventId).slice(0, 25);
           if (activeInPlay.length > 0) {
             await Promise.allSettled(
@@ -2195,10 +2159,10 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
           }
         }
       } catch {
-        // Ignore external ESPN scoreboard hiccup and fall back to cached live state progression
+        // Fallback to cached live state
       }
 
-      // 2. Sync & progress ONLY verified live matches inside our persistent upcoming cache
+      // 2. Sync inside persistent cache
       const upcomingCache = getCacheItem<any[]>(`upcoming_v6_${targetDate}`);
       if (upcomingCache && Array.isArray(upcomingCache.data)) {
         for (const f of upcomingCache.data) {
@@ -2208,7 +2172,6 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
           const hKey = normalizeTeamKey(hName);
           const aKey = normalizeTeamKey(aName);
 
-          // Check if matched in API-Football live=all or ESPN live feed
           const matched = liveDeltas.find(
             (d) =>
               (d.id && String(d.id) === fId) ||
@@ -2237,7 +2200,6 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
             continue;
           }
 
-          // If match started > 115 mins ago, mark as finished (FT)
           if (minsSinceStart > 115) {
             if (f.fixture?.status) {
               f.fixture.status.short = 'FT';
@@ -2245,7 +2207,6 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
             continue;
           }
 
-          // ONLY advance clock if the match was explicitly confirmed IN_PLAY by the provider (NEVER turn NS into fake 0-0 IN_PLAY!)
           const statusShort = String(f?.fixture?.status?.short || '').toUpperCase();
           if (['1H', '2H', 'HT', 'ET', 'LIVE', 'BT', 'P', 'INT'].includes(statusShort) && minsSinceStart <= 115) {
             const clockEst = estimateRealisticSoccerClock(
@@ -2307,7 +2268,7 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
-// 0.35 Deep Match Telemetry Endpoint (On-Demand Play-by-Play, Corners, Cards & Rosters for Modal)
+// 0.35 Deep Match Telemetry Endpoint
 app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
   const fixtureId = String(req.query.id || '').trim();
   const espnIdParam = String(req.query.espnId || req.query.eventId || '').trim();
@@ -2406,7 +2367,6 @@ app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
       });
     }
 
-    // Fallback: Check API-Football live=all & persistent upcoming cache for this match
     const apiLiveList = await fetchApiFootballLiveAll();
     let matchedAf = apiLiveList.find(
       (lf: any) =>
@@ -2469,7 +2429,7 @@ app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
-// 0.5 NBA Live & Scheduled Scoreboard endpoint (Official ESPN Feed - 0 API-Football quota consumed)
+// 0.5 NBA Live & Scheduled Scoreboard endpoint (ESPN 100% gratuito)
 app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
   const dateQuery = (req.query.date as string) || '';
   const force = req.query.force === 'true';
@@ -2480,7 +2440,6 @@ app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
   const cacheKey = `nba_sb_${espnDateStr}`;
   const cached = getCacheItem<any[]>(cacheKey);
 
-  // Scoreboard cache TTL: 3 minutes for today's games, 24 hours for historical/future
   const cacheTTL = targetDate === todayColombia ? 3 * 60 * 1000 : 24 * 60 * 60 * 1000;
   if (cached && !force && Date.now() - cached.timestamp < cacheTTL) {
     return res.json({
@@ -2595,8 +2554,7 @@ app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
-// 1. Secret Proxy Endpoint: GET /api/fixtures?date=YYYY-MM-DD
-// Optimized with 25-minute TTL, single-flight coalescing, and quota shield
+// 1. Secret Proxy Endpoint: GET /api/fixtures
 app.get('/api/fixtures', dataRateLimitMiddleware, async (req, res) => {
   const date = (req.query.date as string) || new Date().toISOString().split('T')[0];
   const force = req.query.force === 'true';
@@ -2605,7 +2563,7 @@ app.get('/api/fixtures', dataRateLimitMiddleware, async (req, res) => {
   const cacheKey = `fix_${date}`;
   const cached = getCacheItem<any[]>(cacheKey);
   const todayStr = new Date().toISOString().split('T')[0];
-  const cacheTTL = date === todayStr ? 25 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  const cacheTTL = date === todayStr ? 2 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
 
   if (cached && (!force || quotaShieldActive)) {
     const isFresh = Date.now() - cached.timestamp < cacheTTL;
@@ -2689,7 +2647,7 @@ app.get('/api/fixtures', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
-// 2. Secret Key & Quota Status check: GET /api/status (Zero key fragment/length disclosure)
+// 2. Status Check
 app.get('/api/status', dataRateLimitMiddleware, (_req, res) => {
   const hasApiFootball = Boolean(getSecretKey('API_FOOTBALL_KEY'));
   const hasFootballData = Boolean(getSecretKey('FOOTBALL_DATA_KEY'));
@@ -2703,12 +2661,12 @@ app.get('/api/status', dataRateLimitMiddleware, (_req, res) => {
     quotaShieldActive: lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD,
     quotaShieldThreshold: QUOTA_SHIELD_THRESHOLD,
     cachedEntriesCount: memoryCache.size,
-    cacheTtlMinutes: 25,
+    cacheTtlMinutes: 120,
     serverReady: true
   });
 });
 
-// 2b. Proxy for The Odds API (Real market odds - 60 min TTL + Coalescing)
+// 2b. The Odds API
 app.get('/api/market-odds', dataRateLimitMiddleware, async (req, res) => {
   const oddsKey = getSecretKey('ODDS_API_KEY');
   const cacheKey = 'odds_soccer';
@@ -2743,7 +2701,7 @@ app.get('/api/market-odds', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
-// 2c. Proxy for Football-Data.org (Official Standings - 120 min TTL + Coalescing)
+// 2c. Football-Data.org
 app.get('/api/standings', dataRateLimitMiddleware, async (req, res) => {
   const fdKey = getSecretKey('FOOTBALL_DATA_KEY');
   const league = sanitizeText((req.query.league as string) || 'PD', 10) || 'PD';
@@ -2779,7 +2737,6 @@ app.get('/api/standings', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
-// --- Control de Acceso por Licencias Criptográficas Autónomas y Modelo Zero Trust ---
 const LICENSES_FILE = IS_VERCEL ? path.resolve('/tmp', 'licenses_db.json') : path.resolve(__dirname, 'licenses_db.json');
 const ADMIN_CONFIG_FILE = IS_VERCEL ? path.resolve('/tmp', 'admin_config.json') : path.resolve(__dirname, 'admin_config.json');
 const BUNDLED_ADMIN_CONFIG_FILE = path.resolve(__dirname, 'admin_config.json');
@@ -2870,7 +2827,6 @@ function isValidAdminPin(pin: unknown, cfg: AdminConfig): boolean {
   return false;
 }
 
-// 3. Secret Key Setup endpoint: POST /api/set-secret-key (Protegido con autenticación de Administrador)
 app.post('/api/set-secret-key', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3032,7 +2988,6 @@ function serverGenerateToken(deviceId: string, planType: string, customExpiryMs?
   return { key, expiresAt, planLabel };
 }
 
-// 1. Obtener configuración pública de contacto (WhatsApp) y logo para la app (PIN solo vía x-admin-pin)
 app.get('/api/license/config', (req, res) => {
   const pin = extractAdminCredential(req);
   const cfg = getAdminConfig();
@@ -3049,7 +3004,6 @@ app.get('/api/license/config', (req, res) => {
   });
 });
 
-// 2. Actualizar configuración de administrador (protegido por x-admin-pin + Anti-Fuerza Bruta)
 app.post('/api/license/config', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3093,7 +3047,6 @@ app.post('/api/license/config', async (req, res) => {
   });
 });
 
-// 3. Generar una nueva licencia (protegido por x-admin-pin + Anti-Fuerza Bruta)
 app.post('/api/license/generate', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3129,7 +3082,6 @@ app.post('/api/license/generate', async (req, res) => {
     revoked: false
   };
 
-  // Reemplazar si ya existía para el mismo dispositivo o agregar
   const filtered = db.filter(item => item.key !== key);
   filtered.unshift(record);
   saveLicensesDb(filtered);
@@ -3148,7 +3100,6 @@ app.post('/api/license/generate', async (req, res) => {
   });
 });
 
-// 3b. Ping de Presencia Silencioso (Heartbeat en tiempo real con validación de dispositivo)
 app.post('/api/license/heartbeat', (req, res) => {
   const { key, deviceId, clientName, deviceInfo } = req.body || {};
   if (!key && !deviceId) {
@@ -3162,7 +3113,6 @@ app.post('/api/license/heartbeat', (req, res) => {
   const found = db.find(item => item.key === cleanKey || item.deviceId === cleanDev);
 
   if (found) {
-    // Hardening de Dispositivo Único: si la licencia pertenece a un dispositivo específico distinto, rechazar
     if (cleanKey && cleanDev && found.deviceId && !found.deviceId.includes('ALL')) {
       const normFoundDev = found.deviceId.replace(/[^A-Z0-9]/g, '').replace(/^DEV/, '');
       const normIncomingDev = cleanDev.replace(/[^A-Z0-9]/g, '').replace(/^DEV/, '');
@@ -3197,7 +3147,6 @@ app.post('/api/license/heartbeat', (req, res) => {
   return res.json({ success: true, unregistered: true });
 });
 
-// 4. Validar una licencia (pública para el cliente con comprobación de revocación y protección anti-fuerza bruta)
 app.post('/api/license/validate', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3254,7 +3203,6 @@ app.post('/api/license/validate', async (req, res) => {
     }
   }
 
-  // Descomponer y verificar firma
   const parts = cleanKey.split('-');
   if (parts.length !== 5 || parts[0] !== 'FS') {
     await recordAuthFailure(req);
@@ -3296,7 +3244,6 @@ app.post('/api/license/validate', async (req, res) => {
   const expiryTimestamp = isPermanent ? null : expSeconds * 1000;
   const isExpired = !isPermanent && (expiryTimestamp! < nowMs);
 
-  // Si la clave no existía en el registro del servidor pero es matemáticamente válida, la registramos automáticamente
   if (!found && !isExpired) {
     const cleanName = clientName ? sanitizeText(String(clientName), 60) : 'Cliente Registrado';
     const autoRecord: ServerLicenseRecord = {
@@ -3331,7 +3278,6 @@ app.post('/api/license/validate', async (req, res) => {
   });
 });
 
-// 5. Listar licencias emitidas con información de presencia y días (protegido por x-admin-pin + Anti-Fuerza Bruta)
 app.get('/api/license/list', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3367,7 +3313,6 @@ app.get('/api/license/list', async (req, res) => {
   });
 });
 
-// 5b. Renovación a 1-Clic de Acceso (+15, +30, +90 días)
 app.post('/api/license/renew', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3413,7 +3358,6 @@ app.post('/api/license/renew', async (req, res) => {
   });
 });
 
-// 5c. Recuperar o restablecer PIN de administrador mediante Código Maestro, OTP de Supabase o verificación de propietario
 app.post('/api/license/recover', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3459,7 +3403,6 @@ app.post('/api/license/recover', async (req, res) => {
   });
 });
 
-// 5d. Estado de Supabase y esquema SQL para el administrador (protegido por x-admin-pin)
 app.get('/api/admin/supabase-status', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3484,7 +3427,6 @@ app.get('/api/admin/supabase-status', async (req, res) => {
   });
 });
 
-// 6. Revocar o reactivar licencia (protegido por x-admin-pin)
 app.post('/api/license/revoke', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3518,7 +3460,6 @@ app.post('/api/license/revoke', async (req, res) => {
   return res.json({ success: true, message: revoke ? 'Licencia revocada' : 'Licencia reactivada', updated });
 });
 
-// 7. Guardar logo personalizado de la app e iconos instalables PWA (Android / iOS / Chrome)
 app.post('/api/admin/logo', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3554,7 +3495,6 @@ app.post('/api/admin/logo', async (req, res) => {
     const filename = `custom-logo.${ext}`;
     saveBase64File(imageData, filename);
 
-    // Actualizar automáticamente los iconos instalables de Google Chrome / Android / iPhone (PWA)
     saveBase64File(pwa512 || imageData, 'pwa-512x512.png');
     saveBase64File(pwa192 || imageData, 'pwa-192x192.png');
     saveBase64File(pwa192 || imageData, 'apple-touch-icon.png');
@@ -3571,7 +3511,6 @@ app.post('/api/admin/logo', async (req, res) => {
   }
 });
 
-// 8. Restaurar logo por defecto
 app.delete('/api/admin/logo', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3601,11 +3540,6 @@ app.delete('/api/admin/logo', async (req, res) => {
   }
 });
 
-// =========================================================================
-// RUTAS DE AUTENTICACIÓN Y CONTROL DE DISPOSITIVO ÚNICO
-// =========================================================================
-
-// 1. Iniciar Sesión con Usuario + PIN (con verificación de Dispositivo Único y Anti-Fuerza Bruta)
 app.post('/api/auth/login', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3623,7 +3557,6 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// 2. Solicitar Registro de Cuenta Nueva (Usuario + PIN con Rate Limiting y Control de Dispositivo)
 app.post('/api/auth/register-request', dataRateLimitMiddleware, async (req, res) => {
   try {
     const { username, pin, displayName, whatsapp, deviceId, deviceName } = req.body || {};
@@ -3634,7 +3567,6 @@ app.post('/api/auth/register-request', dataRateLimitMiddleware, async (req, res)
   }
 });
 
-// 3. Listar Usuarios Registrados (Solo Administrador vía x-admin-pin)
 app.get('/api/admin/users/list', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3655,7 +3587,6 @@ app.get('/api/admin/users/list', async (req, res) => {
   }
 });
 
-// 4. Desvincular Dispositivo de Usuario (Para cambio legítimo de teléfono)
 app.post('/api/admin/users/reset-device', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3682,7 +3613,6 @@ app.post('/api/admin/users/reset-device', async (req, res) => {
   });
 });
 
-// 5. Renovar / Extender Suscripción a Usuario (+15, +30, +90 días)
 app.post('/api/admin/users/renew', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3704,7 +3634,6 @@ app.post('/api/admin/users/renew', async (req, res) => {
   return res.json({ success: ok, message: ok ? `Suscripción extendida +${addDays} días` : 'Error al renovar' });
 });
 
-// 6. Cambiar Estado de Usuario (active / suspended)
 app.post('/api/admin/users/toggle-status', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3725,7 +3654,6 @@ app.post('/api/admin/users/toggle-status', async (req, res) => {
   return res.json({ success: ok, message: ok ? 'Estado actualizado' : 'Error al cambiar estado' });
 });
 
-// 7. Crear o Editar Usuario Manualmente
 app.post('/api/admin/users/upsert', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -3743,379 +3671,6 @@ app.post('/api/admin/users/upsert', async (req, res) => {
   return res.json({ success: ok, message: ok ? 'Usuario guardado' : 'Error al guardar usuario' });
 });
 
-// 8. Simulador Controlado de Carga y Concurrencia (100 Usuarios Simultáneos — Modo Sandbox 0% Cuota Externa)
-app.post('/api/admin/stress-test', async (req, res) => {
-  const remoteIp = req.socket?.remoteAddress || '';
-  const isLocalInternal =
-    (remoteIp === '127.0.0.1' || remoteIp === '::1' || remoteIp === '::ffff:127.0.0.1') &&
-    req.headers['x-stress-sandbox'] === 'internal';
-
-  if (!isLocalInternal) {
-    if (checkAuthLockout(req, res)) return;
-    const { pin } = req.body || {};
-    const cfg = getAdminConfig();
-    const cred = extractAdminCredential(req, pin);
-    if (!isValidAdminPin(cred, cfg)) {
-      await recordAuthFailure(req);
-      return res.status(403).json({ success: false, error: 'PIN de administrador requerido para ejecutar prueba de estrés' });
-    }
-    clearAuthFailures(req);
-  }
-
-  const rawUsers = Number(req.body?.virtualUsers) || 100;
-  const virtualUsers = Math.min(500, Math.max(10, rawUsers));
-  const scenario: 'WARM' | 'COLD_BURST' = req.body?.scenario === 'WARM' ? 'WARM' : 'COLD_BURST';
-
-  const memBefore = process.memoryUsage();
-  const startGlobal = performance.now();
-
-  // Distribución realista de 100 usuarios conectados simultáneamente:
-  // - 40% consultando Cartelera & Top Picks (/api/upcoming)
-  // - 30% en Radar Live Pulse (/api/live-pulse)
-  // - 15% en Radar Baloncesto NBA (/api/nba/scoreboard)
-  // - 10% en Telemetría Profunda de Partido (/api/match-telemetry)
-  // - 5% en Inicio de Sesión / Verificación Criptográfica de Dispositivo Único (/api/auth/login + /api/license/verify)
-  const upcomingUsers = Math.max(1, Math.round(virtualUsers * 0.4));
-  const livePulseUsers = Math.max(1, Math.round(virtualUsers * 0.3));
-  const nbaUsers = Math.max(1, Math.round(virtualUsers * 0.15));
-  const telemetryUsers = Math.max(1, Math.round(virtualUsers * 0.1));
-  const authUsers = Math.max(1, virtualUsers - upcomingUsers - livePulseUsers - nbaUsers - telemetryUsers);
-
-  const allLatencies: number[] = [];
-  const calcP95 = (arr: number[]): number => {
-    if (arr.length === 0) return 0;
-    const sorted = [...arr].sort((a, b) => a - b);
-    const idx = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
-    return Number(sorted[idx].toFixed(2));
-  };
-  const calcAvg = (arr: number[]): number => {
-    if (arr.length === 0) return 0;
-    const sum = arr.reduce((a, b) => a + b, 0);
-    return Number((sum / arr.length).toFixed(2));
-  };
-
-  // Claves aisladas de sandbox para no borrar ni alterar la caché real ni gastar llamadas pagas
-  const sandboxRunId = `sbx_${Date.now()}`;
-  let externalUpstreamSimulatedCalls = 0;
-
-  // Pre-poblar si el escenario es WARM
-  const samplePayloadUpcoming = {
-    source: 'memory_cache_sandbox',
-    response: Array.from({ length: 48 }, (_, i) => ({
-      fixture: { id: 900000 + i, status: { short: i < 8 ? '2H' : 'NS', elapsed: i < 8 ? 64 : null } },
-      league: { id: 39, name: 'Premier League', country: 'Inglaterra' },
-      teams: { home: { name: `Local ${i}` }, away: { name: `Visitante ${i}` } },
-      goals: { home: i < 8 ? 1 : null, away: i < 8 ? 1 : null }
-    }))
-  };
-
-  if (scenario === 'WARM') {
-    memoryCache.set(`${sandboxRunId}_upcoming`, { timestamp: Date.now(), data: samplePayloadUpcoming });
-    memoryCache.set(`${sandboxRunId}_live_pulse`, { timestamp: Date.now(), data: { liveCount: 12, matches: samplePayloadUpcoming.response.slice(0, 12) } });
-    memoryCache.set(`${sandboxRunId}_nba`, { timestamp: Date.now(), data: { games: Array.from({ length: 8 }, (_, i) => ({ id: `nba_${i}`, status: 'IN_PLAY' })) } });
-    memoryCache.set(`${sandboxRunId}_telemetry`, { timestamp: Date.now(), data: { corners: 9, yellowCards: 4, events: 14 } });
-  }
-
-  // CAPA 1: /api/upcoming (40% de los usuarios simultáneos)
-  let upcomingSupplierCalls = 0;
-  const upcomingLatencies: number[] = [];
-  const upcomingPromises = Array.from({ length: upcomingUsers }, async () => {
-    const t0 = performance.now();
-    const key = `${sandboxRunId}_upcoming`;
-    const cached = memoryCache.get(key);
-    if (cached) {
-      const serialized = JSON.stringify(cached.data);
-      void serialized.length;
-    } else {
-      await runSingleFlight(key, async () => {
-        upcomingSupplierCalls += 1;
-        externalUpstreamSimulatedCalls += 1;
-        // Simula tiempo de parseo y ensamblaje de proveedor público sin gastar API-Football
-        await new Promise((r) => setTimeout(r, 18));
-        memoryCache.set(key, { timestamp: Date.now(), data: samplePayloadUpcoming });
-        return samplePayloadUpcoming;
-      });
-    }
-    const elapsed = performance.now() - t0;
-    upcomingLatencies.push(elapsed);
-    allLatencies.push(elapsed);
-  });
-
-  // CAPA 2: /api/live-pulse (30% de los usuarios simultáneos con radar en vivo activo)
-  let livePulseSupplierCalls = 0;
-  const livePulseLatencies: number[] = [];
-  const livePulsePromises = Array.from({ length: livePulseUsers }, async () => {
-    const t0 = performance.now();
-    const key = `${sandboxRunId}_live_pulse`;
-    const cached = memoryCache.get(key);
-    if (cached) {
-      const serialized = JSON.stringify(cached.data);
-      void serialized.length;
-    } else {
-      await runSingleFlight(key, async () => {
-        livePulseSupplierCalls += 1;
-        externalUpstreamSimulatedCalls += 1;
-        await new Promise((r) => setTimeout(r, 14));
-        const payload = { liveCount: 12, matches: samplePayloadUpcoming.response.slice(0, 12) };
-        memoryCache.set(key, { timestamp: Date.now(), data: payload });
-        return payload;
-      });
-    }
-    const elapsed = performance.now() - t0;
-    livePulseLatencies.push(elapsed);
-    allLatencies.push(elapsed);
-  });
-
-  // CAPA 3: /api/nba/scoreboard (15% de los usuarios simultáneos)
-  let nbaSupplierCalls = 0;
-  const nbaLatencies: number[] = [];
-  const nbaPromises = Array.from({ length: nbaUsers }, async () => {
-    const t0 = performance.now();
-    const key = `${sandboxRunId}_nba`;
-    const cached = memoryCache.get(key);
-    if (cached) {
-      const serialized = JSON.stringify(cached.data);
-      void serialized.length;
-    } else {
-      await runSingleFlight(key, async () => {
-        nbaSupplierCalls += 1;
-        externalUpstreamSimulatedCalls += 1;
-        await new Promise((r) => setTimeout(r, 12));
-        const payload = { games: Array.from({ length: 8 }, (_, i) => ({ id: `nba_${i}`, status: 'IN_PLAY' })) };
-        memoryCache.set(key, { timestamp: Date.now(), data: payload });
-        return payload;
-      });
-    }
-    const elapsed = performance.now() - t0;
-    nbaLatencies.push(elapsed);
-    allLatencies.push(elapsed);
-  });
-
-  // CAPA 4: /api/match-telemetry (10% abriendo estadísticas detalladas de un partido en vivo)
-  let telemetrySupplierCalls = 0;
-  const telemetryLatencies: number[] = [];
-  const telemetryPromises = Array.from({ length: telemetryUsers }, async () => {
-    const t0 = performance.now();
-    const key = `${sandboxRunId}_telemetry`;
-    const cached = memoryCache.get(key);
-    if (cached) {
-      const serialized = JSON.stringify(cached.data);
-      void serialized.length;
-    } else {
-      await runSingleFlight(key, async () => {
-        telemetrySupplierCalls += 1;
-        externalUpstreamSimulatedCalls += 1;
-        await new Promise((r) => setTimeout(r, 15));
-        const payload = { corners: 9, yellowCards: 4, events: 14 };
-        memoryCache.set(key, { timestamp: Date.now(), data: payload });
-        return payload;
-      });
-    }
-    const elapsed = performance.now() - t0;
-    telemetryLatencies.push(elapsed);
-    allLatencies.push(elapsed);
-  });
-
-  // CAPA 5: /api/auth/login & /api/license/verify (5% verificando firma JWT HMAC-SHA256 + lectura de licencia en memoria/DB)
-  const authLatencies: number[] = [];
-  const licensesSnapshot = getLicensesDb();
-  const authPromises = Array.from({ length: authUsers }, async (_, idx) => {
-    const t0 = performance.now();
-    const fakeDeviceId = `SIM-DEV-${idx + 1}`;
-    const token = createSessionJwt({
-      userId: `sim_usr_${idx + 1}`,
-      username: `apostador_${idx + 1}`,
-      role: 'client',
-      deviceId: fakeDeviceId,
-      ttlDays: 30
-    });
-    verifySessionJwt(token, fakeDeviceId);
-    // Lectura controlada en memoria sin mutar disco ni Supabase
-    void licensesSnapshot.length;
-    const elapsed = performance.now() - t0;
-    authLatencies.push(elapsed);
-    allLatencies.push(elapsed);
-  });
-
-  // Ejecutar las 100+ promesas exactamente en paralelo dentro del Event Loop de Node.js
-  await Promise.all([
-    ...upcomingPromises,
-    ...livePulsePromises,
-    ...nbaPromises,
-    ...telemetryPromises,
-    ...authPromises
-  ]);
-
-  // Limpiar claves temporales del sandbox para no dejar basura en RAM
-  memoryCache.delete(`${sandboxRunId}_upcoming`);
-  memoryCache.delete(`${sandboxRunId}_live_pulse`);
-  memoryCache.delete(`${sandboxRunId}_nba`);
-  memoryCache.delete(`${sandboxRunId}_telemetry`);
-
-  const totalDurationMs = Number((performance.now() - startGlobal).toFixed(2));
-  const memAfter = process.memoryUsage();
-
-  const sortedAll = [...allLatencies].sort((a, b) => a - b);
-  const minMs = Number((sortedAll[0] || 0).toFixed(2));
-  const p50Ms = Number((sortedAll[Math.floor(sortedAll.length * 0.5)] || 0).toFixed(2));
-  const p95Ms = calcP95(sortedAll);
-  const p99Ms = Number((sortedAll[Math.min(sortedAll.length - 1, Math.floor(sortedAll.length * 0.99))] || 0).toFixed(2));
-  const maxMs = Number((sortedAll[sortedAll.length - 1] || 0).toFixed(2));
-  const avgMs = calcAvg(sortedAll);
-
-  const dataRequestsCount = upcomingUsers + livePulseUsers + nbaUsers + telemetryUsers;
-  const totalCoalesced =
-    scenario === 'COLD_BURST'
-      ? Math.max(0, dataRequestsCount - externalUpstreamSimulatedCalls)
-      : 0;
-  const cacheHitsCount = scenario === 'WARM' ? dataRequestsCount : totalCoalesced;
-  const apiSavedPct = Number(
-    (((dataRequestsCount - externalUpstreamSimulatedCalls) / Math.max(1, dataRequestsCount)) * 100).toFixed(1)
-  );
-
-  const throughputReqPerSec = Math.round((virtualUsers / Math.max(1, totalDurationMs)) * 1000);
-
-  const heapBeforeMb = Number((memBefore.heapUsed / (1024 * 1024)).toFixed(2));
-  const heapAfterMb = Number((memAfter.heapUsed / (1024 * 1024)).toFixed(2));
-  const heapDeltaMb = Number((heapAfterMb - heapBeforeMb).toFixed(2));
-  const rssMb = Number((memAfter.rss / (1024 * 1024)).toFixed(2));
-
-  const layers = [
-    {
-      layerName: 'Cartelera & Top Picks (/api/upcoming)',
-      endpoint: '/api/upcoming',
-      virtualUsers: upcomingUsers,
-      requestsSent: upcomingUsers,
-      coalescedBySingleFlight: scenario === 'COLD_BURST' ? Math.max(0, upcomingUsers - upcomingSupplierCalls) : 0,
-      cacheHits: scenario === 'WARM' ? upcomingUsers : Math.max(0, upcomingUsers - upcomingSupplierCalls),
-      externalApiCallsSpent: 0,
-      dbReadsSimulated: 0,
-      dbWritesSimulated: 0,
-      avgLatencyMs: calcAvg(upcomingLatencies),
-      p95LatencyMs: calcP95(upcomingLatencies),
-      status: 'OPTIMAL',
-      notes:
-        scenario === 'COLD_BURST'
-          ? `${upcomingUsers} usuarios unificados en 1 sola promesa vía runSingleFlight (TTL 25m)`
-          : `${upcomingUsers} usuarios servidos instantáneamente desde RAM (< 2 ms)`
-    },
-    {
-      layerName: 'Radar en Vivo (/api/live-pulse)',
-      endpoint: '/api/live-pulse',
-      virtualUsers: livePulseUsers,
-      requestsSent: livePulseUsers,
-      coalescedBySingleFlight: scenario === 'COLD_BURST' ? Math.max(0, livePulseUsers - livePulseSupplierCalls) : 0,
-      cacheHits: scenario === 'WARM' ? livePulseUsers : Math.max(0, livePulseUsers - livePulseSupplierCalls),
-      externalApiCallsSpent: 0,
-      dbReadsSimulated: 0,
-      dbWritesSimulated: 0,
-      avgLatencyMs: calcAvg(livePulseLatencies),
-      p95LatencyMs: calcP95(livePulseLatencies),
-      status: 'OPTIMAL',
-      notes:
-        scenario === 'COLD_BURST'
-          ? `${livePulseUsers} radares simultáneos comparten 1 única consulta cada 30s`
-          : `${livePulseUsers} radares servidos desde RAM con 0 llamadas externas`
-    },
-    {
-      layerName: 'Radar NBA (/api/nba/scoreboard)',
-      endpoint: '/api/nba/scoreboard',
-      virtualUsers: nbaUsers,
-      requestsSent: nbaUsers,
-      coalescedBySingleFlight: scenario === 'COLD_BURST' ? Math.max(0, nbaUsers - nbaSupplierCalls) : 0,
-      cacheHits: scenario === 'WARM' ? nbaUsers : Math.max(0, nbaUsers - nbaSupplierCalls),
-      externalApiCallsSpent: 0,
-      dbReadsSimulated: 0,
-      dbWritesSimulated: 0,
-      avgLatencyMs: calcAvg(nbaLatencies),
-      p95LatencyMs: calcP95(nbaLatencies),
-      status: 'OPTIMAL',
-      notes: `${nbaUsers} usuarios consultando marcadores NBA (TTL 3m, $0 costo API)`
-    },
-    {
-      layerName: 'Telemetría de Partido (/api/match-telemetry)',
-      endpoint: '/api/match-telemetry',
-      virtualUsers: telemetryUsers,
-      requestsSent: telemetryUsers,
-      coalescedBySingleFlight: scenario === 'COLD_BURST' ? Math.max(0, telemetryUsers - telemetrySupplierCalls) : 0,
-      cacheHits: scenario === 'WARM' ? telemetryUsers : Math.max(0, telemetryUsers - telemetrySupplierCalls),
-      externalApiCallsSpent: 0,
-      dbReadsSimulated: 0,
-      dbWritesSimulated: 0,
-      avgLatencyMs: calcAvg(telemetryLatencies),
-      p95LatencyMs: calcP95(telemetryLatencies),
-      status: 'OPTIMAL',
-      notes: `${telemetryUsers} modales abiertos con córners, tarjetas y alineaciones`
-    },
-    {
-      layerName: 'Autenticación & Dispositivo Único (/api/auth/login)',
-      endpoint: '/api/auth/login',
-      virtualUsers: authUsers,
-      requestsSent: authUsers,
-      coalescedBySingleFlight: 0,
-      cacheHits: authUsers,
-      externalApiCallsSpent: 0,
-      dbReadsSimulated: authUsers,
-      dbWritesSimulated: 0,
-      avgLatencyMs: calcAvg(authLatencies),
-      p95LatencyMs: calcP95(authLatencies),
-      status: 'OPTIMAL',
-      notes: `${authUsers} firmas JWT HMAC-SHA256 + validación de licencia en modo Dry-Run`
-    }
-  ];
-
-  return res.json({
-    success: true,
-    timestamp: new Date().toISOString(),
-    mode: 'SANDBOX_CONTROLLED',
-    scenario,
-    virtualUsers,
-    totalConcurrentRequests: virtualUsers,
-    durationMs: totalDurationMs,
-    throughputReqPerSec,
-    latency: {
-      minMs,
-      avgMs,
-      p50Ms,
-      p95Ms,
-      p99Ms,
-      maxMs
-    },
-    apiImpact: {
-      externalQuotaConsumed: 0,
-      espnPublicCallsSimulated: externalUpstreamSimulatedCalls,
-      apiFootballQuotaSavedPct: apiSavedPct,
-      singleFlightCoalescedCount: totalCoalesced,
-      ramCacheHitRatioPct: Number(((cacheHitsCount / Math.max(1, dataRequestsCount)) * 100).toFixed(1)),
-      quotaShieldActive: Boolean(quotaShieldActive)
-    },
-    databaseImpact: {
-      supabaseConfigured: isSupabaseConfigured(),
-      firestoreConfigured: true,
-      liveMatchBrowsingDbReads: 0,
-      authAndLicenseDbReads: authUsers,
-      productionRowsModified: 0,
-      estimatedMonthlyDbBandwidthMbFor100Users: Number(((virtualUsers * 0.12)).toFixed(1)),
-      connectionPoolSaturationPct: Number(Math.min(100, (authUsers / 60) * 100).toFixed(1))
-    },
-    serverResources: {
-      heapUsedBeforeMb: heapBeforeMb,
-      heapUsedAfterMb: heapAfterMb,
-      heapDeltaMb,
-      rssMb,
-      activeCacheKeys: memoryCache.size
-    },
-    rateLimiterAudit: {
-      limitPerIpPerMin: 45,
-      distinctIpsAllowedPct: 100,
-      sharedNatIpWarning:
-        'Optimizado: Cada dispositivo tiene un cupo propio de 45 req/min (vía x-device-id) y un techo compartido de 240 req/min por IP WiFi/NAT para que hasta 35 usuarios en un mismo router naveguen sin bloquearse.'
-    },
-    layers
-  });
-});
-
-// Serve public assets (images, wallpapers, icons) without caching
 app.use(express.static(path.resolve(__dirname, 'public'), {
   etag: false,
   maxAge: 0,
@@ -4126,7 +3681,6 @@ app.use(express.static(path.resolve(__dirname, 'public'), {
   }
 }));
 
-// Middleware global defensivo de captura de errores para Express (Cero fuga de stack traces o detalles internos)
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('[Express Error Handler]:', err);
   if (!res.headersSent) {
@@ -4138,7 +3692,6 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   }
 });
 
-// Vite middleware in dev or static files in production
 async function startServer() {
   if (process.env.NODE_ENV !== 'production' && !IS_VERCEL) {
     const vitePkg = 'vite';

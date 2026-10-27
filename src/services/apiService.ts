@@ -3,8 +3,8 @@ import { resolveTeamStarPlayerName, isContaminatedForeignStar } from './lineupSe
 import { isExcludedYouthOrAmateurLeague } from './leagueCategorizer';
 
 export const API_KEY_STORAGE_KEY = 'futbolstats_apikey';
-export const CACHE_PREFIX = 'futbolstats_fixtures_v9_';
-export const CACHE_META_PREFIX = 'futbolstats_cache_meta_v9_';
+export const CACHE_PREFIX = 'futbolstats_fixtures_v10_';
+export const CACHE_META_PREFIX = 'futbolstats_cache_meta_v10_';
 
 export function getStoredApiKey(): string {
   try {
@@ -24,1033 +24,6 @@ export function setStoredApiKey(key: string): void {
   } catch {
     // ignore local storage errors in private mode
   }
-}
-
-// Generate rich, realistic elite fixtures for any given date
-function generateHighCaliberFixtures(dateStr: string): MatchFixture[] {
-  // Use dateStr as seed so fixtures for the same date are consistent
-  const dateHash = dateStr.split('-').reduce((acc, part) => acc + parseInt(part || '0', 10), 0);
-
-  const fixtureBlueprints: Omit<MatchFixture, 'id' | 'date'>[] = [
-    // 0. Copa Colombia BetPlay: Independiente Santa Fe vs Llaneros FC
-    {
-      time: '18:30',
-      status: 'SCHEDULED',
-      league: {
-        id: 240,
-        name: 'Copa Colombia BetPlay',
-        country: 'Colombia',
-        flag: '🇨🇴',
-        round: 'Octavos de Final',
-        avgGoalsPerMatch: 2.35,
-        avgCardsPerMatch: 5.1
-      },
-      homeTeam: {
-        id: 1133,
-        name: 'Independiente Santa Fe',
-        shortName: 'Santa Fe',
-        logo: 'https://media.api-sports.io/football/teams/1133.png',
-        rank: 3,
-        points: 52,
-        form: ['W', 'D', 'W', 'W', 'D'],
-        attackStrength: 1.35,
-        defenseStrength: 0.85,
-        avgShotsPerMatch: 13.8,
-        avgShotsOnTarget: 5.4,
-        restHours: 96,
-        starPlayer: {
-          name: 'Hugo Rodallega',
-          position: 'Delantero',
-          goalsSeason: 14,
-          expectedShots: 3.5,
-          expectedShotsOnTarget: 1.8,
-          goalConversionRate: 0.28
-        }
-      },
-      awayTeam: {
-        id: 1139,
-        name: 'Llaneros FC',
-        shortName: 'Llaneros',
-        logo: 'https://media.api-sports.io/football/teams/1139.png',
-        rank: 12,
-        points: 36,
-        form: ['D', 'W', 'L', 'D', 'W'],
-        attackStrength: 1.05,
-        defenseStrength: 1.15,
-        avgShotsPerMatch: 10.2,
-        avgShotsOnTarget: 3.8,
-        restHours: 72,
-        starPlayer: {
-          name: 'Néider Ospina',
-          position: 'Extremo',
-          goalsSeason: 7,
-          expectedShots: 2.4,
-          expectedShotsOnTarget: 1.1,
-          goalConversionRate: 0.22
-        }
-      },
-      referee: {
-        name: 'Wilmar Roldán',
-        nationality: 'Colombia',
-        rigor: 'Moderado',
-        avgYellowCards: 4.6,
-        avgRedCards: 0.22,
-        foulsPerCard: 5.4
-      },
-      venue: {
-        name: 'Estadio Nemesio Camacho El Campín',
-        city: 'Bogotá',
-        capacity: 36343
-      },
-      travel: {
-        awayDistanceKm: 120,
-        awayFlightHours: 0.5
-      },
-      derbyOrRivalry: false
-    },
-
-    // 0.1 Copa Colombia BetPlay: Atlético Nacional vs Cúcuta Deportivo
-    {
-      time: '20:30',
-      status: 'SCHEDULED',
-      league: {
-        id: 240,
-        name: 'Copa Colombia BetPlay',
-        country: 'Colombia',
-        flag: '🇨🇴',
-        round: 'Octavos de Final',
-        avgGoalsPerMatch: 2.42,
-        avgCardsPerMatch: 4.8
-      },
-      homeTeam: {
-        id: 1131,
-        name: 'Atlético Nacional',
-        shortName: 'Atl. Nacional',
-        logo: 'https://media.api-sports.io/football/teams/1131.png',
-        rank: 2,
-        points: 58,
-        form: ['W', 'W', 'D', 'W', 'L'],
-        attackStrength: 1.45,
-        defenseStrength: 0.79,
-        avgShotsPerMatch: 15.2,
-        avgShotsOnTarget: 6.2,
-        restHours: 96,
-        starPlayer: {
-          name: 'Alfredo Morelos',
-          position: 'Delantero',
-          goalsSeason: 12,
-          expectedShots: 3.8,
-          expectedShotsOnTarget: 2.0,
-          goalConversionRate: 0.30
-        }
-      },
-      awayTeam: {
-        id: 1137,
-        name: 'Cúcuta Deportivo',
-        shortName: 'Cúcuta',
-        logo: 'https://media.api-sports.io/football/teams/1137.png',
-        rank: 14,
-        points: 32,
-        form: ['L', 'D', 'W', 'L', 'D'],
-        attackStrength: 0.95,
-        defenseStrength: 1.25,
-        avgShotsPerMatch: 9.8,
-        avgShotsOnTarget: 3.5,
-        restHours: 72,
-        starPlayer: {
-          name: 'Jaime Peralta',
-          position: 'Delantero',
-          goalsSeason: 6,
-          expectedShots: 2.2,
-          expectedShotsOnTarget: 1.0,
-          goalConversionRate: 0.20
-        }
-      },
-      referee: {
-        name: 'Carlos Betancur',
-        nationality: 'Colombia',
-        rigor: 'Severo',
-        avgYellowCards: 5.2,
-        avgRedCards: 0.28,
-        foulsPerCard: 4.8
-      },
-      venue: {
-        name: 'Estadio Atanasio Girardot',
-        city: 'Medellín',
-        capacity: 44863
-      },
-      travel: {
-        awayDistanceKm: 580,
-        awayFlightHours: 1.1
-      },
-      derbyOrRivalry: true
-    },
-
-    // 0.2 Copa Colombia BetPlay: Alianza FC vs Deportivo Pasto (En Vivo / 2H)
-    {
-      time: '16:10',
-      status: 'IN_PLAY',
-      currentScore: {
-        home: 1,
-        away: 1,
-        minute: 82
-      },
-      league: {
-        id: 240,
-        name: 'Copa Colombia BetPlay',
-        country: 'Colombia',
-        flag: '🇨🇴',
-        round: 'Octavos de Final',
-        avgGoalsPerMatch: 2.30,
-        avgCardsPerMatch: 4.9
-      },
-      homeTeam: {
-        id: 1138,
-        name: 'Alianza FC',
-        shortName: 'Alianza',
-        logo: 'https://media.api-sports.io/football/teams/1138.png',
-        rank: 8,
-        points: 40,
-        form: ['D', 'L', 'W', 'D', 'W'],
-        attackStrength: 1.15,
-        defenseStrength: 1.05,
-        avgShotsPerMatch: 11.5,
-        avgShotsOnTarget: 4.2,
-        restHours: 72,
-        starPlayer: {
-          name: 'Mayer Gil',
-          position: 'Extremo',
-          goalsSeason: 6,
-          expectedShots: 2.6,
-          expectedShotsOnTarget: 1.2,
-          goalConversionRate: 0.24
-        }
-      },
-      awayTeam: {
-        id: 1135,
-        name: 'Deportivo Pasto',
-        shortName: 'Pasto',
-        logo: 'https://media.api-sports.io/football/teams/1135.png',
-        rank: 7,
-        points: 42,
-        form: ['W', 'D', 'L', 'W', 'D'],
-        attackStrength: 1.18,
-        defenseStrength: 1.02,
-        avgShotsPerMatch: 12.0,
-        avgShotsOnTarget: 4.5,
-        restHours: 72,
-        starPlayer: {
-          name: 'Daniel Moreno',
-          position: 'Delantero',
-          goalsSeason: 9,
-          expectedShots: 3.1,
-          expectedShotsOnTarget: 1.5,
-          goalConversionRate: 0.26
-        }
-      },
-      referee: {
-        name: 'Jhon Hinestroza',
-        nationality: 'Colombia',
-        rigor: 'Moderado',
-        avgYellowCards: 4.5,
-        avgRedCards: 0.18,
-        foulsPerCard: 5.0
-      },
-      venue: {
-        name: 'Estadio Armando Maestre Pavajeau',
-        city: 'Valledupar',
-        capacity: 11000
-      },
-      travel: {
-        awayDistanceKm: 980,
-        awayFlightHours: 2.1
-      },
-      derbyOrRivalry: false
-    },
-
-    // 0.3 Colombia Primera B: Leones FC vs Barranquilla FC (En Vivo / 2H)
-    {
-      time: '16:00',
-      status: 'IN_PLAY',
-      currentScore: {
-        home: 1,
-        away: 0,
-        minute: 88
-      },
-      league: {
-        id: 241,
-        name: 'Torneo BetPlay (Primera B)',
-        country: 'Colombia',
-        flag: '🇨🇴',
-        round: 'Jornada 14',
-        avgGoalsPerMatch: 2.20,
-        avgCardsPerMatch: 5.2
-      },
-      homeTeam: {
-        id: 1140,
-        name: 'Leones FC',
-        shortName: 'Leones',
-        logo: 'https://media.api-sports.io/football/teams/1140.png',
-        rank: 9,
-        points: 28,
-        form: ['W', 'L', 'D', 'W', 'L'],
-        attackStrength: 1.10,
-        defenseStrength: 1.10,
-        avgShotsPerMatch: 10.8,
-        avgShotsOnTarget: 4.0,
-        restHours: 72,
-        starPlayer: {
-          name: 'Nicolás Restrepo',
-          position: 'Delantero',
-          goalsSeason: 5,
-          expectedShots: 2.4,
-          expectedShotsOnTarget: 1.1,
-          goalConversionRate: 0.22
-        }
-      },
-      awayTeam: {
-        id: 1141,
-        name: 'Barranquilla FC',
-        shortName: 'Barranquilla',
-        logo: 'https://media.api-sports.io/football/teams/1141.png',
-        rank: 10,
-        points: 26,
-        form: ['L', 'D', 'L', 'W', 'D'],
-        attackStrength: 1.02,
-        defenseStrength: 1.18,
-        avgShotsPerMatch: 9.9,
-        avgShotsOnTarget: 3.4,
-        restHours: 72,
-        starPlayer: {
-          name: 'Miller Bacca',
-          position: 'Delantero',
-          goalsSeason: 4,
-          expectedShots: 2.1,
-          expectedShotsOnTarget: 0.9,
-          goalConversionRate: 0.20
-        }
-      },
-      referee: {
-        name: 'Diego Ulloa',
-        nationality: 'Colombia',
-        rigor: 'Moderado',
-        avgYellowCards: 4.8,
-        avgRedCards: 0.25,
-        foulsPerCard: 5.1
-      },
-      venue: {
-        name: 'Estadio Metropolitano Ciudad de Itagüí',
-        city: 'Itagüí',
-        capacity: 12000
-      },
-      travel: {
-        awayDistanceKm: 700,
-        awayFlightHours: 1.3
-      },
-      derbyOrRivalry: false
-    },
-
-    // 1. LaLiga: Real Madrid vs FC Barcelona (El Clásico)
-    {
-      time: '21:00',
-      status: 'SCHEDULED',
-      league: {
-        id: 140,
-        name: 'LaLiga EA Sports',
-        country: 'España',
-        flag: '🇪🇸',
-        round: 'Jornada 28',
-        avgGoalsPerMatch: 2.68,
-        avgCardsPerMatch: 4.8
-      },
-      homeTeam: {
-        id: 541,
-        name: 'Real Madrid CF',
-        shortName: 'Real Madrid',
-        logo: 'https://media.api-sports.io/football/teams/541.png',
-        rank: 1,
-        points: 68,
-        form: ['W', 'W', 'D', 'W', 'W'],
-        attackStrength: 1.48,
-        defenseStrength: 0.78,
-        avgShotsPerMatch: 16.4,
-        avgShotsOnTarget: 6.8,
-        restHours: 96,
-        starPlayer: {
-          name: 'Kylian Mbappé',
-          position: 'Delantero',
-          goalsSeason: 22,
-          expectedShots: 4.2,
-          expectedShotsOnTarget: 2.1,
-          goalConversionRate: 0.29
-        }
-      },
-      awayTeam: {
-        id: 529,
-        name: 'FC Barcelona',
-        shortName: 'Barcelona',
-        logo: 'https://media.api-sports.io/football/teams/529.png',
-        rank: 2,
-        points: 65,
-        form: ['W', 'W', 'W', 'L', 'W'],
-        attackStrength: 1.44,
-        defenseStrength: 0.82,
-        avgShotsPerMatch: 15.8,
-        avgShotsOnTarget: 6.2,
-        restHours: 72,
-        starPlayer: {
-          name: 'Robert Lewandowski',
-          position: 'Delantero',
-          goalsSeason: 20,
-          expectedShots: 3.8,
-          expectedShotsOnTarget: 1.9,
-          goalConversionRate: 0.28
-        }
-      },
-      referee: {
-        name: 'Jesús Gil Manzano',
-        nationality: 'España',
-        rigor: 'Severo',
-        avgYellowCards: 5.6,
-        avgRedCards: 0.32,
-        foulsPerCard: 4.1
-      },
-      venue: {
-        name: 'Estadio Santiago Bernabéu',
-        city: 'Madrid',
-        capacity: 84000
-      },
-      travel: {
-        awayDistanceKm: 620,
-        awayFlightHours: 1.2
-      },
-      derbyOrRivalry: true
-    },
-    // 2. Premier League: Manchester City vs Arsenal
-    {
-      time: '17:30',
-      status: 'SCHEDULED',
-      league: {
-        id: 39,
-        name: 'Premier League',
-        country: 'Inglaterra',
-        flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
-        round: 'Matchweek 30',
-        avgGoalsPerMatch: 2.95,
-        avgCardsPerMatch: 4.2
-      },
-      homeTeam: {
-        id: 50,
-        name: 'Manchester City',
-        shortName: 'Man City',
-        logo: 'https://media.api-sports.io/football/teams/50.png',
-        rank: 2,
-        points: 67,
-        form: ['W', 'W', 'W', 'D', 'W'],
-        attackStrength: 1.55,
-        defenseStrength: 0.80,
-        avgShotsPerMatch: 17.5,
-        avgShotsOnTarget: 7.2,
-        restHours: 120,
-        starPlayer: {
-          name: 'Erling Haaland',
-          position: 'Delantero',
-          goalsSeason: 26,
-          expectedShots: 4.5,
-          expectedShotsOnTarget: 2.4,
-          goalConversionRate: 0.32
-        }
-      },
-      awayTeam: {
-        id: 42,
-        name: 'Arsenal FC',
-        shortName: 'Arsenal',
-        logo: 'https://media.api-sports.io/football/teams/42.png',
-        rank: 1,
-        points: 69,
-        form: ['W', 'W', 'W', 'W', 'D'],
-        attackStrength: 1.42,
-        defenseStrength: 0.72,
-        avgShotsPerMatch: 15.2,
-        avgShotsOnTarget: 5.8,
-        restHours: 96,
-        starPlayer: {
-          name: 'Bukayo Saka',
-          position: 'Extremo',
-          goalsSeason: 15,
-          expectedShots: 3.2,
-          expectedShotsOnTarget: 1.4,
-          goalConversionRate: 0.24
-        }
-      },
-      referee: {
-        name: 'Michael Oliver',
-        nationality: 'Inglaterra',
-        rigor: 'Moderado',
-        avgYellowCards: 4.1,
-        avgRedCards: 0.18,
-        foulsPerCard: 5.4
-      },
-      venue: {
-        name: 'Etihad Stadium',
-        city: 'Manchester',
-        capacity: 53400
-      },
-      travel: {
-        awayDistanceKm: 330,
-        awayFlightHours: 0.8
-      },
-      derbyOrRivalry: false
-    },
-    // 3. Champions League: Bayern München vs Paris Saint-Germain
-    {
-      time: '21:00',
-      status: 'SCHEDULED',
-      league: {
-        id: 2,
-        name: 'UEFA Champions League',
-        country: 'Europa',
-        flag: '🇪🇺',
-        round: 'Cuartos de Final',
-        avgGoalsPerMatch: 3.05,
-        avgCardsPerMatch: 4.5
-      },
-      homeTeam: {
-        id: 157,
-        name: 'Bayern München',
-        shortName: 'Bayern',
-        logo: 'https://media.api-sports.io/football/teams/157.png',
-        rank: 1,
-        points: 62,
-        form: ['W', 'W', 'W', 'W', 'L'],
-        attackStrength: 1.58,
-        defenseStrength: 0.84,
-        avgShotsPerMatch: 18.2,
-        avgShotsOnTarget: 7.4,
-        restHours: 72,
-        starPlayer: {
-          name: 'Harry Kane',
-          position: 'Delantero',
-          goalsSeason: 28,
-          expectedShots: 4.6,
-          expectedShotsOnTarget: 2.3,
-          goalConversionRate: 0.31
-        }
-      },
-      awayTeam: {
-        id: 85,
-        name: 'Paris Saint-Germain',
-        shortName: 'PSG',
-        logo: 'https://media.api-sports.io/football/teams/85.png',
-        rank: 1,
-        points: 64,
-        form: ['W', 'D', 'W', 'W', 'W'],
-        attackStrength: 1.45,
-        defenseStrength: 0.86,
-        avgShotsPerMatch: 16.0,
-        avgShotsOnTarget: 6.5,
-        restHours: 68, // fatigued (<72h)
-        starPlayer: {
-          name: 'Ousmane Dembélé',
-          position: 'Extremo',
-          goalsSeason: 12,
-          expectedShots: 3.4,
-          expectedShotsOnTarget: 1.5,
-          goalConversionRate: 0.22
-        }
-      },
-      referee: {
-        name: 'Szymon Marciniak',
-        nationality: 'Polonia',
-        rigor: 'Severo',
-        avgYellowCards: 5.1,
-        avgRedCards: 0.28,
-        foulsPerCard: 4.6
-      },
-      venue: {
-        name: 'Allianz Arena',
-        city: 'Múnich',
-        capacity: 75000
-      },
-      travel: {
-        awayDistanceKm: 840,
-        awayFlightHours: 4.2 // Long travel
-      },
-      derbyOrRivalry: false
-    },
-    // 4. Serie A: Inter Milan vs Juventus (Derby d'Italia)
-    {
-      time: '20:45',
-      status: 'SCHEDULED',
-      league: {
-        id: 135,
-        name: 'Serie A',
-        country: 'Italia',
-        flag: '🇮🇹',
-        round: 'Giornata 29',
-        avgGoalsPerMatch: 2.58,
-        avgCardsPerMatch: 5.1
-      },
-      homeTeam: {
-        id: 505,
-        name: 'Inter Milano',
-        shortName: 'Inter',
-        logo: 'https://media.api-sports.io/football/teams/505.png',
-        rank: 1,
-        points: 71,
-        form: ['W', 'W', 'W', 'W', 'W'],
-        attackStrength: 1.42,
-        defenseStrength: 0.68,
-        avgShotsPerMatch: 15.6,
-        avgShotsOnTarget: 5.9,
-        restHours: 144,
-        starPlayer: {
-          name: 'Lautaro Martínez',
-          position: 'Delantero',
-          goalsSeason: 23,
-          expectedShots: 4.0,
-          expectedShotsOnTarget: 1.9,
-          goalConversionRate: 0.29
-        }
-      },
-      awayTeam: {
-        id: 496,
-        name: 'Juventus FC',
-        shortName: 'Juventus',
-        logo: 'https://media.api-sports.io/football/teams/496.png',
-        rank: 3,
-        points: 59,
-        form: ['D', 'W', 'D', 'W', 'L'],
-        attackStrength: 1.18,
-        defenseStrength: 0.74,
-        avgShotsPerMatch: 12.8,
-        avgShotsOnTarget: 4.6,
-        restHours: 96,
-        starPlayer: {
-          name: 'Dušan Vlahović',
-          position: 'Delantero',
-          goalsSeason: 16,
-          expectedShots: 3.5,
-          expectedShotsOnTarget: 1.6,
-          goalConversionRate: 0.26
-        }
-      },
-      referee: {
-        name: 'Daniele Orsato',
-        nationality: 'Italia',
-        rigor: 'Severo',
-        avgYellowCards: 5.4,
-        avgRedCards: 0.30,
-        foulsPerCard: 4.2
-      },
-      venue: {
-        name: 'Stadio Giuseppe Meazza (San Siro)',
-        city: 'Milán',
-        capacity: 75817
-      },
-      travel: {
-        awayDistanceKm: 140,
-        awayFlightHours: 0.5
-      },
-      derbyOrRivalry: true
-    },
-    // 5. Premier League: Liverpool vs Chelsea
-    {
-      time: '15:00',
-      status: 'SCHEDULED',
-      league: {
-        id: 39,
-        name: 'Premier League',
-        country: 'Inglaterra',
-        flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
-        round: 'Matchweek 30',
-        avgGoalsPerMatch: 2.95,
-        avgCardsPerMatch: 4.2
-      },
-      homeTeam: {
-        id: 40,
-        name: 'Liverpool FC',
-        shortName: 'Liverpool',
-        logo: 'https://media.api-sports.io/football/teams/40.png',
-        rank: 3,
-        points: 64,
-        form: ['W', 'D', 'W', 'W', 'W'],
-        attackStrength: 1.46,
-        defenseStrength: 0.82,
-        avgShotsPerMatch: 16.8,
-        avgShotsOnTarget: 6.4,
-        restHours: 96,
-        starPlayer: {
-          name: 'Mohamed Salah',
-          position: 'Extremo',
-          goalsSeason: 19,
-          expectedShots: 3.9,
-          expectedShotsOnTarget: 1.8,
-          goalConversionRate: 0.27
-        }
-      },
-      awayTeam: {
-        id: 49,
-        name: 'Chelsea FC',
-        shortName: 'Chelsea',
-        logo: 'https://media.api-sports.io/football/teams/49.png',
-        rank: 6,
-        points: 49,
-        form: ['W', 'W', 'L', 'D', 'W'],
-        attackStrength: 1.25,
-        defenseStrength: 0.98,
-        avgShotsPerMatch: 13.9,
-        avgShotsOnTarget: 5.1,
-        restHours: 70, // fatigued (<72h)
-        starPlayer: {
-          name: 'Cole Palmer',
-          position: 'Mediapunta',
-          goalsSeason: 17,
-          expectedShots: 3.6,
-          expectedShotsOnTarget: 1.6,
-          goalConversionRate: 0.26
-        }
-      },
-      referee: {
-        name: 'Anthony Taylor',
-        nationality: 'Inglaterra',
-        rigor: 'Moderado',
-        avgYellowCards: 4.3,
-        avgRedCards: 0.20,
-        foulsPerCard: 5.0
-      },
-      venue: {
-        name: 'Anfield',
-        city: 'Liverpool',
-        capacity: 61276
-      },
-      travel: {
-        awayDistanceKm: 350,
-        awayFlightHours: 0.9
-      },
-      derbyOrRivalry: false
-    },
-    // 6. LaLiga: Atlético de Madrid vs Sevilla FC
-    {
-      time: '18:30',
-      status: 'SCHEDULED',
-      league: {
-        id: 140,
-        name: 'LaLiga EA Sports',
-        country: 'España',
-        flag: '🇪🇸',
-        round: 'Jornada 28',
-        avgGoalsPerMatch: 2.68,
-        avgCardsPerMatch: 4.8
-      },
-      homeTeam: {
-        id: 530,
-        name: 'Atlético de Madrid',
-        shortName: 'Atlético',
-        logo: 'https://media.api-sports.io/football/teams/530.png',
-        rank: 3,
-        points: 58,
-        form: ['W', 'L', 'W', 'W', 'D'],
-        attackStrength: 1.28,
-        defenseStrength: 0.76,
-        avgShotsPerMatch: 14.1,
-        avgShotsOnTarget: 5.3,
-        restHours: 120,
-        starPlayer: {
-          name: 'Antoine Griezmann',
-          position: 'Mediapunta',
-          goalsSeason: 14,
-          expectedShots: 3.3,
-          expectedShotsOnTarget: 1.5,
-          goalConversionRate: 0.25
-        }
-      },
-      awayTeam: {
-        id: 536,
-        name: 'Sevilla FC',
-        shortName: 'Sevilla',
-        logo: 'https://media.api-sports.io/football/teams/536.png',
-        rank: 12,
-        points: 34,
-        form: ['L', 'D', 'W', 'L', 'D'],
-        attackStrength: 1.05,
-        defenseStrength: 1.12,
-        avgShotsPerMatch: 11.8,
-        avgShotsOnTarget: 4.0,
-        restHours: 96,
-        starPlayer: {
-          name: 'Isaac Romero',
-          position: 'Delantero',
-          goalsSeason: 9,
-          expectedShots: 2.8,
-          expectedShotsOnTarget: 1.1,
-          goalConversionRate: 0.21
-        }
-      },
-      referee: {
-        name: 'Alejandro Hernández Hernández',
-        nationality: 'España',
-        rigor: 'Severo',
-        avgYellowCards: 5.8,
-        avgRedCards: 0.35,
-        foulsPerCard: 3.9
-      },
-      venue: {
-        name: 'Cívitas Metropolitano',
-        city: 'Madrid',
-        capacity: 70460
-      },
-      travel: {
-        awayDistanceKm: 530,
-        awayFlightHours: 1.1
-      },
-      derbyOrRivalry: false
-    },
-    // 7. Bundesliga: Borussia Dortmund vs Bayer Leverkusen
-    {
-      time: '18:30',
-      status: 'SCHEDULED',
-      league: {
-        id: 78,
-        name: 'Bundesliga',
-        country: 'Alemania',
-        flag: '🇩🇪',
-        round: 'Spieltag 27',
-        avgGoalsPerMatch: 3.18,
-        avgCardsPerMatch: 3.9
-      },
-      homeTeam: {
-        id: 165,
-        name: 'Borussia Dortmund',
-        shortName: 'Dortmund',
-        logo: 'https://media.api-sports.io/football/teams/165.png',
-        rank: 4,
-        points: 52,
-        form: ['W', 'W', 'D', 'L', 'W'],
-        attackStrength: 1.38,
-        defenseStrength: 0.94,
-        avgShotsPerMatch: 15.4,
-        avgShotsOnTarget: 6.0,
-        restHours: 96,
-        starPlayer: {
-          name: 'Serhou Guirassy',
-          position: 'Delantero',
-          goalsSeason: 18,
-          expectedShots: 3.7,
-          expectedShotsOnTarget: 1.8,
-          goalConversionRate: 0.28
-        }
-      },
-      awayTeam: {
-        id: 168,
-        name: 'Bayer 04 Leverkusen',
-        shortName: 'Leverkusen',
-        logo: 'https://media.api-sports.io/football/teams/168.png',
-        rank: 2,
-        points: 60,
-        form: ['W', 'W', 'W', 'D', 'W'],
-        attackStrength: 1.45,
-        defenseStrength: 0.81,
-        avgShotsPerMatch: 16.2,
-        avgShotsOnTarget: 6.6,
-        restHours: 72,
-        starPlayer: {
-          name: 'Florian Wirtz',
-          position: 'Mediapunta',
-          goalsSeason: 14,
-          expectedShots: 3.5,
-          expectedShotsOnTarget: 1.7,
-          goalConversionRate: 0.25
-        }
-      },
-      referee: {
-        name: 'Felix Zwayer',
-        nationality: 'Alemania',
-        rigor: 'Moderado',
-        avgYellowCards: 4.4,
-        avgRedCards: 0.16,
-        foulsPerCard: 5.2
-      },
-      venue: {
-        name: 'Signal Iduna Park',
-        city: 'Dortmund',
-        capacity: 81365
-      },
-      travel: {
-        awayDistanceKm: 85,
-        awayFlightHours: 0.4
-      },
-      derbyOrRivalry: false
-    },
-    // 8. Copa Libertadores: River Plate vs Flamengo
-    {
-      time: '21:30',
-      status: 'SCHEDULED',
-      league: {
-        id: 13,
-        name: 'Copa Libertadores',
-        country: 'Sudamérica',
-        flag: '🏆',
-        round: 'Fase de Grupos',
-        avgGoalsPerMatch: 2.62,
-        avgCardsPerMatch: 5.7
-      },
-      homeTeam: {
-        id: 435,
-        name: 'CA River Plate',
-        shortName: 'River Plate',
-        logo: 'https://media.api-sports.io/football/teams/435.png',
-        rank: 1,
-        points: 12,
-        form: ['W', 'W', 'W', 'D', 'W'],
-        attackStrength: 1.35,
-        defenseStrength: 0.74,
-        avgShotsPerMatch: 15.0,
-        avgShotsOnTarget: 5.8,
-        restHours: 120,
-        starPlayer: {
-          name: 'Miguel Borja',
-          position: 'Delantero',
-          goalsSeason: 16,
-          expectedShots: 3.8,
-          expectedShotsOnTarget: 1.8,
-          goalConversionRate: 0.28
-        }
-      },
-      awayTeam: {
-        id: 127,
-        name: 'CR Flamengo',
-        shortName: 'Flamengo',
-        logo: 'https://media.api-sports.io/football/teams/127.png',
-        rank: 2,
-        points: 10,
-        form: ['W', 'L', 'W', 'W', 'D'],
-        attackStrength: 1.32,
-        defenseStrength: 0.85,
-        avgShotsPerMatch: 14.2,
-        avgShotsOnTarget: 5.4,
-        restHours: 65, // fatigued
-        starPlayer: {
-          name: 'Pedro',
-          position: 'Delantero',
-          goalsSeason: 19,
-          expectedShots: 3.9,
-          expectedShotsOnTarget: 1.9,
-          goalConversionRate: 0.29
-        }
-      },
-      referee: {
-        name: 'Wilton Sampaio',
-        nationality: 'Brasil',
-        rigor: 'Severo',
-        avgYellowCards: 6.2,
-        avgRedCards: 0.42,
-        foulsPerCard: 3.7
-      },
-      venue: {
-        name: 'Estadio Monumental',
-        city: 'Buenos Aires',
-        capacity: 84567
-      },
-      travel: {
-        awayDistanceKm: 2650,
-        awayFlightHours: 4.5 // international flight
-      },
-      derbyOrRivalry: true
-    },
-    // 9. LaLiga: Valencia CF vs RCD Espanyol (Pelea por Permanencia)
-    {
-      time: '14:00',
-      status: 'SCHEDULED',
-      league: {
-        id: 140,
-        name: 'LaLiga EA Sports',
-        country: 'España',
-        flag: '🇪🇸',
-        round: 'Jornada 28',
-        avgGoalsPerMatch: 2.68,
-        avgCardsPerMatch: 4.8
-      },
-      homeTeam: {
-        id: 532,
-        name: 'Valencia CF',
-        shortName: 'Valencia',
-        logo: 'https://media.api-sports.io/football/teams/532.png',
-        rank: 17,
-        points: 27,
-        form: ['L', 'D', 'W', 'L', 'L'],
-        attackStrength: 0.92,
-        defenseStrength: 1.15,
-        avgShotsPerMatch: 11.2,
-        avgShotsOnTarget: 3.8,
-        restHours: 144,
-        starPlayer: {
-          name: 'Hugo Duro',
-          position: 'Delantero',
-          goalsSeason: 10,
-          expectedShots: 2.7,
-          expectedShotsOnTarget: 1.0,
-          goalConversionRate: 0.22
-        }
-      },
-      awayTeam: {
-        id: 540,
-        name: 'RCD Espanyol',
-        shortName: 'Espanyol',
-        logo: 'https://media.api-sports.io/football/teams/540.png',
-        rank: 18,
-        points: 25,
-        form: ['D', 'L', 'L', 'W', 'L'],
-        attackStrength: 0.88,
-        defenseStrength: 1.25,
-        avgShotsPerMatch: 10.4,
-        avgShotsOnTarget: 3.4,
-        restHours: 120,
-        starPlayer: {
-          name: 'Javi Puado',
-          position: 'Extremo',
-          goalsSeason: 8,
-          expectedShots: 2.4,
-          expectedShotsOnTarget: 0.9,
-          goalConversionRate: 0.20
-        }
-      },
-      referee: {
-        name: 'César Soto Grado',
-        nationality: 'España',
-        rigor: 'Severo',
-        avgYellowCards: 5.9,
-        avgRedCards: 0.38,
-        foulsPerCard: 3.8
-      },
-      venue: {
-        name: 'Estadio de Mestalla',
-        city: 'Valencia',
-        capacity: 49430
-      },
-      travel: {
-        awayDistanceKm: 350,
-        awayFlightHours: 0.9
-      },
-      derbyOrRivalry: false
-    }
-  ];
-
-  return fixtureBlueprints.map((item, index) => {
-    return {
-      ...item,
-      id: `fix-${dateStr}-${index + 1}-${dateHash % 997}`,
-      date: dateStr,
-      h2h: item.h2h || computeH2H(
-        item.homeTeam.id,
-        item.awayTeam.id,
-        item.homeTeam.attackStrength,
-        item.homeTeam.defenseStrength,
-        item.awayTeam.attackStrength,
-        item.awayTeam.defenseStrength
-      )
-    };
-  });
 }
 
 export function computeH2H(
@@ -1105,7 +78,6 @@ interface ClubProfile {
 }
 
 // Strictly disambiguated club matcher: prevents substring collisions across leagues/continents
-// (e.g., "Internacional de Bogota" or "SC Internacional" or "Inter Miami" NEVER match Inter Milan).
 function matchKnownClub(name: string, country?: string): ClubProfile | null {
   const raw = (name || '')
     .toLowerCase()
@@ -1188,7 +160,7 @@ function matchKnownClub(name: string, country?: string): ClubProfile | null {
     return { atk: 1.18, def: 0.98, rank: 4, star: 'Teófilo Gutiérrez', starPos: 'Delantero', shots: 12.2 };
   }
 
-  // 2. SUDAMÉRICA & CONCACAF (Clubes con posibles homónimos europeos)
+  // 2. SUDAMÉRICA & CONCACAF
   if (raw.includes('inter miami')) {
     return { atk: 1.48, def: 0.92, rank: 1, star: 'Lionel Messi', starPos: 'Delantero', shots: 16.0 };
   }
@@ -1217,7 +189,7 @@ function matchKnownClub(name: string, country?: string): ClubProfile | null {
     return { atk: 1.34, def: 0.76, rank: 2, star: 'Estêvão', starPos: 'Extremo', shots: 14.8 };
   }
 
-  // 3. EUROPA ELITE (Con validación estricta para no contaminar ligas de otros países)
+  // 3. EUROPA ELITE
   const isNonEuropeanLeague = /colombia|brasil|brazil|argentina|ecuador|uruguay|paraguay|peru|chile|bolivia|venezuela|mexico|costa rica|nicaragua|honduras|guatemala|salvador|panama|estados unidos|usa/i.test(cNorm);
   if (isNonEuropeanLeague) {
     return null;
@@ -1303,7 +275,6 @@ function getTeamRating(name: string, id: number, isHome: boolean, country?: stri
     };
   }
 
-  // Deterministic calculation from team ID and name to give realistic variation
   const hash = (id * 17 + name.length * 31 + (isHome ? 13 : 7)) % 100;
   const rank = Math.max(1, Math.min(20, Math.floor(hash / 5) + 1));
   const attackStrength = Math.round((1.45 - (rank * 0.035) + ((hash % 10) * 0.015)) * 100) / 100;
@@ -1334,7 +305,6 @@ export function getUserTimeZone(): string {
   return 'America/Bogota';
 }
 
-// Helper: Convert date/timestamp to the user's local country timezone
 export function formatToColombiaTime(isoOrTimestamp: string | number | undefined): { date: string; time: string; fullLabel: string } {
   const userTz = getUserTimeZone();
   if (!isoOrTimestamp) {
@@ -1410,7 +380,6 @@ export function getColombiaDateString(offsetDays = 0): string {
 function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture {
   const fixtureId = String(raw.fixture?.id || Math.random());
   
-  // Format kickoff explicitly to the user's local timezone
   const rawDateOrTimestamp = raw.fixture?.timestamp ? raw.fixture.timestamp * 1000 : raw.fixture?.date;
   const localTimeInfo = formatToColombiaTime(rawDateOrTimestamp);
   const kickoff = localTimeInfo.time;
@@ -1425,7 +394,6 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
   const homeGoals = raw.goals?.home ?? raw.score?.fulltime?.home ?? 0;
   const awayGoals = raw.goals?.away ?? raw.score?.fulltime?.away ?? 0;
 
-  // Determine kickoff timestamp in ms
   const matchTimestampMs = raw.fixture?.timestamp
     ? raw.fixture.timestamp * 1000
     : raw.fixture?.date
@@ -1437,26 +405,17 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
 
   let status: 'SCHEDULED' | 'IN_PLAY' | 'FINISHED' = 'SCHEDULED';
 
-  // 1. Explicit finished status from provider OR kickoff was >= 120 mins ago
   if (['FT', 'AET', 'PEN', 'AWD', 'WO', 'PST', 'CANC', 'ABD'].includes(statusShort)) {
     status = 'FINISHED';
   } else if (matchTimestampMs > 0 && minutesSinceKickoff >= 120) {
     status = 'FINISHED';
-  }
-  // 2. Explicit live in-play status (within active match window)
-  else if (['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE', 'INT'].includes(statusShort)) {
+  } else if (['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE', 'INT'].includes(statusShort)) {
     status = 'IN_PLAY';
-  }
-  // 3. Match has final goals reported and match was played or 90 mins elapsed
-  else if (hasGoalsReported && (elapsed >= 90 || minutesSinceKickoff >= 105)) {
+  } else if (hasGoalsReported && (elapsed >= 90 || minutesSinceKickoff >= 105)) {
     status = 'FINISHED';
-  }
-  // 4. Match has real reported goals and is currently underway
-  else if (hasGoalsReported && minutesSinceKickoff > 0 && minutesSinceKickoff < 115) {
+  } else if (hasGoalsReported && minutesSinceKickoff > 0 && minutesSinceKickoff < 115) {
     status = 'IN_PLAY';
-  }
-  // 5. Kickoff is in the future or match has no live confirmation from provider
-  else {
+  } else {
     status = 'SCHEDULED';
   }
 
@@ -1620,7 +579,6 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
 
 function sortFixturesByPriority(list: MatchFixture[]): MatchFixture[] {
   return [...list].sort((a, b) => {
-    // Priority order: Live (0), Upcoming/Scheduled (1), Finished (2)
     const priority = (s: MatchFixture['status']) => (s === 'IN_PLAY' ? 0 : s === 'SCHEDULED' ? 1 : 2);
     const diff = priority(a.status) - priority(b.status);
     if (diff !== 0) return diff;
@@ -1657,8 +615,8 @@ export async function saveSecretServerApiKey(key: string): Promise<{ success: bo
   }
 }
 
-const UPCOMING_CACHE_PREFIX = 'futbolstats_upcoming_v11_';
-const UPCOMING_CACHE_TTL_MS = 25 * 60 * 1000; // 25 minutes in localStorage for maximum quota protection
+const UPCOMING_CACHE_PREFIX = 'futbolstats_upcoming_v12_';
+const UPCOMING_CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas de caché local
 
 export function sanitizeFixturePlayers(fix: MatchFixture): MatchFixture {
   const homeContaminated = isContaminatedForeignStar(fix.homeTeam.starPlayer?.name, fix.homeTeam.name);
@@ -1750,7 +708,7 @@ export function getLocalUpcomingCache(dateStr: string): { fixtures: MatchFixture
       return null;
     }
     const age = Date.now() - parsed.timestamp;
-    // Invalidate if contains mock IDs or synthetic test matches
+    // Purgar inmediatamente si contiene IDs ficticios antiguos
     const hasMock = parsed.fixtures.some((f) => {
       const idStr = String(f.id);
       return idStr.startsWith('fix-') || idStr === '991001' || idStr === '991002' || idStr === '991003';
@@ -1781,7 +739,6 @@ export function getLocalUpcomingCache(dateStr: string): { fixtures: MatchFixture
 export function saveLocalUpcomingCache(dateStr: string, fixtures: MatchFixture[]): void {
   try {
     if (!Array.isArray(fixtures) || fixtures.length === 0) return;
-    // Only save real fixtures, never mock data or synthetic test fixtures
     const isMock = fixtures.some(f => {
       const idStr = String(f.id);
       return idStr.startsWith('fix-') || idStr === '991001' || idStr === '991002' || idStr === '991003';
@@ -1813,7 +770,7 @@ export async function fetchUpcomingFixtures(
   const targetDate = dateStr || getColombiaDateString(0);
   const userTz = getUserTimeZone();
 
-  // 1. Check localStorage FIRST if not forcing refresh
+  // 1. Verificar primero en localStorage si no se forza refresco
   if (!options.forceRefresh) {
     const local = getLocalUpcomingCache(targetDate);
     if (local && Array.isArray(local.fixtures) && local.fixtures.length > 0) {
@@ -1826,7 +783,7 @@ export async function fetchUpcomingFixtures(
     }
   }
 
-  // 2. Fetch from server proxy with official API + ESPN $0 multi-league fallback
+  // 2. Consultar servidor con caché compartida y fallback $0 de ESPN
   try {
     const forceParam = options.forceRefresh ? '&force=true' : '';
     const url = `/api/upcoming?date=${encodeURIComponent(targetDate)}&tz=${encodeURIComponent(userTz)}${forceParam}`;
@@ -1871,20 +828,10 @@ export async function fetchUpcomingFixtures(
     console.warn('FutbolStats Pro: Error al conectar con proxy de partidos próximos', err);
   }
 
-  // 3. Fallback: only if network completely failed and server is unreachable
-  const fallback = sortFixturesByPriority(
-    generateHighCaliberFixtures(targetDate).filter(f => {
-      const idStr = String(f.id);
-      return idStr !== '991001' && idStr !== '991002' && idStr !== '991003' && (f.status === 'SCHEDULED' || f.status === 'IN_PLAY');
-    })
-  );
-  return { fixtures: fallback, count: fallback.length, fromLocalStorage: false, cachedAt: Date.now() };
+  // 3. Fallback: Lista vacía real (CERO partidos falsos)
+  return { fixtures: [], count: 0, fromLocalStorage: false, cachedAt: Date.now() };
 }
 
-/**
- * Fetches strictly FINISHED official matches from Prime Colombian Bookmaker Leagues ($0 API-Football quota)
- * for the Accuracy Evaluator audit dashboard.
- */
 export async function fetchCompletedAuditFixtures(): Promise<MatchFixture[]> {
   try {
     const res = await fetch('/api/audit-finished');
@@ -1906,7 +853,6 @@ export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures:
   const cacheKey = `${CACHE_PREFIX}${dateStr}`;
   const metaKey = `${CACHE_META_PREFIX}${dateStr}`;
 
-  // Step 1: Check localStorage Cache first (0 calls consumed)
   try {
     const cachedData = localStorage.getItem(cacheKey);
     const cachedMeta = localStorage.getItem(metaKey);
@@ -1920,7 +866,7 @@ export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures:
           meta: {
             ...meta,
             source: 'cache',
-            callsConsumed: 0 // 0 calls consumed on read
+            callsConsumed: 0
           }
         };
       }
@@ -1929,7 +875,6 @@ export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures:
     console.warn('FutbolStats Pro: Error al leer cache local', err);
   }
 
-  // Step 2: Secret Server Proxy (Key is 100% hidden on server, never sent to client)
   try {
     const serverProxyRes = await fetch(`/api/fixtures?date=${dateStr}`);
     if (serverProxyRes.ok) {
@@ -1957,12 +902,10 @@ export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures:
       }
     }
   } catch {
-    // server proxy inactive or in offline mode
+    // server proxy inactive
   }
 
-  // Step 3: Fallback client key if configured
   const apiKey = getStoredApiKey();
-
   if (apiKey) {
     try {
       const response = await fetch(`https://v3.football.api-sports.io/fixtures?date=${dateStr}`, {
@@ -2001,30 +944,21 @@ export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures:
         }
       }
     } catch {
-      console.info('FutbolStats Pro: API no disponible o cuota superada. Conmutando a nómina de alta fidelidad.');
+      console.info('FutbolStats Pro: API no disponible o cuota superada.');
     }
   }
 
-  // Step 4: High-Caliber Fallback (LaLiga, Premier, Champions, Serie A, Libertadores)
-  const rawFallback = generateHighCaliberFixtures(dateStr);
-  const fallbackFixtures = sortFixturesByPriority(rawFallback);
+  // Fallback con lista vacía en vez de datos artificiales
   const fallbackMeta: CacheMetadata = {
     date: dateStr,
     cachedAt: new Date().toISOString(),
     source: 'fallback',
     callsConsumed: 0,
     remainingCalls: 100,
-    totalMatches: fallbackFixtures.length
+    totalMatches: 0
   };
 
-  try {
-    localStorage.setItem(cacheKey, JSON.stringify(fallbackFixtures));
-    localStorage.setItem(metaKey, JSON.stringify(fallbackMeta));
-  } catch {
-    // ignore
-  }
-
-  return { fixtures: fallbackFixtures, meta: fallbackMeta };
+  return { fixtures: [], meta: fallbackMeta };
 }
 
 export function clearLocalCache(): void {
@@ -2033,7 +967,7 @@ export function clearLocalCache(): void {
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (key.startsWith(CACHE_PREFIX) || key.startsWith(CACHE_META_PREFIX))) {
+      if (key && (key.startsWith(CACHE_PREFIX) || key.startsWith(CACHE_META_PREFIX) || key.startsWith(UPCOMING_CACHE_PREFIX))) {
         keysToRemove.push(key);
       }
     }
@@ -2086,10 +1020,6 @@ export interface LivePulseSyncResult {
   syncedAt: number;
 }
 
-/**
- * Polls /api/live-pulse (45-second hybrid live engine, 0 API-Football quota cost)
- * and merges any live score, minute, stats, or play-by-play event changes into the current fixtures list.
- */
 export async function syncLivePulseFixtures(
   dateStr: string,
   currentFixtures: MatchFixture[]
@@ -2172,7 +1102,6 @@ export async function syncLivePulseFixtures(
           (delta.liveStats && (prevCorners !== nextCorners || prevCards !== nextCards)) ||
           (Array.isArray(delta.liveEvents) && delta.liveEvents.length !== (fix.liveEvents?.length ?? 0));
 
-        // Detect if the scoreboard actually moved (goals scored)
         const isActualScoreChange = prevHome !== delta.homeScore || prevAway !== delta.awayScore;
         if (isActualScoreChange) {
           scoreChangedIds.push(fix.id);
@@ -2225,10 +1154,6 @@ export async function syncLivePulseFixtures(
   }
 }
 
-/**
- * Fetches deep real-time match telemetry (exact corners, yellow/red cards, play-by-play timeline, and official rosters)
- * for a specific match at $0 quota cost.
- */
 export async function fetchMatchLiveTelemetry(fixture: MatchFixture): Promise<{
   liveStats?: RealMatchStats;
   liveEvents?: TimelineEventItem[];
@@ -2272,5 +1197,3 @@ export async function fetchMatchLiveTelemetry(fixture: MatchFixture): Promise<{
   }
   return null;
 }
-
-
