@@ -4001,4 +4001,4 @@ if (!IS_VERCEL) {
   });
 }
 
-export default app;"fix(api-shield): bloquear llamadas directas (?force=true) en botones Actualizar y unificar caché del servidor" -m "- Elimina el envío de &force=true desde los botones Actualizar (Header, barra de Fútbol y Baloncesto) y del pulso automático.
+export default app;
