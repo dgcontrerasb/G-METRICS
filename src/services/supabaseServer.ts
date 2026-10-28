@@ -208,6 +208,23 @@ export async function setSupabaseKvCache<T = unknown>(cacheId: string, payload: 
       color_theme: 'kv-cache',
       updated_at: new Date(timestamp).toISOString(),
     });
+
+    // Autolimpieza automática: cuando se guarda un calendario de fecha, borra cachés de hace más de 3 días
+    // Así la tabla nunca acumula basura y ocupa menos de 150 KB (0.03% del plan Free de 500 MB)
+    if (cacheId.startsWith('apifootball_schedule_')) {
+      const threeDaysAgoIso = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+      client
+        .from('sportstats_config')
+        .delete()
+        .eq('color_theme', 'kv-cache')
+        .neq('id', '__server_telemetry_v1__')
+        .lt('updated_at', threeDaysAgoIso)
+        .then(
+          () => {},
+          () => {}
+        );
+    }
+
     return !error;
   } catch {
     return false;

@@ -468,6 +468,15 @@ async function setSupabaseKvCache(cacheId, payload, timestamp = Date.now()) {
       color_theme: "kv-cache",
       updated_at: new Date(timestamp).toISOString()
     });
+    if (cacheId.startsWith("apifootball_schedule_")) {
+      const threeDaysAgoIso = new Date(Date.now() - 3 * 24 * 60 * 60 * 1e3).toISOString();
+      client.from("sportstats_config").delete().eq("color_theme", "kv-cache").neq("id", "__server_telemetry_v1__").lt("updated_at", threeDaysAgoIso).then(
+        () => {
+        },
+        () => {
+        }
+      );
+    }
     return !error;
   } catch {
     return false;
@@ -2874,7 +2883,6 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
   }
   try {
     const resultList = await runSingleFlight(cacheKey, async () => {
-      serverCacheMisses++;
       let upcomingOnly = [];
       const espnFixtures = await fetchEspnSoccerFixtures(targetDate, clientTz);
       await hydrateTelemetryFromSupabaseIfNeeded();
@@ -2906,6 +2914,7 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
         );
       } else if (apiKey && !quotaShieldActive && lastRemainingCalls > QUOTA_SHIELD_THRESHOLD) {
         try {
+          serverCacheMisses++;
           const apiRes = await fetch(
             `https://v3.football.api-sports.io/fixtures?date=${targetDate}&timezone=America/Bogota`,
             {

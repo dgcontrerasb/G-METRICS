@@ -1980,7 +1980,6 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
   // 2. Single-Flight Coalescing: Solo 1 llamada a la API si 50 usuarios entran juntos
   try {
     const resultList = await runSingleFlight(cacheKey, async () => {
-      serverCacheMisses++;
       let upcomingOnly: any[] = [];
       const espnFixtures = await fetchEspnSoccerFixtures(targetDate, clientTz);
 
@@ -2031,6 +2030,7 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
         );
       } else if (apiKey && !quotaShieldActive && lastRemainingCalls > QUOTA_SHIELD_THRESHOLD) {
         try {
+          serverCacheMisses++;
           const apiRes = await fetch(
             `https://v3.football.api-sports.io/fixtures?date=${targetDate}&timezone=America/Bogota`,
             {
