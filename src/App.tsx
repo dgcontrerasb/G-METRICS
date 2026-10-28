@@ -514,9 +514,8 @@ export default function App() {
         };
       });
 
-      // Only run background pulse reconciliation when loading from initial cache (!forceRefresh),
-      // so a manual forceRefresh from /api/matches?force=true is never overwritten by a stale pulse cache.
-      if (activeFixtures.length > 0 && !forceRefresh) {
+      // Reconcile against shared live pulse cache so live scores are always up to date
+      if (activeFixtures.length > 0) {
         syncLivePulseFixtures(dateStr, activeFixtures, false)
           .then((pulseRes) => {
             if (pulseRes.changedIds.length > 0 || pulseRes.updatedFixtures.length !== activeFixtures.length) {
@@ -697,7 +696,7 @@ export default function App() {
         }
       }
     } else if (activeSport === 'NBA' && nbaFixtures.some((f) => f.status === 'IN_PLAY')) {
-      const res = await fetchNBAFixtures(currentDate, { forceRefresh: true });
+      const res = await fetchNBAFixtures(currentDate, { forceRefresh: false });
       const changedNbaIds: string[] = [];
       res.fixtures.forEach((newFix) => {
         const oldFix = nbaFixtures.find((f) => f.id === newFix.id);
@@ -930,6 +929,19 @@ export default function App() {
       loadNBAMatches(currentDate, false);
     }
   }, [activeSport, currentDate, loadNBAMatches]);
+
+  // Unified manual refresh handler: respects 30s cooldown and reads exclusively from shared server cache + live pulse
+  const handleManualRefresh = useCallback(() => {
+    if (refreshCooldown > 0) return;
+    setRefreshCooldown(30);
+    if (activeSport === 'NBA') {
+      loadNBAMatches(currentDate, false);
+    } else if (fixtures.length > 0) {
+      runLivePulseCheck();
+    } else {
+      loadMatches(currentDate, false);
+    }
+  }, [refreshCooldown, activeSport, currentDate, fixtures.length, loadNBAMatches, runLivePulseCheck, loadMatches]);
 
   // Compute NBA analyses map
   const nbaAnalysesMap: Record<string, NBAAnalysis> = useMemo(() => {
@@ -1226,15 +1238,7 @@ export default function App() {
         onSecretAdminLogoClick={handleSecretAdminLogoClick}
         onOpenAdminModal={() => setIsAdminModalOpen(true)}
         onOpenGuideModal={handleOpenGuideModal}
-        onRefreshMatches={() => {
-          if (refreshCooldown > 0) return;
-          setRefreshCooldown(30);
-          if (activeSport === 'NBA') {
-            loadNBAMatches(currentDate, true);
-          } else {
-            loadMatches(currentDate, true);
-          }
-        }}
+        onRefreshMatches={handleManualRefresh}
         isLoading={activeSport === 'NBA' ? isNBALoading : isLoading}
         refreshCooldown={refreshCooldown}
         currentTotalVisible={currentTotalVisible}
@@ -1408,12 +1412,15 @@ export default function App() {
 
             {/* Refresh button */}
             <button
-              onClick={() => loadMatches(currentDate, true)}
-              className="flex items-center gap-1 px-3 py-1 rounded-full bg-slate-900/40 hover:bg-white/5 text-slate-300 hover:text-white text-xs font-mono tracking-tight font-semibold transition-all duration-200 border border-slate-800/50 cursor-pointer backdrop-blur-sm"
-              title="Actualizar partidos y pronósticos"
+              onClick={handleManualRefresh}
+              disabled={refreshCooldown > 0 || isLoading}
+              className="flex items-center gap-1 px-3 py-1 rounded-full bg-slate-900/40 hover:bg-white/5 disabled:opacity-50 text-slate-300 hover:text-white text-xs font-mono tracking-tight font-semibold transition-all duration-200 border border-slate-800/50 cursor-pointer disabled:cursor-not-allowed backdrop-blur-sm"
+              title="Sincronizar marcadores y pronósticos desde caché compartida"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-400' : ''}`} />
-              <span className="hidden sm:inline">Actualizar</span>
+              <span className="hidden sm:inline">
+                {refreshCooldown > 0 ? `Actualizar (${refreshCooldown}s)` : 'Actualizar'}
+              </span>
             </button>
           </div>
         </div>
@@ -1817,12 +1824,15 @@ export default function App() {
             )}
 
             <button
-              onClick={() => loadNBAMatches(currentDate, true)}
-              className="flex items-center gap-1 px-3 py-1 rounded-full bg-slate-900/40 hover:bg-white/5 text-slate-300 hover:text-white text-xs font-mono tracking-tight font-semibold transition-all duration-200 border border-slate-800/50 cursor-pointer backdrop-blur-sm"
-              title="Refrescar marcadores y proyecciones"
+              onClick={handleManualRefresh}
+              disabled={refreshCooldown > 0 || isNBALoading}
+              className="flex items-center gap-1 px-3 py-1 rounded-full bg-slate-900/40 hover:bg-white/5 disabled:opacity-50 text-slate-300 hover:text-white text-xs font-mono tracking-tight font-semibold transition-all duration-200 border border-slate-800/50 cursor-pointer disabled:cursor-not-allowed backdrop-blur-sm"
+              title="Refrescar marcadores y proyecciones desde caché compartida"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isNBALoading ? 'animate-spin text-amber-400' : ''}`} />
-              <span className="hidden sm:inline">Actualizar</span>
+              <span className="hidden sm:inline">
+                {refreshCooldown > 0 ? `Actualizar (${refreshCooldown}s)` : 'Actualizar'}
+              </span>
             </button>
           </div>
         </div>
@@ -1948,12 +1958,12 @@ export default function App() {
                 </span>
               </div>
               <button
-                onClick={() => loadNBAMatches(currentDate, true)}
-                disabled={isNBALoading}
-                className="text-[11px] font-mono text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                onClick={handleManualRefresh}
+                disabled={refreshCooldown > 0 || isNBALoading}
+                className="text-[11px] font-mono text-amber-400 hover:text-amber-300 disabled:opacity-50 flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
               >
                 <RefreshCw className={`w-3 h-3 ${isNBALoading ? 'animate-spin' : ''}`} />
-                <span>Actualizar Cuartos</span>
+                <span>{refreshCooldown > 0 ? `Actualizar (${refreshCooldown}s)` : 'Actualizar Cuartos'}</span>
               </button>
             </div>
 
