@@ -2033,9 +2033,9 @@ export async function fetchNBAFixtures(
     }
   }
 
-  // 2. Fetch official NBA live & scheduled scoreboard from server / ESPN feed
+  // 2. Fetch official NBA live & scheduled scoreboard from server shared cache
   try {
-    const res = await fetch(`/api/nba/scoreboard?date=${encodeURIComponent(targetDate)}${options.forceRefresh ? '&force=true' : ''}`);
+    const res = await fetch(`/api/nba/scoreboard?date=${encodeURIComponent(targetDate)}`);
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.events) && json.events.length > 0) {
