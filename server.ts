@@ -1806,7 +1806,7 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
   const requestedDate = (req.query.date as string) || '';
   const clientTz = ((req.query.tz as string) || 'America/Bogota').trim() || 'America/Bogota';
   const query = ((req.query.q as string) || '').toLowerCase().trim();
-  const force = req.query.force === 'true';
+  const force = req.query.force === 'true' && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
 
   const todayLocal = getColombiaDateStr(0, clientTz);
   const targetDate = requestedDate || todayLocal;
@@ -1862,7 +1862,7 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
       const espnFixtures = await fetchEspnSoccerFixtures(targetDate, clientTz);
 
       // Caché dedicada de 2 horas para la programación base de API-Football (protege 100% la cuota de 100 req/día)
-      const afScheduleCacheKey = `apifootball_schedule_v1_${targetDate}_${clientTz}`;
+      const afScheduleCacheKey = `apifootball_schedule_v1_${targetDate}`;
       const cachedAfSchedule = getCacheItem<any[]>(afScheduleCacheKey);
       const afScheduleTTL = targetDate === todayLocal ? 2 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
 
@@ -1880,7 +1880,7 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
       } else if (apiKey && !quotaShieldActive) {
         try {
           const apiRes = await fetch(
-            `https://v3.football.api-sports.io/fixtures?date=${targetDate}&timezone=${encodeURIComponent(clientTz)}`,
+            `https://v3.football.api-sports.io/fixtures?date=${targetDate}&timezone=America/Bogota`,
             {
               method: 'GET',
               headers: { 'x-apisports-key': apiKey }
@@ -2143,7 +2143,7 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
 app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
   res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=30');
   const requestedDate = (req.query.date as string) || '';
-  const force = req.query.force === 'true';
+  const force = req.query.force === 'true' && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
   const todayColombia = getColombiaDateStr(0);
   const targetDate = requestedDate || todayColombia;
   const espnDateStr = targetDate.replace(/-/g, '');
@@ -2655,7 +2655,7 @@ app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
 // 0.5 NBA Live & Scheduled Scoreboard endpoint (ESPN 100% gratuito)
 app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
   const dateQuery = (req.query.date as string) || '';
-  const force = req.query.force === 'true';
+  const force = req.query.force === 'true' && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
   const todayColombia = getColombiaDateStr(0);
   const targetDate = dateQuery || todayColombia;
 
@@ -2663,7 +2663,16 @@ app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
   const cacheKey = `nba_sb_${espnDateStr}`;
   const cached = getCacheItem<any[]>(cacheKey);
 
-  const cacheTTL = targetDate === todayColombia ? 3 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  const hasLiveNbaInCache =
+    cached &&
+    Array.isArray(cached.data) &&
+    cached.data.some((ev: any) => String(ev?.status?.type?.state || '').toLowerCase() === 'in');
+  const cacheTTL =
+    targetDate === todayColombia
+      ? hasLiveNbaInCache
+        ? 25 * 1000
+        : 3 * 60 * 1000
+      : 24 * 60 * 60 * 1000;
   if (cached && !force && Date.now() - cached.timestamp < cacheTTL) {
     return res.json({
       success: true,
@@ -2780,7 +2789,7 @@ app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
 // 1. Secret Proxy Endpoint: GET /api/fixtures
 app.get('/api/fixtures', dataRateLimitMiddleware, async (req, res) => {
   const date = (req.query.date as string) || new Date().toISOString().split('T')[0];
-  const force = req.query.force === 'true';
+  const force = req.query.force === 'true' && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
   const apiKey = getSecretApiKey();
 
   const cacheKey = `fix_${date}`;
@@ -3992,4 +4001,4 @@ if (!IS_VERCEL) {
   });
 }
 
-export default app;
+export default app;"fix(api-shield): bloquear llamadas directas (?force=true) en botones Actualizar y unificar caché del servidor" -m "- Elimina el envío de &force=true desde los botones Actualizar (Header, barra de Fútbol y Baloncesto) y del pulso automático.
