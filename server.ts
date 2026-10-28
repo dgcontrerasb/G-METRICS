@@ -18,6 +18,8 @@ import {
   adminToggleAppUserStatus,
   adminUpsertAppUser,
   adminDeleteAppUser,
+  getSupabaseKvCache,
+  setSupabaseKvCache,
   SUPABASE_SQL_SCHEMA
 } from './src/services/supabaseServer';
 import {
@@ -102,7 +104,137 @@ const inFlightRequests = new Map<string, Promise<unknown>>();
 let lastRemainingCalls = 100;
 let quotaShieldActive = false;
 const QUOTA_SHIELD_THRESHOLD = 15;
-const apiFootballAuditLog: Array<{ timestamp: string; date: string; status: number; itemsCount: number }> = [];
+const apiFootballAuditLog: Array<{
+  at: string;
+  timestamp: string;
+  targetDate: string;
+  date: string;
+  endpoint: string;
+  status: number;
+  fixturesCount: number;
+  itemsCount: number;
+  remainingAfter: number;
+}> = [];
+
+// Real-Time Online Presence & Telemetry State
+export interface OnlineSessionEntry {
+  sessionKey: string;
+  username: string;
+  displayName: string;
+  deviceId: string;
+  deviceName?: string;
+  deviceInfo: string;
+  lastSeenAt: number;
+}
+const activeOnlineSessions = new Map<string, OnlineSessionEntry>();
+const ONLINE_WINDOW_MS = 3 * 60 * 1000; // 3 minutos de ventana activa
+let peakOnlineUsers = 1;
+let peakOnlineAt = new Date().toISOString();
+let serverCacheHits = 0;
+let serverCacheMisses = 0;
+let espnPulseCallsCount = 0;
+let supabaseTelemetryHydrated = false;
+const serverBootTimeIso = new Date().toISOString();
+
+function purgeExpiredOnlineSessions(): void {
+  const now = Date.now();
+  activeOnlineSessions.forEach((entry, key) => {
+    if (now - entry.lastSeenAt > ONLINE_WINDOW_MS) {
+      activeOnlineSessions.delete(key);
+    }
+  });
+}
+
+async function hydrateTelemetryFromSupabaseIfNeeded(): Promise<void> {
+  if (supabaseTelemetryHydrated) return;
+  supabaseTelemetryHydrated = true;
+  if (!isSupabaseConfigured()) return;
+  try {
+    const remote = await getSupabaseKvCache<any>('__server_telemetry_v1__');
+    if (remote && remote.data && typeof remote.data === 'object') {
+      const d = remote.data;
+      if (typeof d.peakOnlineUsers === 'number' && d.peakOnlineUsers > peakOnlineUsers) {
+        peakOnlineUsers = d.peakOnlineUsers;
+        if (d.peakOnlineAt) peakOnlineAt = d.peakOnlineAt;
+      }
+      if (typeof d.lastRemainingCalls === 'number' && lastRemainingCalls === 100) {
+        lastRemainingCalls = d.lastRemainingCalls;
+        quotaShieldActive = lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD;
+      }
+      if (Array.isArray(d.apiFootballAuditLog) && apiFootballAuditLog.length === 0) {
+        apiFootballAuditLog.push(...d.apiFootballAuditLog.slice(0, 30));
+      }
+      if (typeof d.serverCacheHits === 'number' && serverCacheHits < d.serverCacheHits) {
+        serverCacheHits = d.serverCacheHits;
+      }
+      if (typeof d.serverCacheMisses === 'number' && serverCacheMisses < d.serverCacheMisses) {
+        serverCacheMisses = d.serverCacheMisses;
+      }
+      if (typeof d.espnPulseCallsCount === 'number' && espnPulseCallsCount < d.espnPulseCallsCount) {
+        espnPulseCallsCount = d.espnPulseCallsCount;
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function saveTelemetrySnapshotToCache(syncToSupabase = false): void {
+  const snapshot = {
+    peakOnlineUsers,
+    peakOnlineAt,
+    lastRemainingCalls,
+    apiFootballAuditLog,
+    serverCacheHits,
+    serverCacheMisses,
+    espnPulseCallsCount
+  };
+  setCacheItem('__server_telemetry_v1__', snapshot);
+  if (syncToSupabase && isSupabaseConfigured()) {
+    setSupabaseKvCache('__server_telemetry_v1__', snapshot).catch(() => {});
+  }
+}
+
+function recordOnlinePresence(opts: {
+  username?: string;
+  displayName?: string;
+  deviceId?: string;
+  deviceInfo?: string;
+}): void {
+  purgeExpiredOnlineSessions();
+  const cleanUser = (opts.username || '').trim().toLowerCase();
+  const cleanDev = (opts.deviceId || '').trim().toUpperCase();
+  const sessionKey = cleanDev || cleanUser || `anon_${Date.now()}`;
+  const existing = activeOnlineSessions.get(sessionKey);
+
+  activeOnlineSessions.set(sessionKey, {
+    sessionKey,
+    username: cleanUser || existing?.username || 'usuario',
+    displayName: (opts.displayName || '').trim() || existing?.displayName || cleanUser || 'Cliente Activo',
+    deviceId: cleanDev || existing?.deviceId || 'WEB',
+    deviceInfo: (opts.deviceInfo || '').trim() || existing?.deviceInfo || 'Navegador Web',
+    lastSeenAt: Date.now()
+  });
+
+  const currentCount = activeOnlineSessions.size;
+  if (currentCount > peakOnlineUsers) {
+    peakOnlineUsers = currentCount;
+    peakOnlineAt = new Date().toISOString();
+    saveTelemetrySnapshotToCache(true);
+  }
+}
+
+function getActiveOnlineUsersList(): Array<OnlineSessionEntry & { secondsAgo: number }> {
+  purgeExpiredOnlineSessions();
+  const now = Date.now();
+  return Array.from(activeOnlineSessions.values())
+    .map((s) => ({
+      ...s,
+      deviceName: s.deviceInfo || s.deviceId,
+      secondsAgo: Math.max(0, Math.round((now - s.lastSeenAt) / 1000))
+    }))
+    .sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+}
 
 // Initialize cache from disk on server startup
 function initDiskCache(): void {
@@ -124,6 +256,23 @@ function initDiskCache(): void {
           }
         }
       }
+      const savedTele = memoryCache.get('__server_telemetry_v1__')?.data as any;
+      if (savedTele && typeof savedTele === 'object') {
+        if (typeof savedTele.peakOnlineUsers === 'number' && savedTele.peakOnlineUsers > peakOnlineUsers) {
+          peakOnlineUsers = savedTele.peakOnlineUsers;
+          if (savedTele.peakOnlineAt) peakOnlineAt = savedTele.peakOnlineAt;
+        }
+        if (typeof savedTele.lastRemainingCalls === 'number') {
+          lastRemainingCalls = savedTele.lastRemainingCalls;
+          quotaShieldActive = lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD;
+        }
+        if (Array.isArray(savedTele.apiFootballAuditLog)) {
+          apiFootballAuditLog.splice(0, apiFootballAuditLog.length, ...savedTele.apiFootballAuditLog.slice(0, 30));
+        }
+        if (typeof savedTele.serverCacheHits === 'number') serverCacheHits = savedTele.serverCacheHits;
+        if (typeof savedTele.serverCacheMisses === 'number') serverCacheMisses = savedTele.serverCacheMisses;
+        if (typeof savedTele.espnPulseCallsCount === 'number') espnPulseCallsCount = savedTele.espnPulseCallsCount;
+      }
       console.log(`[Cache] Cargadas ${memoryCache.size} entradas de caché persistente en disco.`);
     }
   } catch (err) {
@@ -134,23 +283,30 @@ function initDiskCache(): void {
 initDiskCache();
 
 let persistTimeout: NodeJS.Timeout | null = null;
-function persistCacheToDisk(): void {
-  if (persistTimeout) clearTimeout(persistTimeout);
-  persistTimeout = setTimeout(() => {
-    try {
-      if (!fs.existsSync(CACHE_DIR)) {
-        fs.mkdirSync(CACHE_DIR, { recursive: true });
-      }
-      const dump: Record<string, CacheRecord> = {};
-      memoryCache.forEach((val, key) => {
-        if (Array.isArray(val.data) && val.data.length === 0) return;
-        dump[key] = val;
-      });
-      fs.writeFileSync(CACHE_FILE, JSON.stringify(dump), 'utf8');
-    } catch (err) {
-      console.warn('[Cache] Error al guardar caché en disco:', err);
+function writeDiskCacheNow(): void {
+  try {
+    if (!fs.existsSync(CACHE_DIR)) {
+      fs.mkdirSync(CACHE_DIR, { recursive: true });
     }
-  }, 1000);
+    const dump: Record<string, CacheRecord> = {};
+    memoryCache.forEach((val, key) => {
+      if (Array.isArray(val.data) && val.data.length === 0) return;
+      dump[key] = val;
+    });
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(dump), 'utf8');
+  } catch (err) {
+    console.warn('[Cache] Error al guardar caché en disco:', err);
+  }
+}
+
+function persistCacheToDisk(): void {
+  // En Vercel Serverless la CPU se congela al enviar res.json(), por lo que debemos escribir de inmediato sin setTimeout
+  if (IS_VERCEL) {
+    writeDiskCacheNow();
+    return;
+  }
+  if (persistTimeout) clearTimeout(persistTimeout);
+  persistTimeout = setTimeout(writeDiskCacheNow, 250);
 }
 
 function getCacheItem<T = unknown>(key: string): CacheRecord<T> | undefined {
@@ -1807,6 +1963,7 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
     if (cacheAge < cacheTTL) {
       const activeList = filterActiveUpcomingFixtures(cached.data, targetDate, clientTz);
       if (activeList.length > 0) {
+        serverCacheHits++;
         return res.json({
           success: true,
           source: 'persistent_disk_cache',
@@ -1823,14 +1980,42 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
   // 2. Single-Flight Coalescing: Solo 1 llamada a la API si 50 usuarios entran juntos
   try {
     const resultList = await runSingleFlight(cacheKey, async () => {
+      serverCacheMisses++;
       let upcomingOnly: any[] = [];
       const espnFixtures = await fetchEspnSoccerFixtures(targetDate, clientTz);
 
-      // Caché dedicada de 6 horas (y 24h para otras fechas) envuelta en objeto para cachear incluso respuestas vacías []
+      // Caché dedicada de 8 horas (y 24h para otras fechas) respaldada en Memoria + Disco + Supabase PostgreSQL
+      // Así sobrevive al 100% de los Cold Starts de Vercel Serverless (que apagan la RAM cada 5-7 min)
+      await hydrateTelemetryFromSupabaseIfNeeded();
       const afScheduleCacheKey = `apifootball_schedule_v2_${targetDate}`;
-      const cachedAfEnvelope = getCacheItem<{ fetchedAt: number; items: any[] }>(afScheduleCacheKey);
-      const legacyAfSchedule = getCacheItem<any[]>(`apifootball_schedule_v1_${targetDate}`);
-      const afScheduleTTL = targetDate === todayLocal ? 6 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+      let cachedAfEnvelope = getCacheItem<{ fetchedAt: number; items: any[]; remainingCalls?: number }>(afScheduleCacheKey);
+      const afScheduleTTL = targetDate === todayLocal ? 8 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+
+      // Si este contenedor Serverless de Vercel acaba de despertar en frío (RAM vacía), recuperar el calendario desde Supabase
+      if (
+        (!cachedAfEnvelope || Date.now() - cachedAfEnvelope.timestamp >= afScheduleTTL) &&
+        isSupabaseConfigured()
+      ) {
+        const supaSchedule = await getSupabaseKvCache<{ fetchedAt: number; items: any[]; remainingCalls?: number }>(
+          afScheduleCacheKey
+        );
+        if (
+          supaSchedule &&
+          supaSchedule.data &&
+          Array.isArray(supaSchedule.data.items) &&
+          Date.now() - supaSchedule.timestamp < afScheduleTTL
+        ) {
+          memoryCache.set(afScheduleCacheKey, {
+            data: supaSchedule.data,
+            timestamp: supaSchedule.timestamp
+          });
+          cachedAfEnvelope = memoryCache.get(afScheduleCacheKey) as any;
+          if (typeof supaSchedule.data.remainingCalls === 'number') {
+            lastRemainingCalls = supaSchedule.data.remainingCalls;
+            quotaShieldActive = lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD;
+          }
+        }
+      }
 
       if (
         cachedAfEnvelope &&
@@ -1838,19 +2023,9 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
         Array.isArray(cachedAfEnvelope.data.items) &&
         Date.now() - cachedAfEnvelope.timestamp < afScheduleTTL
       ) {
+        serverCacheHits++;
         upcomingOnly = filterActiveUpcomingFixtures(
           JSON.parse(JSON.stringify(cachedAfEnvelope.data.items)),
-          targetDate,
-          clientTz
-        );
-      } else if (
-        legacyAfSchedule &&
-        Array.isArray(legacyAfSchedule.data) &&
-        Date.now() - legacyAfSchedule.timestamp < afScheduleTTL
-      ) {
-        setCacheItem(afScheduleCacheKey, { fetchedAt: legacyAfSchedule.timestamp, items: legacyAfSchedule.data });
-        upcomingOnly = filterActiveUpcomingFixtures(
-          JSON.parse(JSON.stringify(legacyAfSchedule.data)),
           targetDate,
           clientTz
         );
@@ -1869,19 +2044,46 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
           if (apiRes.ok) {
             const json = await apiRes.json();
             const rawList = Array.isArray(json.response) ? json.response : [];
-            // Guardar SIEMPRE el sobre en caché (incluso si rawList es []), evitando reintentos en fechas vacías o restringidas
-            setCacheItem(afScheduleCacheKey, { fetchedAt: Date.now(), items: rawList });
+            // Compactar solo ligas principales para que el guardado en Supabase PostgreSQL sea ultraligero (~30KB)
+            const compactPrimeList = rawList.filter((f: any) => {
+              const lName = String(f?.league?.name || '');
+              const cName = String(f?.league?.country || '');
+              const hName = String(f?.teams?.home?.name || '');
+              const aName = String(f?.teams?.away?.name || '');
+              return !isServerYouthOrLowTierMatch(lName, cName, hName, aName);
+            });
+            const envelopePayload = {
+              fetchedAt: Date.now(),
+              remainingCalls: lastRemainingCalls,
+              items: compactPrimeList
+            };
+            // Guardar en RAM/Disco y también en Supabase para que ningún Cold Start de Vercel vuelva a llamar a la API
+            setCacheItem(afScheduleCacheKey, envelopePayload);
+            if (isSupabaseConfigured()) {
+              await setSupabaseKvCache(afScheduleCacheKey, envelopePayload);
+            }
+            const nowIso = new Date().toISOString();
             apiFootballAuditLog.unshift({
-              timestamp: new Date().toISOString(),
+              at: nowIso,
+              timestamp: nowIso,
+              targetDate,
               date: targetDate,
+              endpoint: `/fixtures?date=${targetDate}`,
               status: apiRes.status,
-              itemsCount: rawList.length
+              fixturesCount: compactPrimeList.length,
+              itemsCount: compactPrimeList.length,
+              remainingAfter: lastRemainingCalls
             });
             if (apiFootballAuditLog.length > 30) apiFootballAuditLog.pop();
-            upcomingOnly = filterActiveUpcomingFixtures(rawList, targetDate, clientTz);
+            saveTelemetrySnapshotToCache(true);
+            upcomingOnly = filterActiveUpcomingFixtures(compactPrimeList, targetDate, clientTz);
           } else {
-            // Bloquear reintentos por 6h si la API responde error HTTP
-            setCacheItem(afScheduleCacheKey, { fetchedAt: Date.now(), items: [] });
+            // Bloquear reintentos por 8h si la API responde error HTTP
+            const emptyEnvelope = { fetchedAt: Date.now(), remainingCalls: lastRemainingCalls, items: [] };
+            setCacheItem(afScheduleCacheKey, emptyEnvelope);
+            if (isSupabaseConfigured()) {
+              await setSupabaseKvCache(afScheduleCacheKey, emptyEnvelope);
+            }
           }
         } catch {
           // Proceed to ESPN official fallback
@@ -2138,6 +2340,7 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
   const cachedPulse = getCacheItem<any[]>(pulseCacheKey);
 
   if (!force && cachedPulse && Date.now() - cachedPulse.timestamp < 15 * 1000) {
+    serverCacheHits++;
     return res.json({
       success: true,
       source: 'hybrid_memory_pulse',
@@ -2150,6 +2353,7 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
 
   try {
     const deltas = await runSingleFlight(pulseCacheKey, async () => {
+      espnPulseCallsCount++;
       const liveDeltas: Array<{
         id?: string;
         espnEventId?: string;
@@ -2816,23 +3020,45 @@ app.get('/api/fixtures', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
-// 2. Status Check
-app.get('/api/status', dataRateLimitMiddleware, (_req, res) => {
+// 2. Status Check & Real-Time Telemetry
+app.get(['/api/status', '/api/admin/telemetry'], dataRateLimitMiddleware, async (_req, res) => {
+  await hydrateTelemetryFromSupabaseIfNeeded();
   const hasApiFootball = Boolean(getSecretKey('API_FOOTBALL_KEY'));
   const hasFootballData = Boolean(getSecretKey('FOOTBALL_DATA_KEY'));
   const hasOddsApi = Boolean(getSecretKey('ODDS_API_KEY'));
+  const onlineUsers = getActiveOnlineUsersList();
+  const totalRequests = serverCacheHits + serverCacheMisses;
+  const cacheHitRatePct = totalRequests > 0 ? Math.round((serverCacheHits / totalRequests) * 1000) / 10 : 100;
 
   return res.json({
+    success: true,
+    status: 'ok',
     apiFootball: hasApiFootball,
     footballData: hasFootballData,
     oddsApi: hasOddsApi,
     remainingCalls: lastRemainingCalls,
+    consumedTodayEst: Math.max(0, 100 - lastRemainingCalls),
     quotaShieldActive: lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD,
     quotaShieldThreshold: QUOTA_SHIELD_THRESHOLD,
     cachedEntriesCount: memoryCache.size,
-    cacheTtlMinutes: 360,
+    cacheTtlMinutes: 480,
+    scheduleTTLHours: 8,
     apiFootballCallsSinceBoot: apiFootballAuditLog.length,
     apiFootballAuditLog,
+    onlineNowCount: onlineUsers.length,
+    onlineUsers,
+    peakOnlineUsers: Math.max(peakOnlineUsers, onlineUsers.length),
+    peakOnlineAt,
+    serverCacheHits,
+    serverCacheMisses,
+    cacheHitRatePct,
+    espnPulseCallsCount,
+    uptimeMinutes: Math.max(1, Math.round(process.uptime() / 60)),
+    memoryMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+    serverBootTimeIso,
+    bundleVersion: 'v2.7-supabase-serverless-shield-8h',
+    isVercel: IS_VERCEL,
+    supabasePersistence: isSupabaseConfigured(),
     serverReady: true
   });
 });
@@ -3272,14 +3498,24 @@ app.post('/api/license/generate', async (req, res) => {
 });
 
 app.post('/api/license/heartbeat', (req, res) => {
-  const { key, deviceId, clientName, deviceInfo } = req.body || {};
-  if (!key && !deviceId) {
+  const { key, deviceId, username, clientName, deviceInfo } = req.body || {};
+  if (!key && !deviceId && !username) {
     return res.json({ success: false, error: 'No se enviaron datos de identificación' });
   }
 
   const db = getLicensesDb();
   const cleanKey = key ? sanitizeText(String(key), 64).toUpperCase() : '';
   const cleanDev = deviceId ? sanitizeText(String(deviceId), 32).toUpperCase() : '';
+  const cleanUsername = username ? sanitizeText(String(username), 40).toLowerCase() : '';
+  const cleanClientName = clientName ? sanitizeText(String(clientName), 60) : '';
+  const cleanDevInfo = deviceInfo ? sanitizeText(String(deviceInfo), 80) : '';
+
+  recordOnlinePresence({
+    username: cleanUsername || cleanClientName || undefined,
+    displayName: cleanClientName || cleanUsername || undefined,
+    deviceId: cleanDev || undefined,
+    deviceInfo: cleanDevInfo || undefined
+  });
 
   const found = db.find(item => item.key === cleanKey || item.deviceId === cleanDev);
 
@@ -3298,13 +3534,12 @@ app.post('/api/license/heartbeat', (req, res) => {
     }
 
     found.lastActiveTimestamp = Date.now();
-    if (clientName && typeof clientName === 'string' && clientName.trim()) {
-      const cleanName = sanitizeText(clientName, 60);
-      found.clientName = cleanName;
-      if (!found.clientNote) found.clientNote = cleanName;
+    if (cleanClientName) {
+      found.clientName = cleanClientName;
+      if (!found.clientNote) found.clientNote = cleanClientName;
     }
-    if (deviceInfo && typeof deviceInfo === 'string') {
-      found.deviceInfo = sanitizeText(deviceInfo, 80);
+    if (cleanDevInfo) {
+      found.deviceInfo = cleanDevInfo;
     }
     saveLicensesDb(db);
     return res.json({
@@ -3721,6 +3956,12 @@ app.post('/api/auth/login', async (req, res) => {
       await recordAuthFailure(req);
     } else if (result.success) {
       clearAuthFailures(req);
+      recordOnlinePresence({
+        username: String(username || '').toLowerCase(),
+        displayName: result.user?.displayName || String(username || ''),
+        deviceId: String(deviceId || ''),
+        deviceInfo: String(deviceName || '')
+      });
     }
     return res.json(result);
   } catch {
@@ -3752,7 +3993,24 @@ app.get('/api/admin/users/list', async (req, res) => {
 
   try {
     const users = await adminListAppUsers();
-    return res.json({ success: true, users });
+    const onlineList = getActiveOnlineUsersList();
+    const enrichedUsers = users.map((u) => {
+      const uname = String(u.username || '').toLowerCase().trim();
+      const devId = String(u.boundDeviceId || '').toUpperCase().trim();
+      const onlineMatch = onlineList.find(
+        (o) =>
+          (uname && o.username.toLowerCase() === uname) ||
+          (devId && o.deviceId.toUpperCase() === devId)
+      );
+      if (onlineMatch && (!u.lastActiveAt || onlineMatch.lastSeenAt > u.lastActiveAt)) {
+        return {
+          ...u,
+          lastActiveAt: onlineMatch.lastSeenAt
+        };
+      }
+      return u;
+    });
+    return res.json({ success: true, users: enrichedUsers });
   } catch {
     return res.status(500).json({ success: false, error: 'Error al consultar listado de usuarios' });
   }

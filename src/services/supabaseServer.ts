@@ -170,6 +170,50 @@ export async function upsertSupabaseAdminConfig(cfg: AdminConfig): Promise<boole
   }
 }
 
+// 1b. Caché Persistente Serverless en Supabase (Sobrevive a reinicios / Cold Starts de Vercel)
+export async function getSupabaseKvCache<T = unknown>(cacheId: string): Promise<{ timestamp: number; data: T } | null> {
+  const client = getSupabaseClient();
+  if (!client || !cacheId || cacheId === 'main') return null;
+
+  try {
+    const { data, error } = await client
+      .from('sportstats_config')
+      .select('custom_logo_url, admin_whatsapp')
+      .eq('id', cacheId)
+      .maybeSingle();
+
+    if (error || !data || !data.custom_logo_url) return null;
+    const parsed = JSON.parse(data.custom_logo_url);
+    if (parsed && typeof parsed === 'object' && 'timestamp' in parsed && 'data' in parsed) {
+      return parsed as { timestamp: number; data: T };
+    }
+  } catch {
+    // ignore parse/network errors
+  }
+  return null;
+}
+
+export async function setSupabaseKvCache<T = unknown>(cacheId: string, payload: T, timestamp = Date.now()): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !cacheId || cacheId === 'main') return false;
+
+  try {
+    const serialized = JSON.stringify({ timestamp, data: payload });
+    const { error } = await client.from('sportstats_config').upsert({
+      id: cacheId,
+      admin_pin: 'KV_CACHE_LOCK',
+      admin_whatsapp: String(timestamp),
+      support_name: cacheId,
+      custom_logo_url: serialized,
+      color_theme: 'kv-cache',
+      updated_at: new Date(timestamp).toISOString(),
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 // 2. Licencias en Supabase
 export async function upsertSupabaseLicense(record: ServerLicenseRecord): Promise<boolean> {
   const client = getSupabaseClient();

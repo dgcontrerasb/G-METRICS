@@ -1,4 +1,4 @@
-// server.ts
+// server.ts - SportStats Pro Production Bundle (v2.7-supabase-serverless-shield-8h)
 import express from "express";
 import dotenv from "dotenv";
 import path2 from "path";
@@ -437,6 +437,39 @@ async function upsertSupabaseAdminConfig(cfg) {
     return true;
   } catch (err) {
     console.error("[Supabase Config] Excepci\xF3n al guardar:", err);
+    return false;
+  }
+}
+async function getSupabaseKvCache(cacheId) {
+  const client = getSupabaseClient();
+  if (!client || !cacheId || cacheId === "main") return null;
+  try {
+    const { data, error } = await client.from("sportstats_config").select("custom_logo_url, admin_whatsapp").eq("id", cacheId).maybeSingle();
+    if (error || !data || !data.custom_logo_url) return null;
+    const parsed = JSON.parse(data.custom_logo_url);
+    if (parsed && typeof parsed === "object" && "timestamp" in parsed && "data" in parsed) {
+      return parsed;
+    }
+  } catch {
+  }
+  return null;
+}
+async function setSupabaseKvCache(cacheId, payload, timestamp = Date.now()) {
+  const client = getSupabaseClient();
+  if (!client || !cacheId || cacheId === "main") return false;
+  try {
+    const serialized = JSON.stringify({ timestamp, data: payload });
+    const { error } = await client.from("sportstats_config").upsert({
+      id: cacheId,
+      admin_pin: "KV_CACHE_LOCK",
+      admin_whatsapp: String(timestamp),
+      support_name: cacheId,
+      custom_logo_url: serialized,
+      color_theme: "kv-cache",
+      updated_at: new Date(timestamp).toISOString()
+    });
+    return !error;
+  } catch {
     return false;
   }
 }
@@ -1299,6 +1332,101 @@ var lastRemainingCalls = 100;
 var quotaShieldActive = false;
 var QUOTA_SHIELD_THRESHOLD = 15;
 var apiFootballAuditLog = [];
+var activeOnlineSessions = /* @__PURE__ */ new Map();
+var ONLINE_WINDOW_MS = 3 * 60 * 1e3;
+var peakOnlineUsers = 1;
+var peakOnlineAt = (/* @__PURE__ */ new Date()).toISOString();
+var serverCacheHits = 0;
+var serverCacheMisses = 0;
+var espnPulseCallsCount = 0;
+var supabaseTelemetryHydrated = false;
+var serverBootTimeIso = (/* @__PURE__ */ new Date()).toISOString();
+function purgeExpiredOnlineSessions() {
+  const now = Date.now();
+  activeOnlineSessions.forEach((entry, key) => {
+    if (now - entry.lastSeenAt > ONLINE_WINDOW_MS) {
+      activeOnlineSessions.delete(key);
+    }
+  });
+}
+async function hydrateTelemetryFromSupabaseIfNeeded() {
+  if (supabaseTelemetryHydrated) return;
+  supabaseTelemetryHydrated = true;
+  if (!isSupabaseConfigured()) return;
+  try {
+    const remote = await getSupabaseKvCache("__server_telemetry_v1__");
+    if (remote && remote.data && typeof remote.data === "object") {
+      const d = remote.data;
+      if (typeof d.peakOnlineUsers === "number" && d.peakOnlineUsers > peakOnlineUsers) {
+        peakOnlineUsers = d.peakOnlineUsers;
+        if (d.peakOnlineAt) peakOnlineAt = d.peakOnlineAt;
+      }
+      if (typeof d.lastRemainingCalls === "number" && lastRemainingCalls === 100) {
+        lastRemainingCalls = d.lastRemainingCalls;
+        quotaShieldActive = lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD;
+      }
+      if (Array.isArray(d.apiFootballAuditLog) && apiFootballAuditLog.length === 0) {
+        apiFootballAuditLog.push(...d.apiFootballAuditLog.slice(0, 30));
+      }
+      if (typeof d.serverCacheHits === "number" && serverCacheHits < d.serverCacheHits) {
+        serverCacheHits = d.serverCacheHits;
+      }
+      if (typeof d.serverCacheMisses === "number" && serverCacheMisses < d.serverCacheMisses) {
+        serverCacheMisses = d.serverCacheMisses;
+      }
+      if (typeof d.espnPulseCallsCount === "number" && espnPulseCallsCount < d.espnPulseCallsCount) {
+        espnPulseCallsCount = d.espnPulseCallsCount;
+      }
+    }
+  } catch {
+  }
+}
+function saveTelemetrySnapshotToCache(syncToSupabase = false) {
+  const snapshot = {
+    peakOnlineUsers,
+    peakOnlineAt,
+    lastRemainingCalls,
+    apiFootballAuditLog,
+    serverCacheHits,
+    serverCacheMisses,
+    espnPulseCallsCount
+  };
+  setCacheItem("__server_telemetry_v1__", snapshot);
+  if (syncToSupabase && isSupabaseConfigured()) {
+    setSupabaseKvCache("__server_telemetry_v1__", snapshot).catch(() => {
+    });
+  }
+}
+function recordOnlinePresence(opts) {
+  purgeExpiredOnlineSessions();
+  const cleanUser = (opts.username || "").trim().toLowerCase();
+  const cleanDev = (opts.deviceId || "").trim().toUpperCase();
+  const sessionKey = cleanDev || cleanUser || `anon_${Date.now()}`;
+  const existing = activeOnlineSessions.get(sessionKey);
+  activeOnlineSessions.set(sessionKey, {
+    sessionKey,
+    username: cleanUser || existing?.username || "usuario",
+    displayName: (opts.displayName || "").trim() || existing?.displayName || cleanUser || "Cliente Activo",
+    deviceId: cleanDev || existing?.deviceId || "WEB",
+    deviceInfo: (opts.deviceInfo || "").trim() || existing?.deviceInfo || "Navegador Web",
+    lastSeenAt: Date.now()
+  });
+  const currentCount = activeOnlineSessions.size;
+  if (currentCount > peakOnlineUsers) {
+    peakOnlineUsers = currentCount;
+    peakOnlineAt = (/* @__PURE__ */ new Date()).toISOString();
+    saveTelemetrySnapshotToCache(true);
+  }
+}
+function getActiveOnlineUsersList() {
+  purgeExpiredOnlineSessions();
+  const now = Date.now();
+  return Array.from(activeOnlineSessions.values()).map((s) => ({
+    ...s,
+    deviceName: s.deviceInfo || s.deviceId,
+    secondsAgo: Math.max(0, Math.round((now - s.lastSeenAt) / 1e3))
+  })).sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+}
 function initDiskCache() {
   try {
     if (!fs2.existsSync(CACHE_DIR)) {
@@ -1318,6 +1446,23 @@ function initDiskCache() {
           }
         }
       }
+      const savedTele = memoryCache.get("__server_telemetry_v1__")?.data;
+      if (savedTele && typeof savedTele === "object") {
+        if (typeof savedTele.peakOnlineUsers === "number" && savedTele.peakOnlineUsers > peakOnlineUsers) {
+          peakOnlineUsers = savedTele.peakOnlineUsers;
+          if (savedTele.peakOnlineAt) peakOnlineAt = savedTele.peakOnlineAt;
+        }
+        if (typeof savedTele.lastRemainingCalls === "number") {
+          lastRemainingCalls = savedTele.lastRemainingCalls;
+          quotaShieldActive = lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD;
+        }
+        if (Array.isArray(savedTele.apiFootballAuditLog)) {
+          apiFootballAuditLog.splice(0, apiFootballAuditLog.length, ...savedTele.apiFootballAuditLog.slice(0, 30));
+        }
+        if (typeof savedTele.serverCacheHits === "number") serverCacheHits = savedTele.serverCacheHits;
+        if (typeof savedTele.serverCacheMisses === "number") serverCacheMisses = savedTele.serverCacheMisses;
+        if (typeof savedTele.espnPulseCallsCount === "number") espnPulseCallsCount = savedTele.espnPulseCallsCount;
+      }
       console.log(`[Cache] Cargadas ${memoryCache.size} entradas de cach\xE9 persistente en disco.`);
     }
   } catch (err) {
@@ -1326,23 +1471,28 @@ function initDiskCache() {
 }
 initDiskCache();
 var persistTimeout = null;
-function persistCacheToDisk() {
-  if (persistTimeout) clearTimeout(persistTimeout);
-  persistTimeout = setTimeout(() => {
-    try {
-      if (!fs2.existsSync(CACHE_DIR)) {
-        fs2.mkdirSync(CACHE_DIR, { recursive: true });
-      }
-      const dump = {};
-      memoryCache.forEach((val, key) => {
-        if (Array.isArray(val.data) && val.data.length === 0) return;
-        dump[key] = val;
-      });
-      fs2.writeFileSync(CACHE_FILE, JSON.stringify(dump), "utf8");
-    } catch (err) {
-      console.warn("[Cache] Error al guardar cach\xE9 en disco:", err);
+function writeDiskCacheNow() {
+  try {
+    if (!fs2.existsSync(CACHE_DIR)) {
+      fs2.mkdirSync(CACHE_DIR, { recursive: true });
     }
-  }, 1e3);
+    const dump = {};
+    memoryCache.forEach((val, key) => {
+      if (Array.isArray(val.data) && val.data.length === 0) return;
+      dump[key] = val;
+    });
+    fs2.writeFileSync(CACHE_FILE, JSON.stringify(dump), "utf8");
+  } catch (err) {
+    console.warn("[Cache] Error al guardar cach\xE9 en disco:", err);
+  }
+}
+function persistCacheToDisk() {
+  if (IS_VERCEL2) {
+    writeDiskCacheNow();
+    return;
+  }
+  if (persistTimeout) clearTimeout(persistTimeout);
+  persistTimeout = setTimeout(writeDiskCacheNow, 250);
 }
 function getCacheItem(key) {
   const rec = memoryCache.get(key);
@@ -2709,6 +2859,7 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
     if (cacheAge < cacheTTL) {
       const activeList = filterActiveUpcomingFixtures(cached.data, targetDate, clientTz);
       if (activeList.length > 0) {
+        serverCacheHits++;
         return res.json({
           success: true,
           source: "persistent_disk_cache",
@@ -2723,22 +2874,33 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
   }
   try {
     const resultList = await runSingleFlight(cacheKey, async () => {
+      serverCacheMisses++;
       let upcomingOnly = [];
       const espnFixtures = await fetchEspnSoccerFixtures(targetDate, clientTz);
+      await hydrateTelemetryFromSupabaseIfNeeded();
       const afScheduleCacheKey = `apifootball_schedule_v2_${targetDate}`;
-      const cachedAfEnvelope = getCacheItem(afScheduleCacheKey);
-      const legacyAfSchedule = getCacheItem(`apifootball_schedule_v1_${targetDate}`);
-      const afScheduleTTL = targetDate === todayLocal ? 6 * 60 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
+      let cachedAfEnvelope = getCacheItem(afScheduleCacheKey);
+      const afScheduleTTL = targetDate === todayLocal ? 8 * 60 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
+      if ((!cachedAfEnvelope || Date.now() - cachedAfEnvelope.timestamp >= afScheduleTTL) && isSupabaseConfigured()) {
+        const supaSchedule = await getSupabaseKvCache(
+          afScheduleCacheKey
+        );
+        if (supaSchedule && supaSchedule.data && Array.isArray(supaSchedule.data.items) && Date.now() - supaSchedule.timestamp < afScheduleTTL) {
+          memoryCache.set(afScheduleCacheKey, {
+            data: supaSchedule.data,
+            timestamp: supaSchedule.timestamp
+          });
+          cachedAfEnvelope = memoryCache.get(afScheduleCacheKey);
+          if (typeof supaSchedule.data.remainingCalls === "number") {
+            lastRemainingCalls = supaSchedule.data.remainingCalls;
+            quotaShieldActive = lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD;
+          }
+        }
+      }
       if (cachedAfEnvelope && typeof cachedAfEnvelope.data === "object" && Array.isArray(cachedAfEnvelope.data.items) && Date.now() - cachedAfEnvelope.timestamp < afScheduleTTL) {
+        serverCacheHits++;
         upcomingOnly = filterActiveUpcomingFixtures(
           JSON.parse(JSON.stringify(cachedAfEnvelope.data.items)),
-          targetDate,
-          clientTz
-        );
-      } else if (legacyAfSchedule && Array.isArray(legacyAfSchedule.data) && Date.now() - legacyAfSchedule.timestamp < afScheduleTTL) {
-        setCacheItem(afScheduleCacheKey, { fetchedAt: legacyAfSchedule.timestamp, items: legacyAfSchedule.data });
-        upcomingOnly = filterActiveUpcomingFixtures(
-          JSON.parse(JSON.stringify(legacyAfSchedule.data)),
           targetDate,
           clientTz
         );
@@ -2755,17 +2917,43 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
           if (apiRes.ok) {
             const json = await apiRes.json();
             const rawList = Array.isArray(json.response) ? json.response : [];
-            setCacheItem(afScheduleCacheKey, { fetchedAt: Date.now(), items: rawList });
+            const compactPrimeList = rawList.filter((f) => {
+              const lName = String(f?.league?.name || "");
+              const cName = String(f?.league?.country || "");
+              const hName = String(f?.teams?.home?.name || "");
+              const aName = String(f?.teams?.away?.name || "");
+              return !isServerYouthOrLowTierMatch(lName, cName, hName, aName);
+            });
+            const envelopePayload = {
+              fetchedAt: Date.now(),
+              remainingCalls: lastRemainingCalls,
+              items: compactPrimeList
+            };
+            setCacheItem(afScheduleCacheKey, envelopePayload);
+            if (isSupabaseConfigured()) {
+              await setSupabaseKvCache(afScheduleCacheKey, envelopePayload);
+            }
+            const nowIso = (/* @__PURE__ */ new Date()).toISOString();
             apiFootballAuditLog.unshift({
-              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              at: nowIso,
+              timestamp: nowIso,
+              targetDate,
               date: targetDate,
+              endpoint: `/fixtures?date=${targetDate}`,
               status: apiRes.status,
-              itemsCount: rawList.length
+              fixturesCount: compactPrimeList.length,
+              itemsCount: compactPrimeList.length,
+              remainingAfter: lastRemainingCalls
             });
             if (apiFootballAuditLog.length > 30) apiFootballAuditLog.pop();
-            upcomingOnly = filterActiveUpcomingFixtures(rawList, targetDate, clientTz);
+            saveTelemetrySnapshotToCache(true);
+            upcomingOnly = filterActiveUpcomingFixtures(compactPrimeList, targetDate, clientTz);
           } else {
-            setCacheItem(afScheduleCacheKey, { fetchedAt: Date.now(), items: [] });
+            const emptyEnvelope = { fetchedAt: Date.now(), remainingCalls: lastRemainingCalls, items: [] };
+            setCacheItem(afScheduleCacheKey, emptyEnvelope);
+            if (isSupabaseConfigured()) {
+              await setSupabaseKvCache(afScheduleCacheKey, emptyEnvelope);
+            }
           }
         } catch {
         }
@@ -2996,6 +3184,7 @@ app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
   const pulseCacheKey = `live_pulse_v6_${espnDateStr}`;
   const cachedPulse = getCacheItem(pulseCacheKey);
   if (!force && cachedPulse && Date.now() - cachedPulse.timestamp < 15 * 1e3) {
+    serverCacheHits++;
     return res.json({
       success: true,
       source: "hybrid_memory_pulse",
@@ -3007,6 +3196,7 @@ app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
   }
   try {
     const deltas = await runSingleFlight(pulseCacheKey, async () => {
+      espnPulseCallsCount++;
       const liveDeltas = [];
       const apiLiveAll = await fetchApiFootballLiveAll();
       for (const lf of apiLiveAll) {
@@ -3573,21 +3763,43 @@ app.get("/api/fixtures", dataRateLimitMiddleware, async (req, res) => {
     });
   }
 });
-app.get("/api/status", dataRateLimitMiddleware, (_req, res) => {
+app.get(["/api/status", "/api/admin/telemetry"], dataRateLimitMiddleware, async (_req, res) => {
+  await hydrateTelemetryFromSupabaseIfNeeded();
   const hasApiFootball = Boolean(getSecretKey("API_FOOTBALL_KEY"));
   const hasFootballData = Boolean(getSecretKey("FOOTBALL_DATA_KEY"));
   const hasOddsApi = Boolean(getSecretKey("ODDS_API_KEY"));
+  const onlineUsers = getActiveOnlineUsersList();
+  const totalRequests = serverCacheHits + serverCacheMisses;
+  const cacheHitRatePct = totalRequests > 0 ? Math.round(serverCacheHits / totalRequests * 1e3) / 10 : 100;
   return res.json({
+    success: true,
+    status: "ok",
     apiFootball: hasApiFootball,
     footballData: hasFootballData,
     oddsApi: hasOddsApi,
     remainingCalls: lastRemainingCalls,
+    consumedTodayEst: Math.max(0, 100 - lastRemainingCalls),
     quotaShieldActive: lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD,
     quotaShieldThreshold: QUOTA_SHIELD_THRESHOLD,
     cachedEntriesCount: memoryCache.size,
-    cacheTtlMinutes: 360,
+    cacheTtlMinutes: 480,
+    scheduleTTLHours: 8,
     apiFootballCallsSinceBoot: apiFootballAuditLog.length,
     apiFootballAuditLog,
+    onlineNowCount: onlineUsers.length,
+    onlineUsers,
+    peakOnlineUsers: Math.max(peakOnlineUsers, onlineUsers.length),
+    peakOnlineAt,
+    serverCacheHits,
+    serverCacheMisses,
+    cacheHitRatePct,
+    espnPulseCallsCount,
+    uptimeMinutes: Math.max(1, Math.round(process.uptime() / 60)),
+    memoryMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+    serverBootTimeIso,
+    bundleVersion: "v2.7-supabase-serverless-shield-8h",
+    isVercel: IS_VERCEL2,
+    supabasePersistence: isSupabaseConfigured(),
     serverReady: true
   });
 });
@@ -3962,13 +4174,22 @@ ${key}
   });
 });
 app.post("/api/license/heartbeat", (req, res) => {
-  const { key, deviceId, clientName, deviceInfo } = req.body || {};
-  if (!key && !deviceId) {
+  const { key, deviceId, username, clientName, deviceInfo } = req.body || {};
+  if (!key && !deviceId && !username) {
     return res.json({ success: false, error: "No se enviaron datos de identificaci\xF3n" });
   }
   const db = getLicensesDb();
   const cleanKey = key ? sanitizeText(String(key), 64).toUpperCase() : "";
   const cleanDev = deviceId ? sanitizeText(String(deviceId), 32).toUpperCase() : "";
+  const cleanUsername = username ? sanitizeText(String(username), 40).toLowerCase() : "";
+  const cleanClientName = clientName ? sanitizeText(String(clientName), 60) : "";
+  const cleanDevInfo = deviceInfo ? sanitizeText(String(deviceInfo), 80) : "";
+  recordOnlinePresence({
+    username: cleanUsername || cleanClientName || void 0,
+    displayName: cleanClientName || cleanUsername || void 0,
+    deviceId: cleanDev || void 0,
+    deviceInfo: cleanDevInfo || void 0
+  });
   const found = db.find((item) => item.key === cleanKey || item.deviceId === cleanDev);
   if (found) {
     if (cleanKey && cleanDev && found.deviceId && !found.deviceId.includes("ALL")) {
@@ -3984,13 +4205,12 @@ app.post("/api/license/heartbeat", (req, res) => {
       }
     }
     found.lastActiveTimestamp = Date.now();
-    if (clientName && typeof clientName === "string" && clientName.trim()) {
-      const cleanName = sanitizeText(clientName, 60);
-      found.clientName = cleanName;
-      if (!found.clientNote) found.clientNote = cleanName;
+    if (cleanClientName) {
+      found.clientName = cleanClientName;
+      if (!found.clientNote) found.clientNote = cleanClientName;
     }
-    if (deviceInfo && typeof deviceInfo === "string") {
-      found.deviceInfo = sanitizeText(deviceInfo, 80);
+    if (cleanDevInfo) {
+      found.deviceInfo = cleanDevInfo;
     }
     saveLicensesDb(db);
     return res.json({
@@ -4337,6 +4557,12 @@ app.post("/api/auth/login", async (req, res) => {
       await recordAuthFailure(req);
     } else if (result.success) {
       clearAuthFailures(req);
+      recordOnlinePresence({
+        username: String(username || "").toLowerCase(),
+        displayName: result.user?.displayName || String(username || ""),
+        deviceId: String(deviceId || ""),
+        deviceInfo: String(deviceName || "")
+      });
     }
     return res.json(result);
   } catch {
@@ -4363,7 +4589,22 @@ app.get("/api/admin/users/list", async (req, res) => {
   clearAuthFailures(req);
   try {
     const users = await adminListAppUsers();
-    return res.json({ success: true, users });
+    const onlineList = getActiveOnlineUsersList();
+    const enrichedUsers = users.map((u) => {
+      const uname = String(u.username || "").toLowerCase().trim();
+      const devId = String(u.boundDeviceId || "").toUpperCase().trim();
+      const onlineMatch = onlineList.find(
+        (o) => uname && o.username.toLowerCase() === uname || devId && o.deviceId.toUpperCase() === devId
+      );
+      if (onlineMatch && (!u.lastActiveAt || onlineMatch.lastSeenAt > u.lastActiveAt)) {
+        return {
+          ...u,
+          lastActiveAt: onlineMatch.lastSeenAt
+        };
+      }
+      return u;
+    });
+    return res.json({ success: true, users: enrichedUsers });
   } catch {
     return res.status(500).json({ success: false, error: "Error al consultar listado de usuarios" });
   }

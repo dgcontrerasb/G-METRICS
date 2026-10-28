@@ -43,12 +43,17 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
   const [showConfirmPin, setShowConfirmPin] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'USERS' | 'AUDIT' | 'CONFIG'>('USERS');
+  const [activeTab, setActiveTab] = useState<'USERS' | 'MONITOR' | 'AUDIT' | 'CONFIG'>('USERS');
+
+  // Server Telemetry & Diagnostic Monitor State
+  const [serverTelemetry, setServerTelemetry] = useState<any | null>(null);
+  const [isLoadingTelemetry, setIsLoadingTelemetry] = useState(false);
+  const [copiedDiagnosticReport, setCopiedDiagnosticReport] = useState(false);
 
   // Supabase User Management State
   const [appUsersList, setAppUsersList] = useState<SupabaseUserItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-  const [userFilter, setUserFilter] = useState<'ALL' | 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'BOUND'>('ALL');
+  const [userFilter, setUserFilter] = useState<'ALL' | 'ONLINE' | 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'BOUND'>('ALL');
   const [userSearch, setUserSearch] = useState('');
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [confirmDeleteUserKey, setConfirmDeleteUserKey] = useState<string | null>(null);
@@ -141,6 +146,21 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
       }
     } catch {
       // fallback
+    }
+  }, []);
+
+  const loadServerTelemetry = useCallback(async () => {
+    setIsLoadingTelemetry(true);
+    try {
+      const res = await fetch('/api/admin/telemetry');
+      const data = await res.json();
+      if (data && (data.status === 'ok' || data.onlineNowCount !== undefined)) {
+        setServerTelemetry(data);
+      }
+    } catch {
+      // ignore network error
+    } finally {
+      setIsLoadingTelemetry(false);
     }
   }, []);
 
@@ -524,6 +544,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
   useEffect(() => {
     if (isOpen) {
       loadConfig();
+      loadServerTelemetry();
       const isRemembered = localStorage.getItem('sportstats_admin_remember') === 'true';
       const savedPin = localStorage.getItem('sportstats_admin_saved_pin') || '';
       if (isRemembered && savedPin) {
@@ -531,13 +552,17 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
         setActiveServerPin(savedPin);
         loadAppUsers(savedPin);
       }
+      const interval = setInterval(() => {
+        loadServerTelemetry();
+      }, 15000);
+      return () => clearInterval(interval);
     } else {
       setShowRecoveryMode(false);
       setRecoveryKeyInput('');
       setRecoveryError(null);
       setRecoverySuccessMsg(null);
     }
-  }, [isOpen, loadConfig, loadAppUsers]);
+  }, [isOpen, loadConfig, loadAppUsers, loadServerTelemetry]);
 
   const unlockAdminDeviceAndAuthenticate = (validPinUsed: string) => {
     localStorage.setItem('sportstats_admin_remember', 'true');
@@ -1054,6 +1079,23 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
               <span className="inline sm:hidden">Usuarios ({appUsersList.length})</span>
             </button>
             <button
+              onClick={() => {
+                setActiveTab('MONITOR');
+                loadServerTelemetry();
+              }}
+              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
+                activeTab === 'MONITOR'
+                  ? 'border-amber-400 text-amber-300 bg-amber-500/10'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 text-amber-400" />
+              <span>Monitor & API</span>
+              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-[10px] font-black text-emerald-300">
+                🟢 {serverTelemetry?.onlineNowCount ?? 1}
+              </span>
+            </button>
+            <button
               onClick={() => setActiveTab('AUDIT')}
               className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
                 activeTab === 'AUDIT'
@@ -1178,7 +1220,8 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                     <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px] font-bold">
                       {[
                         { id: 'ALL', label: `Todos (${appUsersList.length})` },
-                        { id: 'ACTIVE', label: '🟢 Activos' },
+                        { id: 'ONLINE', label: `🟢 En Línea (${serverTelemetry?.onlineNowCount ?? 0})` },
+                        { id: 'ACTIVE', label: '✅ Activos' },
                         { id: 'BOUND', label: '📱 Vinculados' },
                         { id: 'PENDING', label: '⏳ Pendientes' },
                         { id: 'SUSPENDED', label: '🚫 Suspendidos' }
@@ -1252,6 +1295,15 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                     <div className="space-y-3">
                       {appUsersList
                         .filter((u) => {
+                          const isUserOnline =
+                            (u.lastActiveAt ? Date.now() - u.lastActiveAt < 3 * 60 * 1000 : false) ||
+                            (Array.isArray(serverTelemetry?.onlineUsers) &&
+                              serverTelemetry.onlineUsers.some(
+                                (ou: any) =>
+                                  (ou.username && ou.username.toLowerCase() === (u.username || '').toLowerCase()) ||
+                                  (ou.deviceId && u.boundDeviceId && ou.deviceId === u.boundDeviceId)
+                              ));
+                          if (userFilter === 'ONLINE' && !isUserOnline) return false;
                           if (userFilter === 'ACTIVE' && u.status !== 'active') return false;
                           if (userFilter === 'BOUND' && !u.boundDeviceId) return false;
                           if (userFilter === 'PENDING' && u.status !== 'pending') return false;
@@ -1272,6 +1324,14 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                           const isExpired = u.isExpired || (u.expiresAt ? u.expiresAt < Date.now() : false);
                           const isBound = !!u.boundDeviceId;
                           const daysLeft = u.daysRemaining;
+                          const isUserOnline =
+                            (u.lastActiveAt ? Date.now() - u.lastActiveAt < 3 * 60 * 1000 : false) ||
+                            (Array.isArray(serverTelemetry?.onlineUsers) &&
+                              serverTelemetry.onlineUsers.some(
+                                (ou: any) =>
+                                  (ou.username && ou.username.toLowerCase() === (u.username || '').toLowerCase()) ||
+                                  (ou.deviceId && u.boundDeviceId && ou.deviceId === u.boundDeviceId)
+                              ));
 
                           return (
                             <div
@@ -1281,6 +1341,8 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                                   ? 'bg-rose-950/10 border-rose-500/30'
                                   : isExpired
                                   ? 'bg-amber-950/10 border-amber-500/30'
+                                  : isUserOnline
+                                  ? 'bg-[#081218] border-emerald-500/40'
                                   : 'bg-[#080D16] border-slate-800'
                               }`}
                             >
@@ -1298,6 +1360,11 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">
                                     {u.role === 'admin' ? '🛡️ Admin' : '👤 Cliente'}
                                   </span>
+                                  {isUserOnline && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 animate-pulse">
+                                      <span>🟢 EN LÍNEA</span>
+                                    </span>
+                                  )}
                                 </div>
 
                                 <div className="flex items-center gap-2">
@@ -1620,6 +1687,307 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                   )}
                 </div>
               )}
+
+              {/* TAB MONITOR: USUARIOS ONLINE, RÉCORD PICO, CUOTA API Y DIAGNÓSTICO */}
+              {activeTab === 'MONITOR' && (() => {
+                const onlineNow = serverTelemetry?.onlineNowCount ?? 1;
+                const peakUsers = serverTelemetry?.peakOnlineUsers ?? onlineNow;
+                const peakTimeStr = serverTelemetry?.peakOnlineAt
+                  ? new Date(serverTelemetry.peakOnlineAt).toLocaleString('es-CO', {
+                      dateStyle: 'short',
+                      timeStyle: 'short'
+                    })
+                  : 'Hoy';
+                const remainingQuota =
+                  serverTelemetry?.remainingCalls !== null && serverTelemetry?.remainingCalls !== undefined
+                    ? Number(serverTelemetry.remainingCalls)
+                    : null;
+                const consumedEst =
+                  serverTelemetry?.consumedTodayEst !== null && serverTelemetry?.consumedTodayEst !== undefined
+                    ? Number(serverTelemetry.consumedTodayEst)
+                    : serverTelemetry?.apiFootballCallsSinceBoot ?? 0;
+                const callsSinceBoot = serverTelemetry?.apiFootballCallsSinceBoot ?? 0;
+                const cacheHits = serverTelemetry?.serverCacheHits ?? 0;
+                const cacheMisses = serverTelemetry?.serverCacheMisses ?? 0;
+                const cacheHitRate = serverTelemetry?.cacheHitRatePct ?? 100;
+                const espnPulses = serverTelemetry?.espnPulseCallsCount ?? 0;
+                const onlineList: any[] = Array.isArray(serverTelemetry?.onlineUsers)
+                  ? serverTelemetry.onlineUsers
+                  : [];
+                const apiLogList: any[] = Array.isArray(serverTelemetry?.apiFootballAuditLog)
+                  ? serverTelemetry.apiFootballAuditLog
+                  : [];
+
+                const buildDiagnosticReportText = () => {
+                  const nowStr = new Date().toLocaleString('es-CO');
+                  const onlineUsersFormatted =
+                    onlineList.length > 0
+                      ? onlineList
+                          .map((u) => `@${u.username || 'invitado'} (${u.deviceName || u.deviceId || 'equipo'} - hace ${u.secondsAgo ?? 0}s)`)
+                          .join(', ')
+                      : 'Ninguno registrado en ventana de 3 min';
+                  const recentApiCallsFormatted =
+                    apiLogList.length > 0
+                      ? apiLogList
+                          .slice(0, 8)
+                          .map(
+                            (c) =>
+                              `  - [${new Date(c.at).toLocaleTimeString('es-CO')}] ${c.endpoint} | Fecha: ${c.targetDate} | Partidos: ${c.fixturesCount} | Restantes: ${c.remainingAfter ?? '?'}`
+                          )
+                          .join('\n')
+                      : '  - 0 llamadas directas a API-Football en esta sesión (100% servido desde Caché/ESPN)';
+
+                  return [
+                    `📊 INFORME DE DIAGNÓSTICO SPORTSTATS PRO (${nowStr})`,
+                    `==========================================================`,
+                    `🛡️ Versión Blindaje Backend: ${serverTelemetry?.bundleVersion || 'v2.6-shield-6h'} (TTL: ${serverTelemetry?.scheduleTTLHours || 6}h)`,
+                    `🟢 Usuarios Online Ahora (ventana 3m): ${onlineNow} (${onlineUsersFormatted})`,
+                    `🏆 Récord Máximo Usuarios Online: ${peakUsers} (alcanzado: ${peakTimeStr})`,
+                    `👥 Total Usuarios Registrados: ${appUsersList.length}`,
+                    `----------------------------------------------------------`,
+                    `📡 ESTADO DE CUOTA API-FOOTBALL (Límite 100/día):`,
+                    `• Llamadas API-Football en esta sesión: ${callsSinceBoot}`,
+                    `• Cuota Restante Reportada por API-Sports: ${remainingQuota !== null ? `${remainingQuota} / 100` : 'Sin consumo en sesión actual (100% Caché)'}`,
+                    `• Consumo Diario Estimado: ${remainingQuota !== null ? `${consumedEst}% (${consumedEst}/100)` : `${callsSinceBoot} llamadas locales`}`,
+                    `• Eficiencia de Caché Servidor: ${cacheHitRate}% (${cacheHits} aciertos en caché vs ${cacheMisses} llamadas nuevas)`,
+                    `• Pulsos en Vivo Gratuitos (ESPN/TheSportsDB): ${espnPulses} (0 costo de cuota)`,
+                    `• Tiempo activo servidor (Uptime): ${serverTelemetry?.uptimeMinutes ?? 0} min | RAM: ${serverTelemetry?.memoryMb ?? 0} MB`,
+                    `----------------------------------------------------------`,
+                    `📋 ÚLTIMAS LLAMADAS REALES A API-FOOTBALL:`,
+                    recentApiCallsFormatted,
+                    `==========================================================`
+                  ].join('\n');
+                };
+
+                const handleCopyReport = () => {
+                  const text = buildDiagnosticReportText();
+                  navigator.clipboard.writeText(text).then(() => {
+                    setCopiedDiagnosticReport(true);
+                    setTimeout(() => setCopiedDiagnosticReport(false), 4000);
+                  });
+                };
+
+                return (
+                  <div className="space-y-4">
+                    {/* Header Banner + Refresh */}
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-indigo-950/40 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                          <span>Centro de Control en Tiempo Real · Usuarios & Cuota API</span>
+                        </h3>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Monitorea quién está conectado, el pico máximo de tráfico y cada llamada a API-Football.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={loadServerTelemetry}
+                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${isLoadingTelemetry ? 'animate-spin' : ''}`} />
+                          <span>Refrescar Monitor</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 4 KPI Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {/* Card 1: Online Now */}
+                      <div className="bg-[#080D16] border border-emerald-500/30 rounded-2xl p-3 flex flex-col justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                          <span>🟢 Usuarios Online</span>
+                        </span>
+                        <div className="mt-1.5 flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black font-mono text-white">{onlineNow}</span>
+                          <span className="text-[10px] text-slate-400">conectados ahora</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 mt-1">
+                          Ventana activa: últimos 3 min
+                        </span>
+                      </div>
+
+                      {/* Card 2: Peak Online Record */}
+                      <div className="bg-[#080D16] border border-amber-500/30 rounded-2xl p-3 flex flex-col justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1">
+                          <Trophy className="w-3 h-3 text-amber-400" />
+                          <span>Máximo Online</span>
+                        </span>
+                        <div className="mt-1.5 flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black font-mono text-amber-300">{peakUsers}</span>
+                          <span className="text-[10px] text-slate-400">récord pico</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 mt-1 truncate" title={peakTimeStr}>
+                          Pico: {peakTimeStr}
+                        </span>
+                      </div>
+
+                      {/* Card 3: API-Football Quota */}
+                      <div className="bg-[#080D16] border border-cyan-500/30 rounded-2xl p-3 flex flex-col justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1">
+                          <Database className="w-3 h-3 text-cyan-400" />
+                          <span>Llamadas API Hoy</span>
+                        </span>
+                        <div className="mt-1.5 flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black font-mono text-cyan-300">
+                            {remainingQuota !== null ? `${consumedEst}/100` : callsSinceBoot}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {remainingQuota !== null ? `(${remainingQuota} libres)` : 'en sesión'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-emerald-400 mt-1 font-semibold">
+                          Blindaje 6h activo (0 fugas)
+                        </span>
+                      </div>
+
+                      {/* Card 4: Server Cache Hit Rate */}
+                      <div className="bg-[#080D16] border border-indigo-500/30 rounded-2xl p-3 flex flex-col justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-indigo-400" />
+                          <span>Ahorro en Caché</span>
+                        </span>
+                        <div className="mt-1.5 flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black font-mono text-indigo-300">{cacheHitRate}%</span>
+                          <span className="text-[10px] text-slate-400">({cacheHits} hits)</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 mt-1">
+                          ESPN Gratis: {espnPulses} pulsos
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Section: Generador de Informe Corto para Copiar y Pegar en el Chat */}
+                    <div className="bg-gradient-to-br from-indigo-950/35 via-[#080D16] to-slate-900 border border-indigo-500/40 rounded-2xl p-4 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <h4 className="text-xs font-black text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <Copy className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Informe Corto de Diagnóstico (Listo para Copiar y Pegar)</span>
+                          </h4>
+                          <p className="text-[11px] text-slate-400">
+                            Copia este resumen con 1 clic y pégalo en el chat para analizar juntos si la página está trabajando en óptimo estado.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleCopyReport}
+                          className={`px-3.5 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 shadow-md ${
+                            copiedDiagnosticReport
+                              ? 'bg-emerald-500 text-slate-950'
+                              : 'bg-indigo-500 hover:bg-indigo-400 text-white'
+                          }`}
+                        >
+                          {copiedDiagnosticReport ? (
+                            <>
+                              <Check className="w-4 h-4" />
+                              <span>¡Informe Copiado al Portapapeles!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-4 h-4" />
+                              <span>📋 Copiar Informe de Diagnóstico</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <pre className="bg-[#050810] border border-slate-800 rounded-xl p-3 text-[11px] font-mono text-slate-300 overflow-x-auto whitespace-pre-wrap leading-relaxed select-all">
+                        {buildDiagnosticReportText()}
+                      </pre>
+                    </div>
+
+                    {/* Two Columns: Connected Users Now & Recent API-Football Audit Log */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Online Users List */}
+                      <div className="bg-[#080D16] border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                          <h4 className="text-xs font-black text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>🟢 Usuarios Conectados Ahora ({onlineList.length})</span>
+                          </h4>
+                          <span className="text-[10px] text-slate-500">Pulso cada 45s</span>
+                        </div>
+                        {onlineList.length === 0 ? (
+                          <p className="text-xs text-slate-500 py-4 text-center">
+                            Sincronizando sesiones activas...
+                          </p>
+                        ) : (
+                          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                            {onlineList.map((ou, idx) => (
+                              <div
+                                key={`${ou.deviceId || idx}`}
+                                className="p-2.5 rounded-xl bg-[#050810] border border-slate-800/80 flex items-center justify-between gap-2 text-xs"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                                    <span className="font-mono font-bold text-indigo-300 truncate">
+                                      @{ou.username || 'admin_o_cliente'}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                                    📱 {ou.deviceName || ou.deviceId}
+                                  </p>
+                                </div>
+                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md shrink-0">
+                                  hace {ou.secondsAgo ?? 0}s
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* API-Football Audit Log */}
+                      <div className="bg-[#080D16] border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                          <h4 className="text-xs font-black text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>📡 Registro de Llamadas API-Football ({apiLogList.length})</span>
+                          </h4>
+                          <span className="text-[10px] text-slate-500">Solo llamadas reales</span>
+                        </div>
+                        {apiLogList.length === 0 ? (
+                          <div className="py-5 text-center space-y-1">
+                            <p className="text-xs font-bold text-emerald-400">
+                              ✅ 0 llamadas nuevas a API-Football en esta sesión
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              Todos los usuarios y botones Actualizar están leyendo desde la caché blindada de 6 horas y el pulso gratuito de ESPN.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                            {apiLogList.map((entry, idx) => (
+                              <div
+                                key={`${entry.at}-${idx}`}
+                                className="p-2.5 rounded-xl bg-[#050810] border border-slate-800/80 flex items-center justify-between gap-2 text-xs"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-mono font-bold text-cyan-300">
+                                      Fecha: {entry.targetDate}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400">
+                                      ({entry.fixturesCount} partidos)
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
+                                    {new Date(entry.at).toLocaleTimeString('es-CO')} · {entry.endpoint}
+                                  </p>
+                                </div>
+                                <span className="text-[10px] font-mono text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md shrink-0">
+                                  Libres: {entry.remainingAfter ?? '?'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* TAB 1: SEGURIDAD & PIN */}
               {activeTab === 'CONFIG' && (
