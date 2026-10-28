@@ -896,13 +896,12 @@ export async function fetchUpcomingFixtures(
     }
   }
 
-  // 2. Consultar proxy seguro del servidor (/api/matches) con caché compartida de alto rendimiento
+  // 2. Consultar proxy seguro del servidor (/api/matches) con caché compartida de alto rendimiento (CERO llamadas directas forzadas desde cliente)
   try {
-    const forceParam = options.forceRefresh ? '&force=true' : '';
-    const matchUrl = `/api/matches?date=${encodeURIComponent(targetDate)}&tz=${encodeURIComponent(userTz)}${forceParam}`;
+    const matchUrl = `/api/matches?date=${encodeURIComponent(targetDate)}&tz=${encodeURIComponent(userTz)}`;
     let res = await fetch(matchUrl);
     if (!res.ok) {
-      res = await fetch(`/api/upcoming?date=${encodeURIComponent(targetDate)}&tz=${encodeURIComponent(userTz)}${forceParam}`);
+      res = await fetch(`/api/upcoming?date=${encodeURIComponent(targetDate)}&tz=${encodeURIComponent(userTz)}`);
     }
     if (res.ok) {
       const json = await res.json();
@@ -1127,8 +1126,7 @@ export async function syncLivePulseFixtures(
   }
 
   try {
-    const forceParam = forceRefresh ? '&force=true' : '';
-    const res = await fetch(`/api/live-pulse?date=${encodeURIComponent(dateStr)}${forceParam}`);
+    const res = await fetch(`/api/live-pulse?date=${encodeURIComponent(dateStr)}`);
     if (!res.ok) {
       return { updatedFixtures: currentFixtures, changedIds: [], scoreChangedIds: [], liveCount: 0, syncedAt: Date.now() };
     }
