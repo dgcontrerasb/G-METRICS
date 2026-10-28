@@ -101,7 +101,8 @@ const inFlightRequests = new Map<string, Promise<unknown>>();
 // Quota Shield State (API-Football has 100 free requests/day)
 let lastRemainingCalls = 100;
 let quotaShieldActive = false;
-const QUOTA_SHIELD_THRESHOLD = 10;
+const QUOTA_SHIELD_THRESHOLD = 15;
+const apiFootballAuditLog: Array<{ timestamp: string; date: string; status: number; itemsCount: number }> = [];
 
 // Initialize cache from disk on server startup
 function initDiskCache(): void {
@@ -900,48 +901,12 @@ function extractApiFootballLiveTelemetry(
 }
 
 /**
- * Optimizado: No realiza llamadas externas a API-Football cuando la cuota está en riesgo.
- * La telemetría en vivo se delega al Scoreboard de ESPN ($0 costo).
+ * Blindado 100%: CERO llamadas externas a API-Football para live=all.
+ * Toda la telemetría en vivo se obtiene gratuitamente del Scoreboard oficial de ESPN cada 15s.
  */
 async function fetchApiFootballLiveAll(): Promise<any[]> {
-  const cacheKey = 'api_football_live_all_v2';
-  const cached = getCacheItem<any[]>(cacheKey);
-  
-  // 1. Si la cuota ya está baja o en Quota Shield, NUNCA gastar llamadas en vivo a API-Football
-  if (quotaShieldActive || lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD) {
-    return cached?.data || [];
-  }
-
-  // 2. Caché alargada a 15 minutos para proteger drásticamente las llamadas
-  if (cached && Date.now() - cached.timestamp < 15 * 60 * 1000) {
-    return cached.data;
-  }
-
-  const apiKey = getSecretApiKey();
-  if (!apiKey) {
-    return cached?.data || [];
-  }
-
-  return runSingleFlight(cacheKey, async () => {
-    try {
-      const res = await fetch('https://v3.football.api-sports.io/fixtures?live=all', {
-        method: 'GET',
-        headers: { 'x-apisports-key': apiKey }
-      });
-      updateQuotaFromHeaders(res.headers);
-      if (res.ok) {
-        const json = await res.json();
-        const list = Array.isArray(json?.response) ? json.response : [];
-        if (list.length > 0) {
-          setCacheItem(cacheKey, list);
-        }
-        return list;
-      }
-    } catch {
-      // ignore network error
-    }
-    return cached?.data || [];
-  });
+  const cached = getCacheItem<any[]>('api_football_live_all_v2');
+  return cached?.data || [];
 }
 
 function mapEspnPosition(posAbbr: string): 'POR' | 'DEF' | 'MED' | 'DEL' {
@@ -1861,23 +1826,35 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
       let upcomingOnly: any[] = [];
       const espnFixtures = await fetchEspnSoccerFixtures(targetDate, clientTz);
 
-      // Caché dedicada de 2 horas para la programación base de API-Football (protege 100% la cuota de 100 req/día)
-      const afScheduleCacheKey = `apifootball_schedule_v1_${targetDate}`;
-      const cachedAfSchedule = getCacheItem<any[]>(afScheduleCacheKey);
-      const afScheduleTTL = targetDate === todayLocal ? 2 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+      // Caché dedicada de 6 horas (y 24h para otras fechas) envuelta en objeto para cachear incluso respuestas vacías []
+      const afScheduleCacheKey = `apifootball_schedule_v2_${targetDate}`;
+      const cachedAfEnvelope = getCacheItem<{ fetchedAt: number; items: any[] }>(afScheduleCacheKey);
+      const legacyAfSchedule = getCacheItem<any[]>(`apifootball_schedule_v1_${targetDate}`);
+      const afScheduleTTL = targetDate === todayLocal ? 6 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
 
       if (
-        cachedAfSchedule &&
-        Array.isArray(cachedAfSchedule.data) &&
-        cachedAfSchedule.data.length > 0 &&
-        Date.now() - cachedAfSchedule.timestamp < afScheduleTTL
+        cachedAfEnvelope &&
+        typeof cachedAfEnvelope.data === 'object' &&
+        Array.isArray(cachedAfEnvelope.data.items) &&
+        Date.now() - cachedAfEnvelope.timestamp < afScheduleTTL
       ) {
         upcomingOnly = filterActiveUpcomingFixtures(
-          JSON.parse(JSON.stringify(cachedAfSchedule.data)),
+          JSON.parse(JSON.stringify(cachedAfEnvelope.data.items)),
           targetDate,
           clientTz
         );
-      } else if (apiKey && !quotaShieldActive) {
+      } else if (
+        legacyAfSchedule &&
+        Array.isArray(legacyAfSchedule.data) &&
+        Date.now() - legacyAfSchedule.timestamp < afScheduleTTL
+      ) {
+        setCacheItem(afScheduleCacheKey, { fetchedAt: legacyAfSchedule.timestamp, items: legacyAfSchedule.data });
+        upcomingOnly = filterActiveUpcomingFixtures(
+          JSON.parse(JSON.stringify(legacyAfSchedule.data)),
+          targetDate,
+          clientTz
+        );
+      } else if (apiKey && !quotaShieldActive && lastRemainingCalls > QUOTA_SHIELD_THRESHOLD) {
         try {
           const apiRes = await fetch(
             `https://v3.football.api-sports.io/fixtures?date=${targetDate}&timezone=America/Bogota`,
@@ -1892,10 +1869,19 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
           if (apiRes.ok) {
             const json = await apiRes.json();
             const rawList = Array.isArray(json.response) ? json.response : [];
-            if (rawList.length > 0) {
-              setCacheItem(afScheduleCacheKey, rawList);
-            }
+            // Guardar SIEMPRE el sobre en caché (incluso si rawList es []), evitando reintentos en fechas vacías o restringidas
+            setCacheItem(afScheduleCacheKey, { fetchedAt: Date.now(), items: rawList });
+            apiFootballAuditLog.unshift({
+              timestamp: new Date().toISOString(),
+              date: targetDate,
+              status: apiRes.status,
+              itemsCount: rawList.length
+            });
+            if (apiFootballAuditLog.length > 30) apiFootballAuditLog.pop();
             upcomingOnly = filterActiveUpcomingFixtures(rawList, targetDate, clientTz);
+          } else {
+            // Bloquear reintentos por 6h si la API responde error HTTP
+            setCacheItem(afScheduleCacheKey, { fetchedAt: Date.now(), items: [] });
           }
         } catch {
           // Proceed to ESPN official fallback
@@ -2786,91 +2772,42 @@ app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
-// 1. Secret Proxy Endpoint: GET /api/fixtures
+// 1. Secret Proxy Endpoint: GET /api/fixtures (Unificado a caché compartida, 0 llamadas adicionales a API-Football)
 app.get('/api/fixtures', dataRateLimitMiddleware, async (req, res) => {
-  const date = (req.query.date as string) || new Date().toISOString().split('T')[0];
-  const force = req.query.force === 'true' && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
-  const apiKey = getSecretApiKey();
-
-  const cacheKey = `fix_${date}`;
-  const cached = getCacheItem<any[]>(cacheKey);
-  const todayStr = new Date().toISOString().split('T')[0];
-  const cacheTTL = date === todayStr ? 2 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-
-  if (cached && (!force || quotaShieldActive)) {
-    const isFresh = Date.now() - cached.timestamp < cacheTTL;
-    if (isFresh || quotaShieldActive) {
-      return res.status(200).json({
-        success: true,
-        source: 'persistent_disk_cache',
-        remainingCalls: lastRemainingCalls,
-        quotaShieldActive,
-        fixtures: cached.data
-      });
-    }
-  }
-
-  if (quotaShieldActive && cached) {
+  const date = (req.query.date as string) || getColombiaDateStr(0);
+  const sharedUpcoming = getCacheItem<any[]>(`upcoming_v8_${date}`);
+  if (sharedUpcoming && Array.isArray(sharedUpcoming.data) && sharedUpcoming.data.length > 0) {
     return res.status(200).json({
       success: true,
-      source: 'quota_shield_disk_cache',
+      source: 'persistent_disk_cache',
       remainingCalls: lastRemainingCalls,
-      quotaShieldActive: true,
-      fixtures: cached.data
+      quotaShieldActive,
+      fixtures: sharedUpcoming.data
     });
   }
 
-  if (!apiKey) {
+  const afEnvelope = getCacheItem<{ fetchedAt: number; items: any[] }>(`apifootball_schedule_v2_${date}`);
+  if (afEnvelope && Array.isArray(afEnvelope.data?.items) && afEnvelope.data.items.length > 0) {
     return res.status(200).json({
-      success: false,
-      message: 'No secret API key configured on server. Fallback to cache.',
-      hasKey: false,
+      success: true,
+      source: 'persistent_disk_cache',
       remainingCalls: lastRemainingCalls,
       quotaShieldActive,
-      fixtures: cached?.data || []
+      fixtures: afEnvelope.data.items
     });
   }
 
   try {
-    const rawFixtures = await runSingleFlight(cacheKey, async () => {
-      const apiRes = await fetch(`https://v3.football.api-sports.io/fixtures?date=${date}&timezone=America/Bogota`, {
-        method: 'GET',
-        headers: { 'x-apisports-key': apiKey }
-      });
-
-      updateQuotaFromHeaders(apiRes.headers);
-
-      if (!apiRes.ok) {
-        if (cached) return cached.data;
-        return [];
-      }
-
-      const json = await apiRes.json();
-      const fixtures = Array.isArray(json.response) ? json.response : [];
-      if (fixtures.length > 0) {
-        setCacheItem(cacheKey, fixtures);
-      }
-      return fixtures;
-    });
-
+    const espnFallback = await fetchEspnSoccerFixtures(date, 'America/Bogota');
     return res.status(200).json({
       success: true,
-      source: 'api_football_coalesced',
+      source: 'espn_official_coalesced',
       remainingCalls: lastRemainingCalls,
       quotaShieldActive,
-      fixtures: rawFixtures
+      fixtures: espnFallback
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    if (cached) {
-      return res.status(200).json({
-        success: true,
-        source: 'fallback_disk_cache',
-        remainingCalls: lastRemainingCalls,
-        quotaShieldActive,
-        fixtures: cached.data
-      });
-    }
     return res.status(200).json({
       success: false,
       error: message,
@@ -2893,7 +2830,9 @@ app.get('/api/status', dataRateLimitMiddleware, (_req, res) => {
     quotaShieldActive: lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD,
     quotaShieldThreshold: QUOTA_SHIELD_THRESHOLD,
     cachedEntriesCount: memoryCache.size,
-    cacheTtlMinutes: 120,
+    cacheTtlMinutes: 360,
+    apiFootballCallsSinceBoot: apiFootballAuditLog.length,
+    apiFootballAuditLog,
     serverReady: true
   });
 });

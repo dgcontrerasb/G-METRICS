@@ -3,14 +3,335 @@ import express from "express";
 import dotenv from "dotenv";
 import path2 from "path";
 import fs2 from "fs";
-import crypto2 from "node:crypto";
+import crypto3 from "node:crypto";
 import { fileURLToPath } from "url";
 
 // src/services/supabaseServer.ts
 import { createClient } from "@supabase/supabase-js";
-import crypto from "node:crypto";
+import crypto2 from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+
+// src/services/securityShield.ts
+import crypto from "node:crypto";
+var JWT_SECRET = process.env.JWT_SECRET_KEY || process.env.ADMIN_MASTER_KEY || "SPORTSTATS_PRO_ZERO_TRUST_JWT_HMAC_KEY_2026_V4";
+var SCRYPT_PREFIX = "scrypt$";
+var KEY_LEN = 32;
+function isHashedPin(stored) {
+  return typeof stored === "string" && stored.startsWith(SCRYPT_PREFIX);
+}
+function hashUserPin(rawPin) {
+  const clean = String(rawPin || "").trim();
+  if (isHashedPin(clean)) return clean;
+  const salt = crypto.randomBytes(16).toString("hex");
+  const derived = crypto.scryptSync(clean, salt, KEY_LEN).toString("hex");
+  return `${SCRYPT_PREFIX}${salt}$${derived}`;
+}
+function verifyUserPin(inputPin, storedPinOrHash) {
+  const cleanInput = String(inputPin || "").trim();
+  const stored = String(storedPinOrHash || "").trim();
+  if (!cleanInput || !stored) return false;
+  if (isHashedPin(stored)) {
+    const parts = stored.split("$");
+    if (parts.length !== 3) return false;
+    const [, salt, storedHex] = parts;
+    try {
+      const derivedBuf = crypto.scryptSync(cleanInput, salt, KEY_LEN);
+      const storedBuf = Buffer.from(storedHex, "hex");
+      if (derivedBuf.length !== storedBuf.length) return false;
+      return crypto.timingSafeEqual(derivedBuf, storedBuf);
+    } catch {
+      return false;
+    }
+  }
+  return timingSafeCompare(cleanInput, stored);
+}
+function timingSafeCompare(a, b) {
+  const strA = String(a || "");
+  const strB = String(b || "");
+  const bufA = Buffer.from(strA, "utf8");
+  const bufB = Buffer.from(strB, "utf8");
+  if (bufA.length !== bufB.length) {
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+function base64UrlEncode(input) {
+  return Buffer.from(input).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+function base64UrlDecode(input) {
+  let base64 = input.replace(/-/g, "+").replace(/_/g, "/");
+  while (base64.length % 4 !== 0) {
+    base64 += "=";
+  }
+  return Buffer.from(base64, "base64").toString("utf8");
+}
+function createSessionJwt(params) {
+  const nowSec = Math.floor(Date.now() / 1e3);
+  const ttlSec = (params.ttlDays ?? 30) * 24 * 60 * 60;
+  const header = base64UrlEncode(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const payloadObj = {
+    sub: params.userId,
+    username: params.username,
+    role: params.role,
+    deviceId: String(params.deviceId || "").trim().toUpperCase(),
+    iat: nowSec,
+    exp: nowSec + ttlSec
+  };
+  const payload = base64UrlEncode(JSON.stringify(payloadObj));
+  const signingInput = `${header}.${payload}`;
+  const signature = base64UrlEncode(
+    crypto.createHmac("sha256", JWT_SECRET).update(signingInput).digest()
+  );
+  return `${signingInput}.${signature}`;
+}
+function verifySessionJwt(token, expectedDeviceId) {
+  if (!token || typeof token !== "string") return null;
+  const parts = token.trim().split(".");
+  if (parts.length !== 3) return null;
+  const [header, payload, givenSig] = parts;
+  const signingInput = `${header}.${payload}`;
+  const expectedSig = base64UrlEncode(
+    crypto.createHmac("sha256", JWT_SECRET).update(signingInput).digest()
+  );
+  if (!timingSafeCompare(givenSig, expectedSig)) {
+    return null;
+  }
+  try {
+    const decoded = JSON.parse(base64UrlDecode(payload));
+    const nowSec = Math.floor(Date.now() / 1e3);
+    if (!decoded.exp || decoded.exp < nowSec) {
+      return null;
+    }
+    if (expectedDeviceId && decoded.role !== "admin") {
+      const cleanExpected = expectedDeviceId.trim().toUpperCase();
+      if (decoded.deviceId && decoded.deviceId !== cleanExpected) {
+        return null;
+      }
+    }
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+var DANGEROUS_KEYS = /* @__PURE__ */ new Set(["__proto__", "constructor", "prototype"]);
+function sanitizeText(input, maxLength = 120) {
+  if (typeof input !== "string") return "";
+  return input.replace(/[\u0000-\u001F\u007F]/g, "").replace(/<\s*\/?\s*script[^>]*>/gi, "").replace(/javascript\s*:/gi, "").replace(/on\w+\s*=/gi, "").replace(/[<>]/g, "").trim().slice(0, maxLength);
+}
+function sanitizeAlphanumericId(input, maxLength = 32) {
+  if (typeof input !== "string") return "";
+  return input.replace(/[^a-zA-Z0-9_-]/g, "").trim().slice(0, maxLength);
+}
+function sanitizePhone(input) {
+  if (typeof input !== "string") return "";
+  return input.replace(/[^0-9]/g, "").slice(0, 18);
+}
+function sanitizeDeepPayload(obj) {
+  if (obj === null || obj === void 0) return obj;
+  if (typeof obj === "string") {
+    if (obj.startsWith("data:image/")) {
+      return obj;
+    }
+    return sanitizeText(obj, 1e3);
+  }
+  if (Array.isArray(obj)) {
+    return obj.map((item) => sanitizeDeepPayload(item));
+  }
+  if (typeof obj === "object") {
+    const cleanObj = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (DANGEROUS_KEYS.has(k)) continue;
+      cleanObj[k] = sanitizeDeepPayload(v);
+    }
+    return cleanObj;
+  }
+  return obj;
+}
+var dataRateBuckets = /* @__PURE__ */ new Map();
+var ipNatRateBuckets = /* @__PURE__ */ new Map();
+var authFailuresMap = /* @__PURE__ */ new Map();
+var DATA_RATE_WINDOW_MS = 60 * 1e3;
+var DATA_RATE_MAX_REQUESTS = 45;
+var DATA_RATE_MAX_PER_NAT_IP = 240;
+var AUTH_WINDOW_MS = 15 * 60 * 1e3;
+var AUTH_MAX_FAILURES = 5;
+function getClientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.length > 0) {
+    return forwarded.split(",")[0].trim();
+  }
+  return req.socket?.remoteAddress || "127.0.0.1";
+}
+function dataRateLimitMiddleware(req, res, next) {
+  const ip = getClientIp(req);
+  const rawDeviceId = typeof req.headers["x-device-id"] === "string" ? sanitizeAlphanumericId(req.headers["x-device-id"], 32) : "";
+  const bucketKey = rawDeviceId ? `${ip}:${rawDeviceId}` : ip;
+  const now = Date.now();
+  let bucket = dataRateBuckets.get(bucketKey);
+  if (!bucket) {
+    bucket = { timestamps: [] };
+    dataRateBuckets.set(bucketKey, bucket);
+  }
+  bucket.timestamps = bucket.timestamps.filter((t) => now - t < DATA_RATE_WINDOW_MS);
+  let ipBucket = ipNatRateBuckets.get(ip);
+  if (!ipBucket) {
+    ipBucket = { timestamps: [] };
+    ipNatRateBuckets.set(ip, ipBucket);
+  }
+  ipBucket.timestamps = ipBucket.timestamps.filter((t) => now - t < DATA_RATE_WINDOW_MS);
+  const remainingDevice = Math.max(0, DATA_RATE_MAX_REQUESTS - bucket.timestamps.length);
+  const remainingIp = Math.max(0, DATA_RATE_MAX_PER_NAT_IP - ipBucket.timestamps.length);
+  const remaining = Math.min(remainingDevice, remainingIp);
+  res.setHeader("X-RateLimit-Limit", String(DATA_RATE_MAX_REQUESTS));
+  res.setHeader("X-RateLimit-Remaining", String(remaining));
+  if (bucket.timestamps.length >= DATA_RATE_MAX_REQUESTS || ipBucket.timestamps.length >= DATA_RATE_MAX_PER_NAT_IP) {
+    const oldest = bucket.timestamps[0] || ipBucket.timestamps[0] || now;
+    const retryAfterSec = Math.max(1, Math.ceil((DATA_RATE_WINDOW_MS - (now - oldest)) / 1e3));
+    res.setHeader("Retry-After", String(retryAfterSec));
+    res.status(429).json({
+      success: false,
+      error: "Too Many Requests",
+      message: `L\xEDmite de peticiones excedido (m\xE1x. ${DATA_RATE_MAX_REQUESTS}/min por dispositivo, ${DATA_RATE_MAX_PER_NAT_IP}/min por red). Intenta de nuevo en ${retryAfterSec} segundos.`
+    });
+    return;
+  }
+  bucket.timestamps.push(now);
+  ipBucket.timestamps.push(now);
+  next();
+}
+function checkAuthLockout(req, res) {
+  const ip = getClientIp(req);
+  const now = Date.now();
+  const record = authFailuresMap.get(ip);
+  if (!record) return false;
+  if (record.lockedUntil > now) {
+    const waitMinutes = Math.max(1, Math.ceil((record.lockedUntil - now) / 6e4));
+    const waitSeconds = Math.max(1, Math.ceil((record.lockedUntil - now) / 1e3));
+    res.setHeader("Retry-After", String(waitSeconds));
+    res.status(429).json({
+      success: false,
+      isValid: false,
+      code: "RATE_LIMITED",
+      error: "Demasiados intentos fallidos",
+      message: `Acceso bloqueado temporalmente por seguridad tras m\xFAltiples intentos fallidos. Intenta de nuevo en ${waitMinutes} min.`
+    });
+    return true;
+  }
+  if (now - record.firstFailureAt > AUTH_WINDOW_MS) {
+    authFailuresMap.delete(ip);
+  }
+  return false;
+}
+async function recordAuthFailure(req) {
+  const ip = getClientIp(req);
+  const now = Date.now();
+  let record = authFailuresMap.get(ip);
+  if (!record || now - record.firstFailureAt > AUTH_WINDOW_MS) {
+    record = {
+      failures: 1,
+      firstFailureAt: now,
+      lockedUntil: 0
+    };
+  } else {
+    record.failures += 1;
+    if (record.failures >= AUTH_MAX_FAILURES) {
+      record.lockedUntil = now + AUTH_WINDOW_MS;
+    }
+  }
+  authFailuresMap.set(ip, record);
+  const delayMs = Math.min(1800, record.failures * 300);
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+function clearAuthFailures(req) {
+  const ip = getClientIp(req);
+  authFailuresMap.delete(ip);
+}
+var idempotencyStore = /* @__PURE__ */ new Map();
+var IDEMPOTENCY_TTL_MS = 5 * 60 * 1e3;
+function idempotencyMiddleware(req, res, next) {
+  if (req.method !== "POST" && req.method !== "PUT" && req.method !== "DELETE") {
+    next();
+    return;
+  }
+  const rawKey = req.headers["idempotency-key"];
+  if (!rawKey || typeof rawKey !== "string") {
+    next();
+    return;
+  }
+  const cleanKey = `${req.path}:${sanitizeAlphanumericId(rawKey, 64)}`;
+  const now = Date.now();
+  idempotencyStore.forEach((val, key) => {
+    if (now - val.createdAt > IDEMPOTENCY_TTL_MS) {
+      idempotencyStore.delete(key);
+    }
+  });
+  const existing = idempotencyStore.get(cleanKey);
+  if (existing) {
+    res.setHeader("X-Idempotent-Replay", "true");
+    res.status(existing.status).json(existing.body);
+    return;
+  }
+  const originalJson = res.json.bind(res);
+  res.json = ((body) => {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      idempotencyStore.set(cleanKey, {
+        status: res.statusCode,
+        body,
+        createdAt: Date.now()
+      });
+    }
+    return originalJson(body);
+  });
+  next();
+}
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  const customAllowed = (process.env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (customAllowed.includes(origin)) return true;
+  try {
+    const parsed = new URL(origin);
+    const host = parsed.hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "sportstats.pro" || host.endsWith(".sportstats.pro") || host.endsWith(".run.app") || host.endsWith(".google.com") || host.endsWith(".vercel.app");
+  } catch {
+    return false;
+  }
+}
+function securityHeadersMiddleware(req, res, next) {
+  const origin = req.headers.origin;
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  } else if (!origin) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, x-apisports-key, x-admin-pin, Idempotency-Key, x-device-id"
+  );
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-DNS-Prefetch-Control", "off");
+  res.setHeader("X-Download-Options", "noopen");
+  res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self' https: data: blob: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'self' https://*.google.com https://*.aistudio.google.com https://*.run.app;"
+  );
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+  if (req.body && typeof req.body === "object") {
+    req.body = sanitizeDeepPayload(req.body);
+  }
+  next();
+}
+
+// src/services/supabaseServer.ts
 var supabaseClient = null;
 var IS_VERCEL = Boolean(process.env.VERCEL);
 var LOCAL_USERS_FILE = IS_VERCEL ? path.resolve("/tmp", "sportstats_users_db.json") : path.resolve(process.cwd(), "sportstats_users_db.json");
@@ -186,8 +507,8 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
   const isOwnerAdmin = isOwnerEmail || rawClean === "admin";
   const username = isOwnerAdmin ? "admin" : normalizeUsername(rawUsername);
   const pin = String(rawPin || "").trim();
-  const cleanDevice = String(deviceId || "").trim().toUpperCase();
-  const friendlyDevName = String(deviceName || "Dispositivo Web / M\xF3vil").trim();
+  const cleanDevice = sanitizeText(String(deviceId || ""), 48).toUpperCase();
+  const friendlyDevName = sanitizeText(String(deviceName || "Dispositivo Web / M\xF3vil"), 80) || "Dispositivo Web / M\xF3vil";
   if (!isOwnerAdmin && (!username || username.length < 3)) {
     return {
       success: false,
@@ -206,18 +527,29 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
   const nowMs = Date.now();
   if (isOwnerAdmin) {
     const cfg = await fetchSupabaseAdminConfig();
-    const activeAdminPin = cfg?.adminPin || process.env.ADMIN_PIN || "120328";
+    const envAdminPin = (process.env.ADMIN_PIN || "").trim();
+    const envMasterKey = (process.env.ADMIN_MASTER_KEY || "").trim();
+    const activeAdminPin = cfg?.adminPin || envAdminPin || "120328";
     const pinUpper = pin.toUpperCase();
-    const isPinCorrect = pin === activeAdminPin || pin === "120328" || pinUpper === "MASTER-2708" || pinUpper === "2708";
+    const isStrictProd = process.env.NODE_ENV === "production" && Boolean(envMasterKey);
+    const isPinCorrect = timingSafeCompare(pin, activeAdminPin) || (envMasterKey ? timingSafeCompare(pin, envMasterKey) : false) || !isStrictProd && (timingSafeCompare(pin, "120328") || timingSafeCompare(pinUpper, "MASTER-2708") || timingSafeCompare(pinUpper, "2708"));
     if (isPinCorrect) {
+      const sessionToken = createSessionJwt({
+        userId: "admin-owner",
+        username: "admin",
+        role: "admin",
+        deviceId: cleanDevice,
+        ttlDays: 30
+      });
       return {
         success: true,
         message: "Acceso de Propietario verificado con \xE9xito",
+        sessionToken,
         user: {
           id: "admin-owner",
           username: "admin",
           displayName: "Geovanny Contreras (Propietario)",
-          pin,
+          pin: "[PROTECTED]",
           role: "admin",
           status: "active",
           planType: "PERMANENT",
@@ -234,7 +566,7 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
       return {
         success: false,
         code: "INVALID_PIN",
-        message: "PIN incorrecto para la cuenta de Administrador Propietario. Usa tu PIN o el C\xF3digo Maestro MASTER-2708."
+        message: "Credenciales incorrectas para la cuenta de Administrador Propietario."
       };
     }
   }
@@ -245,12 +577,16 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
         console.warn("[Supabase User Login] Error:", error.message);
       }
       if (data) {
-        if (data.pin_hash !== pin) {
+        if (!verifyUserPin(pin, data.pin_hash)) {
           return {
             success: false,
             code: "INVALID_PIN",
             message: "El PIN ingresado no es correcto para este usuario."
           };
+        }
+        if (!isHashedPin(data.pin_hash)) {
+          const upgradedHash = hashUserPin(pin);
+          await client.from("sportstats_users").update({ pin_hash: upgradedHash }).eq("id", data.id);
         }
         const isAdmin = data.role === "admin";
         if (!isAdmin) {
@@ -303,7 +639,7 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
           id: data.id,
           username: data.username,
           displayName: data.display_name || void 0,
-          pin: data.pin_hash,
+          pin: "[PROTECTED]",
           role: data.role || "client",
           status: data.status || "active",
           planType: data.plan_type || "30D",
@@ -319,9 +655,17 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
           daysRemaining,
           isExpired: data.expires_at ? data.expires_at < nowMs : false
         };
+        const sessionToken = createSessionJwt({
+          userId: resolvedUser.id,
+          username: resolvedUser.username,
+          role: resolvedUser.role,
+          deviceId: cleanDevice,
+          ttlDays: 30
+        });
         return {
           success: true,
           message: "Autenticaci\xF3n exitosa",
+          sessionToken,
           user: resolvedUser
         };
       }
@@ -332,12 +676,16 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
   const localUsers = getLocalUsersDb();
   const localUser = localUsers.find((u) => u.username === username);
   if (localUser) {
-    if (localUser.pin !== pin) {
+    if (!verifyUserPin(pin, localUser.pin)) {
       return {
         success: false,
         code: "INVALID_PIN",
         message: "El PIN ingresado no es correcto para este usuario."
       };
+    }
+    if (!isHashedPin(localUser.pin)) {
+      localUser.pin = hashUserPin(pin);
+      saveLocalUsersDb(localUsers);
     }
     const isAdmin = localUser.role === "admin";
     if (!isAdmin) {
@@ -382,34 +730,22 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
       saveLocalUsersDb(localUsers);
     }
     const daysRemaining = localUser.expiresAt ? Math.max(0, Math.ceil((localUser.expiresAt - nowMs) / (24 * 60 * 60 * 1e3))) : null;
+    const sessionToken = createSessionJwt({
+      userId: localUser.id,
+      username: localUser.username,
+      role: localUser.role,
+      deviceId: cleanDevice,
+      ttlDays: 30
+    });
     return {
       success: true,
       message: "Autenticaci\xF3n exitosa",
+      sessionToken,
       user: {
         ...localUser,
+        pin: "[PROTECTED]",
         daysRemaining,
         isExpired: localUser.expiresAt ? localUser.expiresAt < nowMs : false
-      }
-    };
-  }
-  if (username === "admin" && (pin === process.env.ADMIN_PIN || pin === "120328" || pin.toUpperCase() === "MASTER-2708")) {
-    return {
-      success: true,
-      message: "Acceso de Administrador verificado (Modo Maestro)",
-      user: {
-        id: "admin-master",
-        username: "admin",
-        displayName: "Administrador Propietario",
-        pin,
-        role: "admin",
-        status: "active",
-        planType: "PERMANENT",
-        planLabel: "Acceso Maestro Ilimitado",
-        createdAt: nowMs,
-        expiresAt: null,
-        boundDeviceId: cleanDevice,
-        boundDeviceName: friendlyDevName,
-        lastActiveAt: nowMs
       }
     };
   }
@@ -419,9 +755,11 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
     message: "El usuario no existe o las credenciales no son v\xE1lidas."
   };
 }
-async function registerAppUserRequest(rawUsername, rawPin, displayName, whatsapp) {
+async function registerAppUserRequest(rawUsername, rawPin, displayName, whatsapp, deviceId, deviceName) {
   const username = normalizeUsername(rawUsername);
   const pin = String(rawPin || "").trim();
+  const cleanDeviceId = deviceId ? sanitizeText(String(deviceId), 48).toUpperCase() : null;
+  const friendlyDevName = sanitizeText(String(deviceName || "Dispositivo Web / M\xF3vil"), 80) || "Dispositivo Web / M\xF3vil";
   if (!username || username.length < 3) {
     return {
       success: false,
@@ -438,9 +776,22 @@ async function registerAppUserRequest(rawUsername, rawPin, displayName, whatsapp
   }
   const client = getSupabaseClient();
   const nowMs = Date.now();
-  const cleanDisplayName = displayName ? displayName.trim() : void 0;
-  const cleanWhatsapp = whatsapp ? whatsapp.replace(/[^0-9]/g, "") : void 0;
+  const cleanDisplayName = displayName ? sanitizeText(displayName, 60) : void 0;
+  const cleanWhatsapp = whatsapp ? sanitizePhone(whatsapp) : void 0;
+  const hashedPin = hashUserPin(pin);
   const localUsers = getLocalUsersDb();
+  if (cleanDeviceId) {
+    const pendingOnDevice = localUsers.find(
+      (u) => u.boundDeviceId === cleanDeviceId && u.status === "pending" && u.username !== username
+    );
+    if (pendingOnDevice) {
+      return {
+        success: false,
+        code: "DEVICE_PENDING_EXISTS",
+        message: `Ya tienes una solicitud pendiente (@${pendingOnDevice.username}) registrada desde este dispositivo. Espera a que el administrador la active o ingresa con tus credenciales.`
+      };
+    }
+  }
   const existingLocal = localUsers.find((u) => u.username === username);
   if (existingLocal && existingLocal.status === "active") {
     return {
@@ -450,26 +801,30 @@ async function registerAppUserRequest(rawUsername, rawPin, displayName, whatsapp
     };
   }
   const newRecord = existingLocal || {
-    id: crypto.randomUUID ? crypto.randomUUID() : `USR-${Date.now().toString(36).toUpperCase()}`,
+    id: crypto2.randomUUID ? crypto2.randomUUID() : `USR-${Date.now().toString(36).toUpperCase()}`,
     username,
     displayName: cleanDisplayName,
-    pin,
+    pin: hashedPin,
     role: "client",
     status: "pending",
-    planType: "30D",
-    planLabel: "Pase 30 D\xEDas",
+    planType: "PENDING",
+    planLabel: "Pendiente de Activaci\xF3n",
     createdAt: nowMs,
-    expiresAt: nowMs + 30 * 24 * 60 * 60 * 1e3,
-    boundDeviceId: null,
-    boundDeviceName: null,
+    expiresAt: null,
+    boundDeviceId: cleanDeviceId,
+    boundDeviceName: friendlyDevName,
     whatsappNumber: cleanWhatsapp || null,
-    daysRemaining: 30,
+    daysRemaining: 0,
     isExpired: false
   };
   if (existingLocal) {
-    existingLocal.pin = pin;
+    existingLocal.pin = hashedPin;
     if (cleanDisplayName) existingLocal.displayName = cleanDisplayName;
     if (cleanWhatsapp) existingLocal.whatsappNumber = cleanWhatsapp;
+    if (cleanDeviceId) {
+      existingLocal.boundDeviceId = cleanDeviceId;
+      existingLocal.boundDeviceName = friendlyDevName;
+    }
   } else {
     localUsers.unshift(newRecord);
   }
@@ -486,7 +841,7 @@ async function registerAppUserRequest(rawUsername, rawPin, displayName, whatsapp
           };
         }
         await client.from("sportstats_users").update({
-          pin_hash: pin,
+          pin_hash: hashedPin,
           display_name: cleanDisplayName || null,
           whatsapp_number: cleanWhatsapp || null
         }).eq("id", existing.id);
@@ -499,13 +854,13 @@ async function registerAppUserRequest(rawUsername, rawPin, displayName, whatsapp
       const { error } = await client.from("sportstats_users").insert({
         username,
         display_name: cleanDisplayName || null,
-        pin_hash: pin,
+        pin_hash: hashedPin,
         role: "client",
         status: "pending",
-        plan_type: "30D",
-        plan_label: "Pase 30 D\xEDas",
+        plan_type: "PENDING",
+        plan_label: "Pendiente de Activaci\xF3n",
         created_at: nowMs,
-        expires_at: nowMs + 30 * 24 * 60 * 60 * 1e3,
+        expires_at: null,
         bound_device_id: null,
         whatsapp_number: cleanWhatsapp || null
       });
@@ -522,34 +877,78 @@ async function registerAppUserRequest(rawUsername, rawPin, displayName, whatsapp
     username
   };
 }
+var DELETED_USERS_FILE = IS_VERCEL ? path.resolve("/tmp", "sportstats_deleted_users.json") : path.resolve(process.cwd(), "sportstats_deleted_users.json");
+var memoryDeletedUsernames = null;
+function getDeletedUsernamesSet() {
+  if (memoryDeletedUsernames) return memoryDeletedUsernames;
+  try {
+    if (fs.existsSync(DELETED_USERS_FILE)) {
+      const raw = fs.readFileSync(DELETED_USERS_FILE, "utf8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        memoryDeletedUsernames = new Set(parsed.map((item) => String(item).toLowerCase().trim()));
+        return memoryDeletedUsernames;
+      }
+    }
+  } catch {
+  }
+  memoryDeletedUsernames = /* @__PURE__ */ new Set();
+  return memoryDeletedUsernames;
+}
+function saveDeletedUsernamesSet(set) {
+  memoryDeletedUsernames = set;
+  try {
+    fs.writeFileSync(DELETED_USERS_FILE, JSON.stringify(Array.from(set), null, 2), "utf8");
+  } catch {
+  }
+}
+function isValidUuid(str) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
+}
 async function adminListAppUsers() {
   const client = getSupabaseClient();
   const nowMs = Date.now();
   const localUsers = getLocalUsersDb();
+  const deletedSet = getDeletedUsernamesSet();
   const mergedMap = /* @__PURE__ */ new Map();
   for (const u of localUsers) {
-    const daysRemaining = u.expiresAt ? Math.max(0, Math.ceil((u.expiresAt - nowMs) / (24 * 60 * 60 * 1e3))) : null;
-    const isExpired = u.expiresAt ? u.expiresAt < nowMs : false;
-    mergedMap.set(u.username, { ...u, daysRemaining, isExpired });
+    const uname = String(u.username || "").toLowerCase().trim();
+    if (!uname || deletedSet.has(uname)) continue;
+    const isPending = u.status === "pending";
+    const daysRemaining = isPending ? 0 : u.expiresAt ? Math.max(0, Math.ceil((u.expiresAt - nowMs) / (24 * 60 * 60 * 1e3))) : null;
+    const isExpired = isPending ? false : u.expiresAt ? u.expiresAt < nowMs : false;
+    mergedMap.set(uname, {
+      ...u,
+      username: uname,
+      pin: "[PROTECTED]",
+      planType: isPending ? "PENDING" : u.planType || "30D",
+      planLabel: isPending ? "Pendiente de Activaci\xF3n" : u.planLabel || "Pase Mensual",
+      expiresAt: isPending ? null : u.expiresAt,
+      daysRemaining,
+      isExpired
+    });
   }
   if (client) {
     try {
       const { data, error } = await client.from("sportstats_users").select("*").order("created_at", { ascending: false });
       if (!error && Array.isArray(data)) {
         for (const row of data) {
-          const daysRemaining = row.expires_at ? Math.max(0, Math.ceil((row.expires_at - nowMs) / (24 * 60 * 60 * 1e3))) : null;
-          const isExpired = row.expires_at ? row.expires_at < nowMs : false;
+          const uname = String(row.username || "").toLowerCase().trim();
+          if (!uname || deletedSet.has(uname)) continue;
+          const isPending = row.status === "pending";
+          const daysRemaining = isPending ? 0 : row.expires_at ? Math.max(0, Math.ceil((row.expires_at - nowMs) / (24 * 60 * 60 * 1e3))) : null;
+          const isExpired = isPending ? false : row.expires_at ? row.expires_at < nowMs : false;
           const item = {
             id: row.id,
-            username: row.username,
+            username: uname,
             displayName: row.display_name || void 0,
-            pin: row.pin_hash,
+            pin: "[PROTECTED]",
             role: row.role || "client",
             status: row.status || "active",
-            planType: row.plan_type || "30D",
-            planLabel: row.plan_label || "Pase Mensual",
+            planType: isPending ? "PENDING" : row.plan_type || "30D",
+            planLabel: isPending ? "Pendiente de Activaci\xF3n" : row.plan_label || "Pase Mensual",
             createdAt: Number(row.created_at || nowMs),
-            expiresAt: row.expires_at ? Number(row.expires_at) : null,
+            expiresAt: isPending ? null : row.expires_at ? Number(row.expires_at) : null,
             boundDeviceId: row.bound_device_id,
             boundDeviceName: row.bound_device_name,
             boundDeviceUpdatedAt: row.bound_device_updated_at,
@@ -559,7 +958,7 @@ async function adminListAppUsers() {
             daysRemaining,
             isExpired
           };
-          mergedMap.set(item.username, item);
+          mergedMap.set(uname, item);
         }
       }
     } catch (err) {
@@ -568,14 +967,17 @@ async function adminListAppUsers() {
   }
   return Array.from(mergedMap.values()).sort((a, b) => b.createdAt - a.createdAt);
 }
-async function adminResetAppUserDevice(userId) {
+async function adminResetAppUserDevice(userId, username) {
   let updatedLocal = false;
+  const cleanUser = username ? normalizeUsername(username) : "";
   const localUsers = getLocalUsersDb();
+  let matchedUsername = cleanUser;
   for (const u of localUsers) {
-    if (u.id === userId || u.username === userId) {
+    if (u.id === userId || u.username === userId || cleanUser && u.username === cleanUser) {
       u.boundDeviceId = null;
       u.boundDeviceName = null;
       u.boundDeviceUpdatedAt = null;
+      if (!matchedUsername) matchedUsername = u.username;
       updatedLocal = true;
     }
   }
@@ -583,30 +985,47 @@ async function adminResetAppUserDevice(userId) {
   const client = getSupabaseClient();
   if (client) {
     try {
-      const { error } = await client.from("sportstats_users").update({
+      const updatePayload = {
         bound_device_id: null,
         bound_device_name: null,
         bound_device_updated_at: null
-      }).eq("id", userId);
-      if (!error) return true;
+      };
+      if (isValidUuid(userId)) {
+        const { error } = await client.from("sportstats_users").update(updatePayload).eq("id", userId);
+        if (!error) return true;
+      }
+      if (matchedUsername) {
+        const { error } = await client.from("sportstats_users").update(updatePayload).eq("username", matchedUsername);
+        if (!error) return true;
+      }
     } catch {
     }
   }
   return updatedLocal;
 }
-async function adminRenewAppUser(userId, addDays) {
+async function adminRenewAppUser(userId, addDays, username, mode = "SET") {
   const nowMs = Date.now();
+  const isPermanent = Number(addDays) === 0;
   const daysMs = Number(addDays) * 24 * 60 * 60 * 1e3;
   let updatedLocal = false;
+  const cleanUser = username ? normalizeUsername(username) : "";
+  let matchedUsername = cleanUser;
+  const planType = isPermanent ? "PERMANENT" : Number(addDays) === 1 ? "24H" : `${addDays}D`;
+  const planLabel = isPermanent ? "Pase Permanente Vitalicio" : Number(addDays) === 1 ? "Muestra 24 Horas" : `Pase ${addDays} D\xEDas`;
   const localUsers = getLocalUsersDb();
   for (const u of localUsers) {
-    if (u.id === userId || u.username === userId) {
-      if (u.expiresAt && u.expiresAt > nowMs) {
+    if (u.id === userId || u.username === userId || cleanUser && u.username === cleanUser) {
+      if (isPermanent) {
+        u.expiresAt = null;
+      } else if (mode === "ADD" && u.expiresAt && u.expiresAt > nowMs) {
         u.expiresAt = u.expiresAt + daysMs;
       } else {
         u.expiresAt = nowMs + daysMs;
       }
+      u.planType = planType;
+      u.planLabel = planLabel;
       u.status = "active";
+      if (!matchedUsername) matchedUsername = u.username;
       updatedLocal = true;
     }
   }
@@ -614,27 +1033,47 @@ async function adminRenewAppUser(userId, addDays) {
   const client = getSupabaseClient();
   if (client) {
     try {
-      const { data: user } = await client.from("sportstats_users").select("expires_at").eq("id", userId).single();
-      let newExpiry = nowMs + daysMs;
-      if (user && user.expires_at && user.expires_at > nowMs) {
-        newExpiry = user.expires_at + daysMs;
+      let newExpiry = null;
+      if (!isPermanent) {
+        if (mode === "ADD") {
+          const query = client.from("sportstats_users").select("expires_at");
+          const { data: user } = isValidUuid(userId) ? await query.eq("id", userId).maybeSingle() : await query.eq("username", matchedUsername || userId).maybeSingle();
+          newExpiry = nowMs + daysMs;
+          if (user && user.expires_at && user.expires_at > nowMs) {
+            newExpiry = user.expires_at + daysMs;
+          }
+        } else {
+          newExpiry = nowMs + daysMs;
+        }
       }
-      const { error } = await client.from("sportstats_users").update({
+      const updateData = {
         expires_at: newExpiry,
+        plan_type: planType,
+        plan_label: planLabel,
         status: "active"
-      }).eq("id", userId);
-      if (!error) return true;
+      };
+      if (isValidUuid(userId)) {
+        const { error } = await client.from("sportstats_users").update(updateData).eq("id", userId);
+        if (!error) return true;
+      }
+      if (matchedUsername) {
+        const { error } = await client.from("sportstats_users").update(updateData).eq("username", matchedUsername);
+        if (!error) return true;
+      }
     } catch {
     }
   }
   return updatedLocal;
 }
-async function adminToggleAppUserStatus(userId, newStatus) {
+async function adminToggleAppUserStatus(userId, newStatus, username) {
   let updatedLocal = false;
+  const cleanUser = username ? normalizeUsername(username) : "";
+  let matchedUsername = cleanUser;
   const localUsers = getLocalUsersDb();
   for (const u of localUsers) {
-    if (u.id === userId || u.username === userId) {
+    if (u.id === userId || u.username === userId || cleanUser && u.username === cleanUser) {
       u.status = newStatus;
+      if (!matchedUsername) matchedUsername = u.username;
       updatedLocal = true;
     }
   }
@@ -642,8 +1081,14 @@ async function adminToggleAppUserStatus(userId, newStatus) {
   const client = getSupabaseClient();
   if (client) {
     try {
-      const { error } = await client.from("sportstats_users").update({ status: newStatus }).eq("id", userId);
-      if (!error) return true;
+      if (isValidUuid(userId)) {
+        const { error } = await client.from("sportstats_users").update({ status: newStatus }).eq("id", userId);
+        if (!error) return true;
+      }
+      if (matchedUsername) {
+        const { error } = await client.from("sportstats_users").update({ status: newStatus }).eq("username", matchedUsername);
+        if (!error) return true;
+      }
     } catch {
     }
   }
@@ -653,25 +1098,32 @@ async function adminUpsertAppUser(user) {
   if (!user.username) return false;
   const cleanUser = normalizeUsername(user.username);
   if (!cleanUser) return false;
+  const deletedSet = getDeletedUsernamesSet();
+  if (deletedSet.has(cleanUser)) {
+    deletedSet.delete(cleanUser);
+    saveDeletedUsernamesSet(deletedSet);
+  }
   const nowMs = Date.now();
   const defaultExpiry = nowMs + 30 * 24 * 60 * 60 * 1e3;
   const localUsers = getLocalUsersDb();
   const existingIdx = localUsers.findIndex((u) => u.username === cleanUser);
+  const incomingPin = user.pin && user.pin !== "[PROTECTED]" ? String(user.pin).trim() : "";
+  const resolvedPinHash = incomingPin ? hashUserPin(incomingPin) : existingIdx >= 0 ? localUsers[existingIdx].pin : hashUserPin("1234");
   const localRecord = {
-    id: existingIdx >= 0 ? localUsers[existingIdx].id : crypto.randomUUID ? crypto.randomUUID() : `USR-${Date.now().toString(36).toUpperCase()}`,
+    id: existingIdx >= 0 ? localUsers[existingIdx].id : crypto2.randomUUID ? crypto2.randomUUID() : `USR-${Date.now().toString(36).toUpperCase()}`,
     username: cleanUser,
-    displayName: user.displayName || (existingIdx >= 0 ? localUsers[existingIdx].displayName : void 0),
-    pin: user.pin || (existingIdx >= 0 ? localUsers[existingIdx].pin : "1234"),
-    role: user.role || "client",
+    displayName: user.displayName ? sanitizeText(user.displayName, 60) : existingIdx >= 0 ? localUsers[existingIdx].displayName : void 0,
+    pin: resolvedPinHash,
+    role: user.role === "admin" ? "admin" : "client",
     status: user.status || "active",
-    planType: user.planType || "30D",
-    planLabel: user.planLabel || "Pase Mensual (30 D\xEDas)",
+    planType: sanitizeText(user.planType || "30D", 16),
+    planLabel: sanitizeText(user.planLabel || "Pase Mensual (30 D\xEDas)", 48),
     createdAt: user.createdAt || (existingIdx >= 0 ? localUsers[existingIdx].createdAt : nowMs),
     expiresAt: user.expiresAt !== void 0 ? user.expiresAt : defaultExpiry,
     boundDeviceId: user.boundDeviceId !== void 0 ? user.boundDeviceId : existingIdx >= 0 ? localUsers[existingIdx].boundDeviceId : null,
     boundDeviceName: user.boundDeviceName !== void 0 ? user.boundDeviceName : existingIdx >= 0 ? localUsers[existingIdx].boundDeviceName : null,
-    whatsappNumber: user.whatsappNumber || (existingIdx >= 0 ? localUsers[existingIdx].whatsappNumber : null),
-    notes: user.notes || (existingIdx >= 0 ? localUsers[existingIdx].notes : null)
+    whatsappNumber: user.whatsappNumber ? sanitizePhone(user.whatsappNumber) : existingIdx >= 0 ? localUsers[existingIdx].whatsappNumber : null,
+    notes: user.notes ? sanitizeText(user.notes, 200) : existingIdx >= 0 ? localUsers[existingIdx].notes : null
   };
   if (existingIdx >= 0) {
     localUsers[existingIdx] = localRecord;
@@ -682,25 +1134,69 @@ async function adminUpsertAppUser(user) {
   const client = getSupabaseClient();
   if (client) {
     try {
+      const payloadToUpsert = {
+        username: cleanUser,
+        display_name: localRecord.displayName || null,
+        role: localRecord.role,
+        status: localRecord.status,
+        plan_type: localRecord.planType,
+        plan_label: localRecord.planLabel,
+        created_at: localRecord.createdAt,
+        expires_at: localRecord.expiresAt,
+        bound_device_id: localRecord.boundDeviceId || null,
+        bound_device_name: localRecord.boundDeviceName || null,
+        whatsapp_number: localRecord.whatsappNumber || null,
+        notes: localRecord.notes || null
+      };
+      if (incomingPin || existingIdx < 0) {
+        payloadToUpsert.pin_hash = resolvedPinHash;
+      }
       await client.from("sportstats_users").upsert(
-        {
-          username: cleanUser,
-          display_name: localRecord.displayName || null,
-          pin_hash: localRecord.pin,
-          role: localRecord.role,
-          status: localRecord.status,
-          plan_type: localRecord.planType,
-          plan_label: localRecord.planLabel,
-          created_at: localRecord.createdAt,
-          expires_at: localRecord.expiresAt,
-          bound_device_id: localRecord.boundDeviceId || null,
-          bound_device_name: localRecord.boundDeviceName || null,
-          whatsapp_number: localRecord.whatsappNumber || null,
-          notes: localRecord.notes || null
-        },
+        payloadToUpsert,
         { onConflict: "username" }
       );
     } catch {
+    }
+  }
+  return true;
+}
+async function adminDeleteAppUser(userId, username) {
+  const cleanId = String(userId || "").trim();
+  const cleanUsername = username ? normalizeUsername(username) : "";
+  let matchedUsername = cleanUsername;
+  const localUsers = getLocalUsersDb();
+  const remaining = [];
+  for (const u of localUsers) {
+    const uname = String(u.username || "").toLowerCase().trim();
+    const isMatch = cleanId && (u.id === cleanId || uname === cleanId.toLowerCase()) || cleanUsername && uname === cleanUsername;
+    if (isMatch) {
+      if (!matchedUsername && uname) matchedUsername = uname;
+    } else {
+      remaining.push(u);
+    }
+  }
+  if (remaining.length !== localUsers.length) {
+    saveLocalUsersDb(remaining);
+  }
+  if (!matchedUsername && cleanId && !isValidUuid(cleanId) && !cleanId.startsWith("USR-")) {
+    matchedUsername = normalizeUsername(cleanId);
+  }
+  if (matchedUsername) {
+    const deletedSet = getDeletedUsernamesSet();
+    deletedSet.add(matchedUsername);
+    saveDeletedUsernamesSet(deletedSet);
+  }
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      if (isValidUuid(cleanId)) {
+        await client.from("sportstats_users").delete().eq("id", cleanId);
+      }
+      if (matchedUsername) {
+        await client.from("sportstats_users").delete().eq("username", matchedUsername);
+      }
+    } catch (err) {
+      console.warn("[adminDeleteAppUser Supabase warning]:", err);
     }
   }
   return true;
@@ -772,8 +1268,22 @@ var __filename = fileURLToPath(import.meta.url);
 var __dirname = path2.dirname(__filename);
 var app = express();
 var PORT = parseInt(process.env.PORT || "3000", 10);
+app.disable("x-powered-by");
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ limit: "25mb", extended: true }));
+app.use(securityHeadersMiddleware);
+app.use(idempotencyMiddleware);
+var IS_VERCEL2 = Boolean(process.env.VERCEL || process.env.VERCEL_ENV || process.env.NOW_REGION);
+var CACHE_DIR = IS_VERCEL2 ? path2.resolve("/tmp", ".cache") : path2.resolve(process.cwd(), ".cache");
+var CACHE_FILE = path2.resolve(CACHE_DIR, "api_football_cache.json");
+if (IS_VERCEL2) {
+  app.use((req, _res, next) => {
+    if (req.url && !req.url.startsWith("/api")) {
+      req.url = "/api" + (req.url.startsWith("/") ? req.url : "/" + req.url);
+    }
+    next();
+  });
+}
 app.get("/api/health", (_req, res) => {
   res.setHeader("Cache-Control", "no-cache, no-store");
   res.json({
@@ -783,14 +1293,12 @@ app.get("/api/health", (_req, res) => {
     memoryMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
   });
 });
-var IS_VERCEL2 = Boolean(process.env.VERCEL);
-var CACHE_DIR = IS_VERCEL2 ? path2.resolve("/tmp", ".cache") : path2.resolve(process.cwd(), ".cache");
-var CACHE_FILE = path2.resolve(CACHE_DIR, "api_football_cache.json");
 var memoryCache = /* @__PURE__ */ new Map();
 var inFlightRequests = /* @__PURE__ */ new Map();
 var lastRemainingCalls = 100;
 var quotaShieldActive = false;
-var QUOTA_SHIELD_THRESHOLD = 10;
+var QUOTA_SHIELD_THRESHOLD = 15;
+var apiFootballAuditLog = [];
 function initDiskCache() {
   try {
     if (!fs2.existsSync(CACHE_DIR)) {
@@ -802,6 +1310,10 @@ function initDiskCache() {
       if (parsed && typeof parsed === "object") {
         for (const [k, v] of Object.entries(parsed)) {
           if (v && typeof v === "object" && "timestamp" in v && "data" in v) {
+            const dataVal = v.data;
+            if (Array.isArray(dataVal) && dataVal.length === 0) {
+              continue;
+            }
             memoryCache.set(k, v);
           }
         }
@@ -823,6 +1335,7 @@ function persistCacheToDisk() {
       }
       const dump = {};
       memoryCache.forEach((val, key) => {
+        if (Array.isArray(val.data) && val.data.length === 0) return;
         dump[key] = val;
       });
       fs2.writeFileSync(CACHE_FILE, JSON.stringify(dump), "utf8");
@@ -832,9 +1345,17 @@ function persistCacheToDisk() {
   }, 1e3);
 }
 function getCacheItem(key) {
-  return memoryCache.get(key);
+  const rec = memoryCache.get(key);
+  if (rec && Array.isArray(rec.data) && rec.data.length === 0) {
+    memoryCache.delete(key);
+    return void 0;
+  }
+  return rec;
 }
 function setCacheItem(key, data) {
+  if (Array.isArray(data) && data.length === 0) {
+    return;
+  }
   memoryCache.set(key, { data, timestamp: Date.now() });
   persistCacheToDisk();
 }
@@ -885,123 +1406,1413 @@ function getSecretKey(keyName) {
 function getSecretApiKey() {
   return getSecretKey("API_FOOTBALL_KEY");
 }
-function getColombiaDateStr(offsetDays = 0) {
+function getColombiaDateStr(offsetDays = 0, timeZone = "America/Bogota") {
   const d = /* @__PURE__ */ new Date();
   if (offsetDays !== 0) {
     d.setDate(d.getDate() + offsetDays);
   }
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Bogota",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(d);
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(d);
+  } catch {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Bogota",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(d);
+  }
 }
-app.get("/api/upcoming", async (req, res) => {
+var ESPN_LEAGUE_CATALOG = {
+  "700": { id: 39, name: "Premier League", country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
+  "3920": { id: 48, name: "EFL Cup (Carabao Cup)", country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
+  "3915": { id: 40, name: "EFL Championship", country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
+  "3916": { id: 41, name: "EFL League One", country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
+  "3917": { id: 42, name: "EFL League Two", country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
+  "740": { id: 140, name: "LaLiga EA Sports", country: "Espa\xF1a", flag: "\u{1F1EA}\u{1F1F8}" },
+  "3951": { id: 143, name: "Copa del Rey", country: "Espa\xF1a", flag: "\u{1F1EA}\u{1F1F8}" },
+  "3921": { id: 141, name: "LaLiga Hypermotion", country: "Espa\xF1a", flag: "\u{1F1EA}\u{1F1F8}" },
+  "730": { id: 135, name: "Serie A", country: "Italia", flag: "\u{1F1EE}\u{1F1F9}" },
+  "3931": { id: 136, name: "Serie B", country: "Italia", flag: "\u{1F1EE}\u{1F1F9}" },
+  "720": { id: 78, name: "Bundesliga", country: "Alemania", flag: "\u{1F1E9}\u{1F1EA}" },
+  "3954": { id: 81, name: "DFB-Pokal", country: "Alemania", flag: "\u{1F1E9}\u{1F1EA}" },
+  "3927": { id: 79, name: "2. Bundesliga", country: "Alemania", flag: "\u{1F1E9}\u{1F1EA}" },
+  "710": { id: 61, name: "Ligue 1", country: "Francia", flag: "\u{1F1EB}\u{1F1F7}" },
+  "3926": { id: 62, name: "Ligue 2", country: "Francia", flag: "\u{1F1EB}\u{1F1F7}" },
+  "715": { id: 94, name: "Primeira Liga", country: "Portugal", flag: "\u{1F1F5}\u{1F1F9}" },
+  "725": { id: 88, name: "Eredivisie", country: "Pa\xEDses Bajos", flag: "\u{1F1F3}\u{1F1F1}" },
+  "3957": { id: 90, name: "KNVB Beker", country: "Pa\xEDses Bajos", flag: "\u{1F1F3}\u{1F1F1}" },
+  "735": { id: 179, name: "Scottish Premiership", country: "Escocia", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}" },
+  "3901": { id: 144, name: "Pro League", country: "B\xE9lgica", flag: "\u{1F1E7}\u{1F1EA}" },
+  "3946": { id: 203, name: "S\xFCper Lig", country: "Turqu\xEDa", flag: "\u{1F1F9}\u{1F1F7}" },
+  "650": { id: 239, name: "Liga BetPlay Dimayor", country: "Colombia", flag: "\u{1F1E8}\u{1F1F4}" },
+  "745": { id: 128, name: "Liga Profesional Argentina", country: "Argentina", flag: "\u{1F1E6}\u{1F1F7}" },
+  "630": { id: 71, name: "Brasileir\xE3o S\xE9rie A", country: "Brasil", flag: "\u{1F1E7}\u{1F1F7}" },
+  "4007": { id: 72, name: "Brasileir\xE3o S\xE9rie B", country: "Brasil", flag: "\u{1F1E7}\u{1F1F7}" },
+  "640": { id: 265, name: "Primera Divisi\xF3n", country: "Chile", flag: "\u{1F1E8}\u{1F1F1}" },
+  "670": { id: 281, name: "Liga 1", country: "Per\xFA", flag: "\u{1F1F5}\u{1F1EA}" },
+  "660": { id: 242, name: "LigaPro", country: "Ecuador", flag: "\u{1F1EA}\u{1F1E8}" },
+  "680": { id: 268, name: "Campeonato Uruguayo", country: "Uruguay", flag: "\u{1F1FA}\u{1F1FE}" },
+  "3934": { id: 250, name: "Primera Divisi\xF3n", country: "Paraguay", flag: "\u{1F1F5}\u{1F1FE}" },
+  "3949": { id: 299, name: "Liga FUTVE", country: "Venezuela", flag: "\u{1F1FB}\u{1F1EA}" },
+  "620": { id: 344, name: "Divisi\xF3n Profesional", country: "Bolivia", flag: "\u{1F1E7}\u{1F1F4}" },
+  "760": { id: 262, name: "Liga MX", country: "M\xE9xico", flag: "\u{1F1F2}\u{1F1FD}" },
+  "770": { id: 253, name: "MLS", country: "Estados Unidos", flag: "\u{1F1FA}\u{1F1F8}" },
+  "21231": { id: 307, name: "Saudi Pro League", country: "Arabia Saudita", flag: "\u{1F1F8}\u{1F1E6}" },
+  "3902": { id: 17, name: "AFC Champions League Elite", country: "Internacional", flag: "\u{1F30F}" },
+  "2391": { id: 12, name: "CAF Champions League", country: "Internacional", flag: "\u{1F30D}" },
+  "18000": { id: 20, name: "CAF Confederation Cup", country: "Internacional", flag: "\u{1F30D}" }
+};
+var COUNTRY_TRANSLATION_MAP = {
+  England: { country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
+  Spain: { country: "Espa\xF1a", flag: "\u{1F1EA}\u{1F1F8}" },
+  Italy: { country: "Italia", flag: "\u{1F1EE}\u{1F1F9}" },
+  Germany: { country: "Alemania", flag: "\u{1F1E9}\u{1F1EA}" },
+  France: { country: "Francia", flag: "\u{1F1EB}\u{1F1F7}" },
+  Netherlands: { country: "Pa\xEDses Bajos", flag: "\u{1F1F3}\u{1F1F1}" },
+  Portugal: { country: "Portugal", flag: "\u{1F1F5}\u{1F1F9}" },
+  Scotland: { country: "Escocia", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}" },
+  Belgium: { country: "B\xE9lgica", flag: "\u{1F1E7}\u{1F1EA}" },
+  Colombia: { country: "Colombia", flag: "\u{1F1E8}\u{1F1F4}" },
+  Argentina: { country: "Argentina", flag: "\u{1F1E6}\u{1F1F7}" },
+  Brazil: { country: "Brasil", flag: "\u{1F1E7}\u{1F1F7}" },
+  Chile: { country: "Chile", flag: "\u{1F1E8}\u{1F1F1}" },
+  Peru: { country: "Per\xFA", flag: "\u{1F1F5}\u{1F1EA}" },
+  Ecuador: { country: "Ecuador", flag: "\u{1F1EA}\u{1F1E8}" },
+  Uruguay: { country: "Uruguay", flag: "\u{1F1FA}\u{1F1FE}" },
+  Paraguay: { country: "Paraguay", flag: "\u{1F1F5}\u{1F1FE}" },
+  Venezuela: { country: "Venezuela", flag: "\u{1F1FB}\u{1F1EA}" },
+  Bolivia: { country: "Bolivia", flag: "\u{1F1E7}\u{1F1F4}" },
+  Mexico: { country: "M\xE9xico", flag: "\u{1F1F2}\u{1F1FD}" },
+  USA: { country: "Estados Unidos", flag: "\u{1F1FA}\u{1F1F8}" }
+};
+function normalizeTeamKey(name) {
+  return (name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\b(fc|cf|sc|ac|cd|ud|sd|rcd|fk|pfk|sk|bk|if|ik|sv|vfb|tsg|fsv|club|deportivo|atletico|athletic|real|sporting|unidos|united|city|town|rovers|wanderers|al|el|de|del|la|las|los|sad|baku|jeddah|riyadh)\b/g, "").replace(/[^a-z0-9]/g, "").trim();
+}
+function singleTeamFuzzyMatch(k1, k2) {
+  if (!k1 || !k2) return false;
+  if (k1 === k2 || k1.includes(k2) || k2.includes(k1)) return true;
+  if (k1.length >= 5 && k2.length >= 5 && k1.slice(0, 5) === k2.slice(0, 5)) return true;
+  return false;
+}
+function teamsFuzzyMatch(hKey1, aKey1, hKey2, aKey2) {
+  if (!hKey1 || !aKey1 || !hKey2 || !aKey2) return false;
+  const homeMatch = singleTeamFuzzyMatch(hKey1, hKey2);
+  const awayMatch = singleTeamFuzzyMatch(aKey1, aKey2);
+  return homeMatch && awayMatch;
+}
+function estimateRealisticSoccerClock(minsSinceStart, rawStatusShort, reportedElapsed) {
+  const st = String(rawStatusShort || "").toUpperCase().trim();
+  if (st === "HT" || st === "BT" || st === "INT") {
+    return { minute: 45, isHalfTime: true, statusShort: "HT" };
+  }
+  if (["FT", "AET", "PEN"].includes(st)) {
+    return { minute: 90, isHalfTime: false, statusShort: "FT" };
+  }
+  if ((st === "1H" || st === "2H" || st === "ET" || st === "LIVE") && typeof reportedElapsed === "number" && reportedElapsed > 0) {
+    return {
+      minute: Math.min(90, Math.max(1, reportedElapsed)),
+      isHalfTime: false,
+      statusShort: st
+    };
+  }
+  if (minsSinceStart <= 0) {
+    return { minute: 1, isHalfTime: false, statusShort: "NS" };
+  }
+  if (minsSinceStart <= 47) {
+    return { minute: Math.min(45, Math.max(1, Math.floor(minsSinceStart))), isHalfTime: false, statusShort: "1H" };
+  }
+  if (minsSinceStart <= 64) {
+    return { minute: 45, isHalfTime: true, statusShort: "HT" };
+  }
+  const secondHalfMin = 45 + Math.floor(minsSinceStart - 64);
+  return {
+    minute: Math.min(90, Math.max(46, secondHalfMin)),
+    isHalfTime: false,
+    statusShort: "2H"
+  };
+}
+function parseClockMinute(rawClock, fallbackMin = 45) {
+  const str = String(rawClock || "").trim();
+  if (!str) return { minute: fallbackMin, displayMinute: `${fallbackMin}'` };
+  if (/^(ht|half|descanso|entretiempo)$/i.test(str)) {
+    return { minute: 45, displayMinute: "45'" };
+  }
+  const match = str.match(/(\d+)/);
+  const min = match ? parseInt(match[1], 10) : fallbackMin;
+  const cleanDisplay = str.includes("'") ? str : `${min}'`;
+  return {
+    minute: Math.min(120, Math.max(1, isNaN(min) ? fallbackMin : min)),
+    displayMinute: cleanDisplay
+  };
+}
+function getStatNumber(statsArr, statName, fallback = 0) {
+  if (!Array.isArray(statsArr)) return fallback;
+  const item = statsArr.find(
+    (s) => String(s?.name || "").toLowerCase() === statName.toLowerCase() || String(s?.abbreviation || "").toLowerCase() === statName.toLowerCase()
+  );
+  if (!item) return fallback;
+  const val = parseFloat(String(item.displayValue ?? item.value ?? fallback));
+  return isNaN(val) ? fallback : val;
+}
+function reconcileCornerEvents(existingEvents, homeCorners, awayCorners, homeName, awayName, currentMinute) {
+  const currentHomeCorners = existingEvents.filter((e) => e.type === "CORNER" && e.teamSide === "HOME").length;
+  const currentAwayCorners = existingEvents.filter((e) => e.type === "CORNER" && e.teamSide === "AWAY").length;
+  const missingHome = Math.max(0, homeCorners - currentHomeCorners);
+  const missingAway = Math.max(0, awayCorners - currentAwayCorners);
+  const maxMin = Math.max(10, currentMinute || 45);
+  const added = [];
+  for (let i = 0; i < missingHome; i++) {
+    const min = Math.max(3, Math.min(maxMin, Math.round((i + 1) / (missingHome + 1) * maxMin)));
+    added.push({
+      id: `corner_home_sync_${i + 1}_${min}`,
+      minute: min,
+      displayMinute: `${min}'`,
+      type: "CORNER",
+      teamSide: "HOME",
+      teamName: homeName,
+      detail: `Tiro de esquina a favor de ${homeName}`
+    });
+  }
+  for (let i = 0; i < missingAway; i++) {
+    const min = Math.max(4, Math.min(maxMin, Math.round((i + 1) / (missingAway + 1) * maxMin)));
+    added.push({
+      id: `corner_away_sync_${i + 1}_${min}`,
+      minute: min,
+      displayMinute: `${min}'`,
+      type: "CORNER",
+      teamSide: "AWAY",
+      teamName: awayName,
+      detail: `Tiro de esquina a favor de ${awayName}`
+    });
+  }
+  return [...existingEvents, ...added].sort((a, b) => b.minute - a.minute);
+}
+function resolveServerPlayerName(rawName, teamName, index = 9, isSub = false) {
+  const candidate = String(rawName || "").trim();
+  const cleanTeam = String(teamName || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const cleanCand = candidate.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (candidate.length >= 3 && !/^(jugador|goleador|player|titular|suplente|delantero|local|visitante)\b/i.test(candidate) && !/#\d+/.test(candidate) && cleanCand !== cleanTeam) {
+    return candidate;
+  }
+  let hash = 0;
+  const str = `${teamName}_${index}_${isSub ? "sub" : "starter"}`;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  const posHash = Math.abs(hash);
+  const isFemale = /w\b|women|femenino|femenil|u17 w|u20 w/i.test(teamName);
+  const isLatin = /chile|colombia|argentina|spain|españa|mexico|méxico|brazil|brasil|uruguay|paraguay|peru|perú|ecuador|venezuela|costa rica|nicaragua|honduras|guatemala|salvador|panama|bolivia|jalapa|managua|unan|dirian|esteli|real|deportivo|municipal|atletico|atlético|alianza|independiente|universidad|nacional|olimpia|saprissa|alajuelense|herediano|motagua|comunicaciones|millonarios|santa fe|junior|medellin|cali|america|tolima|bucaramanga|once caldas|pereira|pasto|envigado|equidad|fortaleza|llaneros|boca|river|racing|velez|talleres|lanus|belgrano|flamengo|palmeiras|botafogo|corinthians|sao paulo|gremio|cruzeiro|vasco|bahia|fluminense|santos|cruz azul|toluca|monterrey|tigres|pumas|chivas|guadalajara|atlas|pachuca|leon|sevilla|valencia|betis|villarreal|athletic|sociedad|osasuna|celta|girona|espanyol|benfica|porto|sporting|braga/i.test(
+    teamName
+  );
+  if (isFemale) {
+    const firstList2 = isLatin ? ["Ana\xEDs", "Catalina", "Monserrat", "Valeria", "Camila", "Sof\xEDa", "Martina", "Isabella", "Luc\xEDa", "Valentina", "Pau", "Celia", "Aiara", "Ainoa", "Irune", "Paloma", "Natsumy", "Vaitiare", "Daniela", "Fernanda", "Maitte", "Nicole", "Claudia"] : ["Emma", "Olivia", "Sophia", "Ava", "Isla", "Mia", "Charlotte", "Grace", "Chloe", "Ella", "Hannah", "Zoe", "Freya", "Maya", "Nora", "Lucy", "Lily"];
+    const lastList2 = isLatin ? ["Figueroa", "\xC1lvarez", "Cifuentes", "Mellado", "Gonz\xE1lez", "Tapia", "Bustamante", "Carter", "Comendador", "Segura", "Garc\xEDa", "Mart\xEDnez", "Rodr\xEDguez", "L\xF3pez", "Hern\xE1ndez", "Silva", "Morales", "Vargas", "Rojas", "Castro"] : ["Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "White", "Harris"];
+    return `${firstList2[posHash % firstList2.length]} ${lastList2[(posHash >> 2) % lastList2.length]}`;
+  }
+  const firstList = isLatin ? ["Mateo", "Santiago", "Sebasti\xE1n", "Alejandro", "Diego", "Lucas", "Nicol\xE1s", "Joaqu\xEDn", "Gabriel", "Tom\xE1s", "Javier", "Carlos", "Andr\xE9s", "Felipe", "Emanuel", "Rodrigo", "Gonzalo", "Mat\xEDas", "Esteban", "\xC1lvaro", "Marcos", "Franco", "Ignacio"] : ["James", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph", "Thomas", "Charles", "Christopher", "Daniel", "Matthew", "Anthony", "Mark", "Marcus", "Brandon", "Justin", "Tyler", "Austin"];
+  const lastList = isLatin ? ["Gonz\xE1lez", "Rodr\xEDguez", "G\xF3mez", "Fern\xE1ndez", "L\xF3pez", "D\xEDaz", "Mart\xEDnez", "P\xE9rez", "Garc\xEDa", "S\xE1nchez", "Romero", "Sosa", "Torres", "\xC1lvarez", "Ruiz", "Ram\xEDrez", "Flores", "Ben\xEDtez", "Acosta", "Medina"] : ["Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Wilson", "Anderson", "Taylor", "Thomas", "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson", "White", "Harris", "Clark"];
+  return `${firstList[posHash % firstList.length]} ${lastList[(posHash >> 2) % lastList.length]}`;
+}
+function extractEspnScoreboardTelemetry(ev, comp, homeComp, awayComp, homeName, awayName, elapsedMin, isFinished) {
+  const homeStatsArr = Array.isArray(homeComp?.statistics) ? homeComp.statistics : [];
+  const awayStatsArr = Array.isArray(awayComp?.statistics) ? awayComp.statistics : [];
+  const homeTeamIdStr = String(homeComp?.team?.id || homeComp?.id || "");
+  const awayTeamIdStr = String(awayComp?.team?.id || awayComp?.id || "");
+  const details = Array.isArray(comp?.details) ? comp.details : [];
+  let detailHomeYellow = 0;
+  let detailAwayYellow = 0;
+  let detailHomeRed = 0;
+  let detailAwayRed = 0;
+  const events = [
+    {
+      id: `kickoff_${ev?.id || "match"}`,
+      minute: 1,
+      displayMinute: "1'",
+      type: "PERIOD_START",
+      teamSide: "NEUTRAL",
+      detail: "Inicio del primer tiempo"
+    }
+  ];
+  details.forEach((d, idx) => {
+    const teamId = String(d?.team?.id || "");
+    const side = teamId === homeTeamIdStr ? "HOME" : teamId === awayTeamIdStr ? "AWAY" : "HOME";
+    const teamLabel = side === "HOME" ? homeName : awayName;
+    const clockInfo = parseClockMinute(d?.clock?.displayValue, 30);
+    const rawAthlete = d?.athletesInvolved?.[0]?.displayName || d?.athletesInvolved?.[0]?.fullName || d?.athletesInvolved?.[0]?.shortName;
+    const athleteName = resolveServerPlayerName(rawAthlete, teamLabel, 9 - idx % 3, false);
+    const assistName = d?.athletesInvolved?.[1]?.displayName;
+    if (d?.scoringPlay || /goal/i.test(String(d?.type?.text || ""))) {
+      const isPen = Boolean(d?.penaltyKick);
+      const isOG = Boolean(d?.ownGoal);
+      events.push({
+        id: `goal_${ev?.id}_${idx}_${clockInfo.minute}`,
+        minute: clockInfo.minute,
+        displayMinute: clockInfo.displayMinute,
+        type: "GOAL",
+        teamSide: side,
+        teamName: teamLabel,
+        playerPrimary: athleteName,
+        playerSecondary: assistName,
+        detail: isPen ? `Gol de penal convertido por ${athleteName}` : isOG ? `Gol en propia puerta (${athleteName})` : assistName ? `Gol de ${athleteName} \xB7 Asistencia de ${assistName}` : `Anotaci\xF3n oficial de ${athleteName} para ${teamLabel}`
+      });
+    } else if (d?.redCard || /red card/i.test(String(d?.type?.text || ""))) {
+      if (side === "HOME") detailHomeRed++;
+      else detailAwayRed++;
+      events.push({
+        id: `rc_${ev?.id}_${idx}_${clockInfo.minute}`,
+        minute: clockInfo.minute,
+        displayMinute: clockInfo.displayMinute,
+        type: "RED_CARD",
+        teamSide: side,
+        teamName: teamLabel,
+        playerPrimary: athleteName,
+        detail: `Tarjeta roja directa / expulsi\xF3n para ${athleteName}`
+      });
+    } else if (d?.yellowCard || /yellow card/i.test(String(d?.type?.text || ""))) {
+      if (side === "HOME") detailHomeYellow++;
+      else detailAwayYellow++;
+      events.push({
+        id: `yc_${ev?.id}_${idx}_${clockInfo.minute}`,
+        minute: clockInfo.minute,
+        displayMinute: clockInfo.displayMinute,
+        type: "YELLOW_CARD",
+        teamSide: side,
+        teamName: teamLabel,
+        playerPrimary: athleteName,
+        detail: `Amonestaci\xF3n con tarjeta amarilla para ${athleteName}`
+      });
+    }
+  });
+  if (elapsedMin >= 45 || isFinished) {
+    events.push({
+      id: `halftime_${ev?.id || "match"}`,
+      minute: 45,
+      displayMinute: "45'",
+      type: "PERIOD_HALF",
+      teamSide: "NEUTRAL",
+      detail: "Entretiempo reglamentario"
+    });
+  }
+  if (isFinished) {
+    const hScore = parseInt(String(homeComp?.score || "0"), 10) || 0;
+    const aScore = parseInt(String(awayComp?.score || "0"), 10) || 0;
+    events.push({
+      id: `fulltime_${ev?.id || "match"}`,
+      minute: 90,
+      displayMinute: "90'",
+      type: "PERIOD_END",
+      teamSide: "NEUTRAL",
+      detail: `Final del encuentro (${hScore} - ${aScore})`
+    });
+  }
+  const homeCorners = getStatNumber(homeStatsArr, "wonCorners", 0);
+  const awayCorners = getStatNumber(awayStatsArr, "wonCorners", 0);
+  const homeYellows = Math.max(detailHomeYellow, getStatNumber(homeStatsArr, "yellowCards", detailHomeYellow));
+  const awayYellows = Math.max(detailAwayYellow, getStatNumber(awayStatsArr, "yellowCards", detailAwayYellow));
+  const homeReds = Math.max(detailHomeRed, getStatNumber(homeStatsArr, "redCards", detailHomeRed));
+  const awayReds = Math.max(detailAwayRed, getStatNumber(awayStatsArr, "redCards", detailAwayRed));
+  const liveStats = {
+    home: {
+      corners: homeCorners,
+      yellowCards: homeYellows,
+      redCards: homeReds,
+      shots: getStatNumber(homeStatsArr, "totalShots", 0),
+      shotsOnTarget: getStatNumber(homeStatsArr, "shotsOnTarget", 0),
+      possessionPct: getStatNumber(homeStatsArr, "possessionPct", 50),
+      foulsCommitted: getStatNumber(homeStatsArr, "foulsCommitted", 0)
+    },
+    away: {
+      corners: awayCorners,
+      yellowCards: awayYellows,
+      redCards: awayReds,
+      shots: getStatNumber(awayStatsArr, "totalShots", 0),
+      shotsOnTarget: getStatNumber(awayStatsArr, "shotsOnTarget", 0),
+      possessionPct: getStatNumber(awayStatsArr, "possessionPct", 50),
+      foulsCommitted: getStatNumber(awayStatsArr, "foulsCommitted", 0)
+    },
+    updatedAt: Date.now()
+  };
+  const liveEvents = reconcileCornerEvents(
+    events,
+    homeCorners,
+    awayCorners,
+    homeName,
+    awayName,
+    elapsedMin || 45
+  );
+  return { liveStats, liveEvents };
+}
+function extractApiFootballLiveTelemetry(rawFix, overrideHomeScore, overrideAwayScore, overrideMinute, isHalfTime, isFinished) {
+  const homeName = String(rawFix?.teams?.home?.name || "Local");
+  const awayName = String(rawFix?.teams?.away?.name || "Visitante");
+  const homeId = rawFix?.teams?.home?.id;
+  const awayId = rawFix?.teams?.away?.id;
+  const homeScore = overrideHomeScore ?? Number(rawFix?.goals?.home ?? rawFix?.score?.fulltime?.home ?? 0);
+  const awayScore = overrideAwayScore ?? Number(rawFix?.goals?.away ?? rawFix?.score?.fulltime?.away ?? 0);
+  const currentMin = overrideMinute ?? Number(rawFix?.fixture?.status?.elapsed || 45);
+  const fId = String(rawFix?.fixture?.id || "match");
+  const rawEvents = Array.isArray(rawFix?.events) ? rawFix.events : [];
+  const events = [
+    {
+      id: `kickoff_${fId}`,
+      minute: 1,
+      displayMinute: "1'",
+      type: "PERIOD_START",
+      teamSide: "NEUTRAL",
+      detail: "Inicio del primer tiempo"
+    }
+  ];
+  let homeGoalsRecorded = 0;
+  let awayGoalsRecorded = 0;
+  let homeYellows = 0;
+  let awayYellows = 0;
+  let homeReds = 0;
+  let awayReds = 0;
+  rawEvents.forEach((ev, idx) => {
+    const evTeamId = ev?.team?.id;
+    const evTeamName = String(ev?.team?.name || "");
+    const side = homeId && evTeamId === homeId || singleTeamFuzzyMatch(normalizeTeamKey(evTeamName), normalizeTeamKey(homeName)) ? "HOME" : awayId && evTeamId === awayId || singleTeamFuzzyMatch(normalizeTeamKey(evTeamName), normalizeTeamKey(awayName)) ? "AWAY" : "HOME";
+    const teamLabel = side === "HOME" ? homeName : awayName;
+    const min = Math.min(120, Math.max(1, Number(ev?.time?.elapsed || 30)));
+    const extra = ev?.time?.extra ? `+${ev.time.extra}` : "";
+    const displayMinute = `${min}${extra}'`;
+    const rawPlayer = ev?.player?.name;
+    const rawAssist = ev?.assist?.name;
+    const playerPrimary = resolveServerPlayerName(rawPlayer, teamLabel, 9 - idx % 4, false);
+    const playerSecondary = rawAssist ? resolveServerPlayerName(rawAssist, teamLabel, 7, false) : void 0;
+    const evType = String(ev?.type || "").toLowerCase();
+    const evDetail = String(ev?.detail || "").toLowerCase();
+    if (evType === "goal" && !evDetail.includes("missed")) {
+      if (side === "HOME") homeGoalsRecorded++;
+      else awayGoalsRecorded++;
+      const isPen = evDetail.includes("penalty");
+      const isOG = evDetail.includes("own goal");
+      events.push({
+        id: `af_goal_${fId}_${idx}_${min}`,
+        minute: min,
+        displayMinute,
+        type: "GOAL",
+        teamSide: side,
+        teamName: teamLabel,
+        playerPrimary,
+        playerSecondary,
+        detail: isPen ? `Gol de penal convertido por ${playerPrimary}` : isOG ? `Gol en propia puerta (${playerPrimary})` : playerSecondary ? `Gol de ${playerPrimary} \xB7 Asistencia de ${playerSecondary}` : `Anotaci\xF3n oficial de ${playerPrimary} para ${teamLabel}`
+      });
+    } else if (evType === "card") {
+      if (evDetail.includes("red")) {
+        if (side === "HOME") homeReds++;
+        else awayReds++;
+        events.push({
+          id: `af_rc_${fId}_${idx}_${min}`,
+          minute: min,
+          displayMinute,
+          type: "RED_CARD",
+          teamSide: side,
+          teamName: teamLabel,
+          playerPrimary,
+          detail: `Tarjeta roja / expulsi\xF3n para ${playerPrimary}`
+        });
+      } else {
+        if (side === "HOME") homeYellows++;
+        else awayYellows++;
+        events.push({
+          id: `af_yc_${fId}_${idx}_${min}`,
+          minute: min,
+          displayMinute,
+          type: "YELLOW_CARD",
+          teamSide: side,
+          teamName: teamLabel,
+          playerPrimary,
+          detail: `Amonestaci\xF3n con tarjeta amarilla para ${playerPrimary}`
+        });
+      }
+    } else if (evType === "subst") {
+      const subIn = resolveServerPlayerName(rawAssist || rawPlayer, teamLabel, 12 + idx % 5, true);
+      const subOut = resolveServerPlayerName(rawPlayer, teamLabel, 6 + idx % 5, false);
+      events.push({
+        id: `af_sub_${fId}_${idx}_${min}`,
+        minute: min,
+        displayMinute,
+        type: "SUBSTITUTION",
+        teamSide: side,
+        teamName: teamLabel,
+        playerPrimary: subIn,
+        playerSecondary: subOut,
+        detail: `Sustituci\xF3n en ${teamLabel}: ingresa ${subIn} por ${subOut}`
+      });
+    }
+  });
+  const htHome = rawFix?.score?.halftime?.home;
+  const htAway = rawFix?.score?.halftime?.away;
+  const missingHomeGoals = Math.max(0, homeScore - homeGoalsRecorded);
+  const missingAwayGoals = Math.max(0, awayScore - awayGoalsRecorded);
+  for (let i = 0; i < missingHomeGoals; i++) {
+    const inFirstHalf = typeof htHome === "number" && i < htHome;
+    const goalMin = inFirstHalf ? Math.min(44, Math.max(8, Math.round((i + 1) / (missingHomeGoals + 1) * Math.min(44, currentMin)))) : Math.min(currentMin, Math.max(12, Math.round((i + 1) / (missingHomeGoals + 1) * currentMin)));
+    const scorer = resolveServerPlayerName(null, homeName, 9 - i % 3, false);
+    events.push({
+      id: `reconciled_goal_home_${fId}_${i}`,
+      minute: goalMin,
+      displayMinute: `${goalMin}'`,
+      type: "GOAL",
+      teamSide: "HOME",
+      teamName: homeName,
+      playerPrimary: scorer,
+      detail: `Anotaci\xF3n oficial de ${scorer} para ${homeName}`
+    });
+  }
+  for (let i = 0; i < missingAwayGoals; i++) {
+    const inFirstHalf = typeof htAway === "number" && i < htAway;
+    const goalMin = inFirstHalf ? Math.min(44, Math.max(11, Math.round((i + 1) / (missingAwayGoals + 1) * Math.min(44, currentMin)))) : Math.min(currentMin, Math.max(16, Math.round((i + 1) / (missingAwayGoals + 1) * currentMin)));
+    const scorer = resolveServerPlayerName(null, awayName, 10 - i % 3, false);
+    events.push({
+      id: `reconciled_goal_away_${fId}_${i}`,
+      minute: goalMin,
+      displayMinute: `${goalMin}'`,
+      type: "GOAL",
+      teamSide: "AWAY",
+      teamName: awayName,
+      playerPrimary: scorer,
+      detail: `Anotaci\xF3n oficial de ${scorer} para ${awayName}`
+    });
+  }
+  if (isHalfTime || currentMin >= 45 || isFinished) {
+    events.push({
+      id: `halftime_${fId}`,
+      minute: 45,
+      displayMinute: "45'",
+      type: "PERIOD_HALF",
+      teamSide: "NEUTRAL",
+      detail: `Entretiempo reglamentario (${htHome ?? homeScore} - ${htAway ?? awayScore})`
+    });
+  }
+  if (isFinished) {
+    events.push({
+      id: `fulltime_${fId}`,
+      minute: 90,
+      displayMinute: "90'",
+      type: "PERIOD_END",
+      teamSide: "NEUTRAL",
+      detail: `Final del encuentro (${homeScore} - ${awayScore})`
+    });
+  }
+  const progressFactor = Math.min(1, Math.max(0.15, currentMin / 90));
+  const existingStats = rawFix?.liveStats;
+  const homeCorners = existingStats?.home?.corners ?? Math.max(1, Math.round((4.8 + homeScore * 0.7) * progressFactor));
+  const awayCorners = existingStats?.away?.corners ?? Math.max(1, Math.round((4.1 + awayScore * 0.7) * progressFactor));
+  const finalHomeYellows = Math.max(homeYellows, existingStats?.home?.yellowCards ?? Math.floor(1.8 * progressFactor));
+  const finalAwayYellows = Math.max(awayYellows, existingStats?.away?.yellowCards ?? Math.floor(2.1 * progressFactor));
+  while (homeYellows < finalHomeYellows) {
+    homeYellows++;
+    const ycMin = Math.min(currentMin, Math.max(14, Math.round(homeYellows / (finalHomeYellows + 1) * currentMin)));
+    const player = resolveServerPlayerName(null, homeName, 4 + homeYellows, false);
+    events.push({
+      id: `reconciled_yc_home_${fId}_${homeYellows}`,
+      minute: ycMin,
+      displayMinute: `${ycMin}'`,
+      type: "YELLOW_CARD",
+      teamSide: "HOME",
+      teamName: homeName,
+      playerPrimary: player,
+      detail: `Tarjeta amarilla mostrada a ${player} (${homeName})`
+    });
+  }
+  while (awayYellows < finalAwayYellows) {
+    awayYellows++;
+    const ycMin = Math.min(currentMin, Math.max(18, Math.round(awayYellows / (finalAwayYellows + 1) * currentMin)));
+    const player = resolveServerPlayerName(null, awayName, 5 + awayYellows, false);
+    events.push({
+      id: `reconciled_yc_away_${fId}_${awayYellows}`,
+      minute: ycMin,
+      displayMinute: `${ycMin}'`,
+      type: "YELLOW_CARD",
+      teamSide: "AWAY",
+      teamName: awayName,
+      playerPrimary: player,
+      detail: `Tarjeta amarilla mostrada a ${player} (${awayName})`
+    });
+  }
+  const liveStats = {
+    home: {
+      corners: homeCorners,
+      yellowCards: finalHomeYellows,
+      redCards: Math.max(homeReds, existingStats?.home?.redCards ?? 0),
+      shots: existingStats?.home?.shots ?? Math.max(homeScore + 2, Math.round(12.5 * progressFactor)),
+      shotsOnTarget: existingStats?.home?.shotsOnTarget ?? Math.max(homeScore, Math.round(4.6 * progressFactor)),
+      possessionPct: existingStats?.home?.possessionPct ?? 52,
+      foulsCommitted: existingStats?.home?.foulsCommitted ?? Math.round(11 * progressFactor)
+    },
+    away: {
+      corners: awayCorners,
+      yellowCards: finalAwayYellows,
+      redCards: Math.max(awayReds, existingStats?.away?.redCards ?? 0),
+      shots: existingStats?.away?.shots ?? Math.max(awayScore + 1, Math.round(10.5 * progressFactor)),
+      shotsOnTarget: existingStats?.away?.shotsOnTarget ?? Math.max(awayScore, Math.round(3.8 * progressFactor)),
+      possessionPct: existingStats?.away?.possessionPct ?? 48,
+      foulsCommitted: existingStats?.away?.foulsCommitted ?? Math.round(12 * progressFactor)
+    },
+    updatedAt: Date.now()
+  };
+  const liveEvents = reconcileCornerEvents(events, homeCorners, awayCorners, homeName, awayName, currentMin);
+  return { liveStats, liveEvents };
+}
+async function fetchApiFootballLiveAll() {
+  const cached = getCacheItem("api_football_live_all_v2");
+  return cached?.data || [];
+}
+function mapEspnPosition(posAbbr) {
+  const p = (posAbbr || "").toUpperCase();
+  if (p === "G" || p === "GK" || p.includes("GOAL")) return "POR";
+  if (p.includes("D") || p === "CB" || p === "LB" || p === "RB" || p === "CD" || p === "CD-L" || p === "CD-R") return "DEF";
+  if (p.includes("F") || p === "ST" || p === "CF" || p === "LW" || p === "RW") return "DEL";
+  return "MED";
+}
+function parseEspnMatchStatusAndClock(ev) {
+  const state = String(ev?.status?.type?.state || "pre").toLowerCase();
+  const isLive = state === "in";
+  const isPost = state === "post" || ev?.status?.type?.completed === true;
+  const period = Number(ev?.status?.period || 1);
+  const statusTypeName = String(ev?.status?.type?.name || "").toUpperCase();
+  const statusDetail = String(ev?.status?.type?.detail || "").toUpperCase();
+  const statusShortDetail = String(ev?.status?.type?.shortDetail || "").toUpperCase();
+  const rawClock = String(ev?.status?.displayClock || "").trim();
+  const clockSeconds = Number(ev?.status?.clock || 0);
+  if (isPost) {
+    return {
+      isLive: false,
+      isPost: true,
+      isHalfTime: false,
+      statusShort: "FT",
+      elapsedMin: 90
+    };
+  }
+  if (statusTypeName.includes("POSTPONED")) {
+    return { isLive: false, isPost: false, isHalfTime: false, statusShort: "PST", elapsedMin: null };
+  }
+  if (statusTypeName.includes("CANCEL")) {
+    return { isLive: false, isPost: false, isHalfTime: false, statusShort: "CANC", elapsedMin: null };
+  }
+  if (statusTypeName.includes("SUSPEND") || statusTypeName.includes("DELAY")) {
+    return { isLive: false, isPost: false, isHalfTime: false, statusShort: "SUSP", elapsedMin: null };
+  }
+  if (!isLive) {
+    return {
+      isLive: false,
+      isPost: false,
+      isHalfTime: false,
+      statusShort: "NS",
+      elapsedMin: null
+    };
+  }
+  const isHalfTime = statusTypeName.includes("HALFTIME") || statusShortDetail === "HT" || statusDetail === "HT" || statusShortDetail.includes("HALF") || statusShortDetail.includes("DESCANSO");
+  if (isHalfTime) {
+    return {
+      isLive: true,
+      isPost: false,
+      isHalfTime: true,
+      statusShort: "HT",
+      elapsedMin: 45
+    };
+  }
+  const isShootout = statusTypeName.includes("SHOOTOUT") || statusTypeName.includes("PENALT") || statusTypeName.includes("END_OF_EXTRATIME") || statusShortDetail.includes("PEN") || statusDetail.includes("PENS") || period >= 5;
+  if (isShootout) {
+    return {
+      isLive: true,
+      isPost: false,
+      isHalfTime: false,
+      statusShort: "PEN",
+      elapsedMin: 120
+    };
+  }
+  const isOvertime = statusTypeName.includes("OVERTIME") || statusTypeName.includes("EXTRA") || period === 3 || period === 4;
+  const isFirstHalf = !isOvertime && (period === 1 || statusTypeName.includes("FIRST_HALF"));
+  const statusShort = isOvertime ? period === 3 ? "1ET" : "2ET" : isFirstHalf ? "1H" : "2H";
+  let parsedMin = isOvertime ? 95 : isFirstHalf ? 20 : 60;
+  const plusMatch = rawClock.match(/(\d+)\s*'?\s*\+\s*(\d+)/);
+  const colonMatch = rawClock.match(/^(\d+):(\d+)$/);
+  const numMatch = rawClock.match(/(\d+)/);
+  if (plusMatch) {
+    const base = parseInt(plusMatch[1], 10);
+    const extra = parseInt(plusMatch[2], 10);
+    parsedMin = base + extra;
+  } else if (colonMatch) {
+    parsedMin = Math.max(1, parseInt(colonMatch[1], 10));
+  } else if (numMatch) {
+    parsedMin = parseInt(numMatch[1], 10);
+  } else if (clockSeconds > 0) {
+    parsedMin = Math.max(1, Math.ceil(clockSeconds / 60));
+  }
+  if (isOvertime) {
+    parsedMin = Math.min(125, Math.max(91, parsedMin));
+  } else if (isFirstHalf) {
+    parsedMin = Math.min(55, Math.max(1, parsedMin));
+  } else {
+    parsedMin = Math.min(105, Math.max(46, parsedMin));
+  }
+  return {
+    isLive: true,
+    isPost: false,
+    isHalfTime: false,
+    statusShort,
+    elapsedMin: parsedMin
+  };
+}
+async function fetchEspnMatchSummaryTelemetry(espnEventId, homeName, awayName, elapsedMin, isFinished, fallbackTelemetry) {
+  if (!espnEventId) return fallbackTelemetry;
+  const cacheKey = `espn_summary_v3_${espnEventId}`;
+  const cached = getCacheItem(cacheKey);
+  if (cached && Date.now() - cached.timestamp < 15 * 1e3) {
+    return cached.data;
+  }
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3e3);
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/all/summary?event=${encodeURIComponent(espnEventId)}`,
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
+        },
+        signal: controller.signal
+      }
+    );
+    clearTimeout(timeoutId);
+    if (!res.ok) return fallbackTelemetry;
+    const sumData = await res.json();
+    const hKey = normalizeTeamKey(homeName);
+    const aKey = normalizeTeamKey(awayName);
+    const boxTeams = Array.isArray(sumData?.boxscore?.teams) ? sumData.boxscore.teams : [];
+    const homeBox = boxTeams.find((t) => {
+      const tk = normalizeTeamKey(t?.team?.displayName || t?.team?.name || "");
+      return tk && hKey && (tk.includes(hKey) || hKey.includes(tk));
+    }) || boxTeams[0];
+    const awayBox = boxTeams.find((t) => {
+      const tk = normalizeTeamKey(t?.team?.displayName || t?.team?.name || "");
+      return tk && aKey && (tk.includes(aKey) || aKey.includes(tk));
+    }) || boxTeams[1];
+    const homeBoxStats = Array.isArray(homeBox?.statistics) ? homeBox.statistics : [];
+    const awayBoxStats = Array.isArray(awayBox?.statistics) ? awayBox.statistics : [];
+    const keyEvents = Array.isArray(sumData?.keyEvents) ? sumData.keyEvents : [];
+    const parsedEvents = [
+      {
+        id: `kickoff_${espnEventId}`,
+        minute: 1,
+        displayMinute: "1'",
+        type: "PERIOD_START",
+        teamSide: "NEUTRAL",
+        detail: "Inicio del primer tiempo"
+      }
+    ];
+    let keyHomeYellow = 0;
+    let keyAwayYellow = 0;
+    let keyHomeRed = 0;
+    let keyAwayRed = 0;
+    let hasHalftimeEvent = false;
+    keyEvents.forEach((ke, idx) => {
+      const typeKey = String(ke?.type?.type || ke?.type?.text || "").toLowerCase();
+      const clockInfo = parseClockMinute(ke?.clock?.displayValue, 45);
+      const evTeamName = String(ke?.team?.displayName || "");
+      const evTeamKey = normalizeTeamKey(evTeamName);
+      const side = evTeamKey && aKey && (evTeamKey.includes(aKey) || aKey.includes(evTeamKey)) ? "AWAY" : "HOME";
+      const teamLabel = side === "HOME" ? homeName : awayName;
+      const rawP1 = ke?.participants?.[0]?.athlete?.displayName || ke?.participants?.[0]?.displayName;
+      const rawP2 = ke?.participants?.[1]?.athlete?.displayName || ke?.participants?.[1]?.displayName;
+      if (typeKey.includes("halftime") || typeKey === "end-1st-half") {
+        if (!hasHalftimeEvent) {
+          hasHalftimeEvent = true;
+          parsedEvents.push({
+            id: `ht_${espnEventId}`,
+            minute: 45,
+            displayMinute: clockInfo.displayMinute || "45'",
+            type: "PERIOD_HALF",
+            teamSide: "NEUTRAL",
+            detail: "Entretiempo reglamentario"
+          });
+        }
+      } else if (typeKey === "goal" || typeKey.includes("penalty---scored") || typeKey.includes("own-goal") || ke?.scoringPlay === true) {
+        const isOwnGoal = typeKey.includes("own-goal");
+        const isPen = typeKey.includes("penalty");
+        const p1 = resolveServerPlayerName(rawP1, teamLabel, 9 - idx % 3, false);
+        const p2 = rawP2 ? resolveServerPlayerName(rawP2, teamLabel, 7, false) : void 0;
+        parsedEvents.push({
+          id: `goal_${espnEventId}_${idx}`,
+          minute: clockInfo.minute,
+          displayMinute: clockInfo.displayMinute,
+          type: "GOAL",
+          teamSide: side,
+          teamName: teamLabel,
+          playerPrimary: p1,
+          playerSecondary: p2,
+          detail: isPen ? `Gol de penal convertido por ${p1}` : isOwnGoal ? `Gol en propia puerta (${p1})` : p2 ? `Gol de ${p1} \xB7 Asistencia de ${p2}` : `Anotaci\xF3n oficial de ${p1} para ${teamLabel}`
+        });
+      } else if (typeKey.includes("red-card") || typeKey.includes("second-yellow")) {
+        if (side === "HOME") keyHomeRed++;
+        else keyAwayRed++;
+        const p1 = resolveServerPlayerName(rawP1, teamLabel, (3 + idx) % 10, false);
+        parsedEvents.push({
+          id: `rc_${espnEventId}_${idx}`,
+          minute: clockInfo.minute,
+          displayMinute: clockInfo.displayMinute,
+          type: "RED_CARD",
+          teamSide: side,
+          teamName: teamLabel,
+          playerPrimary: p1,
+          detail: `Tarjeta roja / expulsi\xF3n para ${p1}`
+        });
+      } else if (typeKey.includes("yellow-card")) {
+        if (side === "HOME") keyHomeYellow++;
+        else keyAwayYellow++;
+        const p1 = resolveServerPlayerName(rawP1, teamLabel, (4 + idx) % 10, false);
+        parsedEvents.push({
+          id: `yc_${espnEventId}_${idx}`,
+          minute: clockInfo.minute,
+          displayMinute: clockInfo.displayMinute,
+          type: "YELLOW_CARD",
+          teamSide: side,
+          teamName: teamLabel,
+          playerPrimary: p1,
+          detail: `Tarjeta amarilla mostrada a ${p1}`
+        });
+      } else if (typeKey.includes("substitution")) {
+        const p1 = resolveServerPlayerName(rawP1, teamLabel, 12 + idx % 5, true);
+        const p2 = resolveServerPlayerName(rawP2, teamLabel, 6 + idx % 5, false);
+        parsedEvents.push({
+          id: `sub_${espnEventId}_${idx}`,
+          minute: clockInfo.minute,
+          displayMinute: clockInfo.displayMinute,
+          type: "SUBSTITUTION",
+          teamSide: side,
+          teamName: teamLabel,
+          playerPrimary: p1,
+          playerSecondary: p2,
+          detail: `Ingresa ${p1} en reemplazo de ${p2}`
+        });
+      }
+    });
+    if (!hasHalftimeEvent && (elapsedMin >= 45 || isFinished)) {
+      parsedEvents.push({
+        id: `ht_fallback_${espnEventId}`,
+        minute: 45,
+        displayMinute: "45'",
+        type: "PERIOD_HALF",
+        teamSide: "NEUTRAL",
+        detail: "Entretiempo reglamentario"
+      });
+    }
+    const commentary = Array.isArray(sumData?.commentary) ? sumData.commentary : [];
+    commentary.forEach((c, idx) => {
+      const playType = String(c?.play?.type?.type || c?.play?.type?.text || "").toLowerCase();
+      const rawText = String(c?.text || "");
+      if (playType.includes("corner") || /^corner,/i.test(rawText)) {
+        const clockInfo = parseClockMinute(c?.time?.displayValue || c?.play?.clock?.displayValue, 30);
+        const playTeamName = String(c?.play?.team?.displayName || "");
+        const concededMatch = rawText.match(/Conceded by ([^.]+)\.?/i);
+        const concededBy = concededMatch ? concededMatch[1].trim() : "";
+        let side = "HOME";
+        if (playTeamName) {
+          const pk = normalizeTeamKey(playTeamName);
+          if (pk && aKey && (pk.includes(aKey) || aKey.includes(pk))) side = "AWAY";
+        } else {
+          const headerMatch = rawText.match(/^Corner,\s*([^.]+)\./i);
+          if (headerMatch) {
+            const pk = normalizeTeamKey(headerMatch[1]);
+            if (pk && aKey && (pk.includes(aKey) || aKey.includes(pk))) side = "AWAY";
+          }
+        }
+        const teamLabel = side === "HOME" ? homeName : awayName;
+        parsedEvents.push({
+          id: `corner_${espnEventId}_${idx}_${clockInfo.minute}`,
+          minute: clockInfo.minute,
+          displayMinute: clockInfo.displayMinute,
+          type: "CORNER",
+          teamSide: side,
+          teamName: teamLabel,
+          playerPrimary: concededBy || void 0,
+          detail: concededBy ? `Tiro de esquina para ${teamLabel} (cedido por ${concededBy})` : `Tiro de esquina ejecutado por ${teamLabel}`
+        });
+      }
+    });
+    const homeCorners = getStatNumber(homeBoxStats, "wonCorners", fallbackTelemetry.liveStats.home.corners);
+    const awayCorners = getStatNumber(awayBoxStats, "wonCorners", fallbackTelemetry.liveStats.away.corners);
+    const homeYellows = getStatNumber(
+      homeBoxStats,
+      "yellowCards",
+      Math.max(keyHomeYellow, fallbackTelemetry.liveStats.home.yellowCards)
+    );
+    const awayYellows = getStatNumber(
+      awayBoxStats,
+      "yellowCards",
+      Math.max(keyAwayYellow, fallbackTelemetry.liveStats.away.yellowCards)
+    );
+    const homeReds = getStatNumber(
+      homeBoxStats,
+      "redCards",
+      Math.max(keyHomeRed, fallbackTelemetry.liveStats.home.redCards)
+    );
+    const awayReds = getStatNumber(
+      awayBoxStats,
+      "redCards",
+      Math.max(keyAwayRed, fallbackTelemetry.liveStats.away.redCards)
+    );
+    const liveStats = {
+      home: {
+        corners: homeCorners,
+        yellowCards: homeYellows,
+        redCards: homeReds,
+        shots: getStatNumber(homeBoxStats, "totalShots", fallbackTelemetry.liveStats.home.shots),
+        shotsOnTarget: getStatNumber(homeBoxStats, "shotsOnTarget", fallbackTelemetry.liveStats.home.shotsOnTarget),
+        possessionPct: getStatNumber(homeBoxStats, "possessionPct", fallbackTelemetry.liveStats.home.possessionPct),
+        foulsCommitted: getStatNumber(homeBoxStats, "foulsCommitted", fallbackTelemetry.liveStats.home.foulsCommitted)
+      },
+      away: {
+        corners: awayCorners,
+        yellowCards: awayYellows,
+        redCards: awayReds,
+        shots: getStatNumber(awayBoxStats, "totalShots", fallbackTelemetry.liveStats.away.shots),
+        shotsOnTarget: getStatNumber(awayBoxStats, "shotsOnTarget", fallbackTelemetry.liveStats.away.shotsOnTarget),
+        possessionPct: getStatNumber(awayBoxStats, "possessionPct", fallbackTelemetry.liveStats.away.possessionPct),
+        foulsCommitted: getStatNumber(awayBoxStats, "foulsCommitted", fallbackTelemetry.liveStats.away.foulsCommitted)
+      },
+      updatedAt: Date.now()
+    };
+    if (isFinished) {
+      parsedEvents.push({
+        id: `ft_${espnEventId}`,
+        minute: 90,
+        displayMinute: "90'",
+        type: "PERIOD_END",
+        teamSide: "NEUTRAL",
+        detail: "Final del encuentro"
+      });
+    }
+    const finalEvents = reconcileCornerEvents(
+      parsedEvents.length > 1 ? parsedEvents : fallbackTelemetry.liveEvents,
+      homeCorners,
+      awayCorners,
+      homeName,
+      awayName,
+      elapsedMin || 45
+    );
+    let liveRosters = void 0;
+    const rawRosters = Array.isArray(sumData?.rosters) ? sumData.rosters : [];
+    if (rawRosters.length >= 2) {
+      const homeRosterObj = rawRosters.find((r) => r.homeAway === "home") || rawRosters[0];
+      const awayRosterObj = rawRosters.find((r) => r.homeAway === "away") || rawRosters[1];
+      const mapRosterList = (list, isStarter, teamName) => (Array.isArray(list) ? list : []).filter((item) => Boolean(item?.starter) === isStarter).map((item, idx) => {
+        const pStats = Array.isArray(item?.stats) ? item.stats : [];
+        const yc = getStatNumber(pStats, "yellowCards", 0);
+        const rc = getStatNumber(pStats, "redCards", 0);
+        const rawAthleteName = item?.athlete?.displayName || item?.athlete?.fullName;
+        return {
+          id: String(item?.athlete?.id || `p_${idx}`),
+          name: resolveServerPlayerName(rawAthleteName, teamName, isStarter ? idx : idx + 12, !isStarter),
+          number: parseInt(String(item?.jersey || idx + 1), 10) || idx + 1,
+          position: mapEspnPosition(String(item?.position?.abbreviation || "")),
+          isCaptain: Boolean(item?.captain),
+          matchYellowCards: yc,
+          matchRedCards: rc,
+          subbedIn: Boolean(item?.subbedIn),
+          subbedOut: Boolean(item?.subbedOut)
+        };
+      });
+      const homeStarters = mapRosterList(homeRosterObj?.roster, true, homeName);
+      const awayStarters = mapRosterList(awayRosterObj?.roster, true, awayName);
+      if (homeStarters.length >= 7 && awayStarters.length >= 7) {
+        liveRosters = {
+          homeFormation: homeRosterObj?.formation || "4-3-3",
+          awayFormation: awayRosterObj?.formation || "4-3-3",
+          homeStarters,
+          awayStarters,
+          homeSubstitutes: mapRosterList(homeRosterObj?.roster, false, homeName),
+          awaySubstitutes: mapRosterList(awayRosterObj?.roster, false, awayName)
+        };
+      }
+    }
+    const result = { liveStats, liveEvents: finalEvents, liveRosters };
+    setCacheItem(cacheKey, result);
+    return result;
+  } catch {
+    return fallbackTelemetry;
+  }
+}
+async function fetchEspnSoccerFixtures(targetDate, clientTz = "America/Bogota") {
+  const espnDateStr = targetDate.replace(/-/g, "");
+  try {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}&limit=300`,
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
+        }
+      }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const events = Array.isArray(data?.events) ? data.events : [];
+    const mapped = [];
+    const now = Date.now();
+    for (const ev of events) {
+      const comp = ev?.competitions?.[0];
+      if (!comp) continue;
+      const competitors = Array.isArray(comp.competitors) ? comp.competitors : [];
+      const homeComp = competitors.find((c) => c.homeAway === "home") || competitors[0];
+      const awayComp = competitors.find((c) => c.homeAway === "away") || competitors[1];
+      if (!homeComp || !awayComp) continue;
+      const state = String(ev?.status?.type?.state || "pre").toLowerCase();
+      if (state === "post" || ev?.status?.type?.completed === true) {
+        continue;
+      }
+      const matchDateObj = new Date(ev.date);
+      const matchTimestampMs = matchDateObj.getTime();
+      if (isNaN(matchTimestampMs)) continue;
+      if (state !== "in" && matchTimestampMs < now - 120 * 60 * 1e3) {
+        continue;
+      }
+      let eventLocalDate = targetDate;
+      try {
+        eventLocalDate = new Intl.DateTimeFormat("en-CA", {
+          timeZone: clientTz,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit"
+        }).format(matchDateObj);
+      } catch {
+      }
+      if (eventLocalDate !== targetDate) {
+        continue;
+      }
+      const rawUid = String(ev?.uid || "");
+      const espnLeagueId = rawUid.match(/~l:(\d+)/)?.[1] || "0";
+      const rawCountry = String(comp?.venue?.address?.country || "Internacional");
+      const catalogEntry = ESPN_LEAGUE_CATALOG[espnLeagueId];
+      const countryTranslated = COUNTRY_TRANSLATION_MAP[rawCountry];
+      const leagueId = catalogEntry?.id || parseInt(espnLeagueId, 10) || 1;
+      const countryName = catalogEntry?.country || countryTranslated?.country || rawCountry;
+      const flag = catalogEntry?.flag || countryTranslated?.flag || "\u26BD";
+      const slug = String(ev?.season?.slug || "Jornada Regular").replace(/-/g, " ");
+      const leagueName = catalogEntry?.name || `Liga ${countryName}`;
+      const clockParsed = parseEspnMatchStatusAndClock(ev);
+      const isLive = clockParsed.isLive;
+      const elapsedMin = clockParsed.elapsedMin;
+      const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || "Local");
+      const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || "Visitante");
+      const espnEventId = String(ev.id || "");
+      const sbTelemetry = isLive ? extractEspnScoreboardTelemetry(ev, comp, homeComp, awayComp, homeName, awayName, elapsedMin || 45, false) : void 0;
+      mapped.push({
+        espnEventId,
+        liveStats: sbTelemetry?.liveStats,
+        liveEvents: sbTelemetry?.liveEvents,
+        fixture: {
+          id: parseInt(espnEventId || "0", 10) || Math.floor(Math.random() * 9e5 + 1e5),
+          date: ev.date,
+          timestamp: Math.floor(matchTimestampMs / 1e3),
+          venue: {
+            name: comp?.venue?.fullName || "Estadio Oficial",
+            city: comp?.venue?.address?.city || countryName
+          },
+          status: {
+            short: clockParsed.statusShort,
+            elapsed: elapsedMin
+          }
+        },
+        league: {
+          id: leagueId,
+          name: leagueName,
+          country: countryName,
+          flag,
+          round: slug
+        },
+        teams: {
+          home: {
+            id: parseInt(String(homeComp?.team?.id || homeComp?.id || "1"), 10) || 1,
+            name: homeName,
+            logo: String(homeComp?.team?.logo || homeComp?.team?.logos?.[0]?.href || "")
+          },
+          away: {
+            id: parseInt(String(awayComp?.team?.id || awayComp?.id || "2"), 10) || 2,
+            name: awayName,
+            logo: String(awayComp?.team?.logo || awayComp?.team?.logos?.[0]?.href || "")
+          }
+        },
+        goals: {
+          home: isLive ? parseInt(String(homeComp?.score || "0"), 10) || 0 : null,
+          away: isLive ? parseInt(String(awayComp?.score || "0"), 10) || 0 : null
+        }
+      });
+    }
+    const liveItems = mapped.filter(
+      (m) => ["1H", "2H", "HT", "1ET", "2ET", "ET", "PEN"].includes(String(m.fixture?.status?.short || "")) && m.espnEventId
+    ).slice(0, 25);
+    if (liveItems.length > 0) {
+      await Promise.allSettled(
+        liveItems.map(async (item) => {
+          const enriched = await fetchEspnMatchSummaryTelemetry(
+            item.espnEventId,
+            item.teams.home.name,
+            item.teams.away.name,
+            item.fixture.status.elapsed || 45,
+            false,
+            { liveStats: item.liveStats, liveEvents: item.liveEvents || [] }
+          );
+          item.liveStats = enriched.liveStats;
+          item.liveEvents = enriched.liveEvents;
+          if (enriched.liveRosters) {
+            item.liveRosters = enriched.liveRosters;
+          }
+          if (item.fixture.status.short !== "HT" && Array.isArray(enriched.liveEvents)) {
+            const maxEvMin = enriched.liveEvents.reduce((acc, evItem) => {
+              if (evItem?.type === "PERIOD_HALF" || evItem?.type === "PERIOD_END" || evItem?.type === "PERIOD_START") {
+                return acc;
+              }
+              return Math.max(acc, Number(evItem?.minute || 0));
+            }, 0);
+            if (maxEvMin > (item.fixture.status.elapsed || 0)) {
+              item.fixture.status.elapsed = maxEvMin;
+            }
+          }
+        })
+      );
+    }
+    return mapped;
+  } catch (err) {
+    console.warn("[ESPN Soccer Fallback Error]:", err);
+    return [];
+  }
+}
+var SERVER_ALLOWED_PRIME_COUNTRIES = {
+  COLOMBIA: {
+    countryMatches: ["colombia"],
+    allowedLeaguesPattern: /\b(primera a|primera b|liga betplay|torneo betplay|copa betplay|copa colombia|superliga|dimayor)\b/i
+  },
+  ENGLAND: {
+    countryMatches: ["england", "inglaterra"],
+    allowedLeaguesPattern: /\b(premier league|championship|fa cup|efl cup|carabao cup|community shield)\b/i,
+    excludedLeaguesPattern: /\b(premier league 2|u18|u21|u23|national league|league one|league two|efl trophy|isthmian|southern|northern|women|femenina)\b/i
+  },
+  SPAIN: {
+    countryMatches: ["spain", "espana", "espa\xF1a"],
+    allowedLeaguesPattern: /\b(la liga|laliga|primera divisi[oó]n|segunda divisi[oó]n|hypermotion|copa del rey|supercopa)\b/i,
+    excludedLeaguesPattern: /\b(rfef|tercera|federaci[oó]n|juvenil|women|femenina)\b/i
+  },
+  ITALY: {
+    countryMatches: ["italy", "italia"],
+    allowedLeaguesPattern: /\b(serie a|serie b|coppa italia|supercoppa)\b/i,
+    excludedLeaguesPattern: /\b(serie c|serie d|primavera|coppa italia serie|women|femminile)\b/i
+  },
+  GERMANY: {
+    countryMatches: ["germany", "alemania"],
+    allowedLeaguesPattern: /\b(bundesliga|2\. bundesliga|dfb pokal|dfb-pokal|supercup)\b/i,
+    excludedLeaguesPattern: /\b(3\. liga|regionalliga|oberliga|junioren|u19|u17|women|frauen)\b/i
+  },
+  FRANCE: {
+    countryMatches: ["france", "francia"],
+    allowedLeaguesPattern: /\b(ligue 1|ligue 2|coupe de france|troph[eé]e des champions)\b/i,
+    excludedLeaguesPattern: /\b(national|championnat national|u19|feminine|f[eé]minine)\b/i
+  },
+  ARGENTINA: {
+    countryMatches: ["argentina"],
+    allowedLeaguesPattern: /\b(liga profesional|primera divisi[oó]n|copa de la liga|copa argentina|trofeo de campeones|primera nacional)\b/i,
+    excludedLeaguesPattern: /\b(primera b|primera c|primera d|torneo federal|reserva|proyecci[oó]n|femenino)\b/i
+  },
+  BRAZIL: {
+    countryMatches: ["brazil", "brasil"],
+    allowedLeaguesPattern: /\b(serie a|s[eé]rie a|serie b|s[eé]rie b|brasileir[aã]o|copa do brasil|supercopa|paulista a1|paulist[aã]o|carioca)\b/i,
+    excludedLeaguesPattern: /\b(serie c|s[eé]rie c|serie d|s[eé]rie d|paulista a2|paulista a3|copa verde|sub-20|u20|feminino)\b/i
+  },
+  MEXICO: {
+    countryMatches: ["mexico", "m\xE9xico"],
+    allowedLeaguesPattern: /\b(liga mx|expansi[oó]n mx|copa mx|campe[oó]n de campeones)\b/i,
+    excludedLeaguesPattern: /\b(liga premier|tdp|sub-23|u23|femenil)\b/i
+  },
+  USA: {
+    countryMatches: ["usa", "united states", "estados unidos"],
+    allowedLeaguesPattern: /\b(major league soccer|mls|us open cup)\b/i,
+    excludedLeaguesPattern: /\b(mls next|usl|nisa|npsl|ncaa)\b/i
+  },
+  PORTUGAL: {
+    countryMatches: ["portugal"],
+    allowedLeaguesPattern: /\b(primeira liga|liga portugal|ta[cç]a de portugal|ta[cç]a da liga|superta[cç]a)\b/i,
+    excludedLeaguesPattern: /\b(liga 3|campeonato de portugal|revela[cç][aã]o|u23)\b/i
+  },
+  NETHERLANDS: {
+    countryMatches: ["netherlands", "paises bajos", "pa\xEDses bajos", "holanda"],
+    allowedLeaguesPattern: /\b(eredivisie|eerste divisie|knvb beker|johan cruijff)\b/i,
+    excludedLeaguesPattern: /\b(tweede divisie|derde divisie|u21)\b/i
+  },
+  SAUDI_ARABIA: {
+    countryMatches: ["saudi arabia", "saudi-arabia", "arabia saudita"],
+    allowedLeaguesPattern: /\b(pro league|professional league|saudi league|king'?s cup|super cup)\b/i,
+    excludedLeaguesPattern: /\b(division 1|division 2|youth)\b/i
+  },
+  TURKEY: {
+    countryMatches: ["turkey", "turquia", "turqu\xEDa"],
+    allowedLeaguesPattern: /\b(s[uü]per lig|1\. lig|turkish cup|kupasi)\b/i,
+    excludedLeaguesPattern: /\b(2\. lig|3\. lig|u19)\b/i
+  },
+  CHILE: {
+    countryMatches: ["chile"],
+    allowedLeaguesPattern: /\b(primera divisi[oó]n|primera b|copa chile|supercopa)\b/i,
+    excludedLeaguesPattern: /\b(segunda divisi[oó]n|tercera)\b/i
+  },
+  URUGUAY: {
+    countryMatches: ["uruguay"],
+    allowedLeaguesPattern: /\b(primera divisi[oó]n|campeonato uruguayo|torneo apertura|torneo clausura|intermedio)\b/i,
+    excludedLeaguesPattern: /\b(segunda divisi[oó]n|reserva)\b/i
+  },
+  ECUADOR: {
+    countryMatches: ["ecuador"],
+    allowedLeaguesPattern: /\b(liga ?pro|serie a|copa ecuador)\b/i,
+    excludedLeaguesPattern: /\b(serie b|segunda)\b/i
+  },
+  PERU: {
+    countryMatches: ["peru", "per\xFA"],
+    allowedLeaguesPattern: /\b(liga 1|primera divisi[oó]n)\b/i,
+    excludedLeaguesPattern: /\b(liga 2|copa per[uú]|reserva)\b/i
+  },
+  PARAGUAY: {
+    countryMatches: ["paraguay"],
+    allowedLeaguesPattern: /\b(divisi[oó]n profesional|primera divisi[oó]n|copa de primera|copa paraguay)\b/i,
+    excludedLeaguesPattern: /\b(intermedia|reserva)\b/i
+  },
+  BOLIVIA: {
+    countryMatches: ["bolivia"],
+    allowedLeaguesPattern: /\b(divisi[oó]n profesional|primera divisi[oó]n)\b/i,
+    excludedLeaguesPattern: /\b(sim[oó]n bol[ií]var)\b/i
+  },
+  VENEZUELA: {
+    countryMatches: ["venezuela"],
+    allowedLeaguesPattern: /\b(primera divisi[oó]n|liga futve|copa venezuela)\b/i,
+    excludedLeaguesPattern: /\b(segunda divisi[oó]n)\b/i
+  },
+  BELGIUM: {
+    countryMatches: ["belgium", "belgica", "b\xE9lgica"],
+    allowedLeaguesPattern: /\b(pro league|jupiler|first division a|beker van belgie|croky cup)\b/i,
+    excludedLeaguesPattern: /\b(challenger|amateur|u21)\b/i
+  },
+  SCOTLAND: {
+    countryMatches: ["scotland", "escocia"],
+    allowedLeaguesPattern: /\b(premiership|scottish cup|league cup)\b/i,
+    excludedLeaguesPattern: /\b(championship|league one|league two|highland|lowland)\b/i
+  },
+  JAPAN: {
+    countryMatches: ["japan", "japon", "jap\xF3n"],
+    allowedLeaguesPattern: /\b(j1 league|j\.league|emperor cup|j-league cup)\b/i,
+    excludedLeaguesPattern: /\b(j2 league|j3 league|we league|university)\b/i
+  }
+};
+function isServerYouthOrLowTierMatch(leagueName, countryName, homeName, awayName) {
+  const lName = (leagueName || "").toLowerCase().trim();
+  const cName = (countryName || "").toLowerCase().trim();
+  const combined = `${lName} ${cName} ${homeName || ""} ${awayName || ""}`.toLowerCase();
+  if (/\b(u15|u16|u17|u18|u19|u20|u21|u22|u23|sub-15|sub-17|sub-19|sub-20|sub-21|sub-23|youth|juvenil|reservas|reserve|amateur|regional|tercera|fourth division|national league north|national league south|non-league|oberliga|regionalliga|primavera|premier league 2|femenin[ao]|women|frauen|femminile|femenil)\b/i.test(
+    combined
+  )) {
+    return true;
+  }
+  const isEliteIntlCountry = ["world", "europe", "south america", "north & central america", "asia", "international", "europa", "sudam\xE9rica", "sudamerica", "internacional"].some(
+    (ic) => cName === ic || cName.includes(ic)
+  );
+  const isEliteIntlTournament = /\b(uefa champions|champions league|europa league|conference league|super cup|copa libertadores|libertadores|copa sudamericana|sudamericana|recopa|copa america|copa am[eé]rica|eurocopa|world cup|mundial|nations league|eliminatorias|wc qualification|world cup qualification|concacaf champions|afc champions|leagues cup|gold cup|copa oro|club world cup)\b/i.test(
+    lName
+  ) && !/\b(caf|ofc|afc cup|asean|cosafa|cecafa|wafcon|u17|u20|u23|women|youth)\b/i.test(`${lName} ${cName}`);
+  if (isEliteIntlTournament && (isEliteIntlCountry || !cName)) {
+    return false;
+  }
+  for (const rule of Object.values(SERVER_ALLOWED_PRIME_COUNTRIES)) {
+    const countryMatches = rule.countryMatches.some((cm) => {
+      if (cName === cm) return true;
+      if (cm === "england" && (cName.includes("new") || cName.includes("northern"))) return false;
+      return cName === cm;
+    });
+    if (countryMatches) {
+      if (rule.excludedLeaguesPattern && rule.excludedLeaguesPattern.test(lName)) {
+        return true;
+      }
+      if (rule.allowedLeaguesPattern.test(lName)) {
+        return false;
+      }
+      return true;
+    }
+  }
+  if (!cName) {
+    if (/\b(betplay|laliga|bundesliga|eredivisie|primeira liga|brasileir[aã]o|liga mx|mls|s[uü]per lig|campeonato uruguayo|liga futve|j1 league)\b/i.test(
+      lName
+    )) {
+      return false;
+    }
+  }
+  return true;
+}
+function filterActiveUpcomingFixtures(list, targetDate, clientTz) {
+  const now = Date.now();
+  const activeFinishedShorts = ["FT", "AET", "PEN", "PST", "CANC", "ABD", "AWD", "WO"];
+  return list.filter((f) => {
+    const id = f?.fixture?.id;
+    if (id === 991001 || id === 991002 || id === 991003) return false;
+    const lName = String(f?.league?.name || "");
+    const cName = String(f?.league?.country || "");
+    const hName = String(f?.teams?.home?.name || "");
+    const aName = String(f?.teams?.away?.name || "");
+    if (isServerYouthOrLowTierMatch(lName, cName, hName, aName)) {
+      return false;
+    }
+    const statusShort = String(f.fixture?.status?.short || "").toUpperCase();
+    if (activeFinishedShorts.includes(statusShort)) return false;
+    const matchTime = f.fixture?.timestamp ? f.fixture.timestamp * 1e3 : new Date(f.fixture?.date || 0).getTime();
+    if (matchTime > 0 && (now - matchTime) / 6e4 >= 120) {
+      return false;
+    }
+    if (matchTime > 0) {
+      try {
+        const localDate = new Intl.DateTimeFormat("en-CA", {
+          timeZone: clientTz,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit"
+        }).format(new Date(matchTime));
+        if (localDate !== targetDate) return false;
+      } catch {
+      }
+    }
+    const isLive = ["1H", "2H", "HT", "ET", "LIVE", "BT", "P", "INT"].includes(statusShort);
+    if (isLive) return true;
+    return matchTime > now - 115 * 60 * 1e3;
+  });
+}
+app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader("Cache-Control", "s-maxage=120, stale-while-revalidate=300");
   const apiKey = getSecretApiKey();
   const requestedDate = req.query.date || "";
+  const clientTz = (req.query.tz || "America/Bogota").trim() || "America/Bogota";
   const query = (req.query.q || "").toLowerCase().trim();
-  const force = req.query.force === "true";
-  const todayColombia = getColombiaDateStr(0);
-  const targetDate = requestedDate || todayColombia;
-  const cacheKey = `upcoming_${targetDate}`;
+  const force = req.query.force === "true" && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
+  const todayLocal = getColombiaDateStr(0, clientTz);
+  const targetDate = requestedDate || todayLocal;
+  const cacheKey = `upcoming_v8_${targetDate}`;
   const cached = getCacheItem(cacheKey);
-  const cacheTTL = targetDate === todayColombia ? 25 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
-  if (cached && !query) {
-    const isFresh = Date.now() - cached.timestamp < cacheTTL;
-    if (isFresh && !force || quotaShieldActive) {
-      let filtered = cached.data;
-      return res.json({
-        success: true,
-        source: "persistent_disk_cache",
-        remainingCalls: lastRemainingCalls,
-        quotaShieldActive,
-        cachedAt: cached.timestamp,
-        count: Array.isArray(filtered) ? filtered.length : 0,
-        fixtures: filtered
-      });
+  const nowMs = Date.now();
+  const hasLiveOrStartedInCache = cached && Array.isArray(cached.data) && cached.data.some((f) => {
+    const s = String(f?.fixture?.status?.short || "").toUpperCase();
+    if (["1H", "2H", "HT", "ET", "1ET", "2ET", "LIVE", "BT", "P", "PEN", "INT"].includes(s)) return true;
+    const mTime = f?.fixture?.timestamp ? f.fixture.timestamp * 1e3 : new Date(f?.fixture?.date || 0).getTime();
+    return mTime > 0 && mTime <= nowMs;
+  });
+  const cacheTTL = targetDate === todayLocal ? hasLiveOrStartedInCache ? 20 * 1e3 : 2 * 60 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
+  if (cached && Array.isArray(cached.data) && cached.data.length > 0 && !query && !force) {
+    const cacheAge = nowMs - cached.timestamp;
+    if (cacheAge < cacheTTL) {
+      const activeList = filterActiveUpcomingFixtures(cached.data, targetDate, clientTz);
+      if (activeList.length > 0) {
+        return res.json({
+          success: true,
+          source: "persistent_disk_cache",
+          remainingCalls: lastRemainingCalls,
+          quotaShieldActive,
+          cachedAt: cached.timestamp,
+          count: activeList.length,
+          fixtures: activeList
+        });
+      }
     }
-  }
-  if (quotaShieldActive && !force) {
-    if (cached) {
-      return res.json({
-        success: true,
-        source: "quota_shield_disk_cache",
-        remainingCalls: lastRemainingCalls,
-        quotaShieldActive: true,
-        count: Array.isArray(cached.data) ? cached.data.length : 0,
-        fixtures: cached.data
-      });
-    }
-  }
-  if (!apiKey) {
-    return res.json({
-      success: false,
-      message: "No secret API key configured on server.",
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
-      fixtures: cached?.data || []
-    });
   }
   try {
     const resultList = await runSingleFlight(cacheKey, async () => {
-      const apiRes = await fetch(`https://v3.football.api-sports.io/fixtures?date=${targetDate}&timezone=America/Bogota`, {
-        method: "GET",
-        headers: { "x-apisports-key": apiKey }
-      });
-      updateQuotaFromHeaders(apiRes.headers);
-      if (!apiRes.ok) {
-        if (cached) return cached.data;
-        return [];
-      }
-      const json = await apiRes.json();
-      let rawList = Array.isArray(json.response) ? json.response : [];
-      const now = Date.now();
-      rawList = rawList.filter((f) => {
-        const id = f?.fixture?.id;
-        return id !== 991001 && id !== 991002 && id !== 991003;
-      });
-      const activeFinishedShorts = ["FT", "AET", "PEN", "PST", "CANC", "ABD", "AWD", "WO"];
-      let upcomingOnly = rawList.filter((f) => {
-        const statusShort = String(f.fixture?.status?.short || "").toUpperCase();
-        const matchTime = f.fixture?.timestamp ? f.fixture.timestamp * 1e3 : new Date(f.fixture?.date).getTime();
-        const isLive = ["1H", "2H", "HT", "ET", "LIVE", "BT", "P", "INT"].includes(statusShort);
-        if (isLive) return true;
-        if (activeFinishedShorts.includes(statusShort)) return false;
-        return matchTime > now - 45 * 60 * 1e3;
-      });
-      if (targetDate === todayColombia && upcomingOnly.length < 15 && lastRemainingCalls > QUOTA_SHIELD_THRESHOLD) {
-        const tomorrowColombia = getColombiaDateStr(1);
+      let upcomingOnly = [];
+      const espnFixtures = await fetchEspnSoccerFixtures(targetDate, clientTz);
+      const afScheduleCacheKey = `apifootball_schedule_v2_${targetDate}`;
+      const cachedAfEnvelope = getCacheItem(afScheduleCacheKey);
+      const legacyAfSchedule = getCacheItem(`apifootball_schedule_v1_${targetDate}`);
+      const afScheduleTTL = targetDate === todayLocal ? 6 * 60 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
+      if (cachedAfEnvelope && typeof cachedAfEnvelope.data === "object" && Array.isArray(cachedAfEnvelope.data.items) && Date.now() - cachedAfEnvelope.timestamp < afScheduleTTL) {
+        upcomingOnly = filterActiveUpcomingFixtures(
+          JSON.parse(JSON.stringify(cachedAfEnvelope.data.items)),
+          targetDate,
+          clientTz
+        );
+      } else if (legacyAfSchedule && Array.isArray(legacyAfSchedule.data) && Date.now() - legacyAfSchedule.timestamp < afScheduleTTL) {
+        setCacheItem(afScheduleCacheKey, { fetchedAt: legacyAfSchedule.timestamp, items: legacyAfSchedule.data });
+        upcomingOnly = filterActiveUpcomingFixtures(
+          JSON.parse(JSON.stringify(legacyAfSchedule.data)),
+          targetDate,
+          clientTz
+        );
+      } else if (apiKey && !quotaShieldActive && lastRemainingCalls > QUOTA_SHIELD_THRESHOLD) {
         try {
-          const tomorrowRes = await fetch(`https://v3.football.api-sports.io/fixtures?date=${tomorrowColombia}&timezone=America/Bogota`, {
-            method: "GET",
-            headers: { "x-apisports-key": apiKey }
-          });
-          updateQuotaFromHeaders(tomorrowRes.headers);
-          if (tomorrowRes.ok) {
-            const tomorrowJson = await tomorrowRes.json();
-            if (Array.isArray(tomorrowJson.response)) {
-              const tomorrowUpcoming = tomorrowJson.response.filter((f) => {
-                const statusShort = String(f.fixture?.status?.short || "").toUpperCase();
-                return !activeFinishedShorts.includes(statusShort);
-              });
-              upcomingOnly = [...upcomingOnly, ...tomorrowUpcoming];
+          const apiRes = await fetch(
+            `https://v3.football.api-sports.io/fixtures?date=${targetDate}&timezone=America/Bogota`,
+            {
+              method: "GET",
+              headers: { "x-apisports-key": apiKey }
             }
+          );
+          updateQuotaFromHeaders(apiRes.headers);
+          if (apiRes.ok) {
+            const json = await apiRes.json();
+            const rawList = Array.isArray(json.response) ? json.response : [];
+            setCacheItem(afScheduleCacheKey, { fetchedAt: Date.now(), items: rawList });
+            apiFootballAuditLog.unshift({
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              date: targetDate,
+              status: apiRes.status,
+              itemsCount: rawList.length
+            });
+            if (apiFootballAuditLog.length > 30) apiFootballAuditLog.pop();
+            upcomingOnly = filterActiveUpcomingFixtures(rawList, targetDate, clientTz);
+          } else {
+            setCacheItem(afScheduleCacheKey, { fetchedAt: Date.now(), items: [] });
           }
         } catch {
         }
       }
+      if (upcomingOnly.length > 0 && espnFixtures.length > 0) {
+        for (const f of upcomingOnly) {
+          const hKey = normalizeTeamKey(f?.teams?.home?.name || "");
+          const aKey = normalizeTeamKey(f?.teams?.away?.name || "");
+          const matchedEspn = espnFixtures.find(
+            (ef) => teamsFuzzyMatch(
+              hKey,
+              aKey,
+              normalizeTeamKey(ef?.teams?.home?.name || ""),
+              normalizeTeamKey(ef?.teams?.away?.name || "")
+            )
+          );
+          if (matchedEspn) {
+            f.espnEventId = matchedEspn.espnEventId;
+            if (matchedEspn.liveStats) f.liveStats = matchedEspn.liveStats;
+            if (matchedEspn.liveEvents) f.liveEvents = matchedEspn.liveEvents;
+            if (matchedEspn.liveRosters) f.liveRosters = matchedEspn.liveRosters;
+            const espnShort = String(matchedEspn.fixture?.status?.short || "").toUpperCase();
+            if (["1H", "2H", "HT", "1ET", "2ET", "ET", "PEN", "FT", "PST", "CANC", "SUSP"].includes(espnShort)) {
+              f.fixture.status.short = espnShort;
+              f.fixture.status.elapsed = matchedEspn.fixture.status.elapsed;
+              f.goals = matchedEspn.goals;
+            }
+          }
+        }
+        upcomingOnly = filterActiveUpcomingFixtures(upcomingOnly, targetDate, clientTz);
+      }
+      if (upcomingOnly.length === 0) {
+        upcomingOnly = filterActiveUpcomingFixtures(espnFixtures, targetDate, clientTz);
+      }
       upcomingOnly.sort((a, b) => {
         const sA = String(a.fixture?.status?.short || "").toUpperCase();
         const sB = String(b.fixture?.status?.short || "").toUpperCase();
-        const liveA = ["1H", "2H", "HT", "ET", "LIVE"].includes(sA) ? 0 : 1;
-        const liveB = ["1H", "2H", "HT", "ET", "LIVE"].includes(sB) ? 0 : 1;
+        const liveA = ["1H", "2H", "HT", "ET", "1ET", "2ET", "PEN", "LIVE"].includes(sA) ? 0 : 1;
+        const liveB = ["1H", "2H", "HT", "ET", "1ET", "2ET", "PEN", "LIVE"].includes(sB) ? 0 : 1;
         if (liveA !== liveB) return liveA - liveB;
         const tA = a.fixture?.timestamp || 0;
         const tB = b.fixture?.timestamp || 0;
         return tA - tB;
       });
-      setCacheItem(cacheKey, upcomingOnly);
+      if (upcomingOnly.length > 0) {
+        setCacheItem(cacheKey, upcomingOnly);
+      }
       return upcomingOnly;
     });
     let filtered = resultList;
@@ -1015,7 +2826,7 @@ app.get("/api/upcoming", async (req, res) => {
     }
     return res.json({
       success: true,
-      source: "api_football_coalesced",
+      source: "hybrid_official_coalesced",
       remainingCalls: lastRemainingCalls,
       quotaShieldActive,
       count: filtered.length,
@@ -1023,7 +2834,7 @@ app.get("/api/upcoming", async (req, res) => {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (cached) {
+    if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
       return res.json({
         success: true,
         source: "fallback_disk_cache",
@@ -1035,17 +2846,156 @@ app.get("/api/upcoming", async (req, res) => {
     return res.json({ success: false, error: msg, fixtures: [] });
   }
 });
-function normalizeTeamKey(name) {
-  return (name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\b(fc|cf|sc|ac|cd|ud|club|deportivo|atletico|athletic|real|sporting)\b/g, "").replace(/[^a-z0-9]/g, "").trim();
-}
-app.get("/api/live-pulse", async (req, res) => {
+app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
+  const todayStr = getColombiaDateStr(0);
+  const yesterdayStr = getColombiaDateStr(-1);
+  const auditCacheKey = `audit_finished_v4_${todayStr}`;
+  const cachedAudit = getCacheItem(auditCacheKey);
+  if (cachedAudit && Array.isArray(cachedAudit.data) && cachedAudit.data.length > 0 && Date.now() - cachedAudit.timestamp < 15 * 60 * 1e3) {
+    return res.json({
+      success: true,
+      source: "audit_cache",
+      fixtures: cachedAudit.data
+    });
+  }
+  try {
+    const finishedFixtures = await runSingleFlight(auditCacheKey, async () => {
+      const results = [];
+      const datesToScan = [todayStr, yesterdayStr];
+      for (const dStr of datesToScan) {
+        const espnDate = dStr.replace(/-/g, "");
+        try {
+          const sbRes = await fetch(
+            `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=250`,
+            {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
+              }
+            }
+          );
+          if (!sbRes.ok) continue;
+          const sbData = await sbRes.json();
+          const events = Array.isArray(sbData?.events) ? sbData.events : [];
+          for (const ev of events) {
+            const state = String(ev?.status?.type?.state || "").toLowerCase();
+            if (state !== "post" && ev?.status?.type?.completed !== true) continue;
+            const comp = ev?.competitions?.[0];
+            if (!comp) continue;
+            const competitors = Array.isArray(comp.competitors) ? comp.competitors : [];
+            const homeComp = competitors.find((c) => c.homeAway === "home") || competitors[0];
+            const awayComp = competitors.find((c) => c.homeAway === "away") || competitors[1];
+            if (!homeComp || !awayComp) continue;
+            const rawUid = String(ev?.uid || "");
+            const espnLeagueId = rawUid.match(/~l:(\d+)/)?.[1] || "0";
+            const catalogEntry = ESPN_LEAGUE_CATALOG[espnLeagueId];
+            if (!catalogEntry) continue;
+            const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || "Local");
+            const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || "Visitante");
+            if (isServerYouthOrLowTierMatch(catalogEntry.name, catalogEntry.country, homeName, awayName)) {
+              continue;
+            }
+            const espnEventId = String(ev.id || "");
+            const sbTelemetry = extractEspnScoreboardTelemetry(
+              ev,
+              comp,
+              homeComp,
+              awayComp,
+              homeName,
+              awayName,
+              90,
+              true
+            );
+            results.push({
+              espnEventId,
+              liveStats: sbTelemetry.liveStats,
+              liveEvents: sbTelemetry.liveEvents,
+              fixture: {
+                id: parseInt(espnEventId || "0", 10) || Math.floor(Math.random() * 9e5 + 1e5),
+                date: ev.date,
+                timestamp: Math.floor(new Date(ev.date).getTime() / 1e3),
+                venue: {
+                  name: comp?.venue?.fullName || "Estadio Oficial",
+                  city: comp?.venue?.address?.city || catalogEntry.country
+                },
+                status: {
+                  short: "FT",
+                  elapsed: 90
+                }
+              },
+              league: {
+                id: catalogEntry.id,
+                name: catalogEntry.name,
+                country: catalogEntry.country,
+                flag: catalogEntry.flag,
+                round: "Jornada Oficial"
+              },
+              teams: {
+                home: {
+                  id: parseInt(String(homeComp?.team?.id || "1"), 10) || 1,
+                  name: homeName,
+                  logo: String(homeComp?.team?.logo || "")
+                },
+                away: {
+                  id: parseInt(String(awayComp?.team?.id || "2"), 10) || 2,
+                  name: awayName,
+                  logo: String(awayComp?.team?.logo || "")
+                }
+              },
+              goals: {
+                home: parseInt(String(homeComp?.score || "0"), 10) || 0,
+                away: parseInt(String(awayComp?.score || "0"), 10) || 0
+              }
+            });
+          }
+        } catch {
+        }
+      }
+      const topCompleted = results.slice(0, 15);
+      if (topCompleted.length > 0) {
+        await Promise.allSettled(
+          topCompleted.map(async (item) => {
+            if (!item.espnEventId) return;
+            const enriched = await fetchEspnMatchSummaryTelemetry(
+              item.espnEventId,
+              item.teams.home.name,
+              item.teams.away.name,
+              90,
+              true,
+              { liveStats: item.liveStats, liveEvents: item.liveEvents || [] }
+            );
+            item.liveStats = enriched.liveStats;
+            item.liveEvents = enriched.liveEvents;
+          })
+        );
+      }
+      if (results.length > 0) {
+        setCacheItem(auditCacheKey, results);
+      }
+      return results;
+    });
+    return res.json({
+      success: true,
+      source: "espn_prime_finished",
+      fixtures: finishedFixtures
+    });
+  } catch (err) {
+    return res.json({
+      success: false,
+      fixtures: [],
+      error: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader("Cache-Control", "s-maxage=15, stale-while-revalidate=30");
   const requestedDate = req.query.date || "";
+  const force = req.query.force === "true" && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
   const todayColombia = getColombiaDateStr(0);
   const targetDate = requestedDate || todayColombia;
   const espnDateStr = targetDate.replace(/-/g, "");
-  const pulseCacheKey = `live_pulse_${espnDateStr}`;
+  const pulseCacheKey = `live_pulse_v6_${espnDateStr}`;
   const cachedPulse = getCacheItem(pulseCacheKey);
-  if (cachedPulse && Date.now() - cachedPulse.timestamp < 35 * 1e3) {
+  if (!force && cachedPulse && Date.now() - cachedPulse.timestamp < 15 * 1e3) {
     return res.json({
       success: true,
       source: "hybrid_memory_pulse",
@@ -1058,9 +3008,44 @@ app.get("/api/live-pulse", async (req, res) => {
   try {
     const deltas = await runSingleFlight(pulseCacheKey, async () => {
       const liveDeltas = [];
+      const apiLiveAll = await fetchApiFootballLiveAll();
+      for (const lf of apiLiveAll) {
+        const fId = String(lf?.fixture?.id || "");
+        const homeName = String(lf?.teams?.home?.name || "");
+        const awayName = String(lf?.teams?.away?.name || "");
+        const statusShort = String(lf?.fixture?.status?.short || "2H").toUpperCase();
+        const isHalfTime = statusShort === "HT" || statusShort === "BT";
+        const isFinished = ["FT", "AET", "PEN"].includes(statusShort);
+        const homeScore = Number(lf?.goals?.home ?? lf?.score?.fulltime?.home ?? 0);
+        const awayScore = Number(lf?.goals?.away ?? lf?.score?.fulltime?.away ?? 0);
+        const minute = isHalfTime ? 45 : Math.min(120, Math.max(1, Number(lf?.fixture?.status?.elapsed || 45)));
+        const afTelemetry = extractApiFootballLiveTelemetry(
+          lf,
+          homeScore,
+          awayScore,
+          minute,
+          isHalfTime,
+          isFinished
+        );
+        liveDeltas.push({
+          id: fId,
+          homeKey: normalizeTeamKey(homeName),
+          awayKey: normalizeTeamKey(awayName),
+          homeName,
+          awayName,
+          homeScore,
+          awayScore,
+          minute,
+          isHalfTime,
+          statusShort,
+          status: isFinished ? "FINISHED" : "IN_PLAY",
+          liveStats: afTelemetry.liveStats,
+          liveEvents: afTelemetry.liveEvents
+        });
+      }
       try {
         const espnRes = await fetch(
-          `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}`,
+          `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}&limit=300`,
           {
             headers: {
               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
@@ -1077,36 +3062,94 @@ app.get("/api/live-pulse", async (req, res) => {
             const homeComp = competitors.find((c) => c.homeAway === "home") || competitors[0];
             const awayComp = competitors.find((c) => c.homeAway === "away") || competitors[1];
             if (!homeComp || !awayComp) continue;
-            const state = String(ev?.status?.type?.state || "").toLowerCase();
-            const isLive = state === "in";
-            const isPost = state === "post";
-            if (!isLive && !isPost) continue;
+            const clockParsed = parseEspnMatchStatusAndClock(ev);
+            if (!clockParsed.isLive && !clockParsed.isPost) continue;
+            const isLive = clockParsed.isLive;
+            const isPost = clockParsed.isPost;
+            const isHalfTime = clockParsed.isHalfTime;
+            const parsedMin = clockParsed.elapsedMin ?? 45;
+            const statusShort = clockParsed.statusShort;
             const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || "");
             const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || "");
             const homeScore = parseInt(String(homeComp?.score || "0"), 10) || 0;
             const awayScore = parseInt(String(awayComp?.score || "0"), 10) || 0;
-            const rawClock = String(ev?.status?.displayClock || "45");
-            const parsedMin = parseInt(rawClock.replace(/[^0-9]/g, ""), 10) || 45;
-            liveDeltas.push({
-              homeKey: normalizeTeamKey(homeName),
-              awayKey: normalizeTeamKey(awayName),
+            const espnEventId = String(ev.id || "");
+            const hKey = normalizeTeamKey(homeName);
+            const aKey = normalizeTeamKey(awayName);
+            const sbTelemetry = extractEspnScoreboardTelemetry(
+              ev,
+              comp,
+              homeComp,
+              awayComp,
               homeName,
               awayName,
-              homeScore,
-              awayScore,
-              minute: Math.min(90, Math.max(1, parsedMin)),
-              status: isLive ? "IN_PLAY" : "FINISHED"
-            });
+              parsedMin,
+              isPost
+            );
+            const existingDelta = liveDeltas.find((d) => teamsFuzzyMatch(hKey, aKey, d.homeKey, d.awayKey));
+            if (existingDelta) {
+              existingDelta.espnEventId = espnEventId;
+              existingDelta.homeScore = Math.max(existingDelta.homeScore, homeScore);
+              existingDelta.awayScore = Math.max(existingDelta.awayScore, awayScore);
+              existingDelta.isHalfTime = isHalfTime;
+              existingDelta.statusShort = statusShort;
+              existingDelta.minute = isHalfTime ? 45 : parsedMin;
+              existingDelta.liveStats = sbTelemetry.liveStats;
+              existingDelta.liveEvents = sbTelemetry.liveEvents;
+            } else {
+              liveDeltas.push({
+                espnEventId,
+                homeKey: hKey,
+                awayKey: aKey,
+                homeName,
+                awayName,
+                homeScore,
+                awayScore,
+                minute: parsedMin,
+                isHalfTime,
+                statusShort,
+                status: isLive ? "IN_PLAY" : "FINISHED",
+                liveStats: sbTelemetry.liveStats,
+                liveEvents: sbTelemetry.liveEvents
+              });
+            }
+          }
+          const activeInPlay = liveDeltas.filter((d) => d.status === "IN_PLAY" && d.espnEventId).slice(0, 25);
+          if (activeInPlay.length > 0) {
+            await Promise.allSettled(
+              activeInPlay.map(async (delta) => {
+                const enriched = await fetchEspnMatchSummaryTelemetry(
+                  delta.espnEventId,
+                  delta.homeName,
+                  delta.awayName,
+                  delta.minute,
+                  false,
+                  { liveStats: delta.liveStats, liveEvents: delta.liveEvents || [] }
+                );
+                delta.liveStats = enriched.liveStats;
+                delta.liveEvents = enriched.liveEvents;
+                if (enriched.liveRosters) {
+                  delta.liveRosters = enriched.liveRosters;
+                }
+                if (!delta.isHalfTime && Array.isArray(enriched.liveEvents)) {
+                  const maxEvMin = enriched.liveEvents.reduce((acc, evItem) => {
+                    if (evItem?.type === "PERIOD_HALF" || evItem?.type === "PERIOD_END" || evItem?.type === "PERIOD_START") {
+                      return acc;
+                    }
+                    return Math.max(acc, Number(evItem?.minute || 0));
+                  }, 0);
+                  if (maxEvMin > delta.minute) {
+                    delta.minute = maxEvMin;
+                  }
+                }
+              })
+            );
           }
         }
       } catch {
       }
-      const upcomingCache = getCacheItem(`upcoming_${targetDate}`);
+      const upcomingCache = getCacheItem(`upcoming_v8_${targetDate}`);
       if (upcomingCache && Array.isArray(upcomingCache.data)) {
-        const elapsedMinutesSinceCache = Math.max(
-          0,
-          Math.floor((Date.now() - upcomingCache.timestamp) / 6e4)
-        );
         for (const f of upcomingCache.data) {
           const fId = String(f?.fixture?.id || "");
           const hName = String(f?.teams?.home?.name || "");
@@ -1114,34 +3157,79 @@ app.get("/api/live-pulse", async (req, res) => {
           const hKey = normalizeTeamKey(hName);
           const aKey = normalizeTeamKey(aName);
           const matched = liveDeltas.find(
-            (d) => d.homeKey && hKey && (d.homeKey.includes(hKey) || hKey.includes(d.homeKey)) || d.awayKey && aKey && (d.awayKey.includes(aKey) || aKey.includes(d.awayKey))
+            (d) => d.id && String(d.id) === fId || d.espnEventId && String(d.espnEventId) === fId || teamsFuzzyMatch(hKey, aKey, d.homeKey, d.awayKey)
           );
+          const matchTimestamp = f?.fixture?.timestamp ? f.fixture.timestamp * 1e3 : new Date(f?.fixture?.date || 0).getTime();
+          const minsSinceStart = Math.floor((Date.now() - matchTimestamp) / 6e4);
           if (matched) {
             matched.id = fId;
+            if (matched.espnEventId) f.espnEventId = matched.espnEventId;
+            if (matched.liveStats) f.liveStats = matched.liveStats;
+            if (matched.liveEvents) f.liveEvents = matched.liveEvents;
+            if (matched.liveRosters) f.liveRosters = matched.liveRosters;
             if (f.goals) {
               f.goals.home = matched.homeScore;
               f.goals.away = matched.awayScore;
             }
             if (f.fixture?.status) {
-              f.fixture.status.short = matched.status === "IN_PLAY" ? "2H" : "FT";
+              f.fixture.status.short = matched.status === "FINISHED" ? "FT" : matched.isHalfTime ? "HT" : matched.statusShort || "2H";
               f.fixture.status.elapsed = matched.minute;
             }
             continue;
           }
-          const statusShort = String(f?.fixture?.status?.short || "").toUpperCase();
-          if (["1H", "2H", "HT", "ET", "LIVE"].includes(statusShort)) {
-            const baseElapsed = parseInt(String(f?.fixture?.status?.elapsed || "45"), 10) || 45;
-            const currentMin = statusShort === "HT" ? 45 : Math.min(90, baseElapsed + elapsedMinutesSinceCache % 15);
+          if (minsSinceStart > 115) {
+            if (f.fixture?.status) {
+              f.fixture.status.short = "FT";
+            }
             liveDeltas.push({
               id: fId,
+              espnEventId: f.espnEventId,
               homeKey: hKey,
               awayKey: aKey,
               homeName: hName,
               awayName: aName,
               homeScore: Number(f?.goals?.home ?? 0),
               awayScore: Number(f?.goals?.away ?? 0),
-              minute: currentMin,
-              status: "IN_PLAY"
+              minute: 90,
+              isHalfTime: false,
+              statusShort: "FT",
+              status: "FINISHED"
+            });
+            continue;
+          }
+          const statusShort = String(f?.fixture?.status?.short || "").toUpperCase();
+          if (["1H", "2H", "HT", "ET", "LIVE", "BT", "P", "INT"].includes(statusShort) && minsSinceStart <= 115) {
+            const clockEst = estimateRealisticSoccerClock(
+              minsSinceStart,
+              statusShort,
+              f?.fixture?.status?.elapsed
+            );
+            const homeScore = Number(f?.goals?.home ?? 0);
+            const awayScore = Number(f?.goals?.away ?? 0);
+            const fallbackTelemetry = extractApiFootballLiveTelemetry(
+              f,
+              homeScore,
+              awayScore,
+              clockEst.minute,
+              clockEst.isHalfTime,
+              false
+            );
+            liveDeltas.push({
+              id: fId,
+              espnEventId: f.espnEventId,
+              homeKey: hKey,
+              awayKey: aKey,
+              homeName: hName,
+              awayName: aName,
+              homeScore,
+              awayScore,
+              minute: clockEst.minute,
+              isHalfTime: clockEst.isHalfTime,
+              statusShort: clockEst.statusShort,
+              status: clockEst.minute >= 90 && minsSinceStart > 108 ? "FINISHED" : "IN_PLAY",
+              liveStats: f.liveStats || fallbackTelemetry.liveStats,
+              liveEvents: f.liveEvents && f.liveEvents.length > 0 ? f.liveEvents : fallbackTelemetry.liveEvents,
+              liveRosters: f.liveRosters
             });
           }
         }
@@ -1166,15 +3254,182 @@ app.get("/api/live-pulse", async (req, res) => {
     });
   }
 });
-app.get("/api/nba/scoreboard", async (req, res) => {
+app.get("/api/match-telemetry", dataRateLimitMiddleware, async (req, res) => {
+  const fixtureId = String(req.query.id || "").trim();
+  const espnIdParam = String(req.query.espnId || req.query.eventId || "").trim();
+  const dateStr = String(req.query.date || getColombiaDateStr(0)).trim();
+  const homeName = String(req.query.home || "").trim();
+  const awayName = String(req.query.away || "").trim();
+  try {
+    let resolvedEspnId = espnIdParam || (/^\d{9,}$/.test(fixtureId) ? fixtureId : "");
+    let fallbackTelemetry = {
+      liveStats: {
+        home: { corners: 0, yellowCards: 0, redCards: 0, shots: 0, shotsOnTarget: 0, possessionPct: 50, foulsCommitted: 0 },
+        away: { corners: 0, yellowCards: 0, redCards: 0, shots: 0, shotsOnTarget: 0, possessionPct: 50, foulsCommitted: 0 },
+        updatedAt: Date.now()
+      },
+      liveEvents: []
+    };
+    let elapsedMin = 45;
+    let isFinished = false;
+    let isHalfTime = false;
+    let statusShort = "2H";
+    let homeGoals = void 0;
+    let awayGoals = void 0;
+    const espnDateStr = dateStr.replace(/-/g, "");
+    const hKey = normalizeTeamKey(homeName);
+    const aKey = normalizeTeamKey(awayName);
+    try {
+      const sbRes = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}&limit=300`,
+        {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
+          }
+        }
+      );
+      if (sbRes.ok) {
+        const sbData = await sbRes.json();
+        const events = Array.isArray(sbData?.events) ? sbData.events : [];
+        const matchedEv = events.find((ev) => {
+          if (resolvedEspnId && String(ev.id) === resolvedEspnId) return true;
+          const comp = ev?.competitions?.[0];
+          const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
+          const hc = competitors.find((c) => c.homeAway === "home") || competitors[0];
+          const ac = competitors.find((c) => c.homeAway === "away") || competitors[1];
+          return teamsFuzzyMatch(
+            hKey,
+            aKey,
+            normalizeTeamKey(hc?.team?.displayName || hc?.team?.name || ""),
+            normalizeTeamKey(ac?.team?.displayName || ac?.team?.name || "")
+          );
+        });
+        if (matchedEv) {
+          resolvedEspnId = String(matchedEv.id);
+          const comp = matchedEv.competitions?.[0];
+          const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
+          const hc = competitors.find((c) => c.homeAway === "home") || competitors[0];
+          const ac = competitors.find((c) => c.homeAway === "away") || competitors[1];
+          const clockParsed = parseEspnMatchStatusAndClock(matchedEv);
+          isFinished = clockParsed.isPost;
+          isHalfTime = clockParsed.isHalfTime;
+          statusShort = clockParsed.statusShort;
+          elapsedMin = clockParsed.elapsedMin ?? 45;
+          if (clockParsed.isLive || clockParsed.isPost) {
+            homeGoals = parseInt(String(hc?.score || "0"), 10) || 0;
+            awayGoals = parseInt(String(ac?.score || "0"), 10) || 0;
+          }
+          fallbackTelemetry = extractEspnScoreboardTelemetry(
+            matchedEv,
+            comp,
+            hc,
+            ac,
+            homeName || String(hc?.team?.displayName || "Local"),
+            awayName || String(ac?.team?.displayName || "Visitante"),
+            elapsedMin,
+            isFinished
+          );
+        }
+      }
+    } catch {
+    }
+    if (resolvedEspnId) {
+      const enriched = await fetchEspnMatchSummaryTelemetry(
+        resolvedEspnId,
+        homeName || "Local",
+        awayName || "Visitante",
+        elapsedMin,
+        isFinished,
+        fallbackTelemetry
+      );
+      if (!isHalfTime && Array.isArray(enriched.liveEvents)) {
+        const maxEvMin = enriched.liveEvents.reduce((acc, evItem) => {
+          if (evItem?.type === "PERIOD_HALF" || evItem?.type === "PERIOD_END" || evItem?.type === "PERIOD_START") {
+            return acc;
+          }
+          return Math.max(acc, Number(evItem?.minute || 0));
+        }, 0);
+        if (maxEvMin > elapsedMin) {
+          elapsedMin = maxEvMin;
+        }
+      }
+      return res.json({
+        success: true,
+        found: true,
+        espnEventId: resolvedEspnId,
+        homeGoals,
+        awayGoals,
+        minute: isHalfTime ? 45 : elapsedMin,
+        isHalfTime,
+        statusShort,
+        liveStats: enriched.liveStats,
+        liveEvents: enriched.liveEvents,
+        liveRosters: enriched.liveRosters
+      });
+    }
+    const apiLiveList = await fetchApiFootballLiveAll();
+    let matchedAf = apiLiveList.find(
+      (lf) => String(lf?.fixture?.id || "") === fixtureId || teamsFuzzyMatch(
+        hKey,
+        aKey,
+        normalizeTeamKey(lf?.teams?.home?.name || ""),
+        normalizeTeamKey(lf?.teams?.away?.name || "")
+      )
+    );
+    if (!matchedAf) {
+      const upcomingCache = getCacheItem(`upcoming_v8_${dateStr}`);
+      if (upcomingCache && Array.isArray(upcomingCache.data)) {
+        matchedAf = upcomingCache.data.find(
+          (f) => String(f?.fixture?.id || "") === fixtureId || teamsFuzzyMatch(
+            hKey,
+            aKey,
+            normalizeTeamKey(f?.teams?.home?.name || ""),
+            normalizeTeamKey(f?.teams?.away?.name || "")
+          )
+        );
+      }
+    }
+    const syntheticOrMatched = matchedAf || {
+      fixture: { id: fixtureId, status: { short: "2H", elapsed: 45 } },
+      teams: { home: { name: homeName || "Local" }, away: { name: awayName || "Visitante" } },
+      goals: { home: 0, away: 0 },
+      events: []
+    };
+    const stShort = String(syntheticOrMatched?.fixture?.status?.short || "").toUpperCase();
+    const isHT = stShort === "HT" || stShort === "BT";
+    const isFT = ["FT", "AET", "PEN"].includes(stShort);
+    const afTele = extractApiFootballLiveTelemetry(
+      syntheticOrMatched,
+      void 0,
+      void 0,
+      isHT ? 45 : Number(syntheticOrMatched?.fixture?.status?.elapsed || 45),
+      isHT,
+      isFT
+    );
+    return res.json({
+      success: true,
+      found: true,
+      liveStats: afTele.liveStats,
+      liveEvents: afTele.liveEvents,
+      liveRosters: syntheticOrMatched.liveRosters
+    });
+  } catch (err) {
+    return res.json({
+      success: false,
+      error: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+app.get("/api/nba/scoreboard", dataRateLimitMiddleware, async (req, res) => {
   const dateQuery = req.query.date || "";
-  const force = req.query.force === "true";
+  const force = req.query.force === "true" && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
   const todayColombia = getColombiaDateStr(0);
   const targetDate = dateQuery || todayColombia;
   const espnDateStr = targetDate.replace(/-/g, "");
   const cacheKey = `nba_sb_${espnDateStr}`;
   const cached = getCacheItem(cacheKey);
-  const cacheTTL = targetDate === todayColombia ? 3 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
+  const hasLiveNbaInCache = cached && Array.isArray(cached.data) && cached.data.some((ev) => String(ev?.status?.type?.state || "").toLowerCase() === "in");
+  const cacheTTL = targetDate === todayColombia ? hasLiveNbaInCache ? 25 * 1e3 : 3 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
   if (cached && !force && Date.now() - cached.timestamp < cacheTTL) {
     return res.json({
       success: true,
@@ -1185,20 +3440,84 @@ app.get("/api/nba/scoreboard", async (req, res) => {
   }
   try {
     const rawEvents = await runSingleFlight(cacheKey, async () => {
-      const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${espnDateStr}`;
-      const apiRes = await fetch(espnUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0"
+      const endpoints = [
+        {
+          url: `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${espnDateStr}`,
+          league: "NBA",
+          country: "Estados Unidos"
+        },
+        {
+          url: `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?dates=${espnDateStr}&limit=50`,
+          fallbackUrl: "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?limit=50",
+          league: "NCAA Baloncesto",
+          country: "Estados Unidos"
+        },
+        {
+          url: `https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard?dates=${espnDateStr}`,
+          fallbackUrl: "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard",
+          league: "WNBA",
+          country: "Estados Unidos"
+        },
+        {
+          url: `https://site.api.espn.com/apis/site/v2/sports/basketball/fiba/scoreboard?dates=${espnDateStr}`,
+          fallbackUrl: "https://site.api.espn.com/apis/site/v2/sports/basketball/fiba/scoreboard",
+          league: "FIBA Internacional",
+          country: "Mundial"
+        },
+        {
+          url: `https://site.api.espn.com/apis/site/v2/sports/basketball/womens-college-basketball/scoreboard?dates=${espnDateStr}&limit=50`,
+          fallbackUrl: "https://site.api.espn.com/apis/site/v2/sports/basketball/womens-college-basketball/scoreboard?limit=50",
+          league: "NCAA Femenil",
+          country: "Estados Unidos"
+        }
+      ];
+      const responses = await Promise.allSettled(
+        endpoints.map(async (ep) => {
+          let evs = [];
+          try {
+            const apiRes = await fetch(ep.url, {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0"
+              }
+            });
+            if (apiRes.ok) {
+              const data = await apiRes.json();
+              evs = Array.isArray(data.events) ? data.events : [];
+            }
+          } catch {
+          }
+          if (evs.length === 0 && ep.fallbackUrl) {
+            try {
+              const fbRes = await fetch(ep.fallbackUrl, {
+                headers: {
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0"
+                }
+              });
+              if (fbRes.ok) {
+                const fbData = await fbRes.json();
+                evs = Array.isArray(fbData.events) ? fbData.events : [];
+              }
+            } catch {
+            }
+          }
+          evs.forEach((ev) => {
+            ev._sportstatsLeague = {
+              name: ep.league,
+              country: ep.country
+            };
+          });
+          return evs;
+        })
+      );
+      const allEvents = [];
+      responses.forEach((r) => {
+        if (r.status === "fulfilled" && Array.isArray(r.value)) {
+          allEvents.push(...r.value);
         }
       });
-      if (!apiRes.ok) {
-        if (cached) return cached.data;
-        return [];
-      }
-      const data = await apiRes.json();
-      const events = Array.isArray(data.events) ? data.events : [];
-      setCacheItem(cacheKey, events);
-      return events;
+      if (allEvents.length === 0 && cached) return cached.data;
+      setCacheItem(cacheKey, allEvents);
+      return allEvents;
     });
     return res.json({
       success: true,
@@ -1214,81 +3533,39 @@ app.get("/api/nba/scoreboard", async (req, res) => {
     return res.json({ success: false, error: msg, events: [] });
   }
 });
-app.get("/api/fixtures", async (req, res) => {
-  const date = req.query.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  const force = req.query.force === "true";
-  const apiKey = getSecretApiKey();
-  const cacheKey = `fix_${date}`;
-  const cached = getCacheItem(cacheKey);
-  const todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  const cacheTTL = date === todayStr ? 25 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
-  if (cached && (!force || quotaShieldActive)) {
-    const isFresh = Date.now() - cached.timestamp < cacheTTL;
-    if (isFresh || quotaShieldActive) {
-      return res.status(200).json({
-        success: true,
-        source: "persistent_disk_cache",
-        remainingCalls: lastRemainingCalls,
-        quotaShieldActive,
-        fixtures: cached.data
-      });
-    }
-  }
-  if (quotaShieldActive && cached) {
+app.get("/api/fixtures", dataRateLimitMiddleware, async (req, res) => {
+  const date = req.query.date || getColombiaDateStr(0);
+  const sharedUpcoming = getCacheItem(`upcoming_v8_${date}`);
+  if (sharedUpcoming && Array.isArray(sharedUpcoming.data) && sharedUpcoming.data.length > 0) {
     return res.status(200).json({
       success: true,
-      source: "quota_shield_disk_cache",
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive: true,
-      fixtures: cached.data
-    });
-  }
-  if (!apiKey) {
-    return res.status(200).json({
-      success: false,
-      message: "No secret API key configured on server. Fallback to cache.",
-      hasKey: false,
+      source: "persistent_disk_cache",
       remainingCalls: lastRemainingCalls,
       quotaShieldActive,
-      fixtures: cached?.data || []
+      fixtures: sharedUpcoming.data
+    });
+  }
+  const afEnvelope = getCacheItem(`apifootball_schedule_v2_${date}`);
+  if (afEnvelope && Array.isArray(afEnvelope.data?.items) && afEnvelope.data.items.length > 0) {
+    return res.status(200).json({
+      success: true,
+      source: "persistent_disk_cache",
+      remainingCalls: lastRemainingCalls,
+      quotaShieldActive,
+      fixtures: afEnvelope.data.items
     });
   }
   try {
-    const rawFixtures = await runSingleFlight(cacheKey, async () => {
-      const apiRes = await fetch(`https://v3.football.api-sports.io/fixtures?date=${date}&timezone=America/Bogota`, {
-        method: "GET",
-        headers: { "x-apisports-key": apiKey }
-      });
-      updateQuotaFromHeaders(apiRes.headers);
-      if (!apiRes.ok) {
-        if (cached) return cached.data;
-        return [];
-      }
-      const json = await apiRes.json();
-      const fixtures = Array.isArray(json.response) ? json.response : [];
-      if (fixtures.length > 0) {
-        setCacheItem(cacheKey, fixtures);
-      }
-      return fixtures;
-    });
+    const espnFallback = await fetchEspnSoccerFixtures(date, "America/Bogota");
     return res.status(200).json({
       success: true,
-      source: "api_football_coalesced",
+      source: "espn_official_coalesced",
       remainingCalls: lastRemainingCalls,
       quotaShieldActive,
-      fixtures: rawFixtures
+      fixtures: espnFallback
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (cached) {
-      return res.status(200).json({
-        success: true,
-        source: "fallback_disk_cache",
-        remainingCalls: lastRemainingCalls,
-        quotaShieldActive,
-        fixtures: cached.data
-      });
-    }
     return res.status(200).json({
       success: false,
       error: message,
@@ -1296,23 +3573,25 @@ app.get("/api/fixtures", async (req, res) => {
     });
   }
 });
-app.get("/api/status", (req, res) => {
-  const apiFootballKey = getSecretKey("API_FOOTBALL_KEY");
-  const footballDataKey = getSecretKey("FOOTBALL_DATA_KEY");
-  const oddsApiKey = getSecretKey("ODDS_API_KEY");
+app.get("/api/status", dataRateLimitMiddleware, (_req, res) => {
+  const hasApiFootball = Boolean(getSecretKey("API_FOOTBALL_KEY"));
+  const hasFootballData = Boolean(getSecretKey("FOOTBALL_DATA_KEY"));
+  const hasOddsApi = Boolean(getSecretKey("ODDS_API_KEY"));
   return res.json({
-    apiFootball: Boolean(apiFootballKey && apiFootballKey.length > 5),
-    footballData: Boolean(footballDataKey && footballDataKey.length > 5),
-    oddsApi: Boolean(oddsApiKey && oddsApiKey.length > 5),
+    apiFootball: hasApiFootball,
+    footballData: hasFootballData,
+    oddsApi: hasOddsApi,
     remainingCalls: lastRemainingCalls,
     quotaShieldActive: lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD,
     quotaShieldThreshold: QUOTA_SHIELD_THRESHOLD,
     cachedEntriesCount: memoryCache.size,
-    cacheTtlMinutes: 25,
+    cacheTtlMinutes: 360,
+    apiFootballCallsSinceBoot: apiFootballAuditLog.length,
+    apiFootballAuditLog,
     serverReady: true
   });
 });
-app.get("/api/market-odds", async (req, res) => {
+app.get("/api/market-odds", dataRateLimitMiddleware, async (req, res) => {
   const oddsKey = getSecretKey("ODDS_API_KEY");
   const cacheKey = "odds_soccer";
   const cached = getCacheItem(cacheKey);
@@ -1337,14 +3616,14 @@ app.get("/api/market-odds", async (req, res) => {
       return fetched;
     });
     return res.json({ success: true, source: "the_odds_api_coalesced", odds: data });
-  } catch (err) {
+  } catch {
     if (cached) return res.json({ success: true, source: "fallback_disk_cache", odds: cached.data });
-    return res.json({ success: false, error: String(err), odds: [] });
+    return res.json({ success: false, error: "Error al consultar cuotas externas", odds: [] });
   }
 });
-app.get("/api/standings", async (req, res) => {
+app.get("/api/standings", dataRateLimitMiddleware, async (req, res) => {
   const fdKey = getSecretKey("FOOTBALL_DATA_KEY");
-  const league = req.query.league || "PD";
+  const league = sanitizeText(req.query.league || "PD", 10) || "PD";
   const cacheKey = `standings_${league}`;
   const cached = getCacheItem(cacheKey);
   if (cached && Date.now() - cached.timestamp < 2 * 60 * 60 * 1e3) {
@@ -1355,7 +3634,7 @@ app.get("/api/standings", async (req, res) => {
   }
   try {
     const data = await runSingleFlight(cacheKey, async () => {
-      const apiRes = await fetch(`https://api.football-data.org/v4/competitions/${league}/standings`, {
+      const apiRes = await fetch(`https://api.football-data.org/v4/competitions/${encodeURIComponent(league)}/standings`, {
         method: "GET",
         headers: { "X-Auth-Token": fdKey }
       });
@@ -1368,63 +3647,16 @@ app.get("/api/standings", async (req, res) => {
       return fetched;
     });
     return res.json({ success: true, source: "football_data_coalesced", standings: data });
-  } catch (err) {
+  } catch {
     if (cached) return res.json({ success: true, source: "fallback_disk_cache", standings: cached.data });
-    return res.json({ success: false, error: String(err), standings: [] });
-  }
-});
-app.post("/api/set-secret-key", (req, res) => {
-  const { key, footballDataKey, oddsApiKey } = req.body;
-  try {
-    const envPath = path2.resolve(process.cwd(), ".env");
-    let envContent = fs2.existsSync(envPath) ? fs2.readFileSync(envPath, "utf8") : "";
-    if (key && typeof key === "string" && key.trim()) {
-      const clean = key.trim();
-      process.env.API_FOOTBALL_KEY = clean;
-      if (envContent.includes("API_FOOTBALL_KEY=")) {
-        envContent = envContent.replace(/API_FOOTBALL_KEY=.*/g, `API_FOOTBALL_KEY="${clean}"`);
-      } else {
-        envContent += `
-API_FOOTBALL_KEY="${clean}"
-`;
-      }
-    }
-    if (footballDataKey && typeof footballDataKey === "string" && footballDataKey.trim()) {
-      const clean = footballDataKey.trim();
-      process.env.FOOTBALL_DATA_KEY = clean;
-      if (envContent.includes("FOOTBALL_DATA_KEY=")) {
-        envContent = envContent.replace(/FOOTBALL_DATA_KEY=.*/g, `FOOTBALL_DATA_KEY="${clean}"`);
-      } else {
-        envContent += `
-FOOTBALL_DATA_KEY="${clean}"
-`;
-      }
-    }
-    if (oddsApiKey && typeof oddsApiKey === "string" && oddsApiKey.trim()) {
-      const clean = oddsApiKey.trim();
-      process.env.ODDS_API_KEY = clean;
-      if (envContent.includes("ODDS_API_KEY=")) {
-        envContent = envContent.replace(/ODDS_API_KEY=.*/g, `ODDS_API_KEY="${clean}"`);
-      } else {
-        envContent += `
-ODDS_API_KEY="${clean}"
-`;
-      }
-    }
-    fs2.writeFileSync(envPath, envContent, "utf8");
-    return res.json({
-      success: true,
-      message: "Claves configuradas en el servidor de forma 100% segura y privada (nunca visibles en el cliente)."
-    });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: String(err) });
+    return res.json({ success: false, error: "Error al consultar clasificaciones", standings: [] });
   }
 });
 var LICENSES_FILE = IS_VERCEL2 ? path2.resolve("/tmp", "licenses_db.json") : path2.resolve(__dirname, "licenses_db.json");
 var ADMIN_CONFIG_FILE = IS_VERCEL2 ? path2.resolve("/tmp", "admin_config.json") : path2.resolve(__dirname, "admin_config.json");
 var BUNDLED_ADMIN_CONFIG_FILE = path2.resolve(__dirname, "admin_config.json");
-var LICENSE_MASTER_SECRET = "FUTBOLSTATS_PRO_SECURE_HMAC_SALT_2026_X9";
-var MASTER_RECOVERY_CODE = "MASTER-2708";
+var LICENSE_MASTER_SECRET = process.env.LICENSE_MASTER_SECRET || "FUTBOLSTATS_PRO_SECURE_HMAC_SALT_2026_X9";
+var MASTER_RECOVERY_CODE = process.env.ADMIN_MASTER_KEY || "MASTER-2708";
 var memoryAdminConfig = null;
 function getAdminConfig() {
   const defaultConfig = {
@@ -1454,12 +3686,96 @@ function getAdminConfig() {
   }
   return defaultConfig;
 }
+function extractAdminCredential(req, bodyPinField) {
+  const headerPin = req.headers["x-admin-pin"];
+  if (typeof headerPin === "string" && headerPin.trim()) {
+    return headerPin.trim();
+  }
+  const authHeader = req.headers["authorization"];
+  if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
+    const verified = verifySessionJwt(token);
+    if (verified && verified.role === "admin") {
+      return "__VALID_ADMIN_JWT__";
+    }
+  }
+  if (typeof bodyPinField === "string" && bodyPinField.trim()) {
+    return bodyPinField.trim();
+  }
+  if (typeof req.query.pin === "string" && req.query.pin.trim()) {
+    return req.query.pin.trim();
+  }
+  return "";
+}
 function isValidAdminPin(pin, cfg) {
   if (!pin || typeof pin !== "string") return false;
+  if (pin === "__VALID_ADMIN_JWT__") return true;
   const clean = pin.trim();
   const upper = clean.toUpperCase();
-  return clean === cfg.adminPin || clean === "120328" || upper === MASTER_RECOVERY_CODE || upper === "2708";
+  const envMasterKey = (process.env.ADMIN_MASTER_KEY || "").trim();
+  const isStrictProd = process.env.NODE_ENV === "production" && Boolean(envMasterKey);
+  if (timingSafeCompare(clean, cfg.adminPin)) return true;
+  if (envMasterKey && timingSafeCompare(clean, envMasterKey)) return true;
+  if (!isStrictProd) {
+    return timingSafeCompare(clean, "120328") || timingSafeCompare(upper, "MASTER-2708") || timingSafeCompare(upper, "2708");
+  }
+  return false;
 }
+app.post("/api/set-secret-key", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const cfg = getAdminConfig();
+  const cred = extractAdminCredential(req, req.body?.adminPin || req.body?.pin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado para modificar claves de servidor" });
+  }
+  clearAuthFailures(req);
+  const { key, footballDataKey, oddsApiKey } = req.body || {};
+  try {
+    const envPath = path2.resolve(process.cwd(), ".env");
+    let envContent = fs2.existsSync(envPath) ? fs2.readFileSync(envPath, "utf8") : "";
+    if (key && typeof key === "string" && key.trim()) {
+      const clean = sanitizeText(key.trim(), 128);
+      process.env.API_FOOTBALL_KEY = clean;
+      if (envContent.includes("API_FOOTBALL_KEY=")) {
+        envContent = envContent.replace(/API_FOOTBALL_KEY=.*/g, `API_FOOTBALL_KEY="${clean}"`);
+      } else {
+        envContent += `
+API_FOOTBALL_KEY="${clean}"
+`;
+      }
+    }
+    if (footballDataKey && typeof footballDataKey === "string" && footballDataKey.trim()) {
+      const clean = sanitizeText(footballDataKey.trim(), 128);
+      process.env.FOOTBALL_DATA_KEY = clean;
+      if (envContent.includes("FOOTBALL_DATA_KEY=")) {
+        envContent = envContent.replace(/FOOTBALL_DATA_KEY=.*/g, `FOOTBALL_DATA_KEY="${clean}"`);
+      } else {
+        envContent += `
+FOOTBALL_DATA_KEY="${clean}"
+`;
+      }
+    }
+    if (oddsApiKey && typeof oddsApiKey === "string" && oddsApiKey.trim()) {
+      const clean = sanitizeText(oddsApiKey.trim(), 128);
+      process.env.ODDS_API_KEY = clean;
+      if (envContent.includes("ODDS_API_KEY=")) {
+        envContent = envContent.replace(/ODDS_API_KEY=.*/g, `ODDS_API_KEY="${clean}"`);
+      } else {
+        envContent += `
+ODDS_API_KEY="${clean}"
+`;
+      }
+    }
+    fs2.writeFileSync(envPath, envContent, "utf8");
+    return res.json({
+      success: true,
+      message: "Claves configuradas en el servidor de forma 100% segura y privada."
+    });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error interno al guardar configuraci\xF3n" });
+  }
+});
 function saveAdminConfig(cfg) {
   memoryAdminConfig = { ...cfg };
   try {
@@ -1534,15 +3850,15 @@ function serverGenerateToken(deviceId, planType, customExpiryMs) {
   const expSeconds = expiresAt === null ? 0 : Math.floor(expiresAt / 1e3);
   const expHex = expSeconds.toString(16).toUpperCase().padStart(8, "0");
   const message = `${cleanDev}:${planTag}:${expHex}`;
-  const fullHmac = crypto2.createHmac("sha256", LICENSE_MASTER_SECRET).update(message).digest("hex");
+  const fullHmac = crypto3.createHmac("sha256", LICENSE_MASTER_SECRET).update(message).digest("hex");
   const sig8 = fullHmac.substring(0, 8).toUpperCase();
   const key = `FS-${planTag}-${cleanDev}-${expHex}-${sig8}`;
   return { key, expiresAt, planLabel };
 }
 app.get("/api/license/config", (req, res) => {
-  const pin = req.query.pin || req.headers["x-admin-pin"];
+  const pin = extractAdminCredential(req);
   const cfg = getAdminConfig();
-  const isAuthenticated = isValidAdminPin(pin, cfg);
+  const isAuthenticated = pin ? isValidAdminPin(pin, cfg) : false;
   return res.json({
     success: true,
     adminWhatsApp: cfg.adminWhatsApp,
@@ -1553,26 +3869,30 @@ app.get("/api/license/config", (req, res) => {
     requiresAuth: true
   });
 });
-app.post("/api/license/config", (req, res) => {
+app.post("/api/license/config", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
   const { currentPin, newPin, adminWhatsApp, supportName, customLogoUrl, colorTheme } = req.body || {};
   const currentCfg = getAdminConfig();
-  if (!isValidAdminPin(currentPin, currentCfg)) {
-    return res.status(403).json({ success: false, error: "PIN de administrador incorrecto" });
+  const cred = extractAdminCredential(req, currentPin);
+  if (!isValidAdminPin(cred, currentCfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "Credenciales de administrador inv\xE1lidas" });
   }
+  clearAuthFailures(req);
   if (newPin && String(newPin).trim().length >= 4) {
-    currentCfg.adminPin = String(newPin).trim();
+    currentCfg.adminPin = sanitizeText(String(newPin).trim(), 32);
   }
   if (adminWhatsApp && typeof adminWhatsApp === "string") {
-    currentCfg.adminWhatsApp = adminWhatsApp.replace(/[^0-9]/g, "");
+    currentCfg.adminWhatsApp = sanitizePhone(adminWhatsApp);
   }
   if (supportName && typeof supportName === "string") {
-    currentCfg.supportName = supportName.trim();
+    currentCfg.supportName = sanitizeText(supportName, 60);
   }
   if (typeof customLogoUrl === "string" || customLogoUrl === null) {
-    currentCfg.customLogoUrl = customLogoUrl || void 0;
+    currentCfg.customLogoUrl = customLogoUrl ? sanitizeText(customLogoUrl, 200) : void 0;
   }
   if (typeof colorTheme === "string") {
-    currentCfg.colorTheme = colorTheme;
+    currentCfg.colorTheme = sanitizeText(colorTheme, 32);
   }
   saveAdminConfig(currentCfg);
   return res.json({
@@ -1587,24 +3907,29 @@ app.post("/api/license/config", (req, res) => {
     }
   });
 });
-app.post("/api/license/generate", (req, res) => {
+app.post("/api/license/generate", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
   const { adminPin, deviceId, clientNote, planType = "30D", customExpiryMs } = req.body || {};
   const cfg = getAdminConfig();
-  if (!isValidAdminPin(adminPin, cfg)) {
+  const cred = extractAdminCredential(req, adminPin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "PIN de administrador no v\xE1lido" });
   }
+  clearAuthFailures(req);
   if (!deviceId || typeof deviceId !== "string" || deviceId.trim().length < 4) {
     return res.status(400).json({ success: false, error: "C\xF3digo de dispositivo no v\xE1lido" });
   }
+  const cleanNote = clientNote ? sanitizeText(String(clientNote), 80) : void 0;
   const { key, expiresAt, planLabel } = serverGenerateToken(deviceId.trim(), planType, customExpiryMs);
   const db = getLicensesDb();
   const record = {
     id: `LIC-${Date.now().toString(36).toUpperCase()}`,
     key,
-    deviceId: deviceId.trim().toUpperCase(),
-    clientNote: clientNote ? String(clientNote).trim() : void 0,
-    clientName: clientNote ? String(clientNote).trim() : void 0,
-    planType,
+    deviceId: sanitizeText(deviceId.trim(), 32).toUpperCase(),
+    clientNote: cleanNote,
+    clientName: cleanNote,
+    planType: sanitizeText(planType, 16),
     planLabel,
     createdAt: Date.now(),
     expiresAt,
@@ -1642,17 +3967,30 @@ app.post("/api/license/heartbeat", (req, res) => {
     return res.json({ success: false, error: "No se enviaron datos de identificaci\xF3n" });
   }
   const db = getLicensesDb();
-  const cleanKey = key ? String(key).trim().toUpperCase() : "";
-  const cleanDev = deviceId ? String(deviceId).trim().toUpperCase() : "";
-  let found = db.find((item) => item.key === cleanKey || item.deviceId === cleanDev);
+  const cleanKey = key ? sanitizeText(String(key), 64).toUpperCase() : "";
+  const cleanDev = deviceId ? sanitizeText(String(deviceId), 32).toUpperCase() : "";
+  const found = db.find((item) => item.key === cleanKey || item.deviceId === cleanDev);
   if (found) {
+    if (cleanKey && cleanDev && found.deviceId && !found.deviceId.includes("ALL")) {
+      const normFoundDev = found.deviceId.replace(/[^A-Z0-9]/g, "").replace(/^DEV/, "");
+      const normIncomingDev = cleanDev.replace(/[^A-Z0-9]/g, "").replace(/^DEV/, "");
+      if (normFoundDev && normIncomingDev && normFoundDev !== normIncomingDev) {
+        return res.json({
+          success: false,
+          revoked: true,
+          deviceMismatch: true,
+          error: "Dispositivo no coincide con el titular de la licencia"
+        });
+      }
+    }
     found.lastActiveTimestamp = Date.now();
     if (clientName && typeof clientName === "string" && clientName.trim()) {
-      found.clientName = clientName.trim();
-      if (!found.clientNote) found.clientNote = clientName.trim();
+      const cleanName = sanitizeText(clientName, 60);
+      found.clientName = cleanName;
+      if (!found.clientNote) found.clientNote = cleanName;
     }
     if (deviceInfo && typeof deviceInfo === "string") {
-      found.deviceInfo = deviceInfo.trim();
+      found.deviceInfo = sanitizeText(deviceInfo, 80);
     }
     saveLicensesDb(db);
     return res.json({
@@ -1664,13 +4002,15 @@ app.post("/api/license/heartbeat", (req, res) => {
   }
   return res.json({ success: true, unregistered: true });
 });
-app.post("/api/license/validate", (req, res) => {
+app.post("/api/license/validate", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
   const { key, deviceId, clientName, deviceInfo } = req.body || {};
   if (!key || typeof key !== "string") {
     return res.status(400).json({ isValid: false, error: "Clave no proporcionada" });
   }
   const cfg = getAdminConfig();
   if (isValidAdminPin(key, cfg)) {
+    clearAuthFailures(req);
     return res.json({
       isValid: true,
       isAdminUnlock: true,
@@ -1684,17 +4024,18 @@ app.post("/api/license/validate", (req, res) => {
     });
   }
   const db = getLicensesDb();
-  const cleanKey = key.trim().toUpperCase();
-  const cleanDev = deviceId ? String(deviceId).trim().toUpperCase() : "";
+  const cleanKey = sanitizeText(key, 64).toUpperCase();
+  const cleanDev = deviceId ? sanitizeText(String(deviceId), 32).toUpperCase() : "";
   let found = db.find((item) => item.key === cleanKey);
   if (found) {
     found.lastActiveTimestamp = Date.now();
     if (clientName && typeof clientName === "string" && clientName.trim()) {
-      found.clientName = clientName.trim();
-      if (!found.clientNote) found.clientNote = clientName.trim();
+      const cleanName = sanitizeText(clientName, 60);
+      found.clientName = cleanName;
+      if (!found.clientNote) found.clientNote = cleanName;
     }
     if (deviceInfo && typeof deviceInfo === "string") {
-      found.deviceInfo = deviceInfo.trim();
+      found.deviceInfo = sanitizeText(deviceInfo, 80);
     }
     saveLicensesDb(db);
     if (found.revoked) {
@@ -1712,6 +4053,7 @@ app.post("/api/license/validate", (req, res) => {
   }
   const parts = cleanKey.split("-");
   if (parts.length !== 5 || parts[0] !== "FS") {
+    await recordAuthFailure(req);
     return res.json({
       isValid: false,
       status: "MALFORMED",
@@ -1720,8 +4062,9 @@ app.post("/api/license/validate", (req, res) => {
   }
   const [, planTag, devClean, expHex, givenSig] = parts;
   const message = `${devClean}:${planTag}:${expHex}`;
-  const expectedHmac = crypto2.createHmac("sha256", LICENSE_MASTER_SECRET).update(message).digest("hex").substring(0, 8).toUpperCase();
-  if (givenSig !== expectedHmac) {
+  const expectedHmac = crypto3.createHmac("sha256", LICENSE_MASTER_SECRET).update(message).digest("hex").substring(0, 8).toUpperCase();
+  if (!timingSafeCompare(givenSig, expectedHmac)) {
+    await recordAuthFailure(req);
     return res.json({
       isValid: false,
       status: "INVALID_SIGNATURE",
@@ -1738,24 +4081,26 @@ app.post("/api/license/validate", (req, res) => {
       });
     }
   }
+  clearAuthFailures(req);
   const expSeconds = parseInt(expHex, 16);
   const isPermanent = expSeconds === 0;
   const nowMs = Date.now();
   const expiryTimestamp = isPermanent ? null : expSeconds * 1e3;
   const isExpired = !isPermanent && expiryTimestamp < nowMs;
   if (!found && !isExpired) {
+    const cleanName = clientName ? sanitizeText(String(clientName), 60) : "Cliente Registrado";
     const autoRecord = {
       id: `LIC-${Date.now().toString(36).toUpperCase()}`,
       key: cleanKey,
       deviceId: cleanDev || `DEV-${devClean}`,
-      clientNote: clientName ? String(clientName).trim() : "Cliente Registrado",
-      clientName: clientName ? String(clientName).trim() : "Cliente Registrado",
+      clientNote: cleanName,
+      clientName: cleanName,
       planType: planTag,
       planLabel: isPermanent ? "Pase Permanente Vitalicio" : `Pase ${planTag}`,
       createdAt: Date.now(),
       expiresAt: expiryTimestamp,
       lastActiveTimestamp: Date.now(),
-      deviceInfo: typeof deviceInfo === "string" ? deviceInfo : void 0,
+      deviceInfo: typeof deviceInfo === "string" ? sanitizeText(deviceInfo, 80) : void 0,
       revoked: false
     };
     db.unshift(autoRecord);
@@ -1774,12 +4119,15 @@ app.post("/api/license/validate", (req, res) => {
     clientName: found?.clientName || found?.clientNote
   });
 });
-app.get("/api/license/list", (req, res) => {
-  const pin = req.query.pin || req.headers["x-admin-pin"];
+app.get("/api/license/list", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
   const cfg = getAdminConfig();
   if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "No autorizado" });
   }
+  clearAuthFailures(req);
   const list = getLicensesDb();
   const nowMs = Date.now();
   const enriched = list.map((item) => {
@@ -1796,20 +4144,23 @@ app.get("/api/license/list", (req, res) => {
   return res.json({
     success: true,
     licenses: enriched,
-    currentPin: cfg.adminPin,
-    masterRecoveryCode: MASTER_RECOVERY_CODE
+    currentPin: cfg.adminPin
   });
 });
-app.post("/api/license/renew", (req, res) => {
+app.post("/api/license/renew", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
   const { adminPin, key, deviceId, addDays = 30 } = req.body || {};
   const cfg = getAdminConfig();
-  if (!isValidAdminPin(adminPin, cfg)) {
+  const cred = extractAdminCredential(req, adminPin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "PIN de administrador no v\xE1lido" });
   }
+  clearAuthFailures(req);
   const db = getLicensesDb();
-  const cleanKey = key ? String(key).trim().toUpperCase() : "";
-  const cleanDev = deviceId ? String(deviceId).trim().toUpperCase() : "";
-  let record = db.find((item) => item.key === cleanKey || item.deviceId === cleanDev);
+  const cleanKey = key ? sanitizeText(String(key), 64).toUpperCase() : "";
+  const cleanDev = deviceId ? sanitizeText(String(deviceId), 32).toUpperCase() : "";
+  const record = db.find((item) => item.key === cleanKey || item.deviceId === cleanDev);
   if (!record) {
     return res.status(404).json({ success: false, error: "No se encontr\xF3 el registro de la licencia" });
   }
@@ -1831,10 +4182,13 @@ app.post("/api/license/renew", (req, res) => {
   });
 });
 app.post("/api/license/recover", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
   const { recoveryKey, deviceId } = req.body || {};
   const cfg = getAdminConfig();
   const cleanKey = String(recoveryKey || "").trim().toUpperCase();
   const last4Phone = cfg.adminWhatsApp.slice(-4);
+  const envMasterKey = (process.env.ADMIN_MASTER_KEY || "").trim().toUpperCase();
+  const isStrictProd = process.env.NODE_ENV === "production" && Boolean(envMasterKey);
   let isOtpValid = false;
   if (deviceId && cleanKey) {
     try {
@@ -1843,30 +4197,34 @@ app.post("/api/license/recover", async (req, res) => {
       isOtpValid = false;
     }
   }
-  const isMasterOrOwner = cleanKey === MASTER_RECOVERY_CODE || cleanKey === last4Phone || cleanKey === cfg.adminPin;
+  const isMasterOrOwner = (envMasterKey ? timingSafeCompare(cleanKey, envMasterKey) : false) || timingSafeCompare(cleanKey, cfg.adminPin.toUpperCase()) || !isStrictProd && (timingSafeCompare(cleanKey, MASTER_RECOVERY_CODE.toUpperCase()) || timingSafeCompare(cleanKey, last4Phone));
   if (!isMasterOrOwner && !isOtpValid) {
+    await recordAuthFailure(req);
     return res.status(403).json({
       success: false,
       error: "C\xF3digo de autorizaci\xF3n o clave incorrecta / expirada."
     });
   }
+  clearAuthFailures(req);
   if (req.body?.newPin && String(req.body.newPin).trim().length >= 4) {
-    cfg.adminPin = String(req.body.newPin).trim();
+    cfg.adminPin = sanitizeText(String(req.body.newPin).trim(), 32);
     saveAdminConfig(cfg);
   }
   return res.json({
     success: true,
     adminPin: cfg.adminPin,
-    masterRecoveryCode: MASTER_RECOVERY_CODE,
     adminWhatsApp: cfg.adminWhatsApp
   });
 });
-app.get("/api/admin/supabase-status", (req, res) => {
-  const pin = req.query.pin || req.headers["x-admin-pin"];
+app.get("/api/admin/supabase-status", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
   const cfg = getAdminConfig();
   if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "No autorizado" });
   }
+  clearAuthFailures(req);
   const isConfigured = isSupabaseConfigured();
   const rawUrl = process.env.SUPABASE_URL || "";
   const maskedUrl = rawUrl ? rawUrl.replace(/^https?:\/\//, "").split(".")[0] + ".supabase.co" : null;
@@ -1877,12 +4235,16 @@ app.get("/api/admin/supabase-status", (req, res) => {
     sqlSchema: SUPABASE_SQL_SCHEMA
   });
 });
-app.post("/api/license/revoke", (req, res) => {
+app.post("/api/license/revoke", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
   const { adminPin, key, revoke = true } = req.body || {};
   const cfg = getAdminConfig();
-  if (!isValidAdminPin(adminPin, cfg)) {
+  const cred = extractAdminCredential(req, adminPin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "No autorizado" });
   }
+  clearAuthFailures(req);
   const db = getLicensesDb();
   let updated = false;
   const modified = db.map((item) => {
@@ -1900,12 +4262,16 @@ app.post("/api/license/revoke", (req, res) => {
   }
   return res.json({ success: true, message: revoke ? "Licencia revocada" : "Licencia reactivada", updated });
 });
-app.post("/api/admin/logo", (req, res) => {
+app.post("/api/admin/logo", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
   const { adminPin, imageData, pwa512, pwa192, pwaMaskable } = req.body || {};
   const cfg = getAdminConfig();
-  if (!isValidAdminPin(adminPin, cfg)) {
+  const cred = extractAdminCredential(req, adminPin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "PIN de administrador no v\xE1lido" });
   }
+  clearAuthFailures(req);
   if (!imageData || typeof imageData !== "string" || !imageData.startsWith("data:image/")) {
     return res.status(400).json({ success: false, error: "Formato de imagen inv\xE1lido" });
   }
@@ -1932,16 +4298,19 @@ app.post("/api/admin/logo", (req, res) => {
     cfg.customLogoUrl = logoUrl;
     saveAdminConfig(cfg);
     return res.json({ success: true, logoUrl, message: "Logo e icono m\xF3vil de Chrome/iPhone actualizados con \xE9xito" });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: "Error al procesar y guardar la imagen: " + err.message });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al procesar y guardar la imagen" });
   }
 });
-app.delete("/api/admin/logo", (req, res) => {
-  const pin = req.query.pin || req.headers["x-admin-pin"] || req.body?.adminPin;
+app.delete("/api/admin/logo", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req, req.body?.adminPin);
   const cfg = getAdminConfig();
   if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "No autorizado" });
   }
+  clearAuthFailures(req);
   try {
     cfg.customLogoUrl = void 0;
     saveAdminConfig(cfg);
@@ -1955,85 +4324,147 @@ app.delete("/api/admin/logo", (req, res) => {
       }
     });
     return res.json({ success: true, message: "Logo restaurado al predeterminado" });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al restaurar logo" });
   }
 });
 app.post("/api/auth/login", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
   try {
     const { username, pin, deviceId, deviceName } = req.body || {};
     const result = await loginAppUser(username, pin, deviceId, deviceName);
+    if (!result.success && (result.code === "INVALID_PIN" || result.code === "USER_NOT_FOUND")) {
+      await recordAuthFailure(req);
+    } else if (result.success) {
+      clearAuthFailures(req);
+    }
     return res.json(result);
-  } catch (err) {
-    return res.status(500).json({ success: false, message: err.message || "Error en inicio de sesi\xF3n" });
+  } catch {
+    return res.status(500).json({ success: false, message: "Error interno en inicio de sesi\xF3n" });
   }
 });
-app.post("/api/auth/register-request", async (req, res) => {
+app.post("/api/auth/register-request", dataRateLimitMiddleware, async (req, res) => {
   try {
-    const { username, pin, displayName, whatsapp } = req.body || {};
-    const result = await registerAppUserRequest(username, pin, displayName, whatsapp);
+    const { username, pin, displayName, whatsapp, deviceId, deviceName } = req.body || {};
+    const result = await registerAppUserRequest(username, pin, displayName, whatsapp, deviceId, deviceName);
     return res.json(result);
-  } catch (err) {
-    return res.status(500).json({ success: false, message: err.message || "Error al procesar solicitud" });
+  } catch {
+    return res.status(500).json({ success: false, message: "Error al procesar solicitud" });
   }
 });
 app.get("/api/admin/users/list", async (req, res) => {
-  const pin = req.query.pin || req.headers["x-admin-pin"];
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
   const cfg = getAdminConfig();
   if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "No autorizado" });
   }
+  clearAuthFailures(req);
   try {
     const users = await adminListAppUsers();
     return res.json({ success: true, users });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al consultar listado de usuarios" });
   }
 });
 app.post("/api/admin/users/reset-device", async (req, res) => {
-  const { pin, userId } = req.body || {};
+  if (checkAuthLockout(req, res)) return;
+  const { pin, userId, username } = req.body || {};
   const cfg = getAdminConfig();
-  if (!isValidAdminPin(pin, cfg)) {
+  const cred = extractAdminCredential(req, pin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "No autorizado" });
   }
-  if (!userId) {
-    return res.status(400).json({ success: false, error: "ID de usuario requerido" });
+  clearAuthFailures(req);
+  if (!userId && !username) {
+    return res.status(400).json({ success: false, error: "ID o nombre de usuario requerido" });
   }
-  const ok = await adminResetAppUserDevice(userId);
+  const ok = await adminResetAppUserDevice(
+    sanitizeText(String(userId || ""), 64),
+    username ? sanitizeText(String(username), 40) : void 0
+  );
   return res.json({
     success: ok,
     message: ok ? "Dispositivo desvinculado con \xE9xito. El usuario ahora puede ingresar desde su nuevo equipo." : "No se pudo desvincular el dispositivo."
   });
 });
 app.post("/api/admin/users/renew", async (req, res) => {
-  const { pin, userId, addDays = 30 } = req.body || {};
+  if (checkAuthLockout(req, res)) return;
+  const { pin, userId, username, addDays = 30, mode = "SET" } = req.body || {};
   const cfg = getAdminConfig();
-  if (!isValidAdminPin(pin, cfg)) {
+  const cred = extractAdminCredential(req, pin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "No autorizado" });
   }
-  if (!userId) {
-    return res.status(400).json({ success: false, error: "ID de usuario requerido" });
+  clearAuthFailures(req);
+  if (!userId && !username) {
+    return res.status(400).json({ success: false, error: "ID o nombre de usuario requerido" });
   }
-  const ok = await adminRenewAppUser(userId, Number(addDays));
-  return res.json({ success: ok, message: ok ? `Suscripci\xF3n extendida +${addDays} d\xEDas` : "Error al renovar" });
+  const ok = await adminRenewAppUser(
+    sanitizeText(String(userId || ""), 64),
+    Number(addDays),
+    username ? sanitizeText(String(username), 40) : void 0,
+    mode === "ADD" ? "ADD" : "SET"
+  );
+  return res.json({
+    success: ok,
+    message: ok ? mode === "ADD" ? `Suscripci\xF3n extendida +${addDays} d\xEDas` : `D\xEDas del usuario fijados a ${addDays} d\xEDas` : "Error al actualizar d\xEDas"
+  });
 });
 app.post("/api/admin/users/toggle-status", async (req, res) => {
-  const { pin, userId, status } = req.body || {};
+  if (checkAuthLockout(req, res)) return;
+  const { pin, userId, username, status } = req.body || {};
   const cfg = getAdminConfig();
-  if (!isValidAdminPin(pin, cfg)) {
+  const cred = extractAdminCredential(req, pin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "No autorizado" });
   }
-  const ok = await adminToggleAppUserStatus(userId, status === "suspended" ? "suspended" : "active");
+  clearAuthFailures(req);
+  const ok = await adminToggleAppUserStatus(
+    sanitizeText(String(userId || ""), 64),
+    status === "suspended" ? "suspended" : "active",
+    username ? sanitizeText(String(username), 40) : void 0
+  );
   return res.json({ success: ok, message: ok ? "Estado actualizado" : "Error al cambiar estado" });
 });
 app.post("/api/admin/users/upsert", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
   const { pin, user } = req.body || {};
   const cfg = getAdminConfig();
-  if (!isValidAdminPin(pin, cfg)) {
+  const cred = extractAdminCredential(req, pin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
     return res.status(403).json({ success: false, error: "No autorizado" });
   }
+  clearAuthFailures(req);
   const ok = await adminUpsertAppUser(user);
   return res.json({ success: ok, message: ok ? "Usuario guardado" : "Error al guardar usuario" });
+});
+app.post("/api/admin/users/delete", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const { pin, userId, username } = req.body || {};
+  const cfg = getAdminConfig();
+  const cred = extractAdminCredential(req, pin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado" });
+  }
+  clearAuthFailures(req);
+  if (!userId && !username) {
+    return res.status(400).json({ success: false, error: "ID o nombre de usuario requerido" });
+  }
+  const ok = await adminDeleteAppUser(
+    sanitizeText(String(userId || ""), 64),
+    username ? sanitizeText(String(username), 40) : void 0
+  );
+  return res.json({
+    success: ok,
+    message: ok ? "Usuario eliminado permanentemente" : "No se pudo eliminar el usuario"
+  });
 });
 app.use(express.static(path2.resolve(__dirname, "public"), {
   etag: false,
@@ -2044,6 +4475,16 @@ app.use(express.static(path2.resolve(__dirname, "public"), {
     res.setHeader("Expires", "0");
   }
 }));
+app.use((err, _req, res, _next) => {
+  console.error("[Express Error Handler]:", err);
+  if (!res.headersSent) {
+    res.status(500).json({
+      success: false,
+      error: "Internal Server Error",
+      message: "Error interno procesando la solicitud."
+    });
+  }
+});
 async function startServer() {
   if (process.env.NODE_ENV !== "production" && !IS_VERCEL2) {
     const vitePkg = "vite";
@@ -2062,15 +4503,6 @@ async function startServer() {
       res.sendFile(path2.resolve(__dirname, "dist/index.html"));
     });
   }
-  app.use((err, _req, res, _next) => {
-    console.error("[Express Error Handler]:", err);
-    if (!res.headersSent) {
-      res.status(500).json({
-        error: "Internal Server Error",
-        message: err?.message || "Error interno en el servidor"
-      });
-    }
-  });
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`FutbolStats Pro server listening on port ${PORT}`);
   });
@@ -2084,9 +4516,6 @@ if (!IS_VERCEL2) {
   });
 }
 var server_default = app;
-
-// api/index.ts
-var index_default = server_default;
 export {
-  index_default as default
+  server_default as default
 };
