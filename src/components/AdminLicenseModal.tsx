@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Shield, Key, X, Lock, Check, Copy, UserCheck, RefreshCw, Smartphone, MessageCircle, Power, Sparkles, Database, Users, Search, Unlock, Download, BarChart2, Printer, CheckCircle2, Trophy } from 'lucide-react';
+import { Shield, Key, X, Lock, Check, Copy, UserCheck, RefreshCw, Smartphone, MessageCircle, Power, Sparkles, Database, Users, Search, Unlock, Download, BarChart2, Printer, CheckCircle2, Trophy, Trash2, Eye, EyeOff } from 'lucide-react';
 import { createLicenseToken, getOrCreateDeviceId, saveActiveLicense, verifyLicenseToken, clearActiveLicense } from '../services/licenseService';
 import { AccuracyEvaluatorService, OverallAccuracySummary } from '../services/accuracyEvaluatorService';
 
@@ -37,6 +37,10 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
   const [pinInput, setPinInput] = useState(() => {
     return localStorage.getItem('sportstats_admin_saved_pin') || '';
   });
+  const [showPinInput, setShowPinInput] = useState(false);
+  const [showRecoveryNewPin, setShowRecoveryNewPin] = useState(false);
+  const [showNewPin, setShowNewPin] = useState(false);
+  const [showConfirmPin, setShowConfirmPin] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<'USERS' | 'AUDIT' | 'CONFIG'>('USERS');
@@ -47,11 +51,14 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
   const [userFilter, setUserFilter] = useState<'ALL' | 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'BOUND'>('ALL');
   const [userSearch, setUserSearch] = useState('');
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [confirmDeleteUserKey, setConfirmDeleteUserKey] = useState<string | null>(null);
   const [newQuickUsername, setNewQuickUsername] = useState('');
   const [newQuickPin, setNewQuickPin] = useState('');
   const [newQuickName, setNewQuickName] = useState('');
   const [newQuickDays, setNewQuickDays] = useState<number>(30);
   const [userRenewDays, setUserRenewDays] = useState<Record<string, number>>({});
+  const [editingDaysUserId, setEditingDaysUserId] = useState<string | null>(null);
+  const [customDaysInputValue, setCustomDaysInputValue] = useState<string>('15');
 
   // Config & Security PIN
   const [adminWhatsApp, setAdminWhatsApp] = useState('573213902708');
@@ -137,11 +144,35 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
     }
   }, []);
 
+  const getLocalDeletedUsernames = (): Set<string> => {
+    try {
+      const raw = localStorage.getItem('sportstats_deleted_usernames');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return new Set(parsed.map((item) => String(item).toLowerCase().trim()));
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return new Set<string>();
+  };
+
+  const saveLocalDeletedUsernames = (set: Set<string>) => {
+    try {
+      localStorage.setItem('sportstats_deleted_usernames', JSON.stringify(Array.from(set)));
+    } catch {
+      // ignore
+    }
+  };
+
   const loadAppUsers = useCallback(async (pin: string) => {
     setIsLoadingUsers(true);
     const mergedMap = new Map<string, SupabaseUserItem>();
+    const deletedSet = getLocalDeletedUsernames();
 
-    // 1. Cargar solicitudes o usuarios guardados en caché local del navegador
+    // 1. Cargar solicitudes o usuarios guardados en caché local del navegador (excluyendo eliminados)
     try {
       const rawLocal = localStorage.getItem('sportstats_local_users_cache');
       if (rawLocal) {
@@ -149,9 +180,19 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
         if (Array.isArray(parsed)) {
           for (const u of parsed) {
             if (u && u.username) {
-              const sanitizedUser = { ...u };
+              const uname = String(u.username).toLowerCase().trim();
+              if (!uname || deletedSet.has(uname)) continue;
+              const isPending = u.status === 'pending';
+              const sanitizedUser = {
+                ...u,
+                username: uname,
+                planType: isPending ? 'PENDING' : (u.planType || '30D'),
+                planLabel: isPending ? 'Pendiente de Activación' : (u.planLabel || 'Pase Mensual'),
+                expiresAt: isPending ? null : u.expiresAt,
+                daysRemaining: isPending ? 0 : u.daysRemaining
+              };
               delete (sanitizedUser as any).pin;
-              mergedMap.set(u.username, sanitizedUser);
+              mergedMap.set(uname, sanitizedUser);
             }
           }
         }
@@ -169,9 +210,19 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
       if (data.success && Array.isArray(data.users)) {
         for (const u of data.users) {
           if (u && u.username) {
-            const sanitizedUser = { ...u };
+            const uname = String(u.username).toLowerCase().trim();
+            if (!uname || deletedSet.has(uname)) continue;
+            const isPending = u.status === 'pending';
+            const sanitizedUser = {
+              ...u,
+              username: uname,
+              planType: isPending ? 'PENDING' : (u.planType || '30D'),
+              planLabel: isPending ? 'Pendiente de Activación' : (u.planLabel || 'Pase Mensual'),
+              expiresAt: isPending ? null : u.expiresAt,
+              daysRemaining: isPending ? 0 : u.daysRemaining
+            };
             delete (sanitizedUser as any).pin;
-            mergedMap.set(u.username, sanitizedUser);
+            mergedMap.set(uname, sanitizedUser);
           }
         }
       }
@@ -195,6 +246,13 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
     if (!cleanUser || cleanUser.length < 3) {
       setActionFeedback('El nombre de usuario debe tener al menos 3 caracteres alfanuméricos.');
       return;
+    }
+
+    // Si estaba eliminado previamente y el admin lo vuelve a crear explícitamente, quitar de eliminados
+    const deletedSet = getLocalDeletedUsernames();
+    if (deletedSet.has(cleanUser)) {
+      deletedSet.delete(cleanUser);
+      saveLocalDeletedUsernames(deletedSet);
     }
 
     const existingUser = appUsersList.find((u) => u.username === cleanUser);
@@ -296,7 +354,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
       await fetch('/api/admin/users/reset-device', {
         method: 'POST',
         headers: buildAdminHeaders(currentPin, true, true),
-        body: JSON.stringify({ userId })
+        body: JSON.stringify({ userId, username })
       });
     } catch {
       // ignore
@@ -307,13 +365,18 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
     setTimeout(() => setActionFeedback(null), 4000);
   };
 
-  const handleRenewUser = async (userId: string, username: string, addDays = 30) => {
+  const handleRenewUser = async (
+    userId: string,
+    username: string,
+    targetDays = 30,
+    mode: 'SET' | 'ADD' = 'SET'
+  ) => {
     const currentPin = pinInput.trim() || activeServerPin || localStorage.getItem('sportstats_admin_saved_pin') || '';
     const nowMs = Date.now();
-    const isPermanent = Number(addDays) === 0;
-    const daysMs = Number(addDays) * 24 * 60 * 60 * 1000;
-    const planType = isPermanent ? 'PERMANENT' : (Number(addDays) === 1 ? '24H' : `${addDays}D`);
-    const planLabel = isPermanent ? 'Pase Permanente Vitalicio' : (Number(addDays) === 1 ? 'Muestra 24 Horas' : `Pase ${addDays} Días`);
+    const isPermanent = Number(targetDays) === 0;
+    const daysMs = Number(targetDays) * 24 * 60 * 60 * 1000;
+    const planType = isPermanent ? 'PERMANENT' : (Number(targetDays) === 1 ? '24H' : `${targetDays}D`);
+    const planLabel = isPermanent ? 'Pase Permanente Vitalicio' : (Number(targetDays) === 1 ? 'Muestra 24 Horas' : `Pase ${targetDays} Días`);
 
     try {
       const rawLocal = localStorage.getItem('sportstats_local_users_cache');
@@ -325,9 +388,12 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
               if (isPermanent) {
                 u.expiresAt = null;
                 u.daysRemaining = null;
-              } else {
-                u.expiresAt = u.expiresAt && u.expiresAt > nowMs ? u.expiresAt + daysMs : nowMs + daysMs;
+              } else if (mode === 'ADD' && u.expiresAt && u.expiresAt > nowMs) {
+                u.expiresAt = u.expiresAt + daysMs;
                 u.daysRemaining = Math.max(0, Math.ceil((u.expiresAt - nowMs) / (24 * 60 * 60 * 1000)));
+              } else {
+                u.expiresAt = nowMs + daysMs;
+                u.daysRemaining = Number(targetDays);
               }
               u.planType = planType;
               u.planLabel = planLabel;
@@ -346,14 +412,18 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
       await fetch('/api/admin/users/renew', {
         method: 'POST',
         headers: buildAdminHeaders(currentPin, true, true),
-        body: JSON.stringify({ userId, addDays })
+        body: JSON.stringify({ userId, username, addDays: targetDays, mode })
       });
     } catch {
       // ignore
     }
 
-    const durationNotice = isPermanent ? 'Acceso Permanente Vitalicio' : Number(addDays) === 1 ? 'Muestra de 24 Horas' : `+${addDays} días`;
-    setActionFeedback(`Suscripción activada (${durationNotice}) para @${username}`);
+    const durationNotice = isPermanent
+      ? 'Acceso Permanente Vitalicio'
+      : mode === 'SET'
+      ? `Días fijados a ${targetDays} día(s)`
+      : `+${targetDays} días agregados`;
+    setActionFeedback(`Suscripción actualizada (${durationNotice}) para @${username}`);
     loadAppUsers(currentPin);
     setTimeout(() => setActionFeedback(null), 4000);
   };
@@ -383,7 +453,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
       await fetch('/api/admin/users/toggle-status', {
         method: 'POST',
         headers: buildAdminHeaders(currentPin, true, true),
-        body: JSON.stringify({ userId, status: newStatus })
+        body: JSON.stringify({ userId, username, status: newStatus })
       });
     } catch {
       // ignore
@@ -395,6 +465,59 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
         : `Cuenta ${username ? `@${username}` : ''} suspendida.`
     );
     loadAppUsers(currentPin);
+    setTimeout(() => setActionFeedback(null), 4000);
+  };
+
+  const handleDeleteUser = async (userId: string, username: string) => {
+    const cleanUser = String(username || '').toLowerCase().trim();
+    setConfirmDeleteUserKey(null);
+
+    // 1. Registrar en lista local de eliminados para evitar que reaparezca desde caché
+    if (cleanUser) {
+      const deletedSet = getLocalDeletedUsernames();
+      deletedSet.add(cleanUser);
+      saveLocalDeletedUsernames(deletedSet);
+    }
+
+    // 2. Eliminar inmediatamente de la lista en pantalla
+    setAppUsersList((prev) =>
+      prev.filter((u) => u.id !== userId && String(u.username || '').toLowerCase().trim() !== cleanUser)
+    );
+
+    // 3. Eliminar de la caché local de usuarios del navegador
+    try {
+      const rawLocal = localStorage.getItem('sportstats_local_users_cache');
+      if (rawLocal) {
+        const list = JSON.parse(rawLocal);
+        if (Array.isArray(list)) {
+          const filtered = list.filter(
+            (u: any) => u.id !== userId && String(u?.username || '').toLowerCase().trim() !== cleanUser
+          );
+          localStorage.setItem('sportstats_local_users_cache', JSON.stringify(filtered));
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 4. Notificar al backend / Supabase enviando tanto userId como username
+    try {
+      const currentPin = pinInput.trim() || activeServerPin || localStorage.getItem('sportstats_admin_saved_pin') || '';
+      const res = await fetch('/api/admin/users/delete', {
+        method: 'POST',
+        headers: buildAdminHeaders(currentPin, true, true),
+        body: JSON.stringify({ userId, username: cleanUser })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionFeedback(`Usuario @${cleanUser || username} eliminado definitivamente.`);
+      } else {
+        setActionFeedback(`Usuario @${cleanUser || username} eliminado correctamente.`);
+      }
+    } catch {
+      setActionFeedback(`Usuario @${cleanUser || username} eliminado correctamente.`);
+    }
+
     setTimeout(() => setActionFeedback(null), 4000);
   };
 
@@ -719,17 +842,27 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
 
           {!showRecoveryMode ? (
             <form onSubmit={handleVerifyPin} className="space-y-3.5">
-              <input
-                type="password"
-                value={pinInput}
-                onChange={(e) => {
-                  setPinInput(e.target.value);
-                  setPinError(null);
-                }}
-                placeholder="••••••"
-                autoFocus
-                className="w-full bg-[#070B14] border border-slate-700/80 rounded-xl px-4 py-2.5 text-center text-lg font-mono tabular-nums tracking-widest text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-400 transition"
-              />
+              <div className="relative">
+                <input
+                  type={showPinInput ? 'text' : 'password'}
+                  value={pinInput}
+                  onChange={(e) => {
+                    setPinInput(e.target.value);
+                    setPinError(null);
+                  }}
+                  placeholder="••••••"
+                  autoFocus
+                  className="w-full bg-[#070B14] border border-slate-700/80 rounded-xl pl-4 pr-11 py-2.5 text-center text-lg font-mono tabular-nums tracking-widest text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-400 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPinInput(!showPinInput)}
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white cursor-pointer"
+                  title={showPinInput ? 'Ocultar PIN' : 'Ver PIN'}
+                >
+                  {showPinInput ? <EyeOff className="w-4 h-4 text-cyan-400" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
 
               {pinError && (
                 <div className="space-y-2">
@@ -802,16 +935,36 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                    Nuevo PIN que deseas asignar (Opcional):
-                  </label>
-                  <input
-                    type="password"
-                    value={recoveryNewPin}
-                    onChange={(e) => setRecoveryNewPin(e.target.value)}
-                    placeholder="Mínimo 4 dígitos"
-                    className="w-full bg-[#0b0e14] border border-slate-700 rounded-lg px-3.5 py-2 text-center text-xs font-mono tracking-wider text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-400 transition"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-semibold text-slate-300">
+                      Nuevo PIN que deseas asignar (Opcional):
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowRecoveryNewPin(!showRecoveryNewPin)}
+                      className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      {showRecoveryNewPin ? <EyeOff className="w-3 h-3 text-emerald-400" /> : <Eye className="w-3 h-3" />}
+                      <span>{showRecoveryNewPin ? 'Ocultar' : 'Ver'}</span>
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showRecoveryNewPin ? 'text' : 'password'}
+                      value={recoveryNewPin}
+                      onChange={(e) => setRecoveryNewPin(e.target.value)}
+                      placeholder="Mínimo 4 dígitos"
+                      className="w-full bg-[#0b0e14] border border-slate-700 rounded-lg pl-3.5 pr-10 py-2 text-center text-xs font-mono tracking-wider text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-400 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRecoveryNewPin(!showRecoveryNewPin)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white cursor-pointer"
+                      title={showRecoveryNewPin ? 'Ocultar PIN' : 'Ver PIN'}
+                    >
+                      {showRecoveryNewPin ? <EyeOff className="w-4 h-4 text-emerald-400" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1172,33 +1325,106 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
 
                               {/* Details Grid: Plan & Device Binding */}
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                {/* Plan & Expiry */}
+                                 {/* Plan & Expiry */}
                                 <div className="bg-[#050810] p-2.5 rounded-xl border border-slate-800/60 flex flex-col justify-between">
                                   <div className="flex items-center justify-between">
                                     <span className="text-[10px] uppercase font-bold text-slate-400">
                                       Plan Activo
                                     </span>
                                     <span className="font-bold text-slate-200">
-                                      {u.planLabel}
+                                      {u.status === 'pending' ? 'Pendiente de Activación' : u.planLabel}
                                     </span>
                                   </div>
-                                  <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-slate-800/40">
-                                    <span className="text-[10px] uppercase font-bold text-slate-400">
-                                      Días Restantes
-                                    </span>
-                                    <span
-                                      className={`font-mono font-black text-xs ${
-                                        isSuspended || isExpired
-                                          ? 'text-rose-400'
-                                          : daysLeft !== null && daysLeft !== undefined && daysLeft <= 3
-                                          ? 'text-amber-400 font-bold'
-                                          : 'text-emerald-400'
-                                      }`}
-                                    >
-                                      {daysLeft === null || daysLeft === undefined
-                                        ? 'Vitalicio (Sin Fin)'
-                                        : `${daysLeft} días`}
-                                    </span>
+                                  <div className="flex flex-col mt-2 pt-1.5 border-t border-slate-800/40 gap-1">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] uppercase font-bold text-slate-400">
+                                        Días Restantes
+                                      </span>
+                                      <div className="flex items-center gap-1.5">
+                                        <span
+                                          className={`font-mono font-black text-xs ${
+                                            u.status === 'pending'
+                                              ? 'text-amber-400 font-bold'
+                                              : isSuspended || isExpired
+                                              ? 'text-rose-400'
+                                              : daysLeft !== null && daysLeft !== undefined && daysLeft <= 3
+                                              ? 'text-amber-400 font-bold'
+                                              : 'text-emerald-400'
+                                          }`}
+                                        >
+                                          {u.status === 'pending'
+                                            ? '0 días (Pendiente de aprobación)'
+                                            : daysLeft === null || daysLeft === undefined
+                                            ? 'Vitalicio (Sin Fin)'
+                                            : `${daysLeft} días`}
+                                        </span>
+                                        {editingDaysUserId !== u.id && u.status !== 'pending' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setEditingDaysUserId(u.id);
+                                              setCustomDaysInputValue(String(daysLeft ?? 15));
+                                            }}
+                                            className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold cursor-pointer transition flex items-center gap-1"
+                                            title="Fijar o modificar cantidad exacta de días restantes"
+                                          >
+                                            <span>✏️ Editar</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {editingDaysUserId === u.id && (
+                                      <div className="mt-1 p-1.5 bg-slate-950 border border-cyan-500/50 rounded-xl flex items-center justify-between gap-1 flex-wrap animate-fadeIn">
+                                        <span className="text-[10px] text-cyan-300 font-bold">Fijar Días:</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="3650"
+                                          value={customDaysInputValue}
+                                          onChange={(e) => setCustomDaysInputValue(e.target.value)}
+                                          className="w-16 bg-slate-900 border border-slate-700 rounded-md px-2 py-0.5 text-white font-mono text-xs font-bold focus:outline-none focus:border-cyan-400"
+                                          placeholder="Días"
+                                        />
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const val = parseInt(customDaysInputValue, 10);
+                                              if (!isNaN(val) && val >= 0) {
+                                                handleRenewUser(u.id, u.username, val, 'SET');
+                                                setEditingDaysUserId(null);
+                                              }
+                                            }}
+                                            className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold cursor-pointer transition shadow-xs"
+                                            title="Fijar exactamente esta cantidad de días a partir de hoy (remplaza días anteriores)"
+                                          >
+                                            ✅ Fijar Días
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const val = parseInt(customDaysInputValue, 10);
+                                              if (!isNaN(val) && val > 0) {
+                                                handleRenewUser(u.id, u.username, val, 'ADD');
+                                                setEditingDaysUserId(null);
+                                              }
+                                            }}
+                                            className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold cursor-pointer transition"
+                                            title="Sumar estos días a la vigencia actual"
+                                          >
+                                            + Sumar
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditingDaysUserId(null)}
+                                            className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white text-[10px] font-bold cursor-pointer"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
 
@@ -1253,16 +1479,17 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                               {/* Action Buttons Toolbar */}
                               <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/60">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  {/* Flexible Duration Selector & Apply Button */}
+                                  {/* Flexible Duration Selector & Apply/Set Buttons */}
                                   <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/80 rounded-lg p-0.5">
                                     <select
                                       value={userRenewDays[u.id] ?? 30}
                                       onChange={(e) => setUserRenewDays((prev) => ({ ...prev, [u.id]: Number(e.target.value) }))}
                                       className="bg-transparent text-white text-[11px] font-bold px-1.5 py-1 focus:outline-none cursor-pointer"
-                                      title="Selecciona la cantidad de días para activar o renovar"
+                                      title="Selecciona la cantidad de días para fijar o renovar"
                                     >
-                                      <option value={1}>⚡ Muestra 24h</option>
+                                      <option value={1}>⚡ 1 Día (Muestra 24h)</option>
                                       <option value={3}>⚡ 3 Días</option>
+                                      <option value={5}>📅 5 Días</option>
                                       <option value={7}>📅 7 Días</option>
                                       <option value={15}>📅 15 Días</option>
                                       <option value={30}>🗓️ 30 Días (Mes)</option>
@@ -1273,33 +1500,53 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                                     </select>
                                     <button
                                       type="button"
-                                      onClick={() => handleRenewUser(u.id, u.username, userRenewDays[u.id] ?? 30)}
+                                      onClick={() => handleRenewUser(u.id, u.username, userRenewDays[u.id] ?? 30, 'SET')}
                                       className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-sm"
-                                      title="Activar o extender sin requerir PIN del usuario"
+                                      title="Fijar exactamente esta cantidad de días desde hoy"
                                     >
                                       <UserCheck className="w-3 h-3" />
-                                      <span>{u.status === 'pending' ? '✅ Aprobar & Activar' : '+ Aplicar'}</span>
+                                      <span>{u.status === 'pending' ? '✅ Aprobar & Activar' : '✅ Fijar Días'}</span>
                                     </button>
+                                    {u.status !== 'pending' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRenewUser(u.id, u.username, userRenewDays[u.id] ?? 30, 'ADD')}
+                                        className="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[11px] font-bold transition cursor-pointer"
+                                        title="Sumar estos días a los días restantes actuales"
+                                      >
+                                        + Sumar
+                                      </button>
+                                    )}
                                   </div>
 
-                                  {/* Quick 1-Click 24h Sample Button */}
+                                  {/* Quick 1-Click 1 Day Sample Button */}
                                   <button
                                     type="button"
-                                    onClick={() => handleRenewUser(u.id, u.username, 1)}
+                                    onClick={() => handleRenewUser(u.id, u.username, 1, 'SET')}
                                     className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-bold transition cursor-pointer flex items-center gap-1"
-                                    title="Dar muestra rápida de 24 horas sin pedir PIN"
+                                    title="Fijar 1 día exacto de prueba (24 horas)"
                                   >
-                                    <span>⚡ +24h Muestra</span>
+                                    <span>⚡ 1 Día</span>
                                   </button>
 
-                                  {/* Quick 1-Click +30 Days Button */}
+                                  {/* Quick 1-Click 15 Days Button */}
                                   <button
                                     type="button"
-                                    onClick={() => handleRenewUser(u.id, u.username, 30)}
-                                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold transition cursor-pointer"
-                                    title="Extender 30 días"
+                                    onClick={() => handleRenewUser(u.id, u.username, 15, 'SET')}
+                                    className="px-2 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-[11px] font-bold transition cursor-pointer flex items-center gap-1"
+                                    title="Fijar exactamente 15 días restantes desde hoy"
                                   >
-                                    <span>+30d</span>
+                                    <span>📅 15d</span>
+                                  </button>
+
+                                  {/* Quick 1-Click 30 Days Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRenewUser(u.id, u.username, 30, 'SET')}
+                                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold transition cursor-pointer"
+                                    title="Fijar exactamente 30 días restantes desde hoy"
+                                  >
+                                    <span>30d</span>
                                   </button>
 
                                   {/* Toggle Active / Suspended */}
@@ -1314,6 +1561,39 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                                       }`}
                                     >
                                       {isSuspended ? 'Reactivar Cuenta' : 'Suspender'}
+                                    </button>
+                                  )}
+
+                                  {/* Delete User Profile Permanently (Inline confirmation compatible with iframes/mobile) */}
+                                  {confirmDeleteUserKey === (u.username || u.id) ? (
+                                    <div className="flex items-center gap-1 bg-rose-950/60 border border-rose-500/50 rounded-lg px-2 py-0.5 animate-fadeIn">
+                                      <span className="text-[10px] font-bold text-rose-200 mr-1">
+                                        ¿Eliminar @{u.username}?
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteUser(u.id, u.username)}
+                                        className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-black transition cursor-pointer shadow-xs"
+                                      >
+                                        Sí, Eliminar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteUserKey(null)}
+                                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold transition cursor-pointer"
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteUserKey(u.username || u.id)}
+                                      className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 hover:text-rose-200 border border-rose-500/40 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                                      title={`Eliminar permanentemente la cuenta de @${u.username}`}
+                                    >
+                                      <Trash2 className="w-3 h-3 text-rose-400" />
+                                      <span>Eliminar</span>
                                     </button>
                                   )}
                                 </div>
@@ -1478,35 +1758,75 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                            Nuevo PIN (mínimo 4 dígitos):
-                          </label>
-                          <input
-                            type="password"
-                            value={newPin}
-                            onChange={(e) => {
-                              setNewPin(e.target.value);
-                              setConfigError(null);
-                            }}
-                            placeholder="Escribe nuevo PIN"
-                            className="w-full bg-[#080D16] border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-400 transition"
-                          />
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] font-semibold text-slate-300">
+                              Nuevo PIN (mínimo 4 dígitos):
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setShowNewPin(!showNewPin)}
+                              className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                            >
+                              {showNewPin ? <EyeOff className="w-3 h-3 text-amber-400" /> : <Eye className="w-3 h-3" />}
+                              <span>{showNewPin ? 'Ocultar' : 'Ver'}</span>
+                            </button>
+                          </div>
+                          <div className="relative">
+                            <input
+                              type={showNewPin ? 'text' : 'password'}
+                              value={newPin}
+                              onChange={(e) => {
+                                setNewPin(e.target.value);
+                                setConfigError(null);
+                              }}
+                              placeholder="Escribe nuevo PIN"
+                              className="w-full bg-[#080D16] border border-slate-700 rounded-xl pl-3.5 pr-10 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-400 transition"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowNewPin(!showNewPin)}
+                              className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white cursor-pointer"
+                              title={showNewPin ? 'Ocultar PIN' : 'Ver PIN'}
+                            >
+                              {showNewPin ? <EyeOff className="w-4 h-4 text-amber-400" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                            Confirmar Nuevo PIN:
-                          </label>
-                          <input
-                            type="password"
-                            value={confirmPin}
-                            onChange={(e) => {
-                              setConfirmPin(e.target.value);
-                              setConfigError(null);
-                            }}
-                            placeholder="Repite el nuevo PIN"
-                            className="w-full bg-[#080D16] border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-400 transition"
-                          />
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] font-semibold text-slate-300">
+                              Confirmar Nuevo PIN:
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setShowConfirmPin(!showConfirmPin)}
+                              className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                            >
+                              {showConfirmPin ? <EyeOff className="w-3 h-3 text-amber-400" /> : <Eye className="w-3 h-3" />}
+                              <span>{showConfirmPin ? 'Ocultar' : 'Ver'}</span>
+                            </button>
+                          </div>
+                          <div className="relative">
+                            <input
+                              type={showConfirmPin ? 'text' : 'password'}
+                              value={confirmPin}
+                              onChange={(e) => {
+                                setConfirmPin(e.target.value);
+                                setConfigError(null);
+                              }}
+                              placeholder="Repite el nuevo PIN"
+                              className="w-full bg-[#080D16] border border-slate-700 rounded-xl pl-3.5 pr-10 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-400 transition"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowConfirmPin(!showConfirmPin)}
+                              className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white cursor-pointer"
+                              title={showConfirmPin ? 'Ocultar PIN' : 'Ver PIN'}
+                            >
+                              {showConfirmPin ? <EyeOff className="w-4 h-4 text-amber-400" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>

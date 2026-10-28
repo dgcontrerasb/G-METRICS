@@ -403,15 +403,25 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
   const nowMs = Date.now();
   const minutesSinceKickoff = matchTimestampMs > 0 ? (nowMs - matchTimestampMs) / 60000 : -1;
 
-  let status: 'SCHEDULED' | 'IN_PLAY' | 'FINISHED' = 'SCHEDULED';
+  let status: MatchFixture['status'] = 'SCHEDULED';
 
-  if (['FT', 'AET', 'PEN', 'AWD', 'WO', 'PST', 'CANC', 'ABD'].includes(statusShort)) {
+  if (['FT', 'AET', 'AWD', 'WO', 'ABD'].includes(statusShort)) {
     status = 'FINISHED';
-  } else if (matchTimestampMs > 0 && minutesSinceKickoff >= 120) {
+  } else if (statusShort === 'PST') {
+    status = 'POSTPONED';
+  } else if (statusShort === 'CANC') {
+    status = 'CANCELLED';
+  } else if (statusShort === 'SUSP') {
+    status = 'SUSPENDED';
+  } else if (matchTimestampMs > 0 && minutesSinceKickoff >= 130) {
     status = 'FINISHED';
-  } else if (['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE', 'INT'].includes(statusShort)) {
+  } else if (statusShort === 'PEN' || statusShort === 'P') {
+    status = 'PENALTY_SHOOTOUT';
+  } else if (['ET', '1ET', '2ET'].includes(statusShort)) {
+    status = 'EXTRA_TIME';
+  } else if (['1H', '2H', 'HT', 'BT', 'LIVE', 'INT'].includes(statusShort)) {
     status = 'IN_PLAY';
-  } else if (hasGoalsReported && (elapsed >= 90 || minutesSinceKickoff >= 105)) {
+  } else if (hasGoalsReported && (elapsed >= 90 || minutesSinceKickoff >= 110)) {
     status = 'FINISHED';
   } else if (hasGoalsReported && minutesSinceKickoff > 0 && minutesSinceKickoff < 115) {
     status = 'IN_PLAY';
@@ -429,11 +439,13 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
   const isHalfTime = isExplicitHT || isSimulatedHT;
 
   let resolvedMinute = 90;
-  if (status === 'IN_PLAY') {
+  if (status === 'IN_PLAY' || status === 'EXTRA_TIME' || status === 'PENALTY_SHOOTOUT') {
     if (isHalfTime) {
       resolvedMinute = 45;
+    } else if (status === 'PENALTY_SHOOTOUT') {
+      resolvedMinute = 120;
     } else if (typeof elapsed === 'number' && elapsed > 0 && statusShort !== 'NS') {
-      resolvedMinute = Math.min(90, Math.max(1, elapsed));
+      resolvedMinute = Math.min(125, Math.max(1, elapsed));
     } else if (minutesSinceKickoff > 0) {
       resolvedMinute =
         minutesSinceKickoff <= 47
@@ -441,6 +453,18 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
           : Math.min(90, Math.max(46, 45 + Math.floor(minutesSinceKickoff - 64)));
     } else {
       resolvedMinute = 45;
+    }
+
+    if (!isHalfTime && Array.isArray(raw.liveEvents)) {
+      const maxEventMin = (raw.liveEvents as TimelineEventItem[]).reduce((acc, ev) => {
+        if (ev.type === 'PERIOD_HALF' || ev.type === 'PERIOD_END' || ev.type === 'PERIOD_START') {
+          return acc;
+        }
+        return Math.max(acc, Number(ev.minute || 0));
+      }, 0);
+      if (maxEventMin > resolvedMinute) {
+        resolvedMinute = maxEventMin;
+      }
     }
   }
 
@@ -482,6 +506,7 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
     espnEventId: raw.espnEventId ? String(raw.espnEventId) : undefined,
     date: matchDate,
     time: kickoff,
+    startTimestamp: matchTimestampMs > 0 ? matchTimestampMs : undefined,
     status,
     currentScore,
     liveStats: raw.liveStats as RealMatchStats | undefined,
@@ -500,7 +525,7 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
       id: homeTeamId,
       name: homeTeamName,
       shortName: homeTeamName.split(' ')[0],
-      logo: raw.teams?.home?.logo || 'https://media.api-sports.io/football/teams/541.png',
+      logo: raw.teams?.home?.logo || '',
       rank: homeRating.rank,
       points: homeRating.points,
       form: ['W', 'D', 'W', 'W', 'L'],
@@ -526,7 +551,7 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
       id: awayTeamId,
       name: awayTeamName,
       shortName: awayTeamName.split(' ')[0],
-      logo: raw.teams?.away?.logo || 'https://media.api-sports.io/football/teams/529.png',
+      logo: raw.teams?.away?.logo || '',
       rank: awayRating.rank,
       points: awayRating.points,
       form: ['W', 'L', 'D', 'W', 'W'],
@@ -577,9 +602,28 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
   };
 }
 
+const LIVE_ACTIVE_STATUSES = new Set([
+  'IN_PLAY',
+  'PAUSED',
+  'HALFTIME',
+  'EXTRA_TIME',
+  'PENALTY_SHOOTOUT'
+]);
+
+const BOARD_ACTIVE_STATUSES = new Set([
+  'SCHEDULED',
+  'TIMED',
+  'IN_PLAY',
+  'PAUSED',
+  'HALFTIME',
+  'EXTRA_TIME',
+  'PENALTY_SHOOTOUT'
+]);
+
 function sortFixturesByPriority(list: MatchFixture[]): MatchFixture[] {
   return [...list].sort((a, b) => {
-    const priority = (s: MatchFixture['status']) => (s === 'IN_PLAY' ? 0 : s === 'SCHEDULED' ? 1 : 2);
+    const priority = (s: MatchFixture['status']) =>
+      LIVE_ACTIVE_STATUSES.has(s) ? 0 : s === 'SCHEDULED' || s === 'TIMED' ? 1 : 2;
     const diff = priority(a.status) - priority(b.status);
     if (diff !== 0) return diff;
     return a.time.localeCompare(b.time);
@@ -615,8 +659,9 @@ export async function saveSecretServerApiKey(key: string): Promise<{ success: bo
   }
 }
 
-const UPCOMING_CACHE_PREFIX = 'futbolstats_upcoming_v12_';
-const UPCOMING_CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas de caché local
+const UPCOMING_CACHE_PREFIX = 'futbolstats_upcoming_v14_';
+const UPCOMING_CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas para partidos futuros programados
+const UPCOMING_LIVE_CACHE_TTL_MS = 20 * 1000; // 20 segundos cuando hay partidos en vivo o por iniciar
 
 export function sanitizeFixturePlayers(fix: MatchFixture): MatchFixture {
   const homeContaminated = isContaminatedForeignStar(fix.homeTeam.starPlayer?.name, fix.homeTeam.name);
@@ -707,7 +752,8 @@ export function getLocalUpcomingCache(dateStr: string): { fixtures: MatchFixture
       localStorage.removeItem(`${UPCOMING_CACHE_PREFIX}${dateStr}`);
       return null;
     }
-    const age = Date.now() - parsed.timestamp;
+    const now = Date.now();
+    const age = now - parsed.timestamp;
     // Purgar inmediatamente si contiene IDs ficticios antiguos
     const hasMock = parsed.fixtures.some((f) => {
       const idStr = String(f.id);
@@ -717,14 +763,29 @@ export function getLocalUpcomingCache(dateStr: string): { fixtures: MatchFixture
       localStorage.removeItem(`${UPCOMING_CACHE_PREFIX}${dateStr}`);
       return null;
     }
-    if (age < UPCOMING_CACHE_TTL_MS) {
+
+    // Si hay partidos en vivo o partidos cuya hora de inicio ya llegó, el TTL máximo es de 90 segundos
+    const hasLiveOrStartedMatch = parsed.fixtures.some((f) => {
+      if (LIVE_ACTIVE_STATUSES.has(f.status)) return true;
+      if (f.startTimestamp && f.startTimestamp <= now) return true;
+      return false;
+    });
+    const effectiveTtl = hasLiveOrStartedMatch ? UPCOMING_LIVE_CACHE_TTL_MS : UPCOMING_CACHE_TTL_MS;
+
+    if (age < effectiveTtl) {
       const activeOnly = parsed.fixtures
-        .filter(
-          (f) =>
-            f.date === dateStr &&
-            (f.status === 'SCHEDULED' || f.status === 'IN_PLAY') &&
-            !isExcludedYouthOrAmateurLeague(f.league?.name, f.league?.country, f.homeTeam?.name, f.awayTeam?.name)
-        )
+        .filter((f) => {
+          if (f.date !== dateStr) return false;
+          if (!BOARD_ACTIVE_STATUSES.has(f.status)) return false;
+          // Descartar partidos cuyo inicio fue hace más de 125 minutos para evitar partidos "zombis" en vivo
+          if (f.startTimestamp && (now - f.startTimestamp) / 60000 >= 125) return false;
+          return !isExcludedYouthOrAmateurLeague(
+            f.league?.name,
+            f.league?.country,
+            f.homeTeam?.name,
+            f.awayTeam?.name
+          );
+        })
         .map(sanitizeFixturePlayers);
       if (activeOnly.length > 0) {
         return { fixtures: activeOnly, cachedAt: parsed.timestamp };
@@ -756,6 +817,39 @@ export function saveLocalUpcomingCache(dateStr: string, fixtures: MatchFixture[]
   }
 }
 
+const SESSION_CACHE_PREFIX = 'sportstats_session_fixtures_v3_';
+const SESSION_CACHE_TTL_MS = 20 * 1000; // 20 segundos para mantener tiempo real en vivo
+
+function getSessionFixturesCache(dateStr: string): MatchFixture[] | null {
+  try {
+    const raw = sessionStorage.getItem(`${SESSION_CACHE_PREFIX}${dateStr}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const now = Date.now();
+    if (parsed && Array.isArray(parsed.fixtures) && now - (parsed.timestamp || 0) < SESSION_CACHE_TTL_MS) {
+      return parsed.fixtures.filter((f: MatchFixture) => {
+        if (!BOARD_ACTIVE_STATUSES.has(f.status)) return false;
+        if (f.startTimestamp && (now - f.startTimestamp) / 60000 >= 125) return false;
+        return true;
+      });
+    }
+  } catch {
+    // fallback
+  }
+  return null;
+}
+
+function saveSessionFixturesCache(dateStr: string, fixtures: MatchFixture[]): void {
+  try {
+    sessionStorage.setItem(
+      `${SESSION_CACHE_PREFIX}${dateStr}`,
+      JSON.stringify({ timestamp: Date.now(), fixtures })
+    );
+  } catch {
+    // ignore sessionStorage limits
+  }
+}
+
 export async function fetchUpcomingFixtures(
   dateStr?: string,
   options: { forceRefresh?: boolean } = {}
@@ -770,10 +864,29 @@ export async function fetchUpcomingFixtures(
   const targetDate = dateStr || getColombiaDateString(0);
   const userTz = getUserTimeZone();
 
-  // 1. Verificar primero en localStorage si no se forza refresco
-  if (!options.forceRefresh) {
+  // Si el usuario solicitó actualización manual (forceRefresh), limpiar cachés locales de esa fecha
+  if (options.forceRefresh) {
+    try {
+      sessionStorage.removeItem(`${SESSION_CACHE_PREFIX}${targetDate}`);
+      localStorage.removeItem(`${UPCOMING_CACHE_PREFIX}${targetDate}`);
+    } catch {
+      // ignore storage errors
+    }
+  } else {
+    // 1. Verificar primero en sessionStorage (90s TTL) para navegación instantánea entre pestañas
+    const sessionData = getSessionFixturesCache(targetDate);
+    if (sessionData && sessionData.length > 0) {
+      return {
+        fixtures: sortFixturesByPriority(sessionData),
+        count: sessionData.length,
+        fromLocalStorage: true,
+        cachedAt: Date.now()
+      };
+    }
+
     const local = getLocalUpcomingCache(targetDate);
     if (local && Array.isArray(local.fixtures) && local.fixtures.length > 0) {
+      saveSessionFixturesCache(targetDate, local.fixtures);
       return {
         fixtures: sortFixturesByPriority(local.fixtures),
         count: local.fixtures.length,
@@ -783,11 +896,14 @@ export async function fetchUpcomingFixtures(
     }
   }
 
-  // 2. Consultar servidor con caché compartida y fallback $0 de ESPN
+  // 2. Consultar proxy seguro del servidor (/api/matches) con caché compartida de alto rendimiento
   try {
     const forceParam = options.forceRefresh ? '&force=true' : '';
-    const url = `/api/upcoming?date=${encodeURIComponent(targetDate)}&tz=${encodeURIComponent(userTz)}${forceParam}`;
-    const res = await fetch(url);
+    const matchUrl = `/api/matches?date=${encodeURIComponent(targetDate)}&tz=${encodeURIComponent(userTz)}${forceParam}`;
+    let res = await fetch(matchUrl);
+    if (!res.ok) {
+      res = await fetch(`/api/upcoming?date=${encodeURIComponent(targetDate)}&tz=${encodeURIComponent(userTz)}${forceParam}`);
+    }
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.fixtures) && json.fixtures.length > 0) {
@@ -807,12 +923,13 @@ export async function fetchUpcomingFixtures(
               ) {
                 return false;
               }
-              return fix.date === targetDate && (fix.status === 'SCHEDULED' || fix.status === 'IN_PLAY');
+              return fix.date === targetDate && BOARD_ACTIVE_STATUSES.has(fix.status);
             })
         );
 
         if (mapped.length > 0) {
           saveLocalUpcomingCache(targetDate, mapped);
+          saveSessionFixturesCache(targetDate, mapped);
           return {
             fixtures: mapped,
             count: mapped.length,
@@ -825,7 +942,7 @@ export async function fetchUpcomingFixtures(
       }
     }
   } catch (err) {
-    console.warn('FutbolStats Pro: Error al conectar con proxy de partidos próximos', err);
+    console.warn('FutbolStats Pro: Error al conectar con proxy de partidos', err);
   }
 
   // 3. Fallback: Lista vacía real (CERO partidos falsos)
@@ -850,6 +967,22 @@ export async function fetchCompletedAuditFixtures(): Promise<MatchFixture[]> {
 }
 
 export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures: MatchFixture[]; meta: CacheMetadata }> {
+  // 1. Verificar primero en sessionStorage (90s TTL) para evitar llamadas redundantes
+  const sessionCached = getSessionFixturesCache(dateStr);
+  if (sessionCached && sessionCached.length > 0) {
+    return {
+      fixtures: sortFixturesByPriority(sessionCached),
+      meta: {
+        date: dateStr,
+        cachedAt: new Date().toISOString(),
+        source: 'cache',
+        callsConsumed: 0,
+        remainingCalls: 100,
+        totalMatches: sessionCached.length
+      }
+    };
+  }
+
   const cacheKey = `${CACHE_PREFIX}${dateStr}`;
   const metaKey = `${CACHE_META_PREFIX}${dateStr}`;
 
@@ -861,6 +994,7 @@ export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures:
       const fixtures: MatchFixture[] = JSON.parse(cachedData);
       const meta: CacheMetadata = JSON.parse(cachedMeta);
       if (Array.isArray(fixtures) && fixtures.length > 0) {
+        saveSessionFixturesCache(dateStr, fixtures);
         return {
           fixtures: sortFixturesByPriority(fixtures),
           meta: {
@@ -875,8 +1009,13 @@ export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures:
     console.warn('FutbolStats Pro: Error al leer cache local', err);
   }
 
+  // 2. Consulta exclusivamente al proxy del servidor (/api/matches o /api/fixtures) — CERO fuga de cuota directa
   try {
-    const serverProxyRes = await fetch(`/api/fixtures?date=${dateStr}`);
+    let serverProxyRes = await fetch(`/api/matches?date=${encodeURIComponent(dateStr)}`);
+    if (!serverProxyRes.ok) {
+      serverProxyRes = await fetch(`/api/fixtures?date=${encodeURIComponent(dateStr)}`);
+    }
+
     if (serverProxyRes.ok) {
       const serverJson = await serverProxyRes.json();
       if (serverJson.success && Array.isArray(serverJson.fixtures) && serverJson.fixtures.length > 0) {
@@ -886,7 +1025,7 @@ export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures:
           date: dateStr,
           cachedAt: new Date().toISOString(),
           source: 'api',
-          callsConsumed: serverJson.source === 'server_cache' ? 0 : 1,
+          callsConsumed: 0,
           remainingCalls: serverJson.remainingCalls ?? 90,
           totalMatches: mappedFixtures.length
         };
@@ -894,6 +1033,7 @@ export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures:
         try {
           localStorage.setItem(cacheKey, JSON.stringify(mappedFixtures));
           localStorage.setItem(metaKey, JSON.stringify(meta));
+          saveSessionFixturesCache(dateStr, mappedFixtures);
         } catch {
           // ignore storage error
         }
@@ -905,50 +1045,7 @@ export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures:
     // server proxy inactive
   }
 
-  const apiKey = getStoredApiKey();
-  if (apiKey) {
-    try {
-      const response = await fetch(`https://v3.football.api-sports.io/fixtures?date=${dateStr}`, {
-        method: 'GET',
-        headers: {
-          'x-apisports-key': apiKey
-        }
-      });
-
-      if (response.ok) {
-        const json = await response.json();
-        const rawFixtures = json.response;
-
-        if (Array.isArray(rawFixtures) && rawFixtures.length > 0) {
-          const rawMapped = rawFixtures.slice(0, 30).map(f => mapApiSportsFixture(f, dateStr));
-          const mappedFixtures = sortFixturesByPriority(rawMapped);
-          const remaining = parseInt(response.headers.get('x-ratelimit-requests-remaining') || '99', 10);
-
-          const meta: CacheMetadata = {
-            date: dateStr,
-            cachedAt: new Date().toISOString(),
-            source: 'api',
-            callsConsumed: 1,
-            remainingCalls: isNaN(remaining) ? 99 : remaining,
-            totalMatches: mappedFixtures.length
-          };
-
-          try {
-            localStorage.setItem(cacheKey, JSON.stringify(mappedFixtures));
-            localStorage.setItem(metaKey, JSON.stringify(meta));
-          } catch {
-            // storage quota full fallback
-          }
-
-          return { fixtures: mappedFixtures, meta };
-        }
-      }
-    } catch {
-      console.info('FutbolStats Pro: API no disponible o cuota superada.');
-    }
-  }
-
-  // Fallback con lista vacía en vez de datos artificiales
+  // Fallback con lista vacía en vez de datos artificiales (CERO llamadas a APIs externas directas)
   const fallbackMeta: CacheMetadata = {
     date: dateStr,
     cachedAt: new Date().toISOString(),
@@ -1022,14 +1119,16 @@ export interface LivePulseSyncResult {
 
 export async function syncLivePulseFixtures(
   dateStr: string,
-  currentFixtures: MatchFixture[]
+  currentFixtures: MatchFixture[],
+  forceRefresh = false
 ): Promise<LivePulseSyncResult> {
   if (!Array.isArray(currentFixtures) || currentFixtures.length === 0) {
     return { updatedFixtures: currentFixtures, changedIds: [], scoreChangedIds: [], liveCount: 0, syncedAt: Date.now() };
   }
 
   try {
-    const res = await fetch(`/api/live-pulse?date=${encodeURIComponent(dateStr)}`);
+    const forceParam = forceRefresh ? '&force=true' : '';
+    const res = await fetch(`/api/live-pulse?date=${encodeURIComponent(dateStr)}${forceParam}`);
     if (!res.ok) {
       return { updatedFixtures: currentFixtures, changedIds: [], scoreChangedIds: [], liveCount: 0, syncedAt: Date.now() };
     }
@@ -1094,8 +1193,31 @@ export async function syncLivePulseFixtures(
           (delta.liveStats?.home.redCards ?? 0) +
           (delta.liveStats?.away.redCards ?? 0);
 
-        const nextStatus = delta.status === 'IN_PLAY' ? 'IN_PLAY' : delta.status === 'FINISHED' ? 'FINISHED' : fix.status;
-        if (nextStatus === 'IN_PLAY') liveCount++;
+        const dShort = String(delta.statusShort || '').toUpperCase();
+        const nextStatus: MatchFixture['status'] =
+          delta.status === 'FINISHED'
+            ? 'FINISHED'
+            : dShort === 'PEN'
+            ? 'PENALTY_SHOOTOUT'
+            : ['ET', '1ET', '2ET'].includes(dShort)
+            ? 'EXTRA_TIME'
+            : delta.status === 'IN_PLAY'
+            ? 'IN_PLAY'
+            : fix.status;
+
+        if (LIVE_ACTIVE_STATUSES.has(nextStatus)) liveCount++;
+
+        const mergedEvents =
+          Array.isArray(delta.liveEvents) && delta.liveEvents.length > 0 ? delta.liveEvents : fix.liveEvents;
+        const maxEventMin = Array.isArray(mergedEvents)
+          ? mergedEvents.reduce((acc, ev) => {
+              if (ev.type === 'PERIOD_HALF' || ev.type === 'PERIOD_END' || ev.type === 'PERIOD_START') return acc;
+              return Math.max(acc, Number(ev.minute || 0));
+            }, 0)
+          : 0;
+
+        // Evitar que el reloj retroceda dentro del mismo tiempo por diferencias de caché
+        const resolvedMin = nextHT ? 45 : Math.max(prevMin, delta.minute, maxEventMin);
 
         const statsUpdated =
           (delta.liveStats && !fix.liveStats) ||
@@ -1109,7 +1231,7 @@ export async function syncLivePulseFixtures(
 
         if (
           isActualScoreChange ||
-          prevMin !== delta.minute ||
+          prevMin !== resolvedMin ||
           prevHT !== nextHT ||
           prevStatus !== nextStatus ||
           statsUpdated
@@ -1122,28 +1244,37 @@ export async function syncLivePulseFixtures(
             currentScore: {
               home: delta.homeScore,
               away: delta.awayScore,
-              minute: nextHT ? 45 : delta.minute,
+              minute: resolvedMin,
               isHalfTime: nextHT,
-              statusShort: delta.statusShort || (nextHT ? 'HT' : '2H')
+              statusShort: delta.statusShort || (nextHT ? 'HT' : fix.currentScore?.statusShort || '2H')
             },
             liveStats: delta.liveStats || fix.liveStats,
-            liveEvents: Array.isArray(delta.liveEvents) && delta.liveEvents.length > 0 ? delta.liveEvents : fix.liveEvents,
+            liveEvents: mergedEvents,
             liveRosters: delta.liveRosters || fix.liveRosters
           });
         }
-      } else if (fix.status === 'IN_PLAY' && fix.currentScore) {
+      } else if (fix.startTimestamp && (Date.now() - fix.startTimestamp) / 60000 >= 125) {
+        changedIds.push(fix.id);
+        return {
+          ...fix,
+          status: 'FINISHED' as const
+        };
+      } else if (LIVE_ACTIVE_STATUSES.has(fix.status) && fix.currentScore) {
         liveCount++;
       }
 
       return fix;
     });
 
-    if (changedIds.length > 0) {
-      saveLocalUpcomingCache(dateStr, updatedFixtures);
+    const activeUpdatedFixtures = updatedFixtures.filter((f) => BOARD_ACTIVE_STATUSES.has(f.status));
+
+    if (changedIds.length > 0 || activeUpdatedFixtures.length !== currentFixtures.length) {
+      saveLocalUpcomingCache(dateStr, activeUpdatedFixtures);
+      saveSessionFixturesCache(dateStr, activeUpdatedFixtures);
     }
 
     return {
-      updatedFixtures,
+      updatedFixtures: activeUpdatedFixtures,
       changedIds,
       scoreChangedIds,
       liveCount,

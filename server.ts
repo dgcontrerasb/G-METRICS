@@ -17,6 +17,7 @@ import {
   adminRenewAppUser,
   adminToggleAppUserStatus,
   adminUpsertAppUser,
+  adminDeleteAppUser,
   SUPABASE_SQL_SCHEMA
 } from './src/services/supabaseServer';
 import {
@@ -951,6 +952,131 @@ function mapEspnPosition(posAbbr: string): 'POR' | 'DEF' | 'MED' | 'DEL' {
   return 'MED';
 }
 
+function parseEspnMatchStatusAndClock(ev: any): {
+  isLive: boolean;
+  isPost: boolean;
+  isHalfTime: boolean;
+  statusShort: string;
+  elapsedMin: number | null;
+} {
+  const state = String(ev?.status?.type?.state || 'pre').toLowerCase();
+  const isLive = state === 'in';
+  const isPost = state === 'post' || ev?.status?.type?.completed === true;
+  const period = Number(ev?.status?.period || 1);
+  const statusTypeName = String(ev?.status?.type?.name || '').toUpperCase();
+  const statusDetail = String(ev?.status?.type?.detail || '').toUpperCase();
+  const statusShortDetail = String(ev?.status?.type?.shortDetail || '').toUpperCase();
+  const rawClock = String(ev?.status?.displayClock || '').trim();
+  const clockSeconds = Number(ev?.status?.clock || 0);
+
+  if (isPost) {
+    return {
+      isLive: false,
+      isPost: true,
+      isHalfTime: false,
+      statusShort: 'FT',
+      elapsedMin: 90
+    };
+  }
+
+  if (statusTypeName.includes('POSTPONED')) {
+    return { isLive: false, isPost: false, isHalfTime: false, statusShort: 'PST', elapsedMin: null };
+  }
+  if (statusTypeName.includes('CANCEL')) {
+    return { isLive: false, isPost: false, isHalfTime: false, statusShort: 'CANC', elapsedMin: null };
+  }
+  if (statusTypeName.includes('SUSPEND') || statusTypeName.includes('DELAY')) {
+    return { isLive: false, isPost: false, isHalfTime: false, statusShort: 'SUSP', elapsedMin: null };
+  }
+
+  if (!isLive) {
+    return {
+      isLive: false,
+      isPost: false,
+      isHalfTime: false,
+      statusShort: 'NS',
+      elapsedMin: null
+    };
+  }
+
+  const isHalfTime =
+    statusTypeName.includes('HALFTIME') ||
+    statusShortDetail === 'HT' ||
+    statusDetail === 'HT' ||
+    statusShortDetail.includes('HALF') ||
+    statusShortDetail.includes('DESCANSO');
+
+  if (isHalfTime) {
+    return {
+      isLive: true,
+      isPost: false,
+      isHalfTime: true,
+      statusShort: 'HT',
+      elapsedMin: 45
+    };
+  }
+
+  const isShootout =
+    statusTypeName.includes('SHOOTOUT') ||
+    statusTypeName.includes('PENALT') ||
+    statusTypeName.includes('END_OF_EXTRATIME') ||
+    statusShortDetail.includes('PEN') ||
+    statusDetail.includes('PENS') ||
+    period >= 5;
+
+  if (isShootout) {
+    return {
+      isLive: true,
+      isPost: false,
+      isHalfTime: false,
+      statusShort: 'PEN',
+      elapsedMin: 120
+    };
+  }
+
+  const isOvertime =
+    statusTypeName.includes('OVERTIME') ||
+    statusTypeName.includes('EXTRA') ||
+    period === 3 ||
+    period === 4;
+
+  const isFirstHalf = !isOvertime && (period === 1 || statusTypeName.includes('FIRST_HALF'));
+  const statusShort = isOvertime ? (period === 3 ? '1ET' : '2ET') : isFirstHalf ? '1H' : '2H';
+
+  let parsedMin = isOvertime ? 95 : isFirstHalf ? 20 : 60;
+  const plusMatch = rawClock.match(/(\d+)\s*'?\s*\+\s*(\d+)/);
+  const colonMatch = rawClock.match(/^(\d+):(\d+)$/);
+  const numMatch = rawClock.match(/(\d+)/);
+
+  if (plusMatch) {
+    const base = parseInt(plusMatch[1], 10);
+    const extra = parseInt(plusMatch[2], 10);
+    parsedMin = base + extra;
+  } else if (colonMatch) {
+    parsedMin = Math.max(1, parseInt(colonMatch[1], 10));
+  } else if (numMatch) {
+    parsedMin = parseInt(numMatch[1], 10);
+  } else if (clockSeconds > 0) {
+    parsedMin = Math.max(1, Math.ceil(clockSeconds / 60));
+  }
+
+  if (isOvertime) {
+    parsedMin = Math.min(125, Math.max(91, parsedMin));
+  } else if (isFirstHalf) {
+    parsedMin = Math.min(55, Math.max(1, parsedMin));
+  } else {
+    parsedMin = Math.min(105, Math.max(46, parsedMin));
+  }
+
+  return {
+    isLive: true,
+    isPost: false,
+    isHalfTime: false,
+    statusShort,
+    elapsedMin: parsedMin
+  };
+}
+
 async function fetchEspnMatchSummaryTelemetry(
   espnEventId: string,
   homeName: string,
@@ -960,9 +1086,9 @@ async function fetchEspnMatchSummaryTelemetry(
   fallbackTelemetry: { liveStats: any; liveEvents: any[] }
 ): Promise<{ liveStats: any; liveEvents: any[]; liveRosters?: any }> {
   if (!espnEventId) return fallbackTelemetry;
-  const cacheKey = `espn_summary_v2_${espnEventId}`;
+  const cacheKey = `espn_summary_v3_${espnEventId}`;
   const cached = getCacheItem<{ liveStats: any; liveEvents: any[]; liveRosters?: any }>(cacheKey);
-  if (cached && Date.now() - cached.timestamp < 45 * 1000) {
+  if (cached && Date.now() - cached.timestamp < 15 * 1000) {
     return cached.data;
   }
 
@@ -1342,21 +1468,9 @@ async function fetchEspnSoccerFixtures(targetDate: string, clientTz = 'America/B
       const slug = String(ev?.season?.slug || 'Jornada Regular').replace(/-/g, ' ');
       const leagueName = catalogEntry?.name || `Liga ${countryName}`;
 
-      const isLive = state === 'in';
-      const statusTypeName = String(ev?.status?.type?.name || '').toUpperCase();
-      const statusShortDetail = String(ev?.status?.type?.shortDetail || '').toUpperCase();
-      const isEspnHalfTime =
-        isLive &&
-        (statusTypeName.includes('HALFTIME') ||
-          statusShortDetail === 'HT' ||
-          statusShortDetail.includes('HALF') ||
-          statusShortDetail.includes('DESCANSO'));
-      const rawClock = String(ev?.status?.displayClock || '45');
-      const elapsedMin = isLive
-        ? isEspnHalfTime
-          ? 45
-          : Math.min(90, Math.max(1, parseInt(rawClock.replace(/[^0-9]/g, ''), 10) || 45))
-        : null;
+      const clockParsed = parseEspnMatchStatusAndClock(ev);
+      const isLive = clockParsed.isLive;
+      const elapsedMin = clockParsed.elapsedMin;
 
       const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || 'Local');
       const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || 'Visitante');
@@ -1379,7 +1493,7 @@ async function fetchEspnSoccerFixtures(targetDate: string, clientTz = 'America/B
             city: comp?.venue?.address?.city || countryName
           },
           status: {
-            short: isLive ? (isEspnHalfTime ? 'HT' : '2H') : 'NS',
+            short: clockParsed.statusShort,
             elapsed: elapsedMin
           }
         },
@@ -1394,12 +1508,12 @@ async function fetchEspnSoccerFixtures(targetDate: string, clientTz = 'America/B
           home: {
             id: parseInt(String(homeComp?.team?.id || homeComp?.id || '1'), 10) || 1,
             name: homeName,
-            logo: String(homeComp?.team?.logo || 'https://media.api-sports.io/football/teams/541.png')
+            logo: String(homeComp?.team?.logo || homeComp?.team?.logos?.[0]?.href || '')
           },
           away: {
             id: parseInt(String(awayComp?.team?.id || awayComp?.id || '2'), 10) || 2,
             name: awayName,
-            logo: String(awayComp?.team?.logo || 'https://media.api-sports.io/football/teams/529.png')
+            logo: String(awayComp?.team?.logo || awayComp?.team?.logos?.[0]?.href || '')
           }
         },
         goals: {
@@ -1409,7 +1523,13 @@ async function fetchEspnSoccerFixtures(targetDate: string, clientTz = 'America/B
       });
     }
 
-    const liveItems = mapped.filter((m) => m.fixture?.status?.short === '2H' && m.espnEventId).slice(0, 25);
+    const liveItems = mapped
+      .filter(
+        (m) =>
+          ['1H', '2H', 'HT', '1ET', '2ET', 'ET', 'PEN'].includes(String(m.fixture?.status?.short || '')) &&
+          m.espnEventId
+      )
+      .slice(0, 25);
     if (liveItems.length > 0) {
       await Promise.allSettled(
         liveItems.map(async (item) => {
@@ -1425,6 +1545,18 @@ async function fetchEspnSoccerFixtures(targetDate: string, clientTz = 'America/B
           item.liveEvents = enriched.liveEvents;
           if (enriched.liveRosters) {
             item.liveRosters = enriched.liveRosters;
+          }
+          // Garantizar que el reloj oficial nunca sea menor al último evento real reportado
+          if (item.fixture.status.short !== 'HT' && Array.isArray(enriched.liveEvents)) {
+            const maxEvMin = enriched.liveEvents.reduce((acc: number, evItem: any) => {
+              if (evItem?.type === 'PERIOD_HALF' || evItem?.type === 'PERIOD_END' || evItem?.type === 'PERIOD_START') {
+                return acc;
+              }
+              return Math.max(acc, Number(evItem?.minute || 0));
+            }, 0);
+            if (maxEvMin > (item.fixture.status.elapsed || 0)) {
+              item.fixture.status.elapsed = maxEvMin;
+            }
           }
         })
       );
@@ -1667,8 +1799,9 @@ function filterActiveUpcomingFixtures(list: any[], targetDate: string, clientTz:
   });
 }
 
-// 0. Upcoming Matches Endpoint: BLINDADO PARA ALTA CONCURRENCIA
-app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
+// 0. Upcoming & Matches Endpoint: BLINDADO PARA ALTA CONCURRENCIA ($0 Free Tier)
+app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
   const apiKey = getSecretApiKey();
   const requestedDate = (req.query.date as string) || '';
   const clientTz = ((req.query.tz as string) || 'America/Bogota').trim() || 'America/Bogota';
@@ -1678,16 +1811,35 @@ app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
   const todayLocal = getColombiaDateStr(0, clientTz);
   const targetDate = requestedDate || todayLocal;
 
-  const cacheKey = `upcoming_v6_${targetDate}`;
+  const cacheKey = `upcoming_v8_${targetDate}`;
   const cached = getCacheItem<any[]>(cacheKey);
 
-  // TTL: 2 horas de caché para hoy (atiende a 100+ usuarios con 1 sola llamada), 24 horas para otras fechas
-  const cacheTTL = targetDate === todayLocal ? 2 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  // TTL inteligente: 20 segundos si hay partidos en vivo o cuya hora de inicio ya llegó;
+  // 2 horas para partidos futuros programados del día; 24 horas para fechas futuras.
+  const nowMs = Date.now();
+  const hasLiveOrStartedInCache =
+    cached &&
+    Array.isArray(cached.data) &&
+    cached.data.some((f: any) => {
+      const s = String(f?.fixture?.status?.short || '').toUpperCase();
+      if (['1H', '2H', 'HT', 'ET', '1ET', '2ET', 'LIVE', 'BT', 'P', 'PEN', 'INT'].includes(s)) return true;
+      const mTime = f?.fixture?.timestamp
+        ? f.fixture.timestamp * 1000
+        : new Date(f?.fixture?.date || 0).getTime();
+      return mTime > 0 && mTime <= nowMs;
+    });
 
-  // 1. Check persistent cache: Serve immediately if fresh and non-empty
-  if (cached && Array.isArray(cached.data) && cached.data.length > 0 && !query) {
-    const isFresh = Date.now() - cached.timestamp < cacheTTL;
-    if ((isFresh && (!force || quotaShieldActive)) || quotaShieldActive) {
+  const cacheTTL =
+    targetDate === todayLocal
+      ? hasLiveOrStartedInCache
+        ? 20 * 1000
+        : 2 * 60 * 60 * 1000
+      : 24 * 60 * 60 * 1000;
+
+  // 1. Check persistent cache: Serve immediately if fresh and not forced
+  if (cached && Array.isArray(cached.data) && cached.data.length > 0 && !query && !force) {
+    const cacheAge = nowMs - cached.timestamp;
+    if (cacheAge < cacheTTL) {
       const activeList = filterActiveUpcomingFixtures(cached.data, targetDate, clientTz);
       if (activeList.length > 0) {
         return res.json({
@@ -1709,7 +1861,23 @@ app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
       let upcomingOnly: any[] = [];
       const espnFixtures = await fetchEspnSoccerFixtures(targetDate, clientTz);
 
-      if (apiKey && !quotaShieldActive) {
+      // Caché dedicada de 2 horas para la programación base de API-Football (protege 100% la cuota de 100 req/día)
+      const afScheduleCacheKey = `apifootball_schedule_v1_${targetDate}_${clientTz}`;
+      const cachedAfSchedule = getCacheItem<any[]>(afScheduleCacheKey);
+      const afScheduleTTL = targetDate === todayLocal ? 2 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+
+      if (
+        cachedAfSchedule &&
+        Array.isArray(cachedAfSchedule.data) &&
+        cachedAfSchedule.data.length > 0 &&
+        Date.now() - cachedAfSchedule.timestamp < afScheduleTTL
+      ) {
+        upcomingOnly = filterActiveUpcomingFixtures(
+          JSON.parse(JSON.stringify(cachedAfSchedule.data)),
+          targetDate,
+          clientTz
+        );
+      } else if (apiKey && !quotaShieldActive) {
         try {
           const apiRes = await fetch(
             `https://v3.football.api-sports.io/fixtures?date=${targetDate}&timezone=${encodeURIComponent(clientTz)}`,
@@ -1724,6 +1892,9 @@ app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
           if (apiRes.ok) {
             const json = await apiRes.json();
             const rawList = Array.isArray(json.response) ? json.response : [];
+            if (rawList.length > 0) {
+              setCacheItem(afScheduleCacheKey, rawList);
+            }
             upcomingOnly = filterActiveUpcomingFixtures(rawList, targetDate, clientTz);
           }
         } catch {
@@ -1748,13 +1919,15 @@ app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
             if (matchedEspn.liveStats) f.liveStats = matchedEspn.liveStats;
             if (matchedEspn.liveEvents) f.liveEvents = matchedEspn.liveEvents;
             if (matchedEspn.liveRosters) f.liveRosters = matchedEspn.liveRosters;
-            if (matchedEspn.fixture?.status?.short === '2H') {
-              f.fixture.status.short = '2H';
+            const espnShort = String(matchedEspn.fixture?.status?.short || '').toUpperCase();
+            if (['1H', '2H', 'HT', '1ET', '2ET', 'ET', 'PEN', 'FT', 'PST', 'CANC', 'SUSP'].includes(espnShort)) {
+              f.fixture.status.short = espnShort;
               f.fixture.status.elapsed = matchedEspn.fixture.status.elapsed;
               f.goals = matchedEspn.goals;
             }
           }
         }
+        upcomingOnly = filterActiveUpcomingFixtures(upcomingOnly, targetDate, clientTz);
       }
 
       if (upcomingOnly.length === 0) {
@@ -1764,8 +1937,8 @@ app.get('/api/upcoming', dataRateLimitMiddleware, async (req, res) => {
       upcomingOnly.sort((a: any, b: any) => {
         const sA = String(a.fixture?.status?.short || '').toUpperCase();
         const sB = String(b.fixture?.status?.short || '').toUpperCase();
-        const liveA = ['1H', '2H', 'HT', 'ET', 'LIVE'].includes(sA) ? 0 : 1;
-        const liveB = ['1H', '2H', 'HT', 'ET', 'LIVE'].includes(sB) ? 0 : 1;
+        const liveA = ['1H', '2H', 'HT', 'ET', '1ET', '2ET', 'PEN', 'LIVE'].includes(sA) ? 0 : 1;
+        const liveB = ['1H', '2H', 'HT', 'ET', '1ET', '2ET', 'PEN', 'LIVE'].includes(sB) ? 0 : 1;
         if (liveA !== liveB) return liveA - liveB;
         const tA = a.fixture?.timestamp || 0;
         const tB = b.fixture?.timestamp || 0;
@@ -1966,17 +2139,19 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
   }
 });
 
-// 0.25 Hybrid Live Pulse Endpoint (45s poll con 0% gasto de API-Football)
+// 0.25 Hybrid Live Pulse Endpoint (15s poll con 0% gasto de API-Football)
 app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=30');
   const requestedDate = (req.query.date as string) || '';
+  const force = req.query.force === 'true';
   const todayColombia = getColombiaDateStr(0);
   const targetDate = requestedDate || todayColombia;
   const espnDateStr = targetDate.replace(/-/g, '');
 
-  const pulseCacheKey = `live_pulse_v5_${espnDateStr}`;
+  const pulseCacheKey = `live_pulse_v6_${espnDateStr}`;
   const cachedPulse = getCacheItem<any[]>(pulseCacheKey);
 
-  if (cachedPulse && Date.now() - cachedPulse.timestamp < 30 * 1000) {
+  if (!force && cachedPulse && Date.now() - cachedPulse.timestamp < 15 * 1000) {
     return res.json({
       success: true,
       source: 'hybrid_memory_pulse',
@@ -2018,7 +2193,7 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
         const isFinished = ['FT', 'AET', 'PEN'].includes(statusShort);
         const homeScore = Number(lf?.goals?.home ?? lf?.score?.fulltime?.home ?? 0);
         const awayScore = Number(lf?.goals?.away ?? lf?.score?.fulltime?.away ?? 0);
-        const minute = isHalfTime ? 45 : Math.min(90, Math.max(1, Number(lf?.fixture?.status?.elapsed || 45)));
+        const minute = isHalfTime ? 45 : Math.min(120, Math.max(1, Number(lf?.fixture?.status?.elapsed || 45)));
 
         const afTelemetry = extractApiFootballLiveTelemetry(
           lf,
@@ -2069,28 +2244,19 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
             const awayComp = competitors.find((c: any) => c.homeAway === 'away') || competitors[1];
             if (!homeComp || !awayComp) continue;
 
-            const state = String(ev?.status?.type?.state || '').toLowerCase();
-            const isLive = state === 'in';
-            const isPost = state === 'post';
-            if (!isLive && !isPost) continue;
+            const clockParsed = parseEspnMatchStatusAndClock(ev);
+            if (!clockParsed.isLive && !clockParsed.isPost) continue;
 
-            const statusTypeName = String(ev?.status?.type?.name || '').toUpperCase();
-            const statusShortDetail = String(ev?.status?.type?.shortDetail || '').toUpperCase();
-            const isHalfTime =
-              isLive &&
-              (statusTypeName.includes('HALFTIME') ||
-                statusShortDetail === 'HT' ||
-                statusShortDetail.includes('HALF') ||
-                statusShortDetail.includes('DESCANSO'));
+            const isLive = clockParsed.isLive;
+            const isPost = clockParsed.isPost;
+            const isHalfTime = clockParsed.isHalfTime;
+            const parsedMin = clockParsed.elapsedMin ?? 45;
+            const statusShort = clockParsed.statusShort;
 
             const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || '');
             const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || '');
             const homeScore = parseInt(String(homeComp?.score || '0'), 10) || 0;
             const awayScore = parseInt(String(awayComp?.score || '0'), 10) || 0;
-            const rawClock = String(ev?.status?.displayClock || '45');
-            const parsedMin = isHalfTime
-              ? 45
-              : Math.min(90, Math.max(1, parseInt(rawClock.replace(/[^0-9]/g, ''), 10) || 45));
             const espnEventId = String(ev.id || '');
             const hKey = normalizeTeamKey(homeName);
             const aKey = normalizeTeamKey(awayName);
@@ -2111,11 +2277,9 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
               existingDelta.espnEventId = espnEventId;
               existingDelta.homeScore = Math.max(existingDelta.homeScore, homeScore);
               existingDelta.awayScore = Math.max(existingDelta.awayScore, awayScore);
-              if (isHalfTime) {
-                existingDelta.isHalfTime = true;
-                existingDelta.statusShort = 'HT';
-                existingDelta.minute = 45;
-              }
+              existingDelta.isHalfTime = isHalfTime;
+              existingDelta.statusShort = statusShort;
+              existingDelta.minute = isHalfTime ? 45 : parsedMin;
               existingDelta.liveStats = sbTelemetry.liveStats;
               existingDelta.liveEvents = sbTelemetry.liveEvents;
             } else {
@@ -2129,7 +2293,7 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
                 awayScore,
                 minute: parsedMin,
                 isHalfTime,
-                statusShort: isPost ? 'FT' : isHalfTime ? 'HT' : '2H',
+                statusShort,
                 status: isLive ? 'IN_PLAY' : 'FINISHED',
                 liveStats: sbTelemetry.liveStats,
                 liveEvents: sbTelemetry.liveEvents
@@ -2154,6 +2318,21 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
                 if (enriched.liveRosters) {
                   delta.liveRosters = enriched.liveRosters;
                 }
+                if (!delta.isHalfTime && Array.isArray(enriched.liveEvents)) {
+                  const maxEvMin = enriched.liveEvents.reduce((acc: number, evItem: any) => {
+                    if (
+                      evItem?.type === 'PERIOD_HALF' ||
+                      evItem?.type === 'PERIOD_END' ||
+                      evItem?.type === 'PERIOD_START'
+                    ) {
+                      return acc;
+                    }
+                    return Math.max(acc, Number(evItem?.minute || 0));
+                  }, 0);
+                  if (maxEvMin > delta.minute) {
+                    delta.minute = maxEvMin;
+                  }
+                }
               })
             );
           }
@@ -2163,7 +2342,7 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
       }
 
       // 2. Sync inside persistent cache
-      const upcomingCache = getCacheItem<any[]>(`upcoming_v6_${targetDate}`);
+      const upcomingCache = getCacheItem<any[]>(`upcoming_v8_${targetDate}`);
       if (upcomingCache && Array.isArray(upcomingCache.data)) {
         for (const f of upcomingCache.data) {
           const fId = String(f?.fixture?.id || '');
@@ -2204,6 +2383,20 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
             if (f.fixture?.status) {
               f.fixture.status.short = 'FT';
             }
+            liveDeltas.push({
+              id: fId,
+              espnEventId: f.espnEventId,
+              homeKey: hKey,
+              awayKey: aKey,
+              homeName: hName,
+              awayName: aName,
+              homeScore: Number(f?.goals?.home ?? 0),
+              awayScore: Number(f?.goals?.away ?? 0),
+              minute: 90,
+              isHalfTime: false,
+              statusShort: 'FT',
+              status: 'FINISHED'
+            });
             continue;
           }
 
@@ -2288,6 +2481,10 @@ app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
     };
     let elapsedMin = 45;
     let isFinished = false;
+    let isHalfTime = false;
+    let statusShort = '2H';
+    let homeGoals: number | undefined = undefined;
+    let awayGoals: number | undefined = undefined;
 
     const espnDateStr = dateStr.replace(/-/g, '');
     const hKey = normalizeTeamKey(homeName);
@@ -2327,10 +2524,15 @@ app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
           const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
           const hc = competitors.find((c: any) => c.homeAway === 'home') || competitors[0];
           const ac = competitors.find((c: any) => c.homeAway === 'away') || competitors[1];
-          const state = String(matchedEv?.status?.type?.state || '').toLowerCase();
-          isFinished = state === 'post';
-          const rawClock = String(matchedEv?.status?.displayClock || '45');
-          elapsedMin = Math.min(90, Math.max(1, parseInt(rawClock.replace(/[^0-9]/g, ''), 10) || 45));
+          const clockParsed = parseEspnMatchStatusAndClock(matchedEv);
+          isFinished = clockParsed.isPost;
+          isHalfTime = clockParsed.isHalfTime;
+          statusShort = clockParsed.statusShort;
+          elapsedMin = clockParsed.elapsedMin ?? 45;
+          if (clockParsed.isLive || clockParsed.isPost) {
+            homeGoals = parseInt(String(hc?.score || '0'), 10) || 0;
+            awayGoals = parseInt(String(ac?.score || '0'), 10) || 0;
+          }
           fallbackTelemetry = extractEspnScoreboardTelemetry(
             matchedEv,
             comp,
@@ -2357,10 +2559,31 @@ app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
         fallbackTelemetry
       );
 
+      if (!isHalfTime && Array.isArray(enriched.liveEvents)) {
+        const maxEvMin = enriched.liveEvents.reduce((acc: number, evItem: any) => {
+          if (
+            evItem?.type === 'PERIOD_HALF' ||
+            evItem?.type === 'PERIOD_END' ||
+            evItem?.type === 'PERIOD_START'
+          ) {
+            return acc;
+          }
+          return Math.max(acc, Number(evItem?.minute || 0));
+        }, 0);
+        if (maxEvMin > elapsedMin) {
+          elapsedMin = maxEvMin;
+        }
+      }
+
       return res.json({
         success: true,
         found: true,
         espnEventId: resolvedEspnId,
+        homeGoals,
+        awayGoals,
+        minute: isHalfTime ? 45 : elapsedMin,
+        isHalfTime,
+        statusShort,
         liveStats: enriched.liveStats,
         liveEvents: enriched.liveEvents,
         liveRosters: enriched.liveRosters
@@ -2380,7 +2603,7 @@ app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
     );
 
     if (!matchedAf) {
-      const upcomingCache = getCacheItem<any[]>(`upcoming_v6_${dateStr}`);
+      const upcomingCache = getCacheItem<any[]>(`upcoming_v8_${dateStr}`);
       if (upcomingCache && Array.isArray(upcomingCache.data)) {
         matchedAf = upcomingCache.data.find(
           (f: any) =>
@@ -3590,7 +3813,7 @@ app.get('/api/admin/users/list', async (req, res) => {
 app.post('/api/admin/users/reset-device', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
-  const { pin, userId } = req.body || {};
+  const { pin, userId, username } = req.body || {};
   const cfg = getAdminConfig();
   const cred = extractAdminCredential(req, pin);
 
@@ -3600,11 +3823,14 @@ app.post('/api/admin/users/reset-device', async (req, res) => {
   }
   clearAuthFailures(req);
 
-  if (!userId) {
-    return res.status(400).json({ success: false, error: 'ID de usuario requerido' });
+  if (!userId && !username) {
+    return res.status(400).json({ success: false, error: 'ID o nombre de usuario requerido' });
   }
 
-  const ok = await adminResetAppUserDevice(sanitizeText(String(userId), 64));
+  const ok = await adminResetAppUserDevice(
+    sanitizeText(String(userId || ''), 64),
+    username ? sanitizeText(String(username), 40) : undefined
+  );
   return res.json({
     success: ok,
     message: ok
@@ -3616,7 +3842,7 @@ app.post('/api/admin/users/reset-device', async (req, res) => {
 app.post('/api/admin/users/renew', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
-  const { pin, userId, addDays = 30 } = req.body || {};
+  const { pin, userId, username, addDays = 30, mode = 'SET' } = req.body || {};
   const cfg = getAdminConfig();
   const cred = extractAdminCredential(req, pin);
 
@@ -3626,18 +3852,30 @@ app.post('/api/admin/users/renew', async (req, res) => {
   }
   clearAuthFailures(req);
 
-  if (!userId) {
-    return res.status(400).json({ success: false, error: 'ID de usuario requerido' });
+  if (!userId && !username) {
+    return res.status(400).json({ success: false, error: 'ID o nombre de usuario requerido' });
   }
 
-  const ok = await adminRenewAppUser(sanitizeText(String(userId), 64), Number(addDays));
-  return res.json({ success: ok, message: ok ? `Suscripción extendida +${addDays} días` : 'Error al renovar' });
+  const ok = await adminRenewAppUser(
+    sanitizeText(String(userId || ''), 64),
+    Number(addDays),
+    username ? sanitizeText(String(username), 40) : undefined,
+    mode === 'ADD' ? 'ADD' : 'SET'
+  );
+  return res.json({
+    success: ok,
+    message: ok
+      ? mode === 'ADD'
+        ? `Suscripción extendida +${addDays} días`
+        : `Días del usuario fijados a ${addDays} días`
+      : 'Error al actualizar días'
+  });
 });
 
 app.post('/api/admin/users/toggle-status', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
-  const { pin, userId, status } = req.body || {};
+  const { pin, userId, username, status } = req.body || {};
   const cfg = getAdminConfig();
   const cred = extractAdminCredential(req, pin);
 
@@ -3648,8 +3886,9 @@ app.post('/api/admin/users/toggle-status', async (req, res) => {
   clearAuthFailures(req);
 
   const ok = await adminToggleAppUserStatus(
-    sanitizeText(String(userId), 64),
-    status === 'suspended' ? 'suspended' : 'active'
+    sanitizeText(String(userId || ''), 64),
+    status === 'suspended' ? 'suspended' : 'active',
+    username ? sanitizeText(String(username), 40) : undefined
   );
   return res.json({ success: ok, message: ok ? 'Estado actualizado' : 'Error al cambiar estado' });
 });
@@ -3669,6 +3908,33 @@ app.post('/api/admin/users/upsert', async (req, res) => {
 
   const ok = await adminUpsertAppUser(user);
   return res.json({ success: ok, message: ok ? 'Usuario guardado' : 'Error al guardar usuario' });
+});
+
+app.post('/api/admin/users/delete', async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+
+  const { pin, userId, username } = req.body || {};
+  const cfg = getAdminConfig();
+  const cred = extractAdminCredential(req, pin);
+
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: 'No autorizado' });
+  }
+  clearAuthFailures(req);
+
+  if (!userId && !username) {
+    return res.status(400).json({ success: false, error: 'ID o nombre de usuario requerido' });
+  }
+
+  const ok = await adminDeleteAppUser(
+    sanitizeText(String(userId || ''), 64),
+    username ? sanitizeText(String(username), 40) : undefined
+  );
+  return res.json({
+    success: ok,
+    message: ok ? 'Usuario eliminado permanentemente' : 'No se pudo eliminar el usuario'
+  });
 });
 
 app.use(express.static(path.resolve(__dirname, 'public'), {

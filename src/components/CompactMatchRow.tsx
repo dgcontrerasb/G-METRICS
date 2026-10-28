@@ -29,13 +29,213 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
   isRecentlyUpdated = false
 }) => {
   const { homeTeam, awayTeam, status } = fixture;
-  const isLive = status === 'IN_PLAY';
-  const isFinished = status === 'FINISHED';
+  const isFinished = status === 'FINISHED' || (status as string) === 'AWARDED';
+  const isSuspended = status === 'SUSPENDED';
+  const isPostponed = status === 'POSTPONED';
+  const isCancelled = status === 'CANCELLED';
+  const isHaltOrInterrupted = isSuspended || isPostponed || isCancelled;
+
+  const isHalfTime = Boolean(
+    status === 'HALFTIME' ||
+    status === 'PAUSED' ||
+    fixture.currentScore?.isHalfTime ||
+    fixture.currentScore?.statusShort === 'HT'
+  );
+
+  const isPenaltyShootout =
+    status === 'PENALTY_SHOOTOUT' ||
+    fixture.currentScore?.statusShort === 'PEN' ||
+    fixture.currentScore?.statusShort === 'PK';
+
+  const isExtraTime =
+    status === 'EXTRA_TIME' ||
+    fixture.currentScore?.statusShort === 'ET' ||
+    fixture.currentScore?.statusShort === '1ET' ||
+    fixture.currentScore?.statusShort === '2ET' ||
+    fixture.currentScore?.statusShort === 'ET_HT';
+
+  const isLive =
+    (status === 'IN_PLAY' || isExtraTime || isPenaltyShootout || isHalfTime) &&
+    !isFinished &&
+    !isHaltOrInterrupted;
+
   const isValueBet = Boolean(analysis.marketOdds?.valueBetDetected);
+
+  // Control anti-obsolescencia: no alertar jugadas/goles si el evento ocurrió hace más de 3 minutos (180s)
+  const isFreshEvent = React.useMemo(() => {
+    if (!isRecentlyUpdated || isHaltOrInterrupted) return false;
+    const updatedAt = fixture.liveStats?.updatedAt || (fixture as any).lastScoreUpdateTimestamp;
+    if (updatedAt && Date.now() - updatedAt > 3 * 60 * 1000) {
+      return false; // Descartar alertas viejas tras recarga de caché
+    }
+    return true;
+  }, [isRecentlyUpdated, fixture, isHaltOrInterrupted]);
+
+  const penaltyScore = fixture.score?.penalties || fixture.currentScore?.penalties;
+  const hasPenalties = Boolean(
+    penaltyScore &&
+    penaltyScore.home !== null &&
+    penaltyScore.away !== null &&
+    (penaltyScore.home !== undefined || penaltyScore.away !== undefined)
+  );
+
+  // Base minute reconciliado con los eventos reales reportados en la cronología
+  const reconciledBaseMinute = React.useMemo(() => {
+    const base = fixture.currentScore?.minute ?? 0;
+    if (isHalfTime) return 45;
+    if (!Array.isArray(fixture.liveEvents) || fixture.liveEvents.length === 0) return base;
+    const maxEvMin = fixture.liveEvents.reduce((acc, ev) => {
+      if (ev.type === 'PERIOD_HALF' || ev.type === 'PERIOD_END' || ev.type === 'PERIOD_START') return acc;
+      return Math.max(acc, Number(ev.minute || 0));
+    }, 0);
+    return Math.max(base, maxEvMin);
+  }, [fixture.currentScore?.minute, fixture.liveEvents, isHalfTime]);
+
+  // Avance local de 60 segundos entre sincronizaciones de red, respetando topes estrictos
+  const [liveMinuteOffset, setLiveMinuteOffset] = React.useState<number>(0);
+
+  React.useEffect(() => {
+    setLiveMinuteOffset(0);
+  }, [fixture.id, reconciledBaseMinute, isHalfTime, status]);
+
+  React.useEffect(() => {
+    if (status !== 'IN_PLAY' || isHalfTime || isFinished || isHaltOrInterrupted) {
+      return;
+    }
+    const ticker = setInterval(() => {
+      setLiveMinuteOffset((prev) => prev + 1);
+    }, 60000);
+    return () => clearInterval(ticker);
+  }, [status, isHalfTime, isFinished, isHaltOrInterrupted]);
+
+  // Reloj oficial sincronizado con topes de seguridad y estados estrictos
+  const renderClock = () => {
+    if (isFinished) {
+      return (
+        <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono tracking-tight text-[10px] font-semibold border border-slate-700/50">
+          FIN
+        </span>
+      );
+    }
+
+    if (isSuspended) {
+      return (
+        <span className="px-2 py-0.5 rounded-full bg-amber-950/70 text-amber-300 font-mono tracking-tight text-[10px] font-bold border border-amber-600/60" title="Partido Suspendido">
+          SUSP
+        </span>
+      );
+    }
+
+    if (isPostponed) {
+      return (
+        <span className="px-2 py-0.5 rounded-full bg-slate-800/90 text-slate-300 font-mono tracking-tight text-[10px] font-bold border border-slate-700/60" title="Partido Aplazado">
+          APLAZ
+        </span>
+      );
+    }
+
+    if (isCancelled) {
+      return (
+        <span className="px-2 py-0.5 rounded-full bg-rose-950/70 text-rose-300 font-mono tracking-tight text-[10px] font-bold border border-rose-600/60" title="Partido Cancelado">
+          CANC
+        </span>
+      );
+    }
+
+    // Tanda de Penales
+    if (isPenaltyShootout) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono tracking-tight font-bold text-[10px] border border-purple-500/40" title="Tanda de Penales en curso (120')">
+          <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></span>
+          <span>PEN</span>
+        </span>
+      );
+    }
+
+    // Entretiempo / Pausa regular (Congelado estrictamente en 45')
+    if (isHalfTime) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono tracking-tight font-bold text-[10px] border border-amber-500/40" title="Partido en Descanso / Entretiempo (45')">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+          <span>HT</span>
+        </span>
+      );
+    }
+
+    // Tiempo Extra (Prórroga 90' a 120')
+    if (isExtraTime) {
+      const rawMin = reconciledBaseMinute || 91;
+      const statusShort = fixture.currentScore?.statusShort;
+      let displayET = 'ET';
+      if (statusShort === 'ET_HT' || statusShort === 'BT') {
+        displayET = 'ET HT';
+      } else if (statusShort === '1ET' || rawMin <= 105) {
+        if (rawMin > 105) {
+          displayET = `105+${rawMin - 105}'`;
+        } else {
+          displayET = `${Math.max(90, Math.min(105, rawMin))}'`;
+        }
+      } else {
+        if (rawMin > 120) {
+          displayET = `120+${rawMin - 120}'`;
+        } else {
+          displayET = `${Math.max(105, Math.min(120, rawMin))}'`;
+        }
+      }
+
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-mono tracking-tight font-bold text-[10px] animate-pulse border border-rose-500/40">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+          <span>{displayET}</span>
+        </span>
+      );
+    }
+
+    // Tiempo Regular En Vivo
+    if (status === 'IN_PLAY') {
+      const statusShort = fixture.currentScore?.statusShort;
+      const rawMin = reconciledBaseMinute;
+      let displayMin = 'VIVO';
+      if (typeof rawMin === 'number' && rawMin > 0) {
+        const isFirstHalf = statusShort === '1H' || (statusShort !== '2H' && rawMin <= 45);
+        if (isFirstHalf) {
+          // Tope estricto 1T en 45' (formato 45+X' si la API reportó adición oficial)
+          if (rawMin > 45) {
+            displayMin = `45+${rawMin - 45}'`;
+          } else {
+            const progressed = Math.min(45, Math.max(1, rawMin + liveMinuteOffset));
+            displayMin = `${progressed}'`;
+          }
+        } else {
+          // Tope estricto 2T en 90' (formato 90+X' si la API reportó compensación)
+          if (rawMin > 90) {
+            displayMin = `90+${rawMin - 90}'`;
+          } else {
+            const progressed = Math.min(90, Math.max(46, rawMin + liveMinuteOffset));
+            displayMin = `${progressed}'`;
+          }
+        }
+      }
+
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-mono tracking-tight font-bold text-[10px] animate-pulse border border-rose-500/40">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+          <span>{displayMin}</span>
+        </span>
+      );
+    }
+
+    return (
+      <span className="font-mono tracking-tight font-semibold text-amber-400 text-xs flex items-center gap-1">
+        <Clock className="w-3 h-3 text-amber-400 shrink-0" />
+        <span>{fixture.time}</span>
+      </span>
+    );
+  };
 
   return (
     <div className={`transition-all duration-300 rounded-xl overflow-hidden border ${
-      isRecentlyUpdated
+      !isHaltOrInterrupted && isFreshEvent
         ? 'border-emerald-400 bg-emerald-950/40 ring-2 ring-emerald-400/90 shadow-[0_0_20px_rgba(16,185,129,0.5)] animate-pulse'
         : isSelected
         ? 'border-emerald-500/60 bg-slate-950/60 ring-1 ring-emerald-500/30'
@@ -55,34 +255,13 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
         <div className="flex items-center justify-between gap-2 min-w-0">
           {/* Minuto / Tiempo / Estado */}
           <div className="shrink-0 flex items-center gap-1.5">
-            {isRecentlyUpdated && (
+            {!isHaltOrInterrupted && isFreshEvent && (
               <span className="px-2 py-0.5 rounded-full bg-emerald-400 text-black font-mono font-black text-[10px] uppercase tracking-tight animate-bounce shadow-md flex items-center gap-1">
                 <span>⚡</span>
                 <span className="hidden sm:inline">¡Marcador!</span>
               </span>
             )}
-            {isLive ? (
-              fixture.currentScore?.isHalfTime ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono tracking-tight font-bold text-[10px] border border-amber-500/40" title="Partido en Descanso / Entretiempo (45')">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                  <span>DESCANSO</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-mono tracking-tight font-bold text-[10px] animate-pulse border border-rose-500/40">
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                  <span>{fixture.currentScore?.minute ? `${fixture.currentScore.minute}'` : 'VIVO'}</span>
-                </span>
-              )
-            ) : isFinished ? (
-              <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono tracking-tight text-[10px] font-semibold border border-slate-700/50">
-                FIN
-              </span>
-            ) : (
-              <span className="font-mono tracking-tight font-semibold text-amber-400 text-xs flex items-center gap-1">
-                <Clock className="w-3 h-3 text-amber-400 shrink-0" />
-                <span>{fixture.time}</span>
-              </span>
-            )}
+            {renderClock()}
           </div>
 
           {/* Duelo de Equipos con Marcador Central en Cápsula */}
@@ -103,11 +282,18 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
             </div>
 
             {/* Marcador Central en Recuadro / Cápsula Elegante */}
-            <div className="px-2.5 py-0.5 rounded-lg bg-slate-900/90 border border-slate-800 font-mono font-bold text-xs sm:text-sm shrink-0 whitespace-nowrap text-center shadow-inner">
-              {isLive || isFinished ? (
-                <span className={isLive ? 'text-emerald-400' : 'text-slate-200'}>
-                  {fixture.currentScore ? `${fixture.currentScore.home} - ${fixture.currentScore.away}` : '0 - 0'}
-                </span>
+            <div className="px-2.5 py-0.5 rounded-lg bg-slate-900/90 border border-slate-800 font-mono font-bold text-xs sm:text-sm shrink-0 whitespace-nowrap text-center shadow-inner flex items-center justify-center gap-1.5">
+              {isLive || isFinished || isSuspended ? (
+                <>
+                  <span className={isLive && !isSuspended ? 'text-emerald-400' : 'text-slate-200'}>
+                    {fixture.currentScore ? `${fixture.currentScore.home} - ${fixture.currentScore.away}` : '0 - 0'}
+                  </span>
+                  {hasPenalties && (
+                    <span className="text-[10.5px] text-amber-400 font-bold" title="Tanda de Penales">
+                      ({penaltyScore?.home ?? 0} - {penaltyScore?.away ?? 0})
+                    </span>
+                  )}
+                </>
               ) : (
                 <span className="text-slate-500 text-[10px]">VS</span>
               )}

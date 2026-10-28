@@ -60,19 +60,38 @@ export interface RealMatchRosters {
   awaySubstitutes: RealMatchRosterPlayer[];
 }
 
+export type MatchStatus =
+  | 'IN_PLAY'
+  | 'PAUSED'
+  | 'HALFTIME'
+  | 'EXTRA_TIME'
+  | 'PENALTY_SHOOTOUT'
+  | 'SUSPENDED'
+  | 'POSTPONED'
+  | 'CANCELLED'
+  | 'FINISHED'
+  | 'TIMED'
+  | 'SCHEDULED'
+  | 'AWARDED';
+
+export interface MatchScore {
+  home: number;
+  away: number;
+  minute?: number;
+  isHalfTime?: boolean;
+  statusShort?: string;
+  penalties?: { home: number | null; away: number | null };
+}
+
 export interface MatchFixture {
   id: string;
   espnEventId?: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
-  status: 'SCHEDULED' | 'IN_PLAY' | 'FINISHED';
-  currentScore?: {
-    home: number;
-    away: number;
-    minute?: number;
-    isHalfTime?: boolean;
-    statusShort?: string;
-  };
+  startTimestamp?: number;
+  status: MatchStatus;
+  currentScore?: MatchScore;
+  score?: MatchScore;
   liveStats?: RealMatchStats;
   liveEvents?: TimelineEventItem[];
   liveRosters?: RealMatchRosters;
@@ -107,6 +126,8 @@ export interface MatchFixture {
   derbyOrRivalry?: boolean;
   h2h?: H2HSummary;
 }
+
+export type Match = MatchFixture;
 
 export interface H2HSummary {
   totalMatches: number;

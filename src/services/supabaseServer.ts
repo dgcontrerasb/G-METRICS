@@ -682,14 +682,14 @@ export async function registerAppUserRequest(
     pin: hashedPin,
     role: 'client',
     status: 'pending',
-    planType: '30D',
-    planLabel: 'Pase 30 Días',
+    planType: 'PENDING',
+    planLabel: 'Pendiente de Activación',
     createdAt: nowMs,
-    expiresAt: nowMs + 30 * 24 * 60 * 60 * 1000,
+    expiresAt: null,
     boundDeviceId: cleanDeviceId,
     boundDeviceName: friendlyDevName,
     whatsappNumber: cleanWhatsapp || null,
-    daysRemaining: 30,
+    daysRemaining: 0,
     isExpired: false
   };
 
@@ -746,10 +746,10 @@ export async function registerAppUserRequest(
         pin_hash: hashedPin,
         role: 'client',
         status: 'pending',
-        plan_type: '30D',
-        plan_label: 'Pase 30 Días',
+        plan_type: 'PENDING',
+        plan_label: 'Pendiente de Activación',
         created_at: nowMs,
-        expires_at: nowMs + 30 * 24 * 60 * 60 * 1000,
+        expires_at: null,
         bound_device_id: null,
         whatsapp_number: cleanWhatsapp || null
       });
@@ -769,17 +769,67 @@ export async function registerAppUserRequest(
   };
 }
 
+const DELETED_USERS_FILE = IS_VERCEL
+  ? path.resolve('/tmp', 'sportstats_deleted_users.json')
+  : path.resolve(process.cwd(), 'sportstats_deleted_users.json');
+
+let memoryDeletedUsernames: Set<string> | null = null;
+
+function getDeletedUsernamesSet(): Set<string> {
+  if (memoryDeletedUsernames) return memoryDeletedUsernames;
+  try {
+    if (fs.existsSync(DELETED_USERS_FILE)) {
+      const raw = fs.readFileSync(DELETED_USERS_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        memoryDeletedUsernames = new Set(parsed.map((item) => String(item).toLowerCase().trim()));
+        return memoryDeletedUsernames;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  memoryDeletedUsernames = new Set<string>();
+  return memoryDeletedUsernames;
+}
+
+function saveDeletedUsernamesSet(set: Set<string>): void {
+  memoryDeletedUsernames = set;
+  try {
+    fs.writeFileSync(DELETED_USERS_FILE, JSON.stringify(Array.from(set), null, 2), 'utf8');
+  } catch {
+    // ignore
+  }
+}
+
+function isValidUuid(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
+}
+
 export async function adminListAppUsers(): Promise<AppUser[]> {
   const client = getSupabaseClient();
   const nowMs = Date.now();
   const localUsers = getLocalUsersDb();
+  const deletedSet = getDeletedUsernamesSet();
   const mergedMap = new Map<string, AppUser>();
 
   // Primero poblar desde base local (ocultando el hash del PIN en la respuesta HTTP)
   for (const u of localUsers) {
-    const daysRemaining = u.expiresAt ? Math.max(0, Math.ceil((u.expiresAt - nowMs) / (24 * 60 * 60 * 1000))) : null;
-    const isExpired = u.expiresAt ? u.expiresAt < nowMs : false;
-    mergedMap.set(u.username, { ...u, pin: '[PROTECTED]', daysRemaining, isExpired });
+    const uname = String(u.username || '').toLowerCase().trim();
+    if (!uname || deletedSet.has(uname)) continue;
+    const isPending = u.status === 'pending';
+    const daysRemaining = isPending ? 0 : u.expiresAt ? Math.max(0, Math.ceil((u.expiresAt - nowMs) / (24 * 60 * 60 * 1000))) : null;
+    const isExpired = isPending ? false : u.expiresAt ? u.expiresAt < nowMs : false;
+    mergedMap.set(uname, {
+      ...u,
+      username: uname,
+      pin: '[PROTECTED]',
+      planType: isPending ? 'PENDING' : (u.planType || '30D'),
+      planLabel: isPending ? 'Pendiente de Activación' : (u.planLabel || 'Pase Mensual'),
+      expiresAt: isPending ? null : u.expiresAt,
+      daysRemaining,
+      isExpired
+    });
   }
 
   if (client) {
@@ -791,20 +841,24 @@ export async function adminListAppUsers(): Promise<AppUser[]> {
 
       if (!error && Array.isArray(data)) {
         for (const row of data) {
-          const daysRemaining = row.expires_at ? Math.max(0, Math.ceil((row.expires_at - nowMs) / (24 * 60 * 60 * 1000))) : null;
-          const isExpired = row.expires_at ? row.expires_at < nowMs : false;
+          const uname = String(row.username || '').toLowerCase().trim();
+          if (!uname || deletedSet.has(uname)) continue;
+
+          const isPending = row.status === 'pending';
+          const daysRemaining = isPending ? 0 : row.expires_at ? Math.max(0, Math.ceil((row.expires_at - nowMs) / (24 * 60 * 60 * 1000))) : null;
+          const isExpired = isPending ? false : row.expires_at ? row.expires_at < nowMs : false;
 
           const item: AppUser = {
             id: row.id,
-            username: row.username,
+            username: uname,
             displayName: row.display_name || undefined,
             pin: '[PROTECTED]',
             role: row.role || 'client',
             status: row.status || 'active',
-            planType: row.plan_type || '30D',
-            planLabel: row.plan_label || 'Pase Mensual',
+            planType: isPending ? 'PENDING' : (row.plan_type || '30D'),
+            planLabel: isPending ? 'Pendiente de Activación' : (row.plan_label || 'Pase Mensual'),
             createdAt: Number(row.created_at || nowMs),
-            expiresAt: row.expires_at ? Number(row.expires_at) : null,
+            expiresAt: isPending ? null : (row.expires_at ? Number(row.expires_at) : null),
             boundDeviceId: row.bound_device_id,
             boundDeviceName: row.bound_device_name,
             boundDeviceUpdatedAt: row.bound_device_updated_at,
@@ -814,7 +868,7 @@ export async function adminListAppUsers(): Promise<AppUser[]> {
             daysRemaining,
             isExpired
           };
-          mergedMap.set(item.username, item);
+          mergedMap.set(uname, item);
         }
       }
     } catch (err) {
@@ -826,14 +880,18 @@ export async function adminListAppUsers(): Promise<AppUser[]> {
 }
 
 // Resetea el dispositivo vinculado para que el cliente pueda registrar un nuevo teléfono
-export async function adminResetAppUserDevice(userId: string): Promise<boolean> {
+export async function adminResetAppUserDevice(userId: string, username?: string): Promise<boolean> {
   let updatedLocal = false;
+  const cleanUser = username ? normalizeUsername(username) : '';
   const localUsers = getLocalUsersDb();
+  let matchedUsername = cleanUser;
+
   for (const u of localUsers) {
-    if (u.id === userId || u.username === userId) {
+    if (u.id === userId || u.username === userId || (cleanUser && u.username === cleanUser)) {
       u.boundDeviceId = null;
       u.boundDeviceName = null;
       u.boundDeviceUpdatedAt = null;
+      if (!matchedUsername) matchedUsername = u.username;
       updatedLocal = true;
     }
   }
@@ -842,16 +900,19 @@ export async function adminResetAppUserDevice(userId: string): Promise<boolean> 
   const client = getSupabaseClient();
   if (client) {
     try {
-      const { error } = await client
-        .from('sportstats_users')
-        .update({
-          bound_device_id: null,
-          bound_device_name: null,
-          bound_device_updated_at: null
-        })
-        .eq('id', userId);
-
-      if (!error) return true;
+      const updatePayload = {
+        bound_device_id: null,
+        bound_device_name: null,
+        bound_device_updated_at: null
+      };
+      if (isValidUuid(userId)) {
+        const { error } = await client.from('sportstats_users').update(updatePayload).eq('id', userId);
+        if (!error) return true;
+      }
+      if (matchedUsername) {
+        const { error } = await client.from('sportstats_users').update(updatePayload).eq('username', matchedUsername);
+        if (!error) return true;
+      }
     } catch {
       // ignore
     }
@@ -860,22 +921,29 @@ export async function adminResetAppUserDevice(userId: string): Promise<boolean> 
   return updatedLocal;
 }
 
-// Renueva la suscripción sumando días (+1, +3, +7, +15, +30, etc. o 0 para Vitalicio)
-export async function adminRenewAppUser(userId: string, addDays: number): Promise<boolean> {
+// Renueva o fijas la suscripción (días exactos o sumando días: mode = 'SET' | 'ADD')
+export async function adminRenewAppUser(
+  userId: string,
+  addDays: number,
+  username?: string,
+  mode: 'SET' | 'ADD' = 'SET'
+): Promise<boolean> {
   const nowMs = Date.now();
   const isPermanent = Number(addDays) === 0;
   const daysMs = Number(addDays) * 24 * 60 * 60 * 1000;
   let updatedLocal = false;
+  const cleanUser = username ? normalizeUsername(username) : '';
+  let matchedUsername = cleanUser;
 
   const planType = isPermanent ? 'PERMANENT' : (Number(addDays) === 1 ? '24H' : `${addDays}D`);
   const planLabel = isPermanent ? 'Pase Permanente Vitalicio' : (Number(addDays) === 1 ? 'Muestra 24 Horas' : `Pase ${addDays} Días`);
 
   const localUsers = getLocalUsersDb();
   for (const u of localUsers) {
-    if (u.id === userId || u.username === userId) {
+    if (u.id === userId || u.username === userId || (cleanUser && u.username === cleanUser)) {
       if (isPermanent) {
         u.expiresAt = null;
-      } else if (u.expiresAt && u.expiresAt > nowMs) {
+      } else if (mode === 'ADD' && u.expiresAt && u.expiresAt > nowMs) {
         u.expiresAt = u.expiresAt + daysMs;
       } else {
         u.expiresAt = nowMs + daysMs;
@@ -883,6 +951,7 @@ export async function adminRenewAppUser(userId: string, addDays: number): Promis
       u.planType = planType;
       u.planLabel = planLabel;
       u.status = 'active';
+      if (!matchedUsername) matchedUsername = u.username;
       updatedLocal = true;
     }
   }
@@ -893,29 +962,36 @@ export async function adminRenewAppUser(userId: string, addDays: number): Promis
     try {
       let newExpiry: number | null = null;
       if (!isPermanent) {
-        const { data: user } = await client
-          .from('sportstats_users')
-          .select('expires_at')
-          .eq('id', userId)
-          .single();
+        if (mode === 'ADD') {
+          const query = client.from('sportstats_users').select('expires_at');
+          const { data: user } = isValidUuid(userId)
+            ? await query.eq('id', userId).maybeSingle()
+            : await query.eq('username', matchedUsername || userId).maybeSingle();
 
-        newExpiry = nowMs + daysMs;
-        if (user && user.expires_at && user.expires_at > nowMs) {
-          newExpiry = user.expires_at + daysMs;
+          newExpiry = nowMs + daysMs;
+          if (user && user.expires_at && user.expires_at > nowMs) {
+            newExpiry = user.expires_at + daysMs;
+          }
+        } else {
+          newExpiry = nowMs + daysMs;
         }
       }
 
-      const { error } = await client
-        .from('sportstats_users')
-        .update({
-          expires_at: newExpiry,
-          plan_type: planType,
-          plan_label: planLabel,
-          status: 'active'
-        })
-        .eq('id', userId);
+      const updateData = {
+        expires_at: newExpiry,
+        plan_type: planType,
+        plan_label: planLabel,
+        status: 'active'
+      };
 
-      if (!error) return true;
+      if (isValidUuid(userId)) {
+        const { error } = await client.from('sportstats_users').update(updateData).eq('id', userId);
+        if (!error) return true;
+      }
+      if (matchedUsername) {
+        const { error } = await client.from('sportstats_users').update(updateData).eq('username', matchedUsername);
+        if (!error) return true;
+      }
     } catch {
       // ignore
     }
@@ -925,12 +1001,19 @@ export async function adminRenewAppUser(userId: string, addDays: number): Promis
 }
 
 // Activa o suspende un usuario
-export async function adminToggleAppUserStatus(userId: string, newStatus: 'active' | 'suspended'): Promise<boolean> {
+export async function adminToggleAppUserStatus(
+  userId: string,
+  newStatus: 'active' | 'suspended',
+  username?: string
+): Promise<boolean> {
   let updatedLocal = false;
+  const cleanUser = username ? normalizeUsername(username) : '';
+  let matchedUsername = cleanUser;
   const localUsers = getLocalUsersDb();
   for (const u of localUsers) {
-    if (u.id === userId || u.username === userId) {
+    if (u.id === userId || u.username === userId || (cleanUser && u.username === cleanUser)) {
       u.status = newStatus;
+      if (!matchedUsername) matchedUsername = u.username;
       updatedLocal = true;
     }
   }
@@ -939,12 +1022,17 @@ export async function adminToggleAppUserStatus(userId: string, newStatus: 'activ
   const client = getSupabaseClient();
   if (client) {
     try {
-      const { error } = await client
-        .from('sportstats_users')
-        .update({ status: newStatus })
-        .eq('id', userId);
-
-      if (!error) return true;
+      if (isValidUuid(userId)) {
+        const { error } = await client.from('sportstats_users').update({ status: newStatus }).eq('id', userId);
+        if (!error) return true;
+      }
+      if (matchedUsername) {
+        const { error } = await client
+          .from('sportstats_users')
+          .update({ status: newStatus })
+          .eq('username', matchedUsername);
+        if (!error) return true;
+      }
     } catch {
       // ignore
     }
@@ -958,6 +1046,13 @@ export async function adminUpsertAppUser(user: Partial<AppUser>): Promise<boolea
   if (!user.username) return false;
   const cleanUser = normalizeUsername(user.username);
   if (!cleanUser) return false;
+
+  // Si el usuario estaba en la lista de eliminados y el admin lo vuelve a crear explícitamente, restaurarlo
+  const deletedSet = getDeletedUsernamesSet();
+  if (deletedSet.has(cleanUser)) {
+    deletedSet.delete(cleanUser);
+    saveDeletedUsernamesSet(deletedSet);
+  }
 
   const nowMs = Date.now();
   const defaultExpiry = nowMs + 30 * 24 * 60 * 60 * 1000;
@@ -1025,6 +1120,57 @@ export async function adminUpsertAppUser(user: Partial<AppUser>): Promise<boolea
       );
     } catch {
       // fallback already saved in localUsers
+    }
+  }
+
+  return true;
+}
+
+// Elimina permanentemente un usuario por ID y/o username
+export async function adminDeleteAppUser(userId: string, username?: string): Promise<boolean> {
+  const cleanId = String(userId || '').trim();
+  const cleanUsername = username ? normalizeUsername(username) : '';
+  let matchedUsername = cleanUsername;
+
+  const localUsers = getLocalUsersDb();
+  const remaining: AppUser[] = [];
+  for (const u of localUsers) {
+    const uname = String(u.username || '').toLowerCase().trim();
+    const isMatch =
+      (cleanId && (u.id === cleanId || uname === cleanId.toLowerCase())) ||
+      (cleanUsername && uname === cleanUsername);
+    if (isMatch) {
+      if (!matchedUsername && uname) matchedUsername = uname;
+    } else {
+      remaining.push(u);
+    }
+  }
+
+  if (remaining.length !== localUsers.length) {
+    saveLocalUsersDb(remaining);
+  }
+
+  if (!matchedUsername && cleanId && !isValidUuid(cleanId) && !cleanId.startsWith('USR-')) {
+    matchedUsername = normalizeUsername(cleanId);
+  }
+
+  if (matchedUsername) {
+    const deletedSet = getDeletedUsernamesSet();
+    deletedSet.add(matchedUsername);
+    saveDeletedUsernamesSet(deletedSet);
+  }
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      if (isValidUuid(cleanId)) {
+        await client.from('sportstats_users').delete().eq('id', cleanId);
+      }
+      if (matchedUsername) {
+        await client.from('sportstats_users').delete().eq('username', matchedUsername);
+      }
+    } catch (err) {
+      console.warn('[adminDeleteAppUser Supabase warning]:', err);
     }
   }
 

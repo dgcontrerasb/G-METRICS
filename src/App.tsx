@@ -482,19 +482,44 @@ export default function App() {
     setIsLoading(true);
     try {
       const result = await fetchUpcomingFixtures(dateStr, { forceRefresh });
+      const activeStatuses = new Set([
+        'SCHEDULED',
+        'TIMED',
+        'IN_PLAY',
+        'PAUSED',
+        'HALFTIME',
+        'EXTRA_TIME',
+        'PENALTY_SHOOTOUT'
+      ]);
       const activeFixtures = result.fixtures.filter((f) => {
         const idStr = String(f.id);
         if (idStr === '991001' || idStr === '991002' || idStr === '991003') return false;
-        return f.status === 'SCHEDULED' || f.status === 'IN_PLAY';
+        return activeStatuses.has(f.status);
       });
+      if (forceRefresh) {
+        activeFixtures.forEach((f) => clearAnalysisCacheForFixture(f.id));
+      }
       setFixtures(activeFixtures);
       setSelectedFixtureIds(new Set());
 
-      // Immediately reconcile live scores, halftime (HT) status, and telemetry for in-play matches
-      if (activeFixtures.length > 0) {
-        syncLivePulseFixtures(dateStr, activeFixtures)
+      setDetailModalPayload((prev) => {
+        if (!prev || prev.type !== 'SOCCER') return prev;
+        const updatedFix = activeFixtures.find((f) => f.id === prev.fixture.id);
+        if (!updatedFix) return prev;
+        clearAnalysisCacheForFixture(updatedFix.id);
+        return {
+          type: 'SOCCER',
+          fixture: updatedFix,
+          analysis: calculateMatchAnalysis(updatedFix)
+        };
+      });
+
+      // Only run background pulse reconciliation when loading from initial cache (!forceRefresh),
+      // so a manual forceRefresh from /api/matches?force=true is never overwritten by a stale pulse cache.
+      if (activeFixtures.length > 0 && !forceRefresh) {
+        syncLivePulseFixtures(dateStr, activeFixtures, false)
           .then((pulseRes) => {
-            if (pulseRes.changedIds.length > 0) {
+            if (pulseRes.changedIds.length > 0 || pulseRes.updatedFixtures.length !== activeFixtures.length) {
               pulseRes.changedIds.forEach((id) => clearAnalysisCacheForFixture(id));
               setFixtures(pulseRes.updatedFixtures);
             }
@@ -544,6 +569,9 @@ export default function App() {
             k.startsWith('futbolstats_upcoming_v8_') ||
             k.startsWith('futbolstats_upcoming_v9_') ||
             k.startsWith('futbolstats_upcoming_v10_') ||
+            k.startsWith('futbolstats_upcoming_v11_') ||
+            k.startsWith('futbolstats_upcoming_v12_') ||
+            k.startsWith('futbolstats_upcoming_v13_') ||
             k.startsWith('basketstats_nba_v3_')
           ) {
             localStorage.removeItem(k);
@@ -560,7 +588,7 @@ export default function App() {
     loadMatches(currentDate, false);
   }, [currentDate, loadMatches]);
 
-  // 45-Second Hybrid Live Update Engine
+  // 20-Second Hybrid Live Update Engine
   const [recentlyUpdatedFixtureIds, setRecentlyUpdatedFixtureIds] = useState<Set<string>>(new Set());
 
   const triggerLiveFlashEffect = useCallback((ids: string[]) => {
@@ -581,8 +609,8 @@ export default function App() {
 
   const runLivePulseCheck = useCallback(async () => {
     if (activeSport === 'SOCCER' && fixtures.length > 0) {
-      const pulseRes = await syncLivePulseFixtures(currentDate, fixtures);
-      if (pulseRes.changedIds.length > 0) {
+      const pulseRes = await syncLivePulseFixtures(currentDate, fixtures, false);
+      if (pulseRes.changedIds.length > 0 || pulseRes.updatedFixtures.length !== fixtures.length) {
         pulseRes.changedIds.forEach((id) => clearAnalysisCacheForFixture(id));
         setFixtures(pulseRes.updatedFixtures);
 
@@ -604,7 +632,11 @@ export default function App() {
       }
 
       // Direct telemetry refresh for the currently open live Soccer match modal
-      if (detailModalPayload?.type === 'SOCCER' && detailModalPayload.fixture.status === 'IN_PLAY') {
+      const isModalMatchLive =
+        detailModalPayload?.type === 'SOCCER' &&
+        ['IN_PLAY', 'PAUSED', 'HALFTIME', 'EXTRA_TIME', 'PENALTY_SHOOTOUT'].includes(detailModalPayload.fixture.status);
+
+      if (isModalMatchLive && detailModalPayload?.type === 'SOCCER') {
         const activeFix = detailModalPayload.fixture;
         const telemetry = await fetchMatchLiveTelemetry(activeFix);
         if (telemetry) {
@@ -614,23 +646,43 @@ export default function App() {
             typeof telemetry.awayGoals === 'number' ? telemetry.awayGoals : (activeFix.currentScore?.away ?? 0);
           const nextHT =
             telemetry.isHalfTime !== undefined ? telemetry.isHalfTime : Boolean(activeFix.currentScore?.isHalfTime);
+          const nextStatusShort = telemetry.statusShort || activeFix.currentScore?.statusShort;
+          const nextStatus =
+            nextHT || nextStatusShort === 'HT'
+              ? 'HALFTIME'
+              : nextStatusShort === 'PEN'
+                ? 'PENALTY_SHOOTOUT'
+                : nextStatusShort === 'ET' || nextStatusShort === '1ET' || nextStatusShort === '2ET'
+                  ? 'EXTRA_TIME'
+                  : activeFix.status;
+
+          const mergedEvents =
+            telemetry.liveEvents && telemetry.liveEvents.length > 0 ? telemetry.liveEvents : activeFix.liveEvents;
+          const maxEventMin =
+            mergedEvents && mergedEvents.length > 0
+              ? mergedEvents.reduce((max, ev) => Math.max(max, Number(ev.minute) || 0), 0)
+              : 0;
           const nextMin = nextHT
             ? 45
-            : Math.max(activeFix.currentScore?.minute ?? 1, telemetry.minute ?? (activeFix.currentScore?.minute ?? 1));
+            : Math.max(
+                activeFix.currentScore?.minute ?? 1,
+                telemetry.minute ?? (activeFix.currentScore?.minute ?? 1),
+                maxEventMin
+              );
 
           const enrichedFix = sanitizeFixturePlayers({
             ...activeFix,
+            status: nextStatus,
             espnEventId: telemetry.espnEventId || activeFix.espnEventId,
             currentScore: {
               home: nextHome,
               away: nextAway,
               minute: nextMin,
               isHalfTime: nextHT,
-              statusShort: telemetry.statusShort || activeFix.currentScore?.statusShort
+              statusShort: nextStatusShort
             },
             liveStats: telemetry.liveStats || activeFix.liveStats,
-            liveEvents:
-              telemetry.liveEvents && telemetry.liveEvents.length > 0 ? telemetry.liveEvents : activeFix.liveEvents,
+            liveEvents: mergedEvents,
             liveRosters: telemetry.liveRosters || activeFix.liveRosters
           });
 
@@ -679,8 +731,11 @@ export default function App() {
 
   useEffect(() => {
     const isModalViewingLiveMatch =
-      Boolean(detailModalPayload) && detailModalPayload?.fixture.status === 'IN_PLAY';
-    const intervalMs = isModalViewingLiveMatch ? 15000 : 45000;
+      Boolean(detailModalPayload) &&
+      ['IN_PLAY', 'PAUSED', 'HALFTIME', 'EXTRA_TIME', 'PENALTY_SHOOTOUT'].includes(
+        detailModalPayload?.fixture.status || ''
+      );
+    const intervalMs = isModalViewingLiveMatch ? 15000 : 20000;
 
     const interval = setInterval(() => {
       runLivePulseCheck();
@@ -735,10 +790,11 @@ export default function App() {
       }
 
       // Status filter (Live & Upcoming)
-      if (selectedFilter === 'LIVE_ONLY' && f.status !== 'IN_PLAY') {
+      const isLiveState = ['IN_PLAY', 'PAUSED', 'HALFTIME', 'EXTRA_TIME', 'PENALTY_SHOOTOUT'].includes(f.status);
+      if (selectedFilter === 'LIVE_ONLY' && !isLiveState) {
         return false;
       }
-      if (selectedFilter === 'UPCOMING_ONLY' && f.status !== 'SCHEDULED') {
+      if (selectedFilter === 'UPCOMING_ONLY' && !['SCHEDULED', 'TIMED'].includes(f.status)) {
         return false;
       }
 
@@ -987,7 +1043,9 @@ export default function App() {
 
   // Live fixtures for Soccer
   const soccerLiveFixtures = useMemo(() => {
-    return filteredFixtures.filter((f) => f.status === 'IN_PLAY');
+    return filteredFixtures.filter((f) =>
+      ['IN_PLAY', 'PAUSED', 'HALFTIME', 'EXTRA_TIME', 'PENALTY_SHOOTOUT'].includes(f.status)
+    );
   }, [filteredFixtures]);
 
   // Quick horizontal league chips carousel (top 12 leagues by match count)

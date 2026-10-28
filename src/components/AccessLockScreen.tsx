@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Lock, MessageCircle, ChevronRight, AlertCircle, Sparkles, Smartphone, ShieldAlert, Check } from 'lucide-react';
+import { User, Lock, MessageCircle, ChevronRight, AlertCircle, Sparkles, Smartphone, ShieldAlert, Check, Eye, EyeOff } from 'lucide-react';
 import { getOrCreateDeviceId, verifyLicenseToken, saveActiveLicense, createLicenseToken, LicenseValidationResult } from '../services/licenseService';
 import { SportStatsLogo } from './SportStatsLogo';
 import { useTheme } from '../context/ThemeContext';
@@ -21,12 +21,14 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
   // Form State - Login
   const [usernameInput, setUsernameInput] = useState('');
   const [pinInput, setPinInput] = useState('');
+  const [showLoginPin, setShowLoginPin] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [loginError, setLoginError] = useState<{ code?: string; message: string; boundDevice?: string } | null>(null);
 
   // Form State - Register
   const [regUsername, setRegUsername] = useState('');
   const [regPin, setRegPin] = useState('');
+  const [showRegPin, setShowRegPin] = useState(false);
   const [regDisplayName, setRegDisplayName] = useState('');
   const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(true);
   const [regLoading, setRegLoading] = useState(false);
@@ -354,19 +356,20 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
       const safeList = Array.isArray(list) ? list : [];
       const existingIdx = safeList.findIndex((u: any) => u.username === cleanUser);
       const nowMs = Date.now();
+      const isAlreadyActive = existingIdx >= 0 && safeList[existingIdx].status === 'active';
       const pendingRecord = {
         id: existingIdx >= 0 ? safeList[existingIdx].id : `USR-${nowMs.toString(36).toUpperCase()}`,
         username: cleanUser,
         displayName: cleanName || undefined,
         role: 'client',
-        status: existingIdx >= 0 && safeList[existingIdx].status === 'active' ? 'active' : 'pending',
-        planType: '30D',
-        planLabel: 'Pase 30 Días',
+        status: isAlreadyActive ? 'active' : 'pending',
+        planType: isAlreadyActive ? safeList[existingIdx].planType : 'PENDING',
+        planLabel: isAlreadyActive ? safeList[existingIdx].planLabel : 'Pendiente de Activación',
         createdAt: nowMs,
-        expiresAt: nowMs + 30 * 24 * 60 * 60 * 1000,
+        expiresAt: isAlreadyActive ? safeList[existingIdx].expiresAt : null,
         boundDeviceId: currentDevId,
         boundDeviceName: friendlyDeviceName,
-        daysRemaining: 30,
+        daysRemaining: isAlreadyActive ? safeList[existingIdx].daysRemaining : 0,
         isExpired: false
       };
       if (existingIdx >= 0) {
@@ -603,15 +606,24 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
 
               {/* PIN Input */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1.5">
-                  PIN de Acceso:
+                <label className="block text-[11px] font-bold text-slate-300 mb-1.5 flex items-center justify-between">
+                  <span>PIN de Acceso:</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPin(!showLoginPin)}
+                    className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer transition font-normal"
+                    title={showLoginPin ? 'Ocultar PIN' : 'Ver PIN'}
+                  >
+                    {showLoginPin ? <EyeOff className="w-3.5 h-3.5 text-emerald-400" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{showLoginPin ? 'Ocultar' : 'Ver PIN'}</span>
+                  </button>
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
                     <Lock className="w-4 h-4" />
                   </div>
                   <input
-                    type="password"
+                    type={showLoginPin ? 'text' : 'password'}
                     value={pinInput}
                     onChange={(e) => {
                       setPinInput(e.target.value);
@@ -620,8 +632,16 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
                     placeholder="••••••"
                     maxLength={10}
                     required
-                    className="w-full bg-[#0b0e14] border border-[#30363d] rounded-xl pl-9 pr-3.5 py-2.5 text-sm font-mono text-white tracking-widest placeholder-[#6e7681] focus:outline-none focus:border-[#00ff66] transition"
+                    className="w-full bg-[#0b0e14] border border-[#30363d] rounded-xl pl-9 pr-10 py-2.5 text-sm font-mono text-white tracking-widest placeholder-[#6e7681] focus:outline-none focus:border-[#00ff66] transition"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPin(!showLoginPin)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white cursor-pointer"
+                    title={showLoginPin ? 'Ocultar PIN' : 'Ver PIN'}
+                  >
+                    {showLoginPin ? <EyeOff className="w-4 h-4 text-emerald-400" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -729,21 +749,37 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
               <div>
                 <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
                   <span>Elige tu PIN personal:</span>
-                  <span className="text-[10px] text-slate-500">Mínimo 4 dígitos</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPin(!showRegPin)}
+                    className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer transition font-normal"
+                    title={showRegPin ? 'Ocultar PIN' : 'Ver PIN'}
+                  >
+                    {showRegPin ? <EyeOff className="w-3.5 h-3.5 text-emerald-400" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{showRegPin ? 'Ocultar' : 'Ver PIN'}</span>
+                  </button>
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
                     <Lock className="w-4 h-4" />
                   </div>
                   <input
-                    type="password"
+                    type={showRegPin ? 'text' : 'password'}
                     value={regPin}
                     onChange={(e) => setRegPin(e.target.value)}
                     placeholder="Mínimo 4 dígitos"
                     maxLength={10}
                     required
-                    className="w-full bg-[#0b0e14] border border-[#30363d] rounded-xl pl-9 pr-3.5 py-2.5 text-sm font-mono text-white tracking-widest placeholder-[#6e7681] focus:outline-none focus:border-emerald-400 transition"
+                    className="w-full bg-[#0b0e14] border border-[#30363d] rounded-xl pl-9 pr-10 py-2.5 text-sm font-mono text-white tracking-widest placeholder-[#6e7681] focus:outline-none focus:border-emerald-400 transition"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPin(!showRegPin)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white cursor-pointer"
+                    title={showRegPin ? 'Ocultar PIN' : 'Ver PIN'}
+                  >
+                    {showRegPin ? <EyeOff className="w-4 h-4 text-emerald-400" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 

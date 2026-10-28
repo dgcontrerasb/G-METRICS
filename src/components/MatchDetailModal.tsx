@@ -75,10 +75,28 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
 
   // Real-time 60-second local clock progression between 15s network syncs
   const [liveMinuteOffset, setLiveMinuteOffset] = useState<number>(0);
-  const serverBaseMinute =
-    payload?.type === 'SOCCER' ? payload.fixture.currentScore?.minute ?? 0 : 0;
   const isSoccerHalfTime =
-    payload?.type === 'SOCCER' ? Boolean(payload.fixture.currentScore?.isHalfTime) : false;
+    payload?.type === 'SOCCER'
+      ? Boolean(
+          payload.fixture.status === 'HALFTIME' ||
+            payload.fixture.status === 'PAUSED' ||
+            payload.fixture.currentScore?.isHalfTime ||
+            payload.fixture.currentScore?.statusShort === 'HT'
+        )
+      : false;
+
+  const serverBaseMinute = React.useMemo(() => {
+    if (payload?.type !== 'SOCCER') return 0;
+    const base = payload.fixture.currentScore?.minute ?? 0;
+    if (isSoccerHalfTime) return 45;
+    const events = payload.fixture.liveEvents;
+    if (!Array.isArray(events) || events.length === 0) return base;
+    const maxEvMin = events.reduce((acc, ev) => {
+      if (ev.type === 'PERIOD_HALF' || ev.type === 'PERIOD_END' || ev.type === 'PERIOD_START') return acc;
+      return Math.max(acc, Number(ev.minute || 0));
+    }, 0);
+    return Math.max(base, maxEvMin);
+  }, [payload, isSoccerHalfTime]);
 
   useEffect(() => {
     setLiveMinuteOffset(0);
@@ -106,15 +124,24 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
 
   const isSoccer = payload.type === 'SOCCER';
   const effectiveSoccerFixture =
-    isSoccer && payload.fixture.status === 'IN_PLAY' && payload.fixture.currentScore && !isSoccerHalfTime
+    isSoccer &&
+    (payload.fixture.status === 'IN_PLAY' || payload.fixture.status === 'EXTRA_TIME') &&
+    payload.fixture.currentScore &&
+    !isSoccerHalfTime
       ? {
           ...payload.fixture,
           currentScore: {
             ...payload.fixture.currentScore,
             minute:
-              serverBaseMinute < 45
+              serverBaseMinute > 45 && payload.fixture.currentScore.statusShort === '1H'
+                ? serverBaseMinute
+                : serverBaseMinute > 90 && payload.fixture.currentScore.statusShort === '2H'
+                ? serverBaseMinute
+                : serverBaseMinute < 45
                 ? Math.min(45, serverBaseMinute + liveMinuteOffset)
-                : Math.min(90, serverBaseMinute + liveMinuteOffset)
+                : serverBaseMinute <= 90
+                ? Math.min(90, serverBaseMinute + liveMinuteOffset)
+                : Math.min(120, serverBaseMinute + liveMinuteOffset)
           }
         }
       : isSoccer
@@ -301,8 +328,13 @@ const SoccerHeader: React.FC<{
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {isLive ? (
-            fixture.currentScore?.isHalfTime ? (
+          {fixture.status === 'PENALTY_SHOOTOUT' || fixture.currentScore?.statusShort === 'PEN' ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 font-mono tracking-tight font-bold animate-pulse text-[10px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+              <span>PENALES · 120'</span>
+            </span>
+          ) : isLive || fixture.status === 'EXTRA_TIME' || fixture.status === 'HALFTIME' || fixture.status === 'PAUSED' ? (
+            fixture.currentScore?.isHalfTime || fixture.status === 'HALFTIME' || fixture.status === 'PAUSED' ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono tracking-tight font-bold text-[10px]">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                 <span>DESCANSO · 45'</span>
@@ -310,7 +342,16 @@ const SoccerHeader: React.FC<{
             ) : (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono tracking-tight font-bold animate-pulse text-[10px]">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                <span>{fixture.currentScore?.minute ? `${fixture.currentScore.minute}'` : 'VIVO'}</span>
+                <span>
+                  {(() => {
+                    const m = fixture.currentScore?.minute;
+                    const sShort = fixture.currentScore?.statusShort;
+                    if (!m) return 'VIVO';
+                    if (sShort === '1H' && m > 45) return `45+${m - 45}'`;
+                    if (sShort === '2H' && m > 90) return `90+${m - 90}'`;
+                    return `${m}'`;
+                  })()}
+                </span>
               </span>
             )
           ) : isFinished ? (
