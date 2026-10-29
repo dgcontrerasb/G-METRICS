@@ -325,7 +325,7 @@ export interface AppUser {
   displayName?: string;
   pin: string;
   role: 'admin' | 'client';
-  status: 'active' | 'pending' | 'suspended' | 'expired';
+  status: 'active' | 'pending' | 'suspended' | 'expired' | 'deleted';
   planType: string;
   planLabel: string;
   createdAt: number;
@@ -483,6 +483,14 @@ export async function loginAppUser(
         const isAdmin = data.role === 'admin';
 
         if (!isAdmin) {
+          if (data.status === 'deleted') {
+            return {
+              success: false,
+              code: 'USER_NOT_FOUND',
+              message: 'Esta cuenta ha sido eliminada por el administrador.'
+            };
+          }
+
           if (data.status === 'pending') {
             return {
               success: false,
@@ -877,7 +885,7 @@ export async function adminListAppUsers(): Promise<AppUser[]> {
   // Primero poblar desde base local (ocultando el hash del PIN en la respuesta HTTP)
   for (const u of localUsers) {
     const uname = String(u.username || '').toLowerCase().trim();
-    if (!uname || deletedSet.has(uname)) continue;
+    if (!uname || deletedSet.has(uname) || u.status === 'deleted') continue;
     const isPending = u.status === 'pending';
     const daysRemaining = isPending ? 0 : u.expiresAt ? Math.max(0, Math.ceil((u.expiresAt - nowMs) / (24 * 60 * 60 * 1000))) : null;
     const isExpired = isPending ? false : u.expiresAt ? u.expiresAt < nowMs : false;
@@ -898,12 +906,13 @@ export async function adminListAppUsers(): Promise<AppUser[]> {
       const { data, error } = await client
         .from('sportstats_users')
         .select('*')
+        .neq('status', 'deleted')
         .order('created_at', { ascending: false });
 
       if (!error && Array.isArray(data)) {
         for (const row of data) {
           const uname = String(row.username || '').toLowerCase().trim();
-          if (!uname || deletedSet.has(uname)) continue;
+          if (!uname || deletedSet.has(uname) || row.status === 'deleted') continue;
 
           const isPending = row.status === 'pending';
           const daysRemaining = isPending ? 0 : row.expires_at ? Math.max(0, Math.ceil((row.expires_at - nowMs) / (24 * 60 * 60 * 1000))) : null;
@@ -1224,6 +1233,14 @@ export async function adminDeleteAppUser(userId: string, username?: string): Pro
   const client = getSupabaseClient();
   if (client) {
     try {
+      // 1. Soft delete garantizado en Supabase: marca status = 'deleted'
+      if (isValidUuid(cleanId)) {
+        await client.from('sportstats_users').update({ status: 'deleted', bound_device_id: null }).eq('id', cleanId);
+      }
+      if (matchedUsername) {
+        await client.from('sportstats_users').update({ status: 'deleted', bound_device_id: null }).eq('username', matchedUsername);
+      }
+      // 2. Intentar también DELETE físico (si las políticas RLS lo permiten)
       if (isValidUuid(cleanId)) {
         await client.from('sportstats_users').delete().eq('id', cleanId);
       }

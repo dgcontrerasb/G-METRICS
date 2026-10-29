@@ -15,7 +15,7 @@ export interface SupabaseUserItem {
   username: string;
   displayName?: string;
   role: 'admin' | 'client';
-  status: 'active' | 'pending' | 'suspended' | 'expired';
+  status: 'active' | 'pending' | 'suspended' | 'expired' | 'deleted';
   planType: string;
   planLabel: string;
   createdAt: number;
@@ -201,7 +201,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
           for (const u of parsed) {
             if (u && u.username) {
               const uname = String(u.username).toLowerCase().trim();
-              if (!uname || deletedSet.has(uname)) continue;
+              if (!uname || deletedSet.has(uname) || u.status === 'deleted') continue;
               const isPending = u.status === 'pending';
               const sanitizedUser = {
                 ...u,
@@ -231,7 +231,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
         for (const u of data.users) {
           if (u && u.username) {
             const uname = String(u.username).toLowerCase().trim();
-            if (!uname || deletedSet.has(uname)) continue;
+            if (!uname || deletedSet.has(uname) || u.status === 'deleted') continue;
             const isPending = u.status === 'pending';
             const sanitizedUser = {
               ...u,
@@ -504,8 +504,13 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
       prev.filter((u) => u.id !== userId && String(u.username || '').toLowerCase().trim() !== cleanUser)
     );
 
-    // 3. Eliminar de la caché local de usuarios del navegador
+    // 3. Eliminar de la caché local de usuarios del navegador y sesiones activas
     try {
+      const activeAuth = localStorage.getItem('sportstats_auth_user');
+      if (activeAuth && activeAuth.toLowerCase().includes(cleanUser)) {
+        localStorage.removeItem('sportstats_auth_user');
+        localStorage.removeItem('sportstats_client_name');
+      }
       const rawLocal = localStorage.getItem('sportstats_local_users_cache');
       if (rawLocal) {
         const list = JSON.parse(rawLocal);
@@ -1037,7 +1042,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
   // STATE 2: Full Authenticated Admin Panel (Only visible after entering the valid PIN)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="bg-[#0C121E] border border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-2xl max-h-[95vh] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden relative">
+      <div className="bg-[#0C121E] border border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-4xl lg:max-w-5xl max-h-[95vh] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden relative">
         {/* Top Header */}
         <div className="p-3 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/60 shrink-0">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
@@ -2252,7 +2257,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
 const AuditTabContent: React.FC = () => {
   const [summary, setSummary] = useState<OverallAccuracySummary | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [sportFilter, setSportFilter] = useState<'SOCCER' | 'NBA' | 'ALL'>('SOCCER');
+  const [sportFilter, setSportFilter] = useState<'PRIME_SOCCER' | 'SECONDARY_SOCCER' | 'NBA' | 'ALL'>('PRIME_SOCCER');
 
   useEffect(() => {
     let isMounted = true;
@@ -2274,20 +2279,32 @@ const AuditTabContent: React.FC = () => {
     };
   }, []);
 
-  const handleDownloadCSV = () => {
+  const [confirmResetCycle, setConfirmResetCycle] = useState<boolean>(false);
+
+  const handleDownloadExcel = () => {
     if (!summary) return;
-    const csvData = AccuracyEvaluatorService.exportToCSV(summary);
-    const blob = new Blob(['\uFEFF' + csvData], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
     const dateStr = new Date().toISOString().split('T')[0];
-    const sportName = sportFilter === 'SOCCER' ? 'Futbol' : sportFilter === 'NBA' ? 'NBA' : 'Todos';
-    link.download = `Auditoria_Eficiencia_${sportName}_SportStats_${dateStr}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const sportName =
+      sportFilter === 'PRIME_SOCCER'
+        ? 'Futbol_Ligas_Principales'
+        : sportFilter === 'SECONDARY_SOCCER'
+        ? 'Futbol_Ligas_Secundarias'
+        : sportFilter === 'NBA'
+        ? 'NBA_Baloncesto'
+        : 'Consolidado_Global';
+    AccuracyEvaluatorService.exportToExcelFile(summary, `Auditoria_Mensual_${sportName}_${dateStr}.xlsx`);
+  };
+
+  const handleResetMonthlyCycle = () => {
+    AccuracyEvaluatorService.resetMonthlyCycle();
+    setConfirmResetCycle(false);
+    setIsLoading(true);
+    AccuracyEvaluatorService.getRealTimeAuditSummary()
+      .then((res) => {
+        setSummary(res);
+        setIsLoading(false);
+      })
+      .catch(() => setIsLoading(false));
   };
 
   const handlePrintPDF = () => {
@@ -2299,208 +2316,339 @@ const AuditTabContent: React.FC = () => {
       <div className="py-16 text-center space-y-3">
         <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
         <p className="text-xs font-mono font-bold text-slate-300">
-          Procesando partidos finalizados y recalculando efectividad del modelo Dixon-Coles & Poisson...
+          Procesando auditoría 100% real: Ligas Principales, Secundarias y Baloncesto NBA...
         </p>
         <span className="text-[10px] text-slate-500 block">
-          Evaluando acta oficial de la Copa Colombia, LaLiga, Premier League, Champions y NBA
+          Evaluando fuentes oficiales ($0 cuota API-Football · Cero plantillas precargadas)
         </span>
       </div>
     );
   }
 
+  // Active Segment Stats
+  const activeStats =
+    sportFilter === 'PRIME_SOCCER'
+      ? summary.primeSoccer
+      : sportFilter === 'SECONDARY_SOCCER'
+      ? summary.secondarySoccer
+      : sportFilter === 'NBA'
+      ? summary.nbaBasketball
+      : summary.consolidated;
+
+  // Filter Match Records by Selected Segment
+  const allSampleMatches = summary.metricsByCategory.flatMap((c) => c.sampleMatches);
+  const filteredMatches = allSampleMatches.filter((rec) => {
+    if (sportFilter === 'ALL') return true;
+    if (sportFilter === 'PRIME_SOCCER') return rec.sport === 'SOCCER' && rec.leagueTier === 'PRIME';
+    if (sportFilter === 'SECONDARY_SOCCER') return rec.sport === 'SOCCER' && rec.leagueTier === 'SECONDARY';
+    if (sportFilter === 'NBA') return rec.sport === 'NBA';
+    return true;
+  });
+
+  // Filter Top Leagues by Selected Segment
+  const filteredTopLeagues = summary.topLeagues.filter((l) => {
+    if (sportFilter === 'ALL') return true;
+    if (sportFilter === 'NBA') return l.sport === 'NBA';
+    if (sportFilter === 'PRIME_SOCCER') return l.sport === 'SOCCER' && l.leagueTier === 'PRIME';
+    if (sportFilter === 'SECONDARY_SOCCER') return l.sport === 'SOCCER' && l.leagueTier === 'SECONDARY';
+    return true;
+  });
+
   // Filter Categories by Selected Sport
   const filteredCategories = summary.metricsByCategory.filter((cat) => {
     if (sportFilter === 'ALL') return true;
-    return cat.sport === sportFilter;
+    if (sportFilter === 'NBA') return cat.sport === 'NBA';
+    return cat.sport === 'SOCCER';
   });
 
-  // Filter Top Leagues by Selected Sport
-  const filteredTopLeagues = summary.topLeagues.filter((l) => {
-    if (sportFilter === 'ALL') return true;
-    return l.sport === sportFilter;
-  });
+  const getSegmentHeaderLabel = () => {
+    if (sportFilter === 'PRIME_SOCCER') return '⚽ Fútbol · Ligas Principales (Tier 1 & 2)';
+    if (sportFilter === 'SECONDARY_SOCCER') return '🌍 Fútbol · Ligas Secundarias / Menores';
+    if (sportFilter === 'NBA') return '🏀 Baloncesto · NBA (Triples & Puntos Jugador)';
+    return '🌐 Consolidado Global de la Plataforma';
+  };
 
-  // Filter Match Records by Selected Sport
-  const filteredMatches = summary.metricsByCategory
-    .filter((cat) => sportFilter === 'ALL' || cat.sport === sportFilter)
-    .flatMap((c) => c.sampleMatches);
+  const getSegmentThemeColor = () => {
+    if (sportFilter === 'NBA') return 'amber';
+    if (sportFilter === 'SECONDARY_SOCCER') return 'indigo';
+    if (sportFilter === 'ALL') return 'cyan';
+    return 'emerald';
+  };
 
-  // Compute Sport-Specific Accuracy Rate
-  const totalFilteredMatches = filteredMatches.length;
-  const totalFilteredHits = filteredMatches.filter((m) => m.isHit).length;
-  const filteredAccuracyRate =
-    totalFilteredMatches > 0
-      ? Number(((totalFilteredHits / totalFilteredMatches) * 100).toFixed(1))
-      : summary.overallAccuracyRate;
+  const theme = getSegmentThemeColor();
 
   return (
     <div className="space-y-4 font-sans text-slate-100">
-      {/* 0. Sport Switcher Bar (Futbol vs Baloncesto Separation) */}
-      <div className="grid grid-cols-3 p-1 bg-slate-950/90 rounded-2xl border border-slate-800 gap-1 text-center font-mono text-xs">
+      {/* 0. Multi-Segment Switcher Bar (Separación Profesional de Informes) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 p-1 bg-slate-950/90 rounded-2xl border border-slate-800 gap-1 text-center font-mono text-xs">
         <button
           type="button"
-          onClick={() => setSportFilter('SOCCER')}
-          className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${
-            sportFilter === 'SOCCER'
+          onClick={() => setSportFilter('PRIME_SOCCER')}
+          className={`py-2 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer font-bold ${
+            sportFilter === 'PRIME_SOCCER'
               ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
               : 'text-slate-400 hover:text-white'
           }`}
         >
-          <span className="text-sm">⚽</span>
-          <span>Fútbol (Soccer)</span>
+          <span>⚽</span>
+          <span>Principales</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSportFilter('SECONDARY_SOCCER')}
+          className={`py-2 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer font-bold ${
+            sportFilter === 'SECONDARY_SOCCER'
+              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-xs'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span>🌍</span>
+          <span>Secundarias</span>
         </button>
 
         <button
           type="button"
           onClick={() => setSportFilter('NBA')}
-          className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${
+          className={`py-2 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer font-bold ${
             sportFilter === 'NBA'
               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
               : 'text-slate-400 hover:text-white'
           }`}
         >
-          <span className="text-sm">🏀</span>
-          <span>Baloncesto (NBA)</span>
+          <span>🏀</span>
+          <span>NBA</span>
         </button>
 
         <button
           type="button"
           onClick={() => setSportFilter('ALL')}
-          className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${
+          className={`py-2 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer font-bold ${
             sportFilter === 'ALL'
               ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-xs'
               : 'text-slate-400 hover:text-white'
           }`}
         >
-          <span className="text-sm">🌐</span>
-          <span>Todos ({summary.totalMatchesEvaluated})</span>
+          <span>🌐</span>
+          <span>Global</span>
         </button>
       </div>
 
-      {/* 1. Metric Header Card */}
-      <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
-        sportFilter === 'NBA'
-          ? 'bg-gradient-to-br from-amber-500/15 via-slate-900 to-slate-950 border-amber-500/30'
-          : 'bg-gradient-to-br from-emerald-500/15 via-slate-900 to-slate-950 border-emerald-500/30'
+      {/* 1. Metric Header Card con Exportación a Excel (Sin botón de imprimir) */}
+      <div className={`p-4 sm:p-5 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+        theme === 'amber'
+          ? 'bg-gradient-to-br from-amber-950/30 via-slate-900 to-slate-950 border-amber-500/30'
+          : theme === 'indigo'
+          ? 'bg-gradient-to-br from-indigo-950/30 via-slate-900 to-slate-950 border-indigo-500/30'
+          : theme === 'cyan'
+          ? 'bg-gradient-to-br from-cyan-950/30 via-slate-900 to-slate-950 border-cyan-500/30'
+          : 'bg-gradient-to-br from-emerald-950/30 via-slate-900 to-slate-950 border-emerald-500/30'
       }`}>
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Sparkles className={`w-4 h-4 ${sportFilter === 'NBA' ? 'text-amber-400' : 'text-emerald-400'}`} />
-            <span className={`text-xs font-mono font-bold uppercase tracking-wider ${
-              sportFilter === 'NBA' ? 'text-amber-400' : 'text-emerald-400'
+        <div className="space-y-1.5 flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-wide border flex items-center gap-1.5 ${
+              theme === 'amber'
+                ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                : theme === 'indigo'
+                ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+                : theme === 'cyan'
+                ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
             }`}>
-              Informe Privado de Eficiencia ({sportFilter === 'SOCCER' ? '⚽ Fútbol' : sportFilter === 'NBA' ? '🏀 Baloncesto NBA' : '🌐 Consolidado'})
+              <Sparkles className="w-3 h-3" />
+              <span>{getSegmentHeaderLabel()}</span>
+            </span>
+
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
+              📅 Modo Día Vencido (Acta Oficial Cerrada)
             </span>
           </div>
-          <h3 className="text-lg font-bold text-white">
-            Promedio de Efectividad {sportFilter === 'SOCCER' ? 'Fútbol' : sportFilter === 'NBA' ? 'NBA' : 'Global'}:{' '}
-            <span className={`font-mono ${sportFilter === 'NBA' ? 'text-amber-400' : 'text-emerald-400'}`}>
-              {filteredAccuracyRate}%
+
+          <div className="flex items-baseline gap-2 flex-wrap pt-0.5">
+            <h3 className="text-xl sm:text-2xl font-black text-white font-mono">
+              Efectividad Verificada:{' '}
+              <span className={
+                theme === 'amber'
+                  ? 'text-amber-400'
+                  : theme === 'indigo'
+                  ? 'text-indigo-400'
+                  : theme === 'cyan'
+                  ? 'text-cyan-400'
+                  : 'text-emerald-400'
+              }>
+                {activeStats.accuracyPercentage}%
+              </span>
+            </h3>
+            <span className="text-xs font-semibold text-slate-400">
+              ({activeStats.hits} aciertos / {activeStats.evaluatedMatches} verificados)
             </span>
-          </h3>
-          <p className="text-xs text-slate-400">
-            {summary.dataSourceLabel || 'Evaluación en tiempo real del modelo probabilístico frente a resultados oficiales finalizados.'}
+          </div>
+
+          <p className="text-xs text-slate-400 leading-relaxed max-w-2xl">
+            {sportFilter === 'SECONDARY_SOCCER'
+              ? 'Se respeta el pronóstico original del algoritmo. Los partidos sin acta oficial se marcan como anulados sin distorsionar el porcentaje.'
+              : sportFilter === 'NBA'
+              ? 'Estadísticas oficiales boxscore segundo a segundo: Triples de jugadores, puntos individuales y totales ($0 costo de cuota).'
+              : 'Resultados oficiales consolidados a día vencido con actas completas de córners, tarjetas y goles.'}
           </p>
         </div>
 
-        {/* Action Buttons: Download CSV / PDF */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Action Buttons: Download XLSX & Reset Cycle (Sin botón de imprimir) */}
+        <div className="flex items-center gap-2.5 shrink-0">
           <button
             type="button"
-            onClick={handleDownloadCSV}
-            className={`px-3.5 py-2 rounded-xl text-slate-950 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-md ${
-              sportFilter === 'NBA'
-                ? 'bg-amber-400 hover:bg-amber-300 shadow-amber-400/20'
-                : 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/20'
+            onClick={handleDownloadExcel}
+            className={`px-4 py-2.5 rounded-xl text-slate-950 font-black text-xs transition-all cursor-pointer flex items-center gap-2 shadow-lg active:scale-95 ${
+              theme === 'amber'
+                ? 'bg-amber-400 hover:bg-amber-300 shadow-amber-400/25'
+                : theme === 'indigo'
+                ? 'bg-indigo-400 hover:bg-indigo-300 shadow-indigo-400/25'
+                : theme === 'cyan'
+                ? 'bg-cyan-400 hover:bg-cyan-300 shadow-cyan-400/25'
+                : 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/25'
             }`}
-            title="Descargar reporte en formato CSV compatible con Microsoft Excel"
+            title="Descargar libro Excel oficial (.xlsx) con 4 hojas separadas por categoría"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Excel (CSV)</span>
+            <Download className="w-4 h-4" />
+            <span>Descargar Libro Excel (.xlsx)</span>
           </button>
-          <button
-            type="button"
-            onClick={handlePrintPDF}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 border border-slate-700"
-            title="Imprimir o guardar como informe PDF"
-          >
-            <Printer className="w-3.5 h-3.5 text-slate-300" />
-            <span>Imprimir / PDF</span>
-          </button>
+
+          {confirmResetCycle ? (
+            <div className="flex items-center gap-1.5 bg-rose-950/80 border border-rose-500/50 rounded-xl px-2.5 py-1.5 animate-fadeIn">
+              <span className="text-[11px] text-rose-200 font-bold">¿Reiniciar mes?</span>
+              <button
+                type="button"
+                onClick={handleResetMonthlyCycle}
+                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-black cursor-pointer transition shadow-xs"
+              >
+                Sí, Limpiar
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmResetCycle(false)}
+                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer transition"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmResetCycle(true)}
+              className="px-3 py-2.5 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-700/80 hover:border-rose-500/30 font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
+              title="Reiniciar el historial para comenzar un nuevo mes desde cero"
+            >
+              <Trash2 className="w-4 h-4 text-slate-400 hover:text-rose-400" />
+              <span className="hidden sm:inline">Nuevo Mes</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 2. Top 5 Ligas o Torneos con Mayor Efectividad */}
+      {/* 1.5 Segment Detail KPI Badges */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-xs">
+          <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Muestras</span>
+          <span className="text-base font-bold font-mono text-white">{activeStats.totalMatches}</span>
+          <span className="text-[10px] text-slate-500 block">partidos en registro</span>
+        </div>
+
+        <div className="p-3 rounded-xl bg-slate-950/60 border border-emerald-500/20 text-xs">
+          <span className="text-emerald-400 block text-[10px] uppercase font-bold">Aciertos Reales</span>
+          <span className="text-base font-bold font-mono text-emerald-300">{activeStats.hits}</span>
+          <span className="text-[10px] text-slate-400 block">pronósticos cumplidos</span>
+        </div>
+
+        <div className="p-3 rounded-xl bg-slate-950/60 border border-rose-500/20 text-xs">
+          <span className="text-rose-400 block text-[10px] uppercase font-bold">Fallos</span>
+          <span className="text-base font-bold font-mono text-rose-300">{activeStats.misses}</span>
+          <span className="text-[10px] text-slate-400 block">no acertados</span>
+        </div>
+
+        <div className="p-3 rounded-xl bg-slate-950/60 border border-amber-500/20 text-xs">
+          <span className="text-amber-400 block text-[10px] uppercase font-bold">
+            {sportFilter === 'SECONDARY_SOCCER' ? '⚠️ Sin Acta Oficial' : 'Tasa de Cobertura'}
+          </span>
+          <span className="text-base font-bold font-mono text-amber-300">
+            {sportFilter === 'SECONDARY_SOCCER' ? `${activeStats.unverifiedCount} (Anulados)` : `${activeStats.coveragePercentage}%`}
+          </span>
+          <span className="text-[10px] text-slate-400 block">
+            {sportFilter === 'SECONDARY_SOCCER' ? 'no restan al promedio' : 'verificación oficial'}
+          </span>
+        </div>
+      </div>
+
+      {/* 2. Top 5 Ligas o Torneos con Mayor Efectividad (Ordenadas de Mayor a Menor) */}
       <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
         <div className="flex items-center justify-between px-1">
           <span className="text-xs font-mono font-bold text-amber-300 uppercase tracking-tight flex items-center gap-1.5">
             <Trophy className="w-4 h-4 text-amber-400" />
-            <span>
-              Top {sportFilter === 'SOCCER' ? '⚽ Ligas de Fútbol' : sportFilter === 'NBA' ? '🏀 Torneos NBA' : '5 Ligas Destacadas'}
-            </span>
+            <span>Top 5 Ligas con Mayor Acierto (Ranking de Mayor a Menor)</span>
           </span>
-          <span className="text-[10px] font-mono text-slate-400">Ranking por Acierto (+EV)</span>
+          <span className="text-[10px] font-mono text-slate-400">Ordenado por % Efectividad (+EV)</span>
         </div>
 
         <div className="space-y-2">
-          {filteredTopLeagues.map((league, idx) => {
-            const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
-            return (
-              <div
-                key={league.leagueName}
-                className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between gap-3 text-xs"
-              >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="w-6 h-6 rounded-lg bg-slate-800 text-amber-300 font-mono text-xs font-bold flex items-center justify-center shrink-0">
-                    {medal}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-semibold text-white truncate flex items-center gap-1.5">
-                      <span>{league.leagueName}</span>
-                      <span className="text-[10px] text-slate-500 font-mono">({league.sport === 'NBA' ? '🏀 NBA' : '⚽ Fútbol'})</span>
-                    </div>
-                    {/* Visual Progress Bar */}
-                    <div className="w-full bg-slate-800 h-1.5 rounded-full mt-1.5 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          league.sport === 'NBA'
-                            ? 'bg-gradient-to-r from-amber-500 to-amber-300'
-                            : 'bg-gradient-to-r from-amber-500 to-emerald-400'
-                        }`}
-                        style={{ width: `${Math.min(100, Math.max(10, league.accuracyPercentage))}%` }}
-                      />
+          {filteredTopLeagues.length === 0 ? (
+            <p className="text-xs text-slate-400 p-3 text-center">No hay ligas con partidos verificados en este segmento.</p>
+          ) : (
+            filteredTopLeagues.map((league, idx) => {
+              const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+              return (
+                <div
+                  key={league.leagueName}
+                  className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between gap-3 text-xs"
+                >
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="w-6 h-6 rounded-lg bg-slate-800 text-amber-300 font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                      {medal}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-white truncate flex items-center gap-1.5">
+                        <span>{league.leagueName}</span>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          ({league.sport === 'NBA' ? '🏀 NBA' : league.leagueTier === 'SECONDARY' ? '🌍 Menor' : '⚽ Prime'})
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            league.sport === 'NBA'
+                              ? 'bg-gradient-to-r from-amber-500 to-amber-300'
+                              : 'bg-gradient-to-r from-emerald-500 to-teal-300'
+                          }`}
+                          style={{ width: `${Math.min(100, Math.max(10, league.accuracyPercentage))}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="text-right shrink-0 font-mono">
-                  <span className={`font-bold block text-sm ${league.sport === 'NBA' ? 'text-amber-400' : 'text-emerald-400'}`}>
-                    {league.accuracyPercentage}%
-                  </span>
-                  <span className="text-[10px] text-slate-400 block">{league.hits}/{league.evaluatedMatches} aciertos</span>
+                  <div className="text-right shrink-0 font-mono">
+                    <span className={`font-bold block text-sm ${league.sport === 'NBA' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      {league.accuracyPercentage}%
+                    </span>
+                    <span className="text-[10px] text-slate-400 block">{league.hits}/{league.evaluatedMatches} aciertos</span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* 3. Gráfica Comparativa de Ítems Evaluados: Pronóstico Página vs Resultado Real */}
+      {/* 3. Gráfica Comparativa de Mercados (Ordenados de Mayor a Menor) */}
       <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
         <div className="flex items-center justify-between px-1">
           <span className="text-xs font-mono font-bold text-slate-200 uppercase tracking-tight flex items-center gap-1.5">
             <BarChart2 className="w-4 h-4 text-emerald-400" />
-            <span>
-              Gráfica Comparativa {sportFilter === 'SOCCER' ? '⚽ Mercados Fútbol' : sportFilter === 'NBA' ? '🏀 Mercados NBA' : 'Pronóstico vs Real'}
-            </span>
+            <span>Efectividad por Tipo de Pronóstico (De Mayor a Menor)</span>
           </span>
-          <span className="text-[10px] font-mono text-slate-400">Análisis xG / Poisson / Dixon-Coles</span>
+          <span className="text-[10px] font-mono text-slate-400">Rendimiento Estadístico Real</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {filteredCategories.map((m) => {
-            const targetProb = 75; // Umbral promedio proyectado por la página
-            const actualProb = m.accuracyPercentage; // Porcentaje real obtenido
+            const actualProb = m.accuracyPercentage;
             const isNba = m.sport === 'NBA';
 
             return (
@@ -2519,28 +2667,12 @@ const AuditTabContent: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Comparative Double Visual Bars */}
                 <div className="space-y-1.5 text-[10px] font-mono">
-                  {/* Bar 1: Pronóstico de la Página */}
                   <div>
                     <div className="flex items-center justify-between text-slate-400 mb-0.5">
-                      <span>Proyección Algoritmo (+EV):</span>
-                      <span className="text-amber-300 font-bold">~{targetProb}% prob.</span>
-                    </div>
-                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                      <div
-                        className="bg-amber-400 h-full rounded-full"
-                        style={{ width: `${targetProb}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Bar 2: Resultado Real Medido */}
-                  <div>
-                    <div className="flex items-center justify-between text-slate-400 mb-0.5">
-                      <span>Resultado Real Medido:</span>
+                      <span>Efectividad Verificada:</span>
                       <span className={`font-bold ${isNba ? 'text-amber-400' : 'text-emerald-400'}`}>
-                        {actualProb}% efectividad
+                        {actualProb}%
                       </span>
                     </div>
                     <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -2553,7 +2685,7 @@ const AuditTabContent: React.FC = () => {
                 </div>
 
                 <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800/80">
-                  <span>Partidos Evaluados: <strong className="text-white">{m.evaluatedMatches}</strong></span>
+                  <span>Muestras: <strong className="text-white">{m.evaluatedMatches}</strong></span>
                   <span>Aciertos: <strong className={isNba ? 'text-amber-300' : 'text-emerald-400'}>{m.hits}</strong></span>
                   <span>Fallos: <strong className="text-rose-400">{m.misses}</strong></span>
                 </div>
@@ -2563,12 +2695,12 @@ const AuditTabContent: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. Detailed Audit Table Log */}
+      {/* 4. Tabla Detallada de Partidos Evaluados (con Estado Transparente) */}
       <div className="p-3.5 rounded-2xl bg-slate-900/40 border border-slate-800/80 space-y-2">
         <div className="flex items-center justify-between px-1">
           <span className="text-xs font-mono font-bold text-slate-300 uppercase tracking-tight flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>Muestras Reales Evaluadas ({filteredMatches.length})</span>
+            <span>Detalle Partido a Partido ({filteredMatches.length} registros)</span>
           </span>
           <span className="text-[10px] text-slate-500 font-mono">Actualizado: {summary.lastUpdated}</span>
         </div>
@@ -2577,32 +2709,49 @@ const AuditTabContent: React.FC = () => {
           <table className="w-full text-left text-xs font-mono">
             <thead>
               <tr className="border-b border-slate-800 text-slate-400 text-[10px] uppercase">
-                <th className="py-2 px-2">Deporte</th>
+                <th className="py-2 px-2">Categoría</th>
                 <th className="py-2 px-2">Partido</th>
                 <th className="py-2 px-2">Mercado</th>
-                <th className="py-2 px-2">Proyección</th>
+                <th className="py-2 px-2">Pronóstico Original</th>
                 <th className="py-2 px-2">Resultado Real</th>
                 <th className="py-2 px-2 text-right">Estado</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
               {filteredMatches.map((rec, i) => (
-                <tr key={i} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-2 px-2 text-[10px] text-slate-400">{rec.sport === 'NBA' ? '🏀 NBA' : '⚽ Fútbol'}</td>
-                  <td className="py-2 px-2 font-semibold text-white">{rec.matchTitle}</td>
+                <tr key={`${rec.fixtureId}-${i}`} className="hover:bg-slate-800/40 transition-colors">
+                  <td className="py-2 px-2 text-[10px] text-slate-400">
+                    {rec.sport === 'NBA'
+                      ? '🏀 NBA'
+                      : rec.leagueTier === 'SECONDARY'
+                      ? '🌍 L. Menor'
+                      : '⚽ L. Prime'}
+                  </td>
+                  <td className="py-2 px-2 font-semibold text-white">
+                    <div>{rec.matchTitle}</div>
+                    <span className="text-[9px] text-slate-500 block">{rec.leagueName}</span>
+                  </td>
                   <td className="py-2 px-2 text-slate-300">{rec.marketType}</td>
-                  <td className="py-2 px-2 text-amber-300">{rec.projectedValue}</td>
+                  <td className="py-2 px-2 text-amber-300">{rec.predictionLabel}</td>
                   <td className="py-2 px-2 text-slate-200">{rec.actualResult}</td>
                   <td className="py-2 px-2 text-right">
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
-                      rec.isHit
-                        ? rec.sport === 'NBA'
+                    {rec.status === 'UNVERIFIED' ? (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border bg-amber-500/15 text-amber-300 border-amber-500/30">
+                        ⚠️ SIN ACTA (ANULADO)
+                      </span>
+                    ) : rec.isHit ? (
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
+                        rec.sport === 'NBA'
                           ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                           : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                        : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                    }`}>
-                      {rec.isHit ? '✓ ACERTADO' : '✕ FALLADO'}
-                    </span>
+                      }`}>
+                        ✓ ACERTADO
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border bg-rose-500/20 text-rose-300 border-rose-500/30">
+                        ✕ FALLADO
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -2613,3 +2762,4 @@ const AuditTabContent: React.FC = () => {
     </div>
   );
 };
+

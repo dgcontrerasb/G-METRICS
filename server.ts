@@ -2172,17 +2172,17 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
   }
 });
 
-// 0.15 Finished Matches Audit Endpoint
+// 0.15 Finished Matches Audit Endpoint (Modalidad Día Vencido: Consulta 100% oficial y consolidada)
 app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
-  const todayStr = getColombiaDateStr(0);
   const yesterdayStr = getColombiaDateStr(-1);
-  const auditCacheKey = `audit_finished_v4_${todayStr}`;
+  const auditCacheKey = `audit_finished_dia_vencido_v6_${yesterdayStr}`;
   const cachedAudit = getCacheItem<any[]>(auditCacheKey);
 
-  if (cachedAudit && Array.isArray(cachedAudit.data) && cachedAudit.data.length > 0 && Date.now() - cachedAudit.timestamp < 15 * 60 * 1000) {
+  // Caché de 30 minutos para partidos de días vencidos (son resultados finales inmutables)
+  if (cachedAudit && Array.isArray(cachedAudit.data) && cachedAudit.data.length > 0 && Date.now() - cachedAudit.timestamp < 30 * 60 * 1000) {
     return res.json({
       success: true,
-      source: 'audit_cache',
+      source: 'audit_cache_dia_vencido',
       fixtures: cachedAudit.data
     });
   }
@@ -2190,7 +2190,15 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
   try {
     const finishedFixtures = await runSingleFlight(auditCacheKey, async () => {
       const results: any[] = [];
-      const datesToScan = [todayStr, yesterdayStr];
+      // Modalidad Día Vencido: Escaneamos ayer (-1) y los 4 días anteriores (-2, -3, -4, -5)
+      // Esto otorga tiempo reglamentario completo para que todas las confederaciones y árbitros tengan sus actas cargadas
+      const datesToScan = [
+        getColombiaDateStr(-1),
+        getColombiaDateStr(-2),
+        getColombiaDateStr(-3),
+        getColombiaDateStr(-4),
+        getColombiaDateStr(-5)
+      ];
 
       for (const dStr of datesToScan) {
         const espnDate = dStr.replace(/-/g, '');
@@ -2284,25 +2292,38 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
             });
           }
         } catch {
-          // continue
+          // continue to next mature date
         }
       }
 
-      const topCompleted = results.slice(0, 15);
-      if (topCompleted.length > 0) {
+      // Enriquecer en lotes paralelos todos los partidos de ligas principales que lo requieran (sin tope de 15)
+      const toEnrich = results.filter((item) => {
+        if (!item.espnEventId) return false;
+        const cHome = item.liveStats?.home?.corners ?? 0;
+        const cAway = item.liveStats?.away?.corners ?? 0;
+        // Si ya tiene córners > 0 registrados en el scoreboard, no requiere llamada extra
+        return cHome + cAway === 0;
+      }).slice(0, 50);
+
+      if (toEnrich.length > 0) {
         await Promise.allSettled(
-          topCompleted.map(async (item) => {
-            if (!item.espnEventId) return;
-            const enriched = await fetchEspnMatchSummaryTelemetry(
-              item.espnEventId,
-              item.teams.home.name,
-              item.teams.away.name,
-              90,
-              true,
-              { liveStats: item.liveStats, liveEvents: item.liveEvents || [] }
-            );
-            item.liveStats = enriched.liveStats;
-            item.liveEvents = enriched.liveEvents;
+          toEnrich.map(async (item) => {
+            try {
+              const enriched = await fetchEspnMatchSummaryTelemetry(
+                item.espnEventId,
+                item.teams.home.name,
+                item.teams.away.name,
+                90,
+                true,
+                { liveStats: item.liveStats, liveEvents: item.liveEvents || [] }
+              );
+              if (enriched && enriched.liveStats) {
+                item.liveStats = enriched.liveStats;
+                item.liveEvents = enriched.liveEvents;
+              }
+            } catch {
+              // ignore single match enrichment error
+            }
           })
         );
       }
@@ -2315,7 +2336,7 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
 
     return res.json({
       success: true,
-      source: 'espn_prime_finished',
+      source: 'espn_prime_finished_dia_vencido',
       fixtures: finishedFixtures
     });
   } catch (err: unknown) {

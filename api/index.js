@@ -1,4 +1,4 @@
-// server.ts - SportStats Pro Production Bundle (v2.7-supabase-serverless-shield-8h)
+// server.ts
 import express from "express";
 import dotenv from "dotenv";
 import path2 from "path";
@@ -632,6 +632,13 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
         }
         const isAdmin = data.role === "admin";
         if (!isAdmin) {
+          if (data.status === "deleted") {
+            return {
+              success: false,
+              code: "USER_NOT_FOUND",
+              message: "Esta cuenta ha sido eliminada por el administrador."
+            };
+          }
           if (data.status === "pending") {
             return {
               success: false,
@@ -955,7 +962,7 @@ async function adminListAppUsers() {
   const mergedMap = /* @__PURE__ */ new Map();
   for (const u of localUsers) {
     const uname = String(u.username || "").toLowerCase().trim();
-    if (!uname || deletedSet.has(uname)) continue;
+    if (!uname || deletedSet.has(uname) || u.status === "deleted") continue;
     const isPending = u.status === "pending";
     const daysRemaining = isPending ? 0 : u.expiresAt ? Math.max(0, Math.ceil((u.expiresAt - nowMs) / (24 * 60 * 60 * 1e3))) : null;
     const isExpired = isPending ? false : u.expiresAt ? u.expiresAt < nowMs : false;
@@ -972,11 +979,11 @@ async function adminListAppUsers() {
   }
   if (client) {
     try {
-      const { data, error } = await client.from("sportstats_users").select("*").order("created_at", { ascending: false });
+      const { data, error } = await client.from("sportstats_users").select("*").neq("status", "deleted").order("created_at", { ascending: false });
       if (!error && Array.isArray(data)) {
         for (const row of data) {
           const uname = String(row.username || "").toLowerCase().trim();
-          if (!uname || deletedSet.has(uname)) continue;
+          if (!uname || deletedSet.has(uname) || row.status === "deleted") continue;
           const isPending = row.status === "pending";
           const daysRemaining = isPending ? 0 : row.expires_at ? Math.max(0, Math.ceil((row.expires_at - nowMs) / (24 * 60 * 60 * 1e3))) : null;
           const isExpired = isPending ? false : row.expires_at ? row.expires_at < nowMs : false;
@@ -1231,6 +1238,12 @@ async function adminDeleteAppUser(userId, username) {
   const client = getSupabaseClient();
   if (client) {
     try {
+      if (isValidUuid(cleanId)) {
+        await client.from("sportstats_users").update({ status: "deleted", bound_device_id: null }).eq("id", cleanId);
+      }
+      if (matchedUsername) {
+        await client.from("sportstats_users").update({ status: "deleted", bound_device_id: null }).eq("username", matchedUsername);
+      }
       if (isValidUuid(cleanId)) {
         await client.from("sportstats_users").delete().eq("id", cleanId);
       }
@@ -3044,21 +3057,26 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
   }
 });
 app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
-  const todayStr = getColombiaDateStr(0);
   const yesterdayStr = getColombiaDateStr(-1);
-  const auditCacheKey = `audit_finished_v4_${todayStr}`;
+  const auditCacheKey = `audit_finished_dia_vencido_v6_${yesterdayStr}`;
   const cachedAudit = getCacheItem(auditCacheKey);
-  if (cachedAudit && Array.isArray(cachedAudit.data) && cachedAudit.data.length > 0 && Date.now() - cachedAudit.timestamp < 15 * 60 * 1e3) {
+  if (cachedAudit && Array.isArray(cachedAudit.data) && cachedAudit.data.length > 0 && Date.now() - cachedAudit.timestamp < 30 * 60 * 1e3) {
     return res.json({
       success: true,
-      source: "audit_cache",
+      source: "audit_cache_dia_vencido",
       fixtures: cachedAudit.data
     });
   }
   try {
     const finishedFixtures = await runSingleFlight(auditCacheKey, async () => {
       const results = [];
-      const datesToScan = [todayStr, yesterdayStr];
+      const datesToScan = [
+        getColombiaDateStr(-1),
+        getColombiaDateStr(-2),
+        getColombiaDateStr(-3),
+        getColombiaDateStr(-4),
+        getColombiaDateStr(-5)
+      ];
       for (const dStr of datesToScan) {
         const espnDate = dStr.replace(/-/g, "");
         try {
@@ -3147,21 +3165,30 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
         } catch {
         }
       }
-      const topCompleted = results.slice(0, 15);
-      if (topCompleted.length > 0) {
+      const toEnrich = results.filter((item) => {
+        if (!item.espnEventId) return false;
+        const cHome = item.liveStats?.home?.corners ?? 0;
+        const cAway = item.liveStats?.away?.corners ?? 0;
+        return cHome + cAway === 0;
+      }).slice(0, 50);
+      if (toEnrich.length > 0) {
         await Promise.allSettled(
-          topCompleted.map(async (item) => {
-            if (!item.espnEventId) return;
-            const enriched = await fetchEspnMatchSummaryTelemetry(
-              item.espnEventId,
-              item.teams.home.name,
-              item.teams.away.name,
-              90,
-              true,
-              { liveStats: item.liveStats, liveEvents: item.liveEvents || [] }
-            );
-            item.liveStats = enriched.liveStats;
-            item.liveEvents = enriched.liveEvents;
+          toEnrich.map(async (item) => {
+            try {
+              const enriched = await fetchEspnMatchSummaryTelemetry(
+                item.espnEventId,
+                item.teams.home.name,
+                item.teams.away.name,
+                90,
+                true,
+                { liveStats: item.liveStats, liveEvents: item.liveEvents || [] }
+              );
+              if (enriched && enriched.liveStats) {
+                item.liveStats = enriched.liveStats;
+                item.liveEvents = enriched.liveEvents;
+              }
+            } catch {
+            }
           })
         );
       }
@@ -3172,7 +3199,7 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
     });
     return res.json({
       success: true,
-      source: "espn_prime_finished",
+      source: "espn_prime_finished_dia_vencido",
       fixtures: finishedFixtures
     });
   } catch (err) {
