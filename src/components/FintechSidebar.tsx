@@ -478,8 +478,7 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
         <div className="p-2.5 border-b border-slate-200/80 space-y-2 bg-slate-50/70">
           <div className="flex items-center justify-between gap-2">
             <div
-              onClick={onSecretAdminLogoClick}
-              className="flex items-center gap-1.5 min-w-0 cursor-pointer active:scale-98 transition-transform"
+              className="flex items-center gap-1.5 min-w-0 select-none"
               title="G METRICS · La Ciencia Detrás de la Victoria"
             >
               <SportStatsLogo size="sm" activeSport={activeSport} withGlow={false} />

@@ -138,8 +138,7 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
           )}
 
           <div
-            onClick={onSecretAdminLogoClick}
-            className="flex items-center cursor-pointer select-none active:scale-98 transition-transform"
+            className="flex items-center select-none"
             title="G METRICS · La Ciencia Detrás de la Victoria"
           >
             <img
