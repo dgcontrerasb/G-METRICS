@@ -85,6 +85,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
   const [supabaseProject, setSupabaseProject] = useState<string | null>(null);
   const [supabaseSqlSchema, setSupabaseSqlSchema] = useState<string | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [showSqlGuide, setShowSqlGuide] = useState(false);
 
   // Emergency Recovery States (when PIN is forgotten)
   const [showRecoveryMode, setShowRecoveryMode] = useState(false);
@@ -191,47 +192,20 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
     setIsLoadingUsers(true);
     const mergedMap = new Map<string, SupabaseUserItem>();
     const deletedSet = getLocalDeletedUsernames();
+    let loadedFromServer = false;
 
-    // 1. Cargar solicitudes o usuarios guardados en caché local del navegador (excluyendo eliminados)
-    try {
-      const rawLocal = localStorage.getItem('sportstats_local_users_cache');
-      if (rawLocal) {
-        const parsed = JSON.parse(rawLocal);
-        if (Array.isArray(parsed)) {
-          for (const u of parsed) {
-            if (u && u.username) {
-              const uname = String(u.username).toLowerCase().trim();
-              if (!uname || deletedSet.has(uname) || u.status === 'deleted') continue;
-              const isPending = u.status === 'pending';
-              const sanitizedUser = {
-                ...u,
-                username: uname,
-                planType: isPending ? 'PENDING' : (u.planType || '30D'),
-                planLabel: isPending ? 'Pendiente de Activación' : (u.planLabel || 'Pase Mensual'),
-                expiresAt: isPending ? null : u.expiresAt,
-                daysRemaining: isPending ? 0 : u.daysRemaining
-              };
-              delete (sanitizedUser as any).pin;
-              mergedMap.set(uname, sanitizedUser);
-            }
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    // 2. Consultar servidor (Supabase + base del servidor) vía cabecera x-admin-pin
+    // 1. Consultar primero al servidor (Supabase + base del servidor) como única fuente de verdad
     try {
       const res = await fetch('/api/admin/users/list', {
         headers: buildAdminHeaders(pin)
       });
       const data = await res.json();
       if (data.success && Array.isArray(data.users)) {
+        loadedFromServer = true;
         for (const u of data.users) {
           if (u && u.username) {
             const uname = String(u.username).toLowerCase().trim();
-            if (!uname || deletedSet.has(uname) || u.status === 'deleted') continue;
+            if (!uname || deletedSet.has(uname) || u.status === 'deleted' || u.planType === 'DELETED' || u.notes === '[DELETED]') continue;
             const isPending = u.status === 'pending';
             const sanitizedUser = {
               ...u,
@@ -247,17 +221,48 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
         }
       }
     } catch {
-      // ignore network error, keep local cache
-    } finally {
-      const finalUsers = Array.from(mergedMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      setAppUsersList(finalUsers);
+      // ignore network error, fallback to local cache below
+    }
+
+    // 2. Solo usar caché local del navegador como respaldo offline si el servidor no respondió
+    if (!loadedFromServer) {
       try {
-        localStorage.setItem('sportstats_local_users_cache', JSON.stringify(finalUsers));
+        const rawLocal = localStorage.getItem('sportstats_local_users_cache');
+        if (rawLocal) {
+          const parsed = JSON.parse(rawLocal);
+          if (Array.isArray(parsed)) {
+            for (const u of parsed) {
+              if (u && u.username) {
+                const uname = String(u.username).toLowerCase().trim();
+                if (!uname || deletedSet.has(uname) || u.status === 'deleted' || u.planType === 'DELETED' || u.notes === '[DELETED]') continue;
+                const isPending = u.status === 'pending';
+                const sanitizedUser = {
+                  ...u,
+                  username: uname,
+                  planType: isPending ? 'PENDING' : (u.planType || '30D'),
+                  planLabel: isPending ? 'Pendiente de Activación' : (u.planLabel || 'Pase Mensual'),
+                  expiresAt: isPending ? null : u.expiresAt,
+                  daysRemaining: isPending ? 0 : u.daysRemaining
+                };
+                delete (sanitizedUser as any).pin;
+                mergedMap.set(uname, sanitizedUser);
+              }
+            }
+          }
+        }
       } catch {
         // ignore
       }
-      setIsLoadingUsers(false);
     }
+
+    const finalUsers = Array.from(mergedMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    setAppUsersList(finalUsers);
+    try {
+      localStorage.setItem('sportstats_local_users_cache', JSON.stringify(finalUsers));
+    } catch {
+      // ignore
+    }
+    setIsLoadingUsers(false);
   }, []);
 
   const handleCreateOrUpdateQuickUser = async (e: React.FormEvent) => {
@@ -837,36 +842,36 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
 
   if (!isOpen) return null;
 
-  // STATE 1: Discrete Security Verification Box (Camouflaged - No mention of Admin Panel)
+  // STATE 1: Discrete Security Verification Box (Fintech Light White)
   if (!isAdminAuthenticated) {
     return (
       <div
         onClick={handleCloseModal}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn"
       >
         <div
           onClick={(e) => e.stopPropagation()}
-          className="bg-[#0B111E] border border-slate-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl relative text-center"
+          className="bg-white border border-slate-200/90 rounded-2xl w-full max-w-sm p-6 shadow-2xl relative text-center text-slate-800"
         >
           <button
             onClick={handleCloseModal}
             type="button"
-            className="absolute top-3.5 right-3.5 w-7 h-7 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer"
+            className="absolute top-3.5 right-3.5 w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition cursor-pointer"
             title="Cerrar"
           >
             <X className="w-3.5 h-3.5" />
           </button>
 
-          <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-700/80 flex items-center justify-center mx-auto mb-3.5">
-            <Lock className="w-5 h-5 text-cyan-400" />
+          <div className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto mb-3">
+            <Lock className="w-5 h-5 text-amber-600" />
           </div>
 
-          <h3 className="text-base font-bold text-white tracking-tight mb-1">
+          <h3 className="text-base font-bold text-slate-900 tracking-tight mb-1">
             {showRecoveryMode ? 'Recuperación de Acceso' : 'Verificación de Seguridad'}
           </h3>
-          <p className="text-xs text-slate-400 mb-5">
+          <p className="text-xs text-slate-500 mb-4">
             {showRecoveryMode
-              ? 'Solicita el envío del código de recuperación a tu WhatsApp o ingresa tu clave recibida.'
+              ? 'Solicita tu código de recuperación por WhatsApp o ingresa tu clave.'
               : 'Ingresa el código de autorización para continuar.'}
           </p>
 
@@ -882,21 +887,21 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                   }}
                   placeholder="••••••"
                   autoFocus
-                  className="w-full bg-[#070B14] border border-slate-700/80 rounded-xl pl-4 pr-11 py-2.5 text-center text-lg font-mono tabular-nums tracking-widest text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-400 transition"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-4 pr-11 py-2.5 text-center text-lg font-mono tabular-nums tracking-widest text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white transition"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPinInput(!showPinInput)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white cursor-pointer"
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-700 cursor-pointer"
                   title={showPinInput ? 'Ocultar PIN' : 'Ver PIN'}
                 >
-                  {showPinInput ? <EyeOff className="w-4 h-4 text-cyan-400" /> : <Eye className="w-4 h-4" />}
+                  {showPinInput ? <EyeOff className="w-4 h-4 text-emerald-600" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
 
               {pinError && (
                 <div className="space-y-2">
-                  <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 py-2 px-3 rounded-lg">
+                  <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 py-2 px-3 rounded-lg font-medium">
                     {pinError}
                   </div>
                   <button
@@ -906,7 +911,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                       setRecoveryError(null);
                       setRecoverySuccessMsg(null);
                     }}
-                    className="text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 underline underline-offset-2 transition cursor-pointer"
+                    className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-2 transition cursor-pointer"
                   >
                     ¿Olvidaste tu código? Recuperar acceso
                   </button>
@@ -917,13 +922,13 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition shadow-md shadow-cyan-500/20 active:scale-95 cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-900 hover:bg-slate-800 text-white transition shadow-xs active:scale-95 cursor-pointer"
                 >
                   Verificar
                 </button>
@@ -940,16 +945,16 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                   const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
                   window.open(url, '_blank', 'noopener,noreferrer');
                 }}
-                className="w-full py-2.5 px-4 rounded-lg font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-sm shadow-emerald-600/20 cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer flex items-center justify-center gap-2"
               >
                 <MessageCircle className="w-4 h-4" />
-                <span>Solicitar autorización al WhatsApp del Administrador</span>
+                <span>Solicitar código por WhatsApp</span>
               </button>
 
-              <div className="pt-2 border-t border-slate-800 space-y-2.5">
+              <div className="pt-2 border-t border-slate-200 space-y-2.5">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                    Ingresa código de autorización recibido:
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Código de autorización recibido:
                   </label>
                   <input
                     type="text"
@@ -960,21 +965,21 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                     }}
                     placeholder="Código o clave de autorización"
                     autoFocus
-                    className="w-full bg-[#0b0e14] border border-slate-700 rounded-lg px-3.5 py-2 text-center text-xs font-mono tracking-wider text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-400 transition"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-center text-xs font-mono tracking-wider text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 transition"
                   />
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-[11px] font-semibold text-slate-300">
-                      Nuevo PIN que deseas asignar (Opcional):
+                    <label className="text-[11px] font-semibold text-slate-700">
+                      Nuevo PIN (Opcional):
                     </label>
                     <button
                       type="button"
                       onClick={() => setShowRecoveryNewPin(!showRecoveryNewPin)}
-                      className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                      className="text-[10px] text-slate-500 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
                     >
-                      {showRecoveryNewPin ? <EyeOff className="w-3 h-3 text-emerald-400" /> : <Eye className="w-3 h-3" />}
+                      {showRecoveryNewPin ? <EyeOff className="w-3 h-3 text-emerald-600" /> : <Eye className="w-3 h-3" />}
                       <span>{showRecoveryNewPin ? 'Ocultar' : 'Ver'}</span>
                     </button>
                   </div>
@@ -984,28 +989,28 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                       value={recoveryNewPin}
                       onChange={(e) => setRecoveryNewPin(e.target.value)}
                       placeholder="Mínimo 4 dígitos"
-                      className="w-full bg-[#0b0e14] border border-slate-700 rounded-lg pl-3.5 pr-10 py-2 text-center text-xs font-mono tracking-wider text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-400 transition"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-3.5 pr-10 py-2 text-center text-xs font-mono tracking-wider text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 transition"
                     />
                     <button
                       type="button"
                       onClick={() => setShowRecoveryNewPin(!showRecoveryNewPin)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white cursor-pointer"
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-700 cursor-pointer"
                       title={showRecoveryNewPin ? 'Ocultar PIN' : 'Ver PIN'}
                     >
-                      {showRecoveryNewPin ? <EyeOff className="w-4 h-4 text-emerald-400" /> : <Eye className="w-4 h-4" />}
+                      {showRecoveryNewPin ? <EyeOff className="w-4 h-4 text-emerald-600" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
               </div>
 
               {recoveryError && (
-                <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 py-2 px-3 rounded-lg text-center">
+                <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 py-2 px-3 rounded-lg text-center font-medium">
                   {recoveryError}
                 </div>
               )}
 
               {recoverySuccessMsg && (
-                <div className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 py-2 px-3 rounded-lg text-center font-semibold">
+                <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 py-2 px-3 rounded-lg text-center font-semibold">
                   {recoverySuccessMsg}
                 </div>
               )}
@@ -1014,10 +1019,10 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                 <button
                   type="button"
                   onClick={handleEmergencyRecovery}
-                  className="w-full py-2.5 px-4 rounded-lg font-bold text-xs bg-emerald-500 hover:bg-emerald-400 text-black transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-900 hover:bg-slate-800 text-white transition shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Key className="w-3.5 h-3.5" />
-                  <span>Verificar y Desbloquear Acceso</span>
+                  <span>Verificar y Desbloquear</span>
                 </button>
 
                 <button
@@ -1027,7 +1032,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                     setRecoveryKeyInput('');
                     setRecoveryError(null);
                   }}
-                  className="w-full py-2 px-4 rounded-lg font-semibold text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer text-center"
+                  className="w-full py-2 px-4 rounded-xl font-semibold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer text-center"
                 >
                   Volver a ingresar PIN
                 </button>
@@ -1039,29 +1044,29 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
     );
   }
 
-  // STATE 2: Full Authenticated Admin Panel (Only visible after entering the valid PIN)
+  // STATE 2: Full Authenticated Admin Panel (Fintech Light White)
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="bg-[#0C121E] border border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-4xl lg:max-w-5xl max-h-[95vh] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn">
+      <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl w-full max-w-4xl lg:max-w-5xl max-h-[95vh] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden relative text-slate-800">
         {/* Top Header */}
-        <div className="p-3 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/60 shrink-0">
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
-              <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+        <div className="p-3 sm:p-4 border-b border-slate-200/80 flex items-center justify-between bg-slate-50/90 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+              <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-xs sm:text-base font-black text-white flex items-center gap-2 truncate">
-                <span>Panel de Administración · SportStats Pro</span>
+              <h2 className="text-xs sm:text-base font-bold text-slate-900 flex items-center gap-2 truncate">
+                <span>Panel de Administración · G METRICS</span>
               </h2>
-              <p className="text-[10px] sm:text-xs text-slate-400 truncate">
-                Genera licencias, personaliza el logo y gestiona accesos.
+              <p className="text-[10px] sm:text-xs text-slate-500 truncate">
+                Gestión de cuentas, monitor de cuota API, auditoría +EV y seguridad.
               </p>
             </div>
           </div>
           <button
             onClick={handleCloseModal}
-            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0 ml-2"
-            title="Cerrar y bloquear panel"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-100 hover:bg-slate-200/80 text-slate-500 hover:text-slate-900 flex items-center justify-center transition cursor-pointer shrink-0 ml-2"
+            title="Cerrar panel"
           >
             <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
@@ -1070,1023 +1075,1052 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
         {/* Authenticated Panel Content */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Pinned Responsive Tabs Bar */}
-          <div className="sticky top-0 z-20 border-b border-slate-800 bg-[#0A101C] px-2 sm:px-4 pt-1.5 pb-0 flex items-center gap-1 sm:gap-2 text-xs font-bold overflow-x-auto scrollbar-none shrink-0">
+          <div className="sticky top-0 z-20 border-b border-slate-200/80 bg-slate-100/70 px-2 sm:px-4 pt-1.5 pb-0 flex items-center gap-1 sm:gap-2 text-xs font-semibold overflow-x-auto scrollbar-none shrink-0">
             <button
               onClick={() => setActiveTab('USERS')}
-              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
+              className={`px-2.5 sm:px-3.5 py-2 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs ${
                 activeTab === 'USERS'
-                  ? 'border-indigo-400 text-indigo-400 bg-indigo-500/10'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                  ? 'border-indigo-600 text-indigo-800 bg-white font-bold shadow-2xs'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Users className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="hidden sm:inline">Usuarios ({appUsersList.length})</span>
-              <span className="inline sm:hidden">Usuarios ({appUsersList.length})</span>
+              <Users className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Usuarios ({appUsersList.length})</span>
             </button>
             <button
               onClick={() => {
                 setActiveTab('MONITOR');
                 loadServerTelemetry();
               }}
-              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
+              className={`px-2.5 sm:px-3.5 py-2 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs ${
                 activeTab === 'MONITOR'
-                  ? 'border-amber-400 text-amber-300 bg-amber-500/10'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                  ? 'border-amber-600 text-amber-900 bg-white font-bold shadow-2xs'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Database className="w-3.5 h-3.5 text-amber-400" />
+              <Database className="w-3.5 h-3.5 text-amber-600" />
               <span>Monitor & API</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-[10px] font-black text-emerald-300">
+              <span className="px-1.5 py-0.2 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-800">
                 🟢 {serverTelemetry?.onlineNowCount ?? 1}
               </span>
             </button>
             <button
               onClick={() => setActiveTab('AUDIT')}
-              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
+              className={`px-2.5 sm:px-3.5 py-2 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs ${
                 activeTab === 'AUDIT'
-                  ? 'border-emerald-400 text-emerald-400 bg-emerald-500/10'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                  ? 'border-emerald-600 text-emerald-800 bg-white font-bold shadow-2xs'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
-              <BarChart2 className="w-3.5 h-3.5 text-emerald-400" />
+              <BarChart2 className="w-3.5 h-3.5 text-emerald-600" />
               <span>Eficiencia (+EV)</span>
             </button>
             <button
               onClick={() => setActiveTab('CONFIG')}
-              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs font-bold ${
+              className={`px-2.5 sm:px-3.5 py-2 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer text-xs ${
                 activeTab === 'CONFIG'
-                  ? 'border-cyan-400 text-cyan-400 bg-cyan-500/10'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                  ? 'border-cyan-600 text-cyan-800 bg-white font-bold shadow-2xs'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Shield className="w-3.5 h-3.5 text-cyan-400" />
+              <Shield className="w-3.5 h-3.5 text-cyan-600" />
               <span>Seguridad & PIN</span>
             </button>
 
             <button
               onClick={handleLogoutAdmin}
-              className="ml-auto my-auto px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-white transition text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
-              title="Cerrar sesión por completo y volver a la pantalla de inicio de sesión"
+              className="ml-auto my-auto px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 transition text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
+              title="Bloquear panel y cerrar sesión"
             >
-              <Power className="w-3.5 h-3.5 text-rose-400" />
-              <span>Cerrar Sesión</span>
+              <Power className="w-3.5 h-3.5 text-rose-600" />
+              <span>Salir</span>
             </button>
           </div>
 
           {/* Tab Content Body (Scrollable independently) */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
-              {/* TAB 0: SUPABASE USERS */}
-              {activeTab === 'USERS' && (
-                <div className="space-y-4">
-                  {/* Feedback Toast */}
-                  {actionFeedback && (
-                    <div className="p-3 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-bold flex items-center justify-between animate-fadeIn">
-                      <div className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-indigo-400 shrink-0" />
-                        <span>{actionFeedback}</span>
-                      </div>
-                      <button
-                        onClick={() => setActionFeedback(null)}
-                        className="text-slate-400 hover:text-white text-xs px-2 py-0.5 rounded cursor-pointer"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Quick Create / Activate User Form */}
-                  <form
-                    onSubmit={handleCreateOrUpdateQuickUser}
-                    className="bg-[#080D16] p-3.5 rounded-xl border border-indigo-500/30 space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
-                        <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>Crear o Activar Usuario Rápido</span>
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        Activa al instante a cualquier cliente
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
-                      <input
-                        type="text"
-                        value={newQuickUsername}
-                        onChange={(e) => setNewQuickUsername(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20))}
-                        placeholder="Usuario (ej. carlos99)"
-                        required
-                        className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
-                      />
-                      <input
-                        type="text"
-                        value={newQuickPin}
-                        onChange={(e) => setNewQuickPin(e.target.value)}
-                        placeholder="PIN (opcional / privado)"
-                        title="Opcional. Déjalo vacío si el cliente ya tiene su PIN personal (se mantendrá intacto) o para asignar 1234 por defecto."
-                        className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
-                      />
-                      <input
-                        type="text"
-                        value={newQuickName}
-                        onChange={(e) => setNewQuickName(e.target.value)}
-                        placeholder="Nombre (opcional)"
-                        className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
-                      />
-                      <select
-                        value={newQuickDays}
-                        onChange={(e) => setNewQuickDays(Number(e.target.value))}
-                        className="bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-400 cursor-pointer"
-                      >
-                        <option value={1}>⚡ Muestra 24 Horas</option>
-                        <option value={3}>⚡ 3 Días (Muestra)</option>
-                        <option value={7}>📅 7 Días (Semanal)</option>
-                        <option value={15}>📅 15 Días (Quincenal)</option>
-                        <option value={30}>🗓️ 30 Días (Mensual)</option>
-                        <option value={60}>🗓️ 60 Días (Bimestral)</option>
-                        <option value={90}>🗓️ 90 Días (Trimestral)</option>
-                        <option value={365}>🏆 365 Días (1 Año)</option>
-                        <option value={0}>♾️ Vitalicio (Permanente)</option>
-                      </select>
-                      <button
-                        type="submit"
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-1"
-                      >
-                        <UserCheck className="w-3.5 h-3.5" />
-                        <span>+ Activar Días</span>
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-slate-400 flex items-center gap-1.5 pt-0.5">
-                      <span className="text-amber-400 font-bold">🔒 PIN Secreto:</span> No necesitas pedirle el PIN al usuario. Si ya está registrado se conserva su PIN; si es nuevo y no se especifica, se le asigna 1234.
-                    </p>
-                  </form>
-
-                  {/* Filter & Search Bar */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-[#080D16] p-2.5 rounded-xl border border-slate-800">
-                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px] font-bold">
-                      {[
-                        { id: 'ALL', label: `Todos (${appUsersList.length})` },
-                        { id: 'ONLINE', label: `🟢 En Línea (${serverTelemetry?.onlineNowCount ?? 0})` },
-                        { id: 'ACTIVE', label: '✅ Activos' },
-                        { id: 'BOUND', label: '📱 Vinculados' },
-                        { id: 'PENDING', label: '⏳ Pendientes' },
-                        { id: 'SUSPENDED', label: '🚫 Suspendidos' }
-                      ].map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => setUserFilter(f.id as any)}
-                          className={`px-2.5 py-1.5 rounded-lg whitespace-nowrap transition cursor-pointer ${
-                            userFilter === f.id
-                              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-
+          <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 bg-white">
+            {/* TAB 0: SUPABASE USERS */}
+            {activeTab === 'USERS' && (
+              <div className="space-y-3.5">
+                {/* Feedback Toast */}
+                {actionFeedback && (
+                  <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-semibold flex items-center justify-between animate-fadeIn">
                     <div className="flex items-center gap-2">
-                      <div className="relative flex-1 sm:w-56">
-                        <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          value={userSearch}
-                          onChange={(e) => setUserSearch(e.target.value)}
-                          placeholder="Buscar @usuario o nombre..."
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-400"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleDownloadUsersExcel}
-                        disabled={appUsersList.length === 0}
-                        className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 flex items-center gap-1.5 shrink-0 transition cursor-pointer disabled:opacity-50"
-                        title="Descargar listado completo de usuarios en archivo Excel (.csv compatible)"
-                      >
-                        <Download className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="hidden sm:inline">Descargar Excel</span>
-                        <span className="inline sm:hidden">Excel</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const p = pinInput.trim() || activeServerPin || localStorage.getItem('sportstats_admin_saved_pin') || '';
-                          loadAppUsers(p);
-                        }}
-                        className="p-1.5 rounded-lg text-xs text-slate-400 hover:text-white bg-slate-800 shrink-0 transition cursor-pointer"
-                        title="Actualizar lista de usuarios"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isLoadingUsers ? 'animate-spin' : ''}`} />
-                      </button>
+                      <Check className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <span>{actionFeedback}</span>
                     </div>
+                    <button
+                      onClick={() => setActionFeedback(null)}
+                      className="text-slate-400 hover:text-slate-700 text-xs px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {/* Quick Create / Activate User Form */}
+                <form
+                  onSubmit={handleCreateOrUpdateQuickUser}
+                  className="bg-slate-50/90 p-3.5 rounded-2xl border border-slate-200/90 space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Crear o Activar Usuario Rápido</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Si no indicas PIN, conserva el actual o asigna 1234
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                    <input
+                      type="text"
+                      value={newQuickUsername}
+                      onChange={(e) => setNewQuickUsername(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20))}
+                      placeholder="Usuario (ej. carlos99)"
+                      required
+                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                    />
+                    <input
+                      type="text"
+                      value={newQuickPin}
+                      onChange={(e) => setNewQuickPin(e.target.value)}
+                      placeholder="PIN (opcional)"
+                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                    />
+                    <input
+                      type="text"
+                      value={newQuickName}
+                      onChange={(e) => setNewQuickName(e.target.value)}
+                      placeholder="Nombre (opcional)"
+                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                    />
+                    <select
+                      value={newQuickDays}
+                      onChange={(e) => setNewQuickDays(Number(e.target.value))}
+                      className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    >
+                      <option value={1}>⚡ Muestra 24h</option>
+                      <option value={3}>⚡ 3 Días</option>
+                      <option value={7}>📅 7 Días</option>
+                      <option value={15}>📅 15 Días</option>
+                      <option value={30}>🗓️ 30 Días</option>
+                      <option value={60}>🗓️ 60 Días</option>
+                      <option value={90}>🗓️ 90 Días</option>
+                      <option value={365}>🏆 365 Días</option>
+                      <option value={0}>♾️ Vitalicio</option>
+                    </select>
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition cursor-pointer shadow-2xs flex items-center justify-center gap-1"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>+ Activar</span>
+                    </button>
+                  </div>
+                </form>
+
+                {/* Filter & Search Bar */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/90 p-2.5 rounded-xl border border-slate-200/90">
+                  <div className="flex items-center gap-1 overflow-x-auto scrollbar-none text-[11px] font-semibold">
+                    {[
+                      { id: 'ALL', label: `Todos (${appUsersList.length})` },
+                      { id: 'ONLINE', label: `🟢 Online (${serverTelemetry?.onlineNowCount ?? 0})` },
+                      { id: 'ACTIVE', label: '✅ Activos' },
+                      { id: 'BOUND', label: '📱 Vinculados' },
+                      { id: 'PENDING', label: '⏳ Pendientes' },
+                      { id: 'SUSPENDED', label: '🚫 Suspendidos' }
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setUserFilter(f.id as any)}
+                        className={`px-2.5 py-1 rounded-lg whitespace-nowrap transition cursor-pointer ${
+                          userFilter === f.id
+                            ? 'bg-slate-900 text-white font-bold'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
                   </div>
 
-                  {/* Users Cards List */}
-                  {isLoadingUsers && appUsersList.length === 0 ? (
-                    <div className="text-center py-12 text-slate-500 text-xs flex items-center justify-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
-                      <span>Cargando usuarios desde Supabase...</span>
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative flex-1 sm:w-52">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={userSearch}
+                        onChange={(e) => setUserSearch(e.target.value)}
+                        placeholder="Buscar @usuario o nombre..."
+                        className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                      />
                     </div>
-                  ) : appUsersList.length === 0 ? (
-                    <div className="text-center py-10 text-slate-500 text-xs bg-[#080D16] rounded-2xl border border-slate-800 p-6 space-y-2">
-                      <Users className="w-8 h-8 text-slate-600 mx-auto" />
-                      <p className="font-bold text-slate-300">No hay cuentas de usuario registradas aún</p>
-                      <p className="text-[11px] text-slate-500">
-                        Los clientes pueden registrarse directamente solicitando su cuenta o iniciando sesión desde la pantalla de bienvenida.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {appUsersList
-                        .filter((u) => {
-                          const isUserOnline =
-                            (u.lastActiveAt ? Date.now() - u.lastActiveAt < 3 * 60 * 1000 : false) ||
-                            (Array.isArray(serverTelemetry?.onlineUsers) &&
-                              serverTelemetry.onlineUsers.some(
-                                (ou: any) =>
-                                  (ou.username && ou.username.toLowerCase() === (u.username || '').toLowerCase()) ||
-                                  (ou.deviceId && u.boundDeviceId && ou.deviceId === u.boundDeviceId)
-                              ));
-                          if (userFilter === 'ONLINE' && !isUserOnline) return false;
-                          if (userFilter === 'ACTIVE' && u.status !== 'active') return false;
-                          if (userFilter === 'BOUND' && !u.boundDeviceId) return false;
-                          if (userFilter === 'PENDING' && u.status !== 'pending') return false;
-                          if (userFilter === 'SUSPENDED' && u.status !== 'suspended') return false;
+                    <button
+                      type="button"
+                      onClick={handleDownloadUsersExcel}
+                      disabled={appUsersList.length === 0}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 flex items-center gap-1 shrink-0 transition cursor-pointer disabled:opacity-50"
+                      title="Descargar usuarios en Excel (.csv)"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Excel</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const p = pinInput.trim() || activeServerPin || localStorage.getItem('sportstats_admin_saved_pin') || '';
+                        loadAppUsers(p);
+                      }}
+                      className="p-1.5 rounded-lg text-xs text-slate-600 hover:text-slate-900 bg-white border border-slate-200 shrink-0 transition cursor-pointer"
+                      title="Actualizar lista"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                </div>
 
-                          if (userSearch.trim()) {
-                            const q = userSearch.toLowerCase();
-                            const userMatch = (u.username || '').toLowerCase().includes(q);
-                            const nameMatch = (u.displayName || '').toLowerCase().includes(q);
-                            const notesMatch = (u.notes || '').toLowerCase().includes(q);
-                            const phoneMatch = (u.whatsappNumber || '').toLowerCase().includes(q);
-                            return userMatch || nameMatch || notesMatch || phoneMatch;
-                          }
-                          return true;
-                        })
-                        .map((u) => {
-                          const isSuspended = u.status === 'suspended';
-                          const isExpired = u.isExpired || (u.expiresAt ? u.expiresAt < Date.now() : false);
-                          const isBound = !!u.boundDeviceId;
-                          const daysLeft = u.daysRemaining;
-                          const isUserOnline =
-                            (u.lastActiveAt ? Date.now() - u.lastActiveAt < 3 * 60 * 1000 : false) ||
-                            (Array.isArray(serverTelemetry?.onlineUsers) &&
-                              serverTelemetry.onlineUsers.some(
-                                (ou: any) =>
-                                  (ou.username && ou.username.toLowerCase() === (u.username || '').toLowerCase()) ||
-                                  (ou.deviceId && u.boundDeviceId && ou.deviceId === u.boundDeviceId)
-                              ));
+                {/* Users Cards List */}
+                {isLoadingUsers && appUsersList.length === 0 ? (
+                  <div className="text-center py-10 text-slate-500 text-xs flex items-center justify-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+                    <span>Cargando usuarios...</span>
+                  </div>
+                ) : appUsersList.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500 text-xs bg-slate-50 rounded-2xl border border-slate-200 p-6 space-y-1.5">
+                    <Users className="w-7 h-7 text-slate-400 mx-auto" />
+                    <p className="font-bold text-slate-800">No hay usuarios registrados aún</p>
+                    <p className="text-[11px] text-slate-500">
+                      Crea una cuenta arriba o espera solicitudes desde la pantalla de ingreso.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {appUsersList
+                      .filter((u) => {
+                        const isUserOnline =
+                          (u.lastActiveAt ? Date.now() - u.lastActiveAt < 3 * 60 * 1000 : false) ||
+                          (Array.isArray(serverTelemetry?.onlineUsers) &&
+                            serverTelemetry.onlineUsers.some(
+                              (ou: any) =>
+                                (ou.username && ou.username.toLowerCase() === (u.username || '').toLowerCase()) ||
+                                (ou.deviceId && u.boundDeviceId && ou.deviceId === u.boundDeviceId)
+                            ));
+                        if (userFilter === 'ONLINE' && !isUserOnline) return false;
+                        if (userFilter === 'ACTIVE' && u.status !== 'active') return false;
+                        if (userFilter === 'BOUND' && !u.boundDeviceId) return false;
+                        if (userFilter === 'PENDING' && u.status !== 'pending') return false;
+                        if (userFilter === 'SUSPENDED' && u.status !== 'suspended') return false;
 
-                          return (
-                            <div
-                              key={u.id}
-                              className={`p-4 rounded-2xl border space-y-3 text-xs transition ${
-                                isSuspended
-                                  ? 'bg-rose-950/10 border-rose-500/30'
-                                  : isExpired
-                                  ? 'bg-amber-950/10 border-amber-500/30'
-                                  : isUserOnline
-                                  ? 'bg-[#081218] border-emerald-500/40'
-                                  : 'bg-[#080D16] border-slate-800'
-                              }`}
-                            >
-                              {/* Header Row: Username, Role, Status */}
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-mono font-black text-sm text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-md">
-                                    @{u.username}
-                                  </span>
-                                  {u.displayName && (
-                                    <span className="font-bold text-slate-100 text-sm">
-                                      {u.displayName}
-                                    </span>
-                                  )}
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">
-                                    {u.role === 'admin' ? '🛡️ Admin' : '👤 Cliente'}
-                                  </span>
-                                  {isUserOnline && (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 animate-pulse">
-                                      <span>🟢 EN LÍNEA</span>
-                                    </span>
-                                  )}
-                                </div>
+                        if (userSearch.trim()) {
+                          const q = userSearch.toLowerCase();
+                          const userMatch = (u.username || '').toLowerCase().includes(q);
+                          const nameMatch = (u.displayName || '').toLowerCase().includes(q);
+                          const notesMatch = (u.notes || '').toLowerCase().includes(q);
+                          const phoneMatch = (u.whatsappNumber || '').toLowerCase().includes(q);
+                          return userMatch || nameMatch || notesMatch || phoneMatch;
+                        }
+                        return true;
+                      })
+                      .map((u) => {
+                        const isSuspended = u.status === 'suspended';
+                        const isExpired = u.isExpired || (u.expiresAt ? u.expiresAt < Date.now() : false);
+                        const isBound = !!u.boundDeviceId;
+                        const daysLeft = u.daysRemaining;
+                        const isUserOnline =
+                          (u.lastActiveAt ? Date.now() - u.lastActiveAt < 3 * 60 * 1000 : false) ||
+                          (Array.isArray(serverTelemetry?.onlineUsers) &&
+                            serverTelemetry.onlineUsers.some(
+                              (ou: any) =>
+                                (ou.username && ou.username.toLowerCase() === (u.username || '').toLowerCase()) ||
+                                (ou.deviceId && u.boundDeviceId && ou.deviceId === u.boundDeviceId)
+                            ));
 
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                      isSuspended
-                                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                        : isExpired
-                                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                        : u.status === 'pending'
-                                        ? 'bg-amber-500/15 text-amber-300 border border-amber-500/25'
-                                        : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                    }`}
-                                  >
-                                    {isSuspended
-                                      ? 'Suspendido'
-                                      : isExpired
-                                      ? 'Vencido'
-                                      : u.status === 'pending'
-                                      ? 'Pendiente'
-                                      : 'Activo'}
+                        return (
+                          <div
+                            key={u.id}
+                            className={`p-3.5 rounded-2xl border space-y-2.5 text-xs transition ${
+                              isSuspended
+                                ? 'bg-rose-50/40 border-rose-200'
+                                : isExpired
+                                ? 'bg-amber-50/40 border-amber-200'
+                                : isUserOnline
+                                ? 'bg-emerald-50/30 border-emerald-300'
+                                : 'bg-slate-50/70 border-slate-200/90'
+                            }`}
+                          >
+                            {/* Header Row: Username, Role, Status */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono font-bold text-xs sm:text-sm text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                                  @{u.username}
+                                </span>
+                                {u.displayName && (
+                                  <span className="font-semibold text-slate-900 text-xs sm:text-sm">
+                                    {u.displayName}
                                   </span>
-                                </div>
+                                )}
+                                <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-white border border-slate-200 text-slate-600">
+                                  {u.role === 'admin' ? '🛡️ Admin' : '👤 Cliente'}
+                                </span>
+                                {isUserOnline && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                                    <span>🟢 EN LÍNEA</span>
+                                  </span>
+                                )}
                               </div>
 
-                              {/* Details Grid: Plan & Device Binding */}
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                 {/* Plan & Expiry */}
-                                <div className="bg-[#050810] p-2.5 rounded-xl border border-slate-800/60 flex flex-col justify-between">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[10px] uppercase font-bold text-slate-400">
-                                      Plan Activo
-                                    </span>
-                                    <span className="font-bold text-slate-200">
-                                      {u.status === 'pending' ? 'Pendiente de Activación' : u.planLabel}
-                                    </span>
-                                  </div>
-                                  <div className="flex flex-col mt-2 pt-1.5 border-t border-slate-800/40 gap-1">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[10px] uppercase font-bold text-slate-400">
-                                        Días Restantes
-                                      </span>
-                                      <div className="flex items-center gap-1.5">
-                                        <span
-                                          className={`font-mono font-black text-xs ${
-                                            u.status === 'pending'
-                                              ? 'text-amber-400 font-bold'
-                                              : isSuspended || isExpired
-                                              ? 'text-rose-400'
-                                              : daysLeft !== null && daysLeft !== undefined && daysLeft <= 3
-                                              ? 'text-amber-400 font-bold'
-                                              : 'text-emerald-400'
-                                          }`}
-                                        >
-                                          {u.status === 'pending'
-                                            ? '0 días (Pendiente de aprobación)'
-                                            : daysLeft === null || daysLeft === undefined
-                                            ? 'Vitalicio (Sin Fin)'
-                                            : `${daysLeft} días`}
-                                        </span>
-                                        {editingDaysUserId !== u.id && u.status !== 'pending' && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setEditingDaysUserId(u.id);
-                                              setCustomDaysInputValue(String(daysLeft ?? 15));
-                                            }}
-                                            className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold cursor-pointer transition flex items-center gap-1"
-                                            title="Fijar o modificar cantidad exacta de días restantes"
-                                          >
-                                            <span>✏️ Editar</span>
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                    isSuspended
+                                      ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                      : isExpired
+                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                      : u.status === 'pending'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                      : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  }`}
+                                >
+                                  {isSuspended
+                                    ? 'Suspendido'
+                                    : isExpired
+                                    ? 'Vencido'
+                                    : u.status === 'pending'
+                                    ? 'Pendiente'
+                                    : 'Activo'}
+                                </span>
+                              </div>
+                            </div>
 
-                                    {editingDaysUserId === u.id && (
-                                      <div className="mt-1 p-1.5 bg-slate-950 border border-cyan-500/50 rounded-xl flex items-center justify-between gap-1 flex-wrap animate-fadeIn">
-                                        <span className="text-[10px] text-cyan-300 font-bold">Fijar Días:</span>
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          max="3650"
-                                          value={customDaysInputValue}
-                                          onChange={(e) => setCustomDaysInputValue(e.target.value)}
-                                          className="w-16 bg-slate-900 border border-slate-700 rounded-md px-2 py-0.5 text-white font-mono text-xs font-bold focus:outline-none focus:border-cyan-400"
-                                          placeholder="Días"
-                                        />
-                                        <div className="flex items-center gap-1">
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const val = parseInt(customDaysInputValue, 10);
-                                              if (!isNaN(val) && val >= 0) {
-                                                handleRenewUser(u.id, u.username, val, 'SET');
-                                                setEditingDaysUserId(null);
-                                              }
-                                            }}
-                                            className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold cursor-pointer transition shadow-xs"
-                                            title="Fijar exactamente esta cantidad de días a partir de hoy (remplaza días anteriores)"
-                                          >
-                                            ✅ Fijar Días
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const val = parseInt(customDaysInputValue, 10);
-                                              if (!isNaN(val) && val > 0) {
-                                                handleRenewUser(u.id, u.username, val, 'ADD');
-                                                setEditingDaysUserId(null);
-                                              }
-                                            }}
-                                            className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold cursor-pointer transition"
-                                            title="Sumar estos días a la vigencia actual"
-                                          >
-                                            + Sumar
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => setEditingDaysUserId(null)}
-                                            className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white text-[10px] font-bold cursor-pointer"
-                                          >
-                                            ✕
-                                          </button>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
+                            {/* Details Grid: Plan & Device Binding */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {/* Plan & Expiry */}
+                              <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 flex flex-col justify-between">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] uppercase font-semibold text-slate-500">
+                                    Plan
+                                  </span>
+                                  <span className="font-semibold text-slate-800">
+                                    {u.status === 'pending' ? 'Pendiente' : u.planLabel}
+                                  </span>
                                 </div>
-
-                                {/* Bound Device Info (Strict Single-Device Protection) */}
-                                <div className="bg-[#050810] p-2.5 rounded-xl border border-slate-800/60 flex flex-col justify-between">
+                                <div className="flex flex-col mt-1.5 pt-1.5 border-t border-slate-100 gap-1">
                                   <div className="flex items-center justify-between">
-                                    <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                                      <Smartphone className="w-3 h-3 text-cyan-400" />
-                                      <span>Dispositivo Único</span>
+                                    <span className="text-[10px] uppercase font-semibold text-slate-500">
+                                      Vigencia
                                     </span>
-                                    <span
-                                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                        isBound
-                                          ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
-                                          : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                      }`}
-                                    >
-                                      {isBound ? '1 Vinculado' : 'Sin Vincular'}
-                                    </span>
-                                  </div>
-
-                                  <div className="mt-2 pt-1.5 border-t border-slate-800/40 flex items-center justify-between gap-2">
-                                    {isBound ? (
-                                      <>
-                                        <div className="min-w-0">
-                                          <p className="text-[11px] font-mono text-slate-300 truncate font-semibold" title={u.boundDeviceId || ''}>
-                                            {u.boundDeviceName || u.boundDeviceId}
-                                          </p>
-                                          <span className="text-[9px] text-slate-500 block truncate">
-                                            Bloqueado a este equipo
-                                          </span>
-                                        </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span
+                                        className={`font-mono font-bold text-xs ${
+                                          u.status === 'pending'
+                                            ? 'text-amber-700'
+                                            : isSuspended || isExpired
+                                            ? 'text-rose-700'
+                                            : daysLeft !== null && daysLeft !== undefined && daysLeft <= 3
+                                            ? 'text-amber-700'
+                                            : 'text-emerald-700'
+                                        }`}
+                                      >
+                                        {u.status === 'pending'
+                                          ? '0 días (Por aprobar)'
+                                          : daysLeft === null || daysLeft === undefined
+                                          ? 'Vitalicio'
+                                          : `${daysLeft} días`}
+                                      </span>
+                                      {editingDaysUserId !== u.id && u.status !== 'pending' && (
                                         <button
                                           type="button"
-                                          onClick={() => handleResetUserDevice(u.id, u.username)}
-                                          className="shrink-0 px-2 py-1 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition"
-                                          title="Permitir que el cliente inicie sesión en otro equipo"
+                                          onClick={() => {
+                                            setEditingDaysUserId(u.id);
+                                            setCustomDaysInputValue(String(daysLeft ?? 15));
+                                          }}
+                                          className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10px] font-semibold cursor-pointer transition"
                                         >
-                                          <Unlock className="w-3 h-3" />
-                                          <span>Desvincular</span>
+                                          ✏️ Editar
                                         </button>
-                                      </>
-                                    ) : (
-                                      <span className="text-[10px] text-slate-400">
-                                        Listo para vincular al iniciar sesión
-                                      </span>
-                                    )}
+                                      )}
+                                    </div>
                                   </div>
+
+                                  {editingDaysUserId === u.id && (
+                                    <div className="mt-1 p-1.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-1 flex-wrap animate-fadeIn">
+                                      <span className="text-[10px] text-slate-700 font-semibold">Días:</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="3650"
+                                        value={customDaysInputValue}
+                                        onChange={(e) => setCustomDaysInputValue(e.target.value)}
+                                        className="w-16 bg-white border border-slate-300 rounded-md px-2 py-0.5 text-slate-900 font-mono text-xs font-bold focus:outline-none focus:border-emerald-600"
+                                      />
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const val = parseInt(customDaysInputValue, 10);
+                                            if (!isNaN(val) && val >= 0) {
+                                              handleRenewUser(u.id, u.username, val, 'SET');
+                                              setEditingDaysUserId(null);
+                                            }
+                                          }}
+                                          className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-semibold cursor-pointer"
+                                        >
+                                          Fijar
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const val = parseInt(customDaysInputValue, 10);
+                                            if (!isNaN(val) && val > 0) {
+                                              handleRenewUser(u.id, u.username, val, 'ADD');
+                                              setEditingDaysUserId(null);
+                                            }
+                                          }}
+                                          className="px-2 py-0.5 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-semibold cursor-pointer"
+                                        >
+                                          + Sumar
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingDaysUserId(null)}
+                                          className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[10px] font-bold cursor-pointer"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 
-                              {/* Action Buttons Toolbar */}
-                              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/60">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  {/* Flexible Duration Selector & Apply/Set Buttons */}
-                                  <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/80 rounded-lg p-0.5">
-                                    <select
-                                      value={userRenewDays[u.id] ?? 30}
-                                      onChange={(e) => setUserRenewDays((prev) => ({ ...prev, [u.id]: Number(e.target.value) }))}
-                                      className="bg-transparent text-white text-[11px] font-bold px-1.5 py-1 focus:outline-none cursor-pointer"
-                                      title="Selecciona la cantidad de días para fijar o renovar"
-                                    >
-                                      <option value={1}>⚡ 1 Día (Muestra 24h)</option>
-                                      <option value={3}>⚡ 3 Días</option>
-                                      <option value={5}>📅 5 Días</option>
-                                      <option value={7}>📅 7 Días</option>
-                                      <option value={15}>📅 15 Días</option>
-                                      <option value={30}>🗓️ 30 Días (Mes)</option>
-                                      <option value={60}>🗓️ 60 Días</option>
-                                      <option value={90}>🗓️ 90 Días</option>
-                                      <option value={365}>🏆 365 Días (Año)</option>
-                                      <option value={0}>♾️ Vitalicio</option>
-                                    </select>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRenewUser(u.id, u.username, userRenewDays[u.id] ?? 30, 'SET')}
-                                      className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-sm"
-                                      title="Fijar exactamente esta cantidad de días desde hoy"
-                                    >
-                                      <UserCheck className="w-3 h-3" />
-                                      <span>{u.status === 'pending' ? '✅ Aprobar & Activar' : '✅ Fijar Días'}</span>
-                                    </button>
-                                    {u.status !== 'pending' && (
+                              {/* Bound Device Info */}
+                              <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 flex flex-col justify-between">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] uppercase font-semibold text-slate-500 flex items-center gap-1">
+                                    <Smartphone className="w-3 h-3 text-cyan-600" />
+                                    <span>Dispositivo (1/1)</span>
+                                  </span>
+                                  <span
+                                    className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border ${
+                                      isBound
+                                        ? 'bg-cyan-50 text-cyan-800 border-cyan-200'
+                                        : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    }`}
+                                  >
+                                    {isBound ? 'Vinculado' : 'Libre'}
+                                  </span>
+                                </div>
+
+                                <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                                  {isBound ? (
+                                    <>
+                                      <p className="text-[11px] font-mono text-slate-700 truncate font-medium" title={u.boundDeviceId || ''}>
+                                        {u.boundDeviceName || u.boundDeviceId}
+                                      </p>
                                       <button
                                         type="button"
-                                        onClick={() => handleRenewUser(u.id, u.username, userRenewDays[u.id] ?? 30, 'ADD')}
-                                        className="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[11px] font-bold transition cursor-pointer"
-                                        title="Sumar estos días a los días restantes actuales"
+                                        onClick={() => handleResetUserDevice(u.id, u.username)}
+                                        className="shrink-0 px-2 py-0.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition"
+                                        title="Permitir inicio de sesión en otro equipo"
                                       >
-                                        + Sumar
+                                        <Unlock className="w-3 h-3" />
+                                        <span>Liberar</span>
                                       </button>
-                                    )}
-                                  </div>
+                                    </>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400">
+                                      Se vinculará al primer ingreso
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
 
-                                  {/* Quick 1-Click 1 Day Sample Button */}
+                            {/* Action Buttons Toolbar */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/70">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+                                  <select
+                                    value={userRenewDays[u.id] ?? 30}
+                                    onChange={(e) => setUserRenewDays((prev) => ({ ...prev, [u.id]: Number(e.target.value) }))}
+                                    className="bg-transparent text-slate-800 text-[11px] font-semibold px-1.5 py-1 focus:outline-none cursor-pointer"
+                                  >
+                                    <option value={1}>⚡ 1 Día</option>
+                                    <option value={3}>⚡ 3 Días</option>
+                                    <option value={7}>📅 7 Días</option>
+                                    <option value={15}>📅 15 Días</option>
+                                    <option value={30}>🗓️ 30 Días</option>
+                                    <option value={60}>🗓️ 60 Días</option>
+                                    <option value={90}>🗓️ 90 Días</option>
+                                    <option value={365}>🏆 365 Días</option>
+                                    <option value={0}>♾️ Vitalicio</option>
+                                  </select>
                                   <button
                                     type="button"
-                                    onClick={() => handleRenewUser(u.id, u.username, 1, 'SET')}
-                                    className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-bold transition cursor-pointer flex items-center gap-1"
-                                    title="Fijar 1 día exacto de prueba (24 horas)"
+                                    onClick={() => handleRenewUser(u.id, u.username, userRenewDays[u.id] ?? 30, 'SET')}
+                                    className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition cursor-pointer flex items-center gap-1"
                                   >
-                                    <span>⚡ 1 Día</span>
+                                    <UserCheck className="w-3 h-3" />
+                                    <span>{u.status === 'pending' ? 'Aprobar' : 'Fijar'}</span>
                                   </button>
-
-                                  {/* Quick 1-Click 15 Days Button */}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRenewUser(u.id, u.username, 15, 'SET')}
-                                    className="px-2 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-[11px] font-bold transition cursor-pointer flex items-center gap-1"
-                                    title="Fijar exactamente 15 días restantes desde hoy"
-                                  >
-                                    <span>📅 15d</span>
-                                  </button>
-
-                                  {/* Quick 1-Click 30 Days Button */}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRenewUser(u.id, u.username, 30, 'SET')}
-                                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold transition cursor-pointer"
-                                    title="Fijar exactamente 30 días restantes desde hoy"
-                                  >
-                                    <span>30d</span>
-                                  </button>
-
-                                  {/* Toggle Active / Suspended */}
                                   {u.status !== 'pending' && (
                                     <button
                                       type="button"
-                                      onClick={() => handleToggleUserStatus(u.id, u.status, u.username)}
-                                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                                        isSuspended
-                                          ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/40'
-                                          : 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/40'
-                                      }`}
+                                      onClick={() => handleRenewUser(u.id, u.username, userRenewDays[u.id] ?? 30, 'ADD')}
+                                      className="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition cursor-pointer"
                                     >
-                                      {isSuspended ? 'Reactivar Cuenta' : 'Suspender'}
+                                      + Sumar
                                     </button>
                                   )}
+                                </div>
 
-                                  {/* Delete User Profile Permanently (Inline confirmation compatible with iframes/mobile) */}
-                                  {confirmDeleteUserKey === (u.username || u.id) ? (
-                                    <div className="flex items-center gap-1 bg-rose-950/60 border border-rose-500/50 rounded-lg px-2 py-0.5 animate-fadeIn">
-                                      <span className="text-[10px] font-bold text-rose-200 mr-1">
-                                        ¿Eliminar @{u.username}?
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteUser(u.id, u.username)}
-                                        className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-black transition cursor-pointer shadow-xs"
-                                      >
-                                        Sí, Eliminar
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setConfirmDeleteUserKey(null)}
-                                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold transition cursor-pointer"
-                                      >
-                                        Cancelar
-                                      </button>
-                                    </div>
-                                  ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRenewUser(u.id, u.username, 1, 'SET')}
+                                  className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-semibold transition cursor-pointer"
+                                >
+                                  ⚡ 1d
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRenewUser(u.id, u.username, 15, 'SET')}
+                                  className="px-2 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-[11px] font-semibold transition cursor-pointer"
+                                >
+                                  15d
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRenewUser(u.id, u.username, 30, 'SET')}
+                                  className="px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-semibold transition cursor-pointer"
+                                >
+                                  30d
+                                </button>
+
+                                {u.status !== 'pending' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleUserStatus(u.id, u.status, u.username)}
+                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer border ${
+                                      isSuspended
+                                        ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border-emerald-200'
+                                        : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200'
+                                    }`}
+                                  >
+                                    {isSuspended ? 'Reactivar' : 'Suspender'}
+                                  </button>
+                                )}
+
+                                {confirmDeleteUserKey === (u.username || u.id) ? (
+                                  <div className="flex items-center gap-1 bg-rose-50 border border-rose-300 rounded-lg px-2 py-0.5 animate-fadeIn">
+                                    <span className="text-[10px] font-bold text-rose-800 mr-1">
+                                      ¿Eliminar @{u.username}?
+                                    </span>
                                     <button
                                       type="button"
-                                      onClick={() => setConfirmDeleteUserKey(u.username || u.id)}
-                                      className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 hover:text-rose-200 border border-rose-500/40 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                                      title={`Eliminar permanentemente la cuenta de @${u.username}`}
+                                      onClick={() => handleDeleteUser(u.id, u.username)}
+                                      className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold transition cursor-pointer"
                                     >
-                                      <Trash2 className="w-3 h-3 text-rose-400" />
-                                      <span>Eliminar</span>
+                                      Sí
                                     </button>
-                                  )}
-                                </div>
-
-                                {/* Send WhatsApp notification */}
-                                {u.whatsappNumber && (
-                                  <a
-                                    href={`https://wa.me/${u.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                                      `Hola ${u.displayName || u.username}, tu cuenta de SportStats Pro (@${u.username}) está activa. Puedes ingresar desde cualquier navegador.`
-                                    )}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1 transition"
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteUserKey(null)}
+                                      className="px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200 text-[10px] font-semibold transition cursor-pointer"
+                                    >
+                                      No
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteUserKey(u.username || u.id)}
+                                    className="px-2 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-600 border border-slate-200 hover:border-rose-200 text-[11px] font-medium flex items-center gap-1 transition cursor-pointer"
+                                    title={`Eliminar @${u.username}`}
                                   >
-                                    <MessageCircle className="w-3 h-3" />
-                                    <span>WhatsApp</span>
-                                  </a>
+                                    <Trash2 className="w-3 h-3" />
+                                    <span>Eliminar</span>
+                                  </button>
                                 )}
                               </div>
+
+                              {u.whatsappNumber && (
+                                <a
+                                  href={`https://wa.me/${u.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                                    `Hola ${u.displayName || u.username}, tu cuenta de SportStats Pro (@${u.username}) está activa.`
+                                  )}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-semibold flex items-center gap-1 transition"
+                                >
+                                  <MessageCircle className="w-3 h-3 text-emerald-600" />
+                                  <span>WhatsApp</span>
+                                </a>
+                              )}
                             </div>
-                          );
-                        })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB MONITOR: USUARIOS ONLINE, RÉCORD PICO, CUOTA API Y DIAGNÓSTICO */}
-              {activeTab === 'MONITOR' && (() => {
-                const onlineNow = serverTelemetry?.onlineNowCount ?? 1;
-                const peakUsers = serverTelemetry?.peakOnlineUsers ?? onlineNow;
-                const peakTimeStr = serverTelemetry?.peakOnlineAt
-                  ? new Date(serverTelemetry.peakOnlineAt).toLocaleString('es-CO', {
-                      dateStyle: 'short',
-                      timeStyle: 'short'
-                    })
-                  : 'Hoy';
-                const remainingQuota =
-                  serverTelemetry?.remainingCalls !== null && serverTelemetry?.remainingCalls !== undefined
-                    ? Number(serverTelemetry.remainingCalls)
-                    : null;
-                const consumedEst =
-                  serverTelemetry?.consumedTodayEst !== null && serverTelemetry?.consumedTodayEst !== undefined
-                    ? Number(serverTelemetry.consumedTodayEst)
-                    : serverTelemetry?.apiFootballCallsSinceBoot ?? 0;
-                const callsSinceBoot = serverTelemetry?.apiFootballCallsSinceBoot ?? 0;
-                const cacheHits = serverTelemetry?.serverCacheHits ?? 0;
-                const cacheMisses = serverTelemetry?.serverCacheMisses ?? 0;
-                const cacheHitRate = serverTelemetry?.cacheHitRatePct ?? 100;
-                const espnPulses = serverTelemetry?.espnPulseCallsCount ?? 0;
-                const onlineList: any[] = Array.isArray(serverTelemetry?.onlineUsers)
-                  ? serverTelemetry.onlineUsers
-                  : [];
-                const apiLogList: any[] = Array.isArray(serverTelemetry?.apiFootballAuditLog)
-                  ? serverTelemetry.apiFootballAuditLog
-                  : [];
-
-                const buildDiagnosticReportText = () => {
-                  const nowStr = new Date().toLocaleString('es-CO');
-                  const onlineUsersFormatted =
-                    onlineList.length > 0
-                      ? onlineList
-                          .map((u) => `@${u.username || 'invitado'} (${u.deviceName || u.deviceId || 'equipo'} - hace ${u.secondsAgo ?? 0}s)`)
-                          .join(', ')
-                      : 'Ninguno registrado en ventana de 3 min';
-                  const recentApiCallsFormatted =
-                    apiLogList.length > 0
-                      ? apiLogList
-                          .slice(0, 8)
-                          .map(
-                            (c) =>
-                              `  - [${new Date(c.at).toLocaleTimeString('es-CO')}] ${c.endpoint} | Fecha: ${c.targetDate} | Partidos: ${c.fixturesCount} | Restantes: ${c.remainingAfter ?? '?'}`
-                          )
-                          .join('\n')
-                      : '  - 0 llamadas directas a API-Football en esta sesión (100% servido desde Caché/ESPN)';
-
-                  return [
-                    `📊 INFORME DE DIAGNÓSTICO SPORTSTATS PRO (${nowStr})`,
-                    `==========================================================`,
-                    `🛡️ Versión Blindaje Backend: ${serverTelemetry?.bundleVersion || 'v2.6-shield-6h'} (TTL: ${serverTelemetry?.scheduleTTLHours || 6}h)`,
-                    `🟢 Usuarios Online Ahora (ventana 3m): ${onlineNow} (${onlineUsersFormatted})`,
-                    `🏆 Récord Máximo Usuarios Online: ${peakUsers} (alcanzado: ${peakTimeStr})`,
-                    `👥 Total Usuarios Registrados: ${appUsersList.length}`,
-                    `----------------------------------------------------------`,
-                    `📡 ESTADO DE CUOTA API-FOOTBALL (Límite 100/día):`,
-                    `• Llamadas API-Football en esta sesión: ${callsSinceBoot}`,
-                    `• Cuota Restante Reportada por API-Sports: ${remainingQuota !== null ? `${remainingQuota} / 100` : 'Sin consumo en sesión actual (100% Caché)'}`,
-                    `• Consumo Diario Estimado: ${remainingQuota !== null ? `${consumedEst}% (${consumedEst}/100)` : `${callsSinceBoot} llamadas locales`}`,
-                    `• Eficiencia de Caché Servidor: ${cacheHitRate}% (${cacheHits} aciertos en caché vs ${cacheMisses} llamadas nuevas)`,
-                    `• Pulsos en Vivo Gratuitos (ESPN/TheSportsDB): ${espnPulses} (0 costo de cuota)`,
-                    `• Tiempo activo servidor (Uptime): ${serverTelemetry?.uptimeMinutes ?? 0} min | RAM: ${serverTelemetry?.memoryMb ?? 0} MB`,
-                    `----------------------------------------------------------`,
-                    `📋 ÚLTIMAS LLAMADAS REALES A API-FOOTBALL:`,
-                    recentApiCallsFormatted,
-                    `==========================================================`
-                  ].join('\n');
-                };
-
-                const handleCopyReport = () => {
-                  const text = buildDiagnosticReportText();
-                  navigator.clipboard.writeText(text).then(() => {
-                    setCopiedDiagnosticReport(true);
-                    setTimeout(() => setCopiedDiagnosticReport(false), 4000);
-                  });
-                };
-
-                return (
-                  <div className="space-y-4">
-                    {/* Header Banner + Refresh */}
-                    <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-indigo-950/40 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-                          <span>Centro de Control en Tiempo Real · Usuarios & Cuota API</span>
-                        </h3>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Monitorea quién está conectado, el pico máximo de tráfico y cada llamada a API-Football.
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={loadServerTelemetry}
-                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${isLoadingTelemetry ? 'animate-spin' : ''}`} />
-                          <span>Refrescar Monitor</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 4 KPI Cards */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      {/* Card 1: Online Now */}
-                      <div className="bg-[#080D16] border border-emerald-500/30 rounded-2xl p-3 flex flex-col justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
-                          <span>🟢 Usuarios Online</span>
-                        </span>
-                        <div className="mt-1.5 flex items-baseline gap-1.5">
-                          <span className="text-2xl font-black font-mono text-white">{onlineNow}</span>
-                          <span className="text-[10px] text-slate-400">conectados ahora</span>
-                        </div>
-                        <span className="text-[10px] text-slate-500 mt-1">
-                          Ventana activa: últimos 3 min
-                        </span>
-                      </div>
-
-                      {/* Card 2: Peak Online Record */}
-                      <div className="bg-[#080D16] border border-amber-500/30 rounded-2xl p-3 flex flex-col justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1">
-                          <Trophy className="w-3 h-3 text-amber-400" />
-                          <span>Máximo Online</span>
-                        </span>
-                        <div className="mt-1.5 flex items-baseline gap-1.5">
-                          <span className="text-2xl font-black font-mono text-amber-300">{peakUsers}</span>
-                          <span className="text-[10px] text-slate-400">récord pico</span>
-                        </div>
-                        <span className="text-[10px] text-slate-500 mt-1 truncate" title={peakTimeStr}>
-                          Pico: {peakTimeStr}
-                        </span>
-                      </div>
-
-                      {/* Card 3: API-Football Quota */}
-                      <div className="bg-[#080D16] border border-cyan-500/30 rounded-2xl p-3 flex flex-col justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1">
-                          <Database className="w-3 h-3 text-cyan-400" />
-                          <span>Llamadas API Hoy</span>
-                        </span>
-                        <div className="mt-1.5 flex items-baseline gap-1.5">
-                          <span className="text-2xl font-black font-mono text-cyan-300">
-                            {remainingQuota !== null ? `${consumedEst}/100` : callsSinceBoot}
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            {remainingQuota !== null ? `(${remainingQuota} libres)` : 'en sesión'}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-emerald-400 mt-1 font-semibold">
-                          Blindaje 6h activo (0 fugas)
-                        </span>
-                      </div>
-
-                      {/* Card 4: Server Cache Hit Rate */}
-                      <div className="bg-[#080D16] border border-indigo-500/30 rounded-2xl p-3 flex flex-col justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1">
-                          <Sparkles className="w-3 h-3 text-indigo-400" />
-                          <span>Ahorro en Caché</span>
-                        </span>
-                        <div className="mt-1.5 flex items-baseline gap-1.5">
-                          <span className="text-2xl font-black font-mono text-indigo-300">{cacheHitRate}%</span>
-                          <span className="text-[10px] text-slate-400">({cacheHits} hits)</span>
-                        </div>
-                        <span className="text-[10px] text-slate-500 mt-1">
-                          ESPN Gratis: {espnPulses} pulsos
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Section: Generador de Informe Corto para Copiar y Pegar en el Chat */}
-                    <div className="bg-gradient-to-br from-indigo-950/35 via-[#080D16] to-slate-900 border border-indigo-500/40 rounded-2xl p-4 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div>
-                          <h4 className="text-xs font-black text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <Copy className="w-3.5 h-3.5 text-indigo-400" />
-                            <span>Informe Corto de Diagnóstico (Listo para Copiar y Pegar)</span>
-                          </h4>
-                          <p className="text-[11px] text-slate-400">
-                            Copia este resumen con 1 clic y pégalo en el chat para analizar juntos si la página está trabajando en óptimo estado.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleCopyReport}
-                          className={`px-3.5 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 shadow-md ${
-                            copiedDiagnosticReport
-                              ? 'bg-emerald-500 text-slate-950'
-                              : 'bg-indigo-500 hover:bg-indigo-400 text-white'
-                          }`}
-                        >
-                          {copiedDiagnosticReport ? (
-                            <>
-                              <Check className="w-4 h-4" />
-                              <span>¡Informe Copiado al Portapapeles!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-4 h-4" />
-                              <span>📋 Copiar Informe de Diagnóstico</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-
-                      <pre className="bg-[#050810] border border-slate-800 rounded-xl p-3 text-[11px] font-mono text-slate-300 overflow-x-auto whitespace-pre-wrap leading-relaxed select-all">
-                        {buildDiagnosticReportText()}
-                      </pre>
-                    </div>
-
-                    {/* Two Columns: Connected Users Now & Recent API-Football Audit Log */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {/* Online Users List */}
-                      <div className="bg-[#080D16] border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
-                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                          <h4 className="text-xs font-black text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <span>🟢 Usuarios Conectados Ahora ({onlineList.length})</span>
-                          </h4>
-                          <span className="text-[10px] text-slate-500">Pulso cada 45s</span>
-                        </div>
-                        {onlineList.length === 0 ? (
-                          <p className="text-xs text-slate-500 py-4 text-center">
-                            Sincronizando sesiones activas...
-                          </p>
-                        ) : (
-                          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                            {onlineList.map((ou, idx) => (
-                              <div
-                                key={`${ou.deviceId || idx}`}
-                                className="p-2.5 rounded-xl bg-[#050810] border border-slate-800/80 flex items-center justify-between gap-2 text-xs"
-                              >
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                                    <span className="font-mono font-bold text-indigo-300 truncate">
-                                      @{ou.username || 'admin_o_cliente'}
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-slate-500 truncate mt-0.5">
-                                    📱 {ou.deviceName || ou.deviceId}
-                                  </p>
-                                </div>
-                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md shrink-0">
-                                  hace {ou.secondsAgo ?? 0}s
-                                </span>
-                              </div>
-                            ))}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            )}
 
-                      {/* API-Football Audit Log */}
-                      <div className="bg-[#080D16] border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
-                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                          <h4 className="text-xs font-black text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <span>📡 Registro de Llamadas API-Football ({apiLogList.length})</span>
-                          </h4>
-                          <span className="text-[10px] text-slate-500">Solo llamadas reales</span>
-                        </div>
-                        {apiLogList.length === 0 ? (
-                          <div className="py-5 text-center space-y-1">
-                            <p className="text-xs font-bold text-emerald-400">
-                              ✅ 0 llamadas nuevas a API-Football en esta sesión
-                            </p>
-                            <p className="text-[10px] text-slate-500">
-                              Todos los usuarios y botones Actualizar están leyendo desde la caché blindada de 6 horas y el pulso gratuito de ESPN.
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                            {apiLogList.map((entry, idx) => (
-                              <div
-                                key={`${entry.at}-${idx}`}
-                                className="p-2.5 rounded-xl bg-[#050810] border border-slate-800/80 flex items-center justify-between gap-2 text-xs"
-                              >
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-mono font-bold text-cyan-300">
-                                      Fecha: {entry.targetDate}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400">
-                                      ({entry.fixturesCount} partidos)
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
-                                    {new Date(entry.at).toLocaleTimeString('es-CO')} · {entry.endpoint}
-                                  </p>
-                                </div>
-                                <span className="text-[10px] font-mono text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md shrink-0">
-                                  Libres: {entry.remainingAfter ?? '?'}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+            {/* TAB MONITOR: USUARIOS ONLINE, RÉCORD PICO, CUOTA API Y DIAGNÓSTICO */}
+            {activeTab === 'MONITOR' && (() => {
+              const onlineNow = serverTelemetry?.onlineNowCount ?? 1;
+              const peakUsers = serverTelemetry?.peakOnlineUsers ?? onlineNow;
+              const peakTimeStr = serverTelemetry?.peakOnlineAt
+                ? new Date(serverTelemetry.peakOnlineAt).toLocaleString('es-CO', {
+                    dateStyle: 'short',
+                    timeStyle: 'short'
+                  })
+                : 'Hoy';
+              const remainingQuota =
+                serverTelemetry?.remainingCalls !== null && serverTelemetry?.remainingCalls !== undefined
+                  ? Number(serverTelemetry.remainingCalls)
+                  : null;
+              const consumedEst =
+                serverTelemetry?.consumedTodayEst !== null && serverTelemetry?.consumedTodayEst !== undefined
+                  ? Number(serverTelemetry.consumedTodayEst)
+                  : serverTelemetry?.apiFootballCallsSinceBoot ?? 0;
+              const callsSinceBoot = serverTelemetry?.apiFootballCallsSinceBoot ?? 0;
+              const cacheHits = serverTelemetry?.serverCacheHits ?? 0;
+              const cacheMisses = serverTelemetry?.serverCacheMisses ?? 0;
+              const cacheHitRate = serverTelemetry?.cacheHitRatePct ?? 100;
+              const espnPulses = serverTelemetry?.espnPulseCallsCount ?? 0;
+              const onlineList: any[] = Array.isArray(serverTelemetry?.onlineUsers)
+                ? serverTelemetry.onlineUsers
+                : [];
+              const apiLogList: any[] = Array.isArray(serverTelemetry?.apiFootballAuditLog)
+                ? serverTelemetry.apiFootballAuditLog
+                : [];
+
+              const buildDiagnosticReportText = () => {
+                const nowStr = new Date().toLocaleString('es-CO');
+                const onlineUsersFormatted =
+                  onlineList.length > 0
+                    ? onlineList
+                        .map((u) => `@${u.username || 'invitado'} (${u.deviceName || u.deviceId || 'equipo'} - hace ${u.secondsAgo ?? 0}s)`)
+                        .join(', ')
+                    : 'Ninguno en ventana de 3 min';
+                const recentApiCallsFormatted =
+                  apiLogList.length > 0
+                    ? apiLogList
+                        .slice(0, 8)
+                        .map(
+                          (c) =>
+                            `  - [${new Date(c.at).toLocaleTimeString('es-CO')}] ${c.endpoint} | Fecha: ${c.targetDate} | Partidos: ${c.fixturesCount} | Libres: ${c.remainingAfter ?? '?'}`
+                        )
+                        .join('\n')
+                    : '  - 0 llamadas a API-Football en sesión (100% Caché/ESPN)';
+
+                return [
+                  `📊 DIAGNÓSTICO SPORTSTATS PRO (${nowStr})`,
+                  `🛡️ Blindaje Backend: ${serverTelemetry?.bundleVersion || 'v2.6-shield-6h'} (TTL: ${serverTelemetry?.scheduleTTLHours || 6}h)`,
+                  `🟢 Online Ahora: ${onlineNow} (${onlineUsersFormatted}) | Pico: ${peakUsers} (${peakTimeStr})`,
+                  `📡 Cuota API-Football: ${remainingQuota !== null ? `${remainingQuota}/100 libres` : `${callsSinceBoot} llamadas en sesión`}`,
+                  `⚡ Eficiencia Caché: ${cacheHitRate}% (${cacheHits} hits / ${cacheMisses} misses) | Pulsos ESPN: ${espnPulses}`,
+                  `📋 Últimas llamadas API:\n${recentApiCallsFormatted}`
+                ].join('\n');
+              };
+
+              const handleCopyReport = () => {
+                const text = buildDiagnosticReportText();
+                navigator.clipboard.writeText(text).then(() => {
+                  setCopiedDiagnosticReport(true);
+                  setTimeout(() => setCopiedDiagnosticReport(false), 4000);
+                });
+              };
+
+              return (
+                <div className="space-y-3.5">
+                  {/* Header Banner + Refresh */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        <span>Monitor de Tráfico y Cuota API en Tiempo Real</span>
+                      </h3>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Sesiones activas, ahorro de caché y registro de consumo API-Football.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={loadServerTelemetry}
+                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition shrink-0"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 text-cyan-600 ${isLoadingTelemetry ? 'animate-spin' : ''}`} />
+                      <span>Refrescar</span>
+                    </button>
+                  </div>
+
+                  {/* 4 KPI Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="bg-emerald-50/50 border border-emerald-200 rounded-2xl p-3 flex flex-col justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                        🟢 Online Ahora
+                      </span>
+                      <div className="mt-1 flex items-baseline gap-1.5">
+                        <span className="text-xl font-bold font-mono text-slate-900">{onlineNow}</span>
+                        <span className="text-[10px] text-slate-500">activos</span>
                       </div>
+                      <span className="text-[10px] text-slate-500 mt-0.5">Ventana 3 min</span>
+                    </div>
+
+                    <div className="bg-amber-50/50 border border-amber-200 rounded-2xl p-3 flex flex-col justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1">
+                        <Trophy className="w-3 h-3 text-amber-600" />
+                        <span>Récord Online</span>
+                      </span>
+                      <div className="mt-1 flex items-baseline gap-1.5">
+                        <span className="text-xl font-bold font-mono text-slate-900">{peakUsers}</span>
+                        <span className="text-[10px] text-slate-500">pico</span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 mt-0.5 truncate">{peakTimeStr}</span>
+                    </div>
+
+                    <div className="bg-cyan-50/50 border border-cyan-200 rounded-2xl p-3 flex flex-col justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-800 flex items-center gap-1">
+                        <Database className="w-3 h-3 text-cyan-600" />
+                        <span>Cuota API Hoy</span>
+                      </span>
+                      <div className="mt-1 flex items-baseline gap-1.5">
+                        <span className="text-xl font-bold font-mono text-slate-900">
+                          {remainingQuota !== null ? `${consumedEst}/100` : callsSinceBoot}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {remainingQuota !== null ? `(${remainingQuota} libres)` : 'sesión'}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-emerald-700 mt-0.5 font-semibold">Blindaje 6h activo</span>
+                    </div>
+
+                    <div className="bg-indigo-50/50 border border-indigo-200 rounded-2xl p-3 flex flex-col justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-indigo-600" />
+                        <span>Ahorro Caché</span>
+                      </span>
+                      <div className="mt-1 flex items-baseline gap-1.5">
+                        <span className="text-xl font-bold font-mono text-slate-900">{cacheHitRate}%</span>
+                        <span className="text-[10px] text-slate-500">({cacheHits} hits)</span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 mt-0.5">ESPN Gratis: {espnPulses}</span>
                     </div>
                   </div>
-                );
-              })()}
 
-              {/* TAB 1: SEGURIDAD & PIN */}
-              {activeTab === 'CONFIG' && (
-                <div className="space-y-5">
-                  {/* Card 2: Current PIN & Emergency Master Code Backup */}
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-950/25 via-slate-900/70 to-slate-900/50 border border-amber-500/30 space-y-3.5">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <h4 className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
-                        <Shield className="w-4 h-4 text-amber-400" />
-                        <span>Tus Credenciales Actuales & Respaldo de Emergencia</span>
-                      </h4>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-bold text-emerald-300">
-                        PIN Activo Verificado
-                      </span>
+                  {/* Informe Corto para Copiar */}
+                  <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <Copy className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Resumen de Diagnóstico Rápido</span>
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Copia este estado resumido con un clic si necesitas soporte técnico.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCopyReport}
+                        className={`px-3 py-1.5 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 ${
+                          copiedDiagnosticReport
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-900 hover:bg-slate-800 text-white'
+                        }`}
+                      >
+                        {copiedDiagnosticReport ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>¡Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copiar Diagnóstico</span>
+                          </>
+                        )}
+                      </button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="bg-[#070B14] border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2">
-                        <div>
-                          <span className="block text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-                            PIN Actual Activo
-                          </span>
-                          <span className="font-mono text-base font-black text-amber-300 tracking-widest">
-                            {activeServerPin || pinInput || 'Cargando...'}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(activeServerPin);
-                            setCopiedCurrentPin(true);
-                            setTimeout(() => setCopiedCurrentPin(false), 2000);
-                          }}
-                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                        >
-                          {copiedCurrentPin ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                          <span>{copiedCurrentPin ? 'Copiado' : 'Copiar'}</span>
-                        </button>
-                      </div>
+                    <pre className="bg-white border border-slate-200 rounded-xl p-2.5 text-[10.5px] font-mono text-slate-700 overflow-x-auto whitespace-pre-wrap leading-relaxed select-all">
+                      {buildDiagnosticReportText()}
+                    </pre>
+                  </div>
 
-                      <div className="bg-[#070B14] border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2">
-                        <div>
-                          <span className="block text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-                            Recuperación de Emergencia
-                          </span>
-                          <span className="font-mono text-xs font-bold text-cyan-300">
-                            Protegido en Servidor (ADMIN_MASTER_KEY)
-                          </span>
-                        </div>
+                  {/* Two Columns: Connected Users Now & Recent API-Football Audit Log */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 space-y-2">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                        <h4 className="text-xs font-bold text-slate-800">
+                          🟢 Conectados Ahora ({onlineList.length})
+                        </h4>
+                        <span className="text-[10px] text-slate-400">Pulso 45s</span>
                       </div>
+                      {onlineList.length === 0 ? (
+                        <p className="text-xs text-slate-500 py-4 text-center">
+                          Sincronizando sesiones...
+                        </p>
+                      ) : (
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {onlineList.map((ou, idx) => (
+                            <div
+                              key={`${ou.deviceId || idx}`}
+                              className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between gap-2 text-xs"
+                            >
+                              <div className="min-w-0">
+                                <span className="font-mono font-bold text-indigo-800 truncate block">
+                                  @{ou.username || 'usuario'}
+                                </span>
+                                <p className="text-[10px] text-slate-500 truncate">
+                                  📱 {ou.deviceName || ou.deviceId}
+                                </p>
+                              </div>
+                              <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0">
+                                {ou.secondsAgo ?? 0}s
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
-                      <p className="text-[11px] text-slate-400 leading-relaxed">
-                        Puedes enviarte un respaldo privado de tu PIN activo directamente a tu propio WhatsApp personal.
-                      </p>
+                    <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 space-y-2">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                        <h4 className="text-xs font-bold text-slate-800">
+                          📡 Llamadas API-Football ({apiLogList.length})
+                        </h4>
+                        <span className="text-[10px] text-slate-400">Tiempo real</span>
+                      </div>
+                      {apiLogList.length === 0 ? (
+                        <div className="py-4 text-center space-y-1">
+                          <p className="text-xs font-bold text-emerald-700">
+                            ✅ 0 llamadas nuevas en esta sesión
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            Sirviendo 100% desde caché de 6h y pulso gratuito ESPN.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {apiLogList.map((entry, idx) => (
+                            <div
+                              key={`${entry.at}-${idx}`}
+                              className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between gap-2 text-xs"
+                            >
+                              <div className="min-w-0">
+                                <span className="font-mono font-bold text-cyan-800">
+                                  {entry.targetDate} ({entry.fixturesCount} juegos)
+                                </span>
+                                <p className="text-[10px] text-slate-500 font-mono truncate">
+                                  {new Date(entry.at).toLocaleTimeString('es-CO')} · {entry.endpoint}
+                                </p>
+                              </div>
+                              <span className="text-[10px] font-mono text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md shrink-0">
+                                Libres: {entry.remainingAfter ?? '?'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* TAB 1: SEGURIDAD & PIN */}
+            {activeTab === 'CONFIG' && (
+              <div className="space-y-4">
+                {/* Credenciales Actuales */}
+                <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/90 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-amber-600" />
+                      <span>Credenciales Actuales de Administrador</span>
+                    </h4>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-800">
+                      PIN Activo
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2">
+                      <div>
+                        <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                          PIN Actual
+                        </span>
+                        <span className="font-mono text-base font-bold text-slate-900 tracking-widest">
+                          {activeServerPin || pinInput || '••••'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(activeServerPin);
+                          setCopiedCurrentPin(true);
+                          setTimeout(() => setCopiedCurrentPin(false), 2000);
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
+                      >
+                        {copiedCurrentPin ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedCurrentPin ? 'Copiado' : 'Copiar'}</span>
+                      </button>
+                    </div>
+
+                    <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2">
+                      <div>
+                        <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                          Respaldo Personal
+                        </span>
+                        <span className="text-xs text-slate-600">
+                          Enviar copia privada a tu WhatsApp
+                        </span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => handleSendCredentialsToWhatsApp(activeServerPin)}
-                        className="shrink-0 py-2 px-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        className="shrink-0 py-1.5 px-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold text-xs flex items-center gap-1 transition cursor-pointer"
                       >
-                        <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Guardar en mi WhatsApp</span>
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Enviar</span>
                       </button>
                     </div>
                   </div>
+                </div>
 
-                  {/* Card 2.5: Supabase Cloud Database Status & Quick Setup */}
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-teal-950/20 via-slate-900/70 to-slate-900/50 border border-teal-500/30 space-y-3.5">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <h4 className="text-xs font-black text-teal-300 uppercase tracking-wider flex items-center gap-1.5">
-                        <Database className="w-4 h-4 text-teal-400" />
-                        <span>Base de Datos en la Nube (Supabase Free)</span>
-                      </h4>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          supabaseConfigured
-                            ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
-                            : 'bg-amber-500/15 border border-amber-500/30 text-amber-300'
-                        }`}
-                      >
-                        {supabaseConfigured ? `Conectado · ${supabaseProject || 'Supabase'}` : 'Almacenamiento Local (Listo para Supabase)'}
-                      </span>
+                {/* Cambiar PIN y WhatsApp */}
+                <form onSubmit={handleSaveConfig} className="space-y-4">
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3">
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Actualizar PIN y WhatsApp de Contacto</span>
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-semibold text-slate-700">
+                            Nuevo PIN:
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPin(!showNewPin)}
+                            className="text-[10px] text-slate-500 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
+                          >
+                            {showNewPin ? <EyeOff className="w-3 h-3 text-amber-600" /> : <Eye className="w-3 h-3" />}
+                            <span>{showNewPin ? 'Ocultar' : 'Ver'}</span>
+                          </button>
+                        </div>
+                        <input
+                          type={showNewPin ? 'text' : 'password'}
+                          value={newPin}
+                          onChange={(e) => {
+                            setNewPin(e.target.value);
+                            setConfigError(null);
+                          }}
+                          placeholder="Mínimo 4 dígitos"
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-amber-500 transition"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-semibold text-slate-700">
+                            Confirmar PIN:
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPin(!showConfirmPin)}
+                            className="text-[10px] text-slate-500 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
+                          >
+                            {showConfirmPin ? <EyeOff className="w-3 h-3 text-amber-600" /> : <Eye className="w-3 h-3" />}
+                            <span>{showConfirmPin ? 'Ocultar' : 'Ver'}</span>
+                          </button>
+                        </div>
+                        <input
+                          type={showConfirmPin ? 'text' : 'password'}
+                          value={confirmPin}
+                          onChange={(e) => {
+                            setConfirmPin(e.target.value);
+                            setConfigError(null);
+                          }}
+                          placeholder="Repite el nuevo PIN"
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-amber-500 transition"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                          WhatsApp Admin:
+                        </label>
+                        <input
+                          type="text"
+                          value={adminWhatsApp}
+                          onChange={(e) => setAdminWhatsApp(e.target.value)}
+                          placeholder="Ej: 573213902708"
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-emerald-500 transition"
+                          required
+                        />
+                      </div>
                     </div>
 
-                    <p className="text-[11px] text-slate-300 leading-relaxed">
-                      Conectar una base de datos gratuita de <strong>Supabase</strong> permite sincronizar en la nube todos los registros de licencias, presencia de dispositivos, PIN seguro y códigos de autorización OTP de un solo uso sin exponer llaves maestras en WhatsApp ni en el navegador.
-                    </p>
+                    {configError && (
+                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+                        {configError}
+                      </div>
+                    )}
 
-                    <div className="bg-[#070B14] border border-slate-800 rounded-xl p-3 space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold text-slate-200">
-                          1. Script SQL para Crear Tablas en Supabase:
-                        </span>
+                    {configSuccess && (
+                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-600" />
+                        <span>{configSuccess}</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-900 hover:bg-slate-800 text-white transition shadow-xs active:scale-95 cursor-pointer"
+                    >
+                      Guardar Configuración
+                    </button>
+                  </div>
+                </form>
+
+                {/* Base de Datos Supabase (Plegable para evitar ruido visual) */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Database className="w-4 h-4 text-teal-600" />
+                      <span className="text-xs font-bold text-slate-900">
+                        Conexión Base de Datos (Supabase)
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                          supabaseConfigured
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                            : 'bg-amber-50 border-amber-200 text-amber-800'
+                        }`}
+                      >
+                        {supabaseConfigured ? `Conectado · ${supabaseProject || 'Cloud'}` : 'Modo Local'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowSqlGuide((prev) => !prev)}
+                      className="text-[11px] font-semibold text-teal-700 hover:underline cursor-pointer"
+                    >
+                      {showSqlGuide ? 'Ocultar guía técnica ▲' : 'Ver guía SQL de instalación ▼'}
+                    </button>
+                  </div>
+
+                  {showSqlGuide && (
+                    <div className="pt-2 border-t border-slate-200 space-y-2 text-[11px] text-slate-600">
+                      <div className="bg-white border border-slate-200 rounded-xl p-2.5 flex items-center justify-between gap-2">
+                        <span>Script SQL de creación de tablas:</span>
                         <button
                           type="button"
                           onClick={() => {
@@ -2096,159 +2130,25 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({ isOpen, on
                               setTimeout(() => setCopiedSql(false), 2500);
                             }
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/40 text-teal-200 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 font-semibold flex items-center gap-1 transition cursor-pointer"
                         >
-                          {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                          <span>{copiedSql ? '¡SQL Copiado!' : 'Copiar Script SQL'}</span>
+                          {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedSql ? '¡Copiado!' : 'Copiar SQL'}</span>
                         </button>
                       </div>
-                      <p className="text-[10px] text-slate-400">
-                        Copia este script y pégalo en el <strong>SQL Editor</strong> de tu proyecto en Supabase para crear las tablas con un solo clic.
-                      </p>
-                    </div>
-
-                    <div className="text-[11px] text-slate-400 space-y-1 bg-[#070B14] p-3 rounded-xl border border-slate-800">
-                      <span className="font-bold text-slate-200 block text-[10px] uppercase tracking-wider mb-1">
-                        2. Variables a configurar en tu entorno (.env / Vercel):
-                      </span>
-                      <div className="font-mono text-[10px] text-teal-300 space-y-0.5">
-                        <div>SUPABASE_URL=https://tu-proyecto.supabase.co</div>
-                        <div>SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key</div>
+                      <div className="font-mono text-[10px] text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200">
+                        SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en variables de entorno.
                       </div>
                     </div>
-                  </div>
-
-                  {/* Card 3: PIN & WhatsApp Form */}
-                  <form onSubmit={handleSaveConfig} className="space-y-5">
-                    <div className="p-4 rounded-2xl bg-slate-900/50 border border-slate-800 space-y-4">
-                      <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                        <Lock className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Cambiar PIN de Administrador</span>
-                      </h4>
-                      <p className="text-[11px] text-slate-400 leading-relaxed">
-                        Este PIN es tu llave privada y secreta para acceder a este panel (actualmente <strong>{activeServerPin}</strong>).
-                      </p>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="text-[11px] font-semibold text-slate-300">
-                              Nuevo PIN (mínimo 4 dígitos):
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => setShowNewPin(!showNewPin)}
-                              className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                            >
-                              {showNewPin ? <EyeOff className="w-3 h-3 text-amber-400" /> : <Eye className="w-3 h-3" />}
-                              <span>{showNewPin ? 'Ocultar' : 'Ver'}</span>
-                            </button>
-                          </div>
-                          <div className="relative">
-                            <input
-                              type={showNewPin ? 'text' : 'password'}
-                              value={newPin}
-                              onChange={(e) => {
-                                setNewPin(e.target.value);
-                                setConfigError(null);
-                              }}
-                              placeholder="Escribe nuevo PIN"
-                              className="w-full bg-[#080D16] border border-slate-700 rounded-xl pl-3.5 pr-10 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-400 transition"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowNewPin(!showNewPin)}
-                              className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white cursor-pointer"
-                              title={showNewPin ? 'Ocultar PIN' : 'Ver PIN'}
-                            >
-                              {showNewPin ? <EyeOff className="w-4 h-4 text-amber-400" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="text-[11px] font-semibold text-slate-300">
-                              Confirmar Nuevo PIN:
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => setShowConfirmPin(!showConfirmPin)}
-                              className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                            >
-                              {showConfirmPin ? <EyeOff className="w-3 h-3 text-amber-400" /> : <Eye className="w-3 h-3" />}
-                              <span>{showConfirmPin ? 'Ocultar' : 'Ver'}</span>
-                            </button>
-                          </div>
-                          <div className="relative">
-                            <input
-                              type={showConfirmPin ? 'text' : 'password'}
-                              value={confirmPin}
-                              onChange={(e) => {
-                                setConfirmPin(e.target.value);
-                                setConfigError(null);
-                              }}
-                              placeholder="Repite el nuevo PIN"
-                              className="w-full bg-[#080D16] border border-slate-700 rounded-xl pl-3.5 pr-10 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-400 transition"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowConfirmPin(!showConfirmPin)}
-                              className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white cursor-pointer"
-                              title={showConfirmPin ? 'Ocultar PIN' : 'Ver PIN'}
-                            >
-                              {showConfirmPin ? <EyeOff className="w-4 h-4 text-amber-400" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-4 rounded-2xl bg-slate-900/50 border border-slate-800 space-y-3">
-                      <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                        <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Número de WhatsApp para Solicitudes</span>
-                      </h4>
-                      <input
-                        type="text"
-                        value={adminWhatsApp}
-                        onChange={(e) => setAdminWhatsApp(e.target.value)}
-                        placeholder="Ej: 573213902708"
-                        className="w-full bg-[#080D16] border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100 focus:outline-none focus:border-emerald-500 transition"
-                        required
-                      />
-                      <span className="text-[11px] text-slate-500 block">
-                        Canal oficial configurado para solicitudes de clientes
-                      </span>
-                    </div>
-
-                    {configError && (
-                      <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-bold">
-                        {configError}
-                      </div>
-                    )}
-
-                    {configSuccess && (
-                      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-2">
-                        <Check className="w-4 h-4 text-emerald-400" />
-                        <span>{configSuccess}</span>
-                      </div>
-                    )}
-
-                    <button
-                      type="submit"
-                      className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 transition shadow-lg shadow-amber-500/20 active:scale-95 cursor-pointer"
-                    >
-                      Guardar Cambios de PIN y WhatsApp
-                    </button>
-                  </form>
+                  )}
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* TAB 2: AUDIT & ALGORITHM ACCURACY */}
-              {activeTab === 'AUDIT' && <AuditTabContent />}
-            </div>
+            {/* TAB 2: AUDIT & ALGORITHM ACCURACY */}
+            {activeTab === 'AUDIT' && <AuditTabContent />}
           </div>
+        </div>
       </div>
     </div>
   );
@@ -2307,25 +2207,17 @@ const AuditTabContent: React.FC = () => {
       .catch(() => setIsLoading(false));
   };
 
-  const handlePrintPDF = () => {
-    window.print();
-  };
-
   if (isLoading || !summary) {
     return (
-      <div className="py-16 text-center space-y-3">
-        <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
-        <p className="text-xs font-mono font-bold text-slate-300">
-          Procesando auditoría 100% real: Ligas Principales, Secundarias y Baloncesto NBA...
+      <div className="py-12 text-center space-y-2">
+        <RefreshCw className="w-7 h-7 text-emerald-600 animate-spin mx-auto" />
+        <p className="text-xs font-semibold text-slate-700">
+          Calculando efectividad real por competición...
         </p>
-        <span className="text-[10px] text-slate-500 block">
-          Evaluando fuentes oficiales ($0 cuota API-Football · Cero plantillas precargadas)
-        </span>
       </div>
     );
   }
 
-  // Active Segment Stats
   const activeStats =
     sportFilter === 'PRIME_SOCCER'
       ? summary.primeSoccer
@@ -2335,7 +2227,6 @@ const AuditTabContent: React.FC = () => {
       ? summary.nbaBasketball
       : summary.consolidated;
 
-  // Filter Match Records by Selected Segment
   const allSampleMatches = summary.metricsByCategory.flatMap((c) => c.sampleMatches);
   const filteredMatches = allSampleMatches.filter((rec) => {
     if (sportFilter === 'ALL') return true;
@@ -2345,7 +2236,6 @@ const AuditTabContent: React.FC = () => {
     return true;
   });
 
-  // Filter Top Leagues by Selected Segment
   const filteredTopLeagues = summary.topLeagues.filter((l) => {
     if (sportFilter === 'ALL') return true;
     if (sportFilter === 'NBA') return l.sport === 'NBA';
@@ -2354,7 +2244,6 @@ const AuditTabContent: React.FC = () => {
     return true;
   });
 
-  // Filter Categories by Selected Sport
   const filteredCategories = summary.metricsByCategory.filter((cat) => {
     if (sportFilter === 'ALL') return true;
     if (sportFilter === 'NBA') return cat.sport === 'NBA';
@@ -2362,171 +2251,114 @@ const AuditTabContent: React.FC = () => {
   });
 
   const getSegmentHeaderLabel = () => {
-    if (sportFilter === 'PRIME_SOCCER') return '⚽ Fútbol · Ligas Principales (Tier 1 & 2)';
-    if (sportFilter === 'SECONDARY_SOCCER') return '🌍 Fútbol · Ligas Secundarias / Menores';
-    if (sportFilter === 'NBA') return '🏀 Baloncesto · NBA (Triples & Puntos Jugador)';
-    return '🌐 Consolidado Global de la Plataforma';
+    if (sportFilter === 'PRIME_SOCCER') return '⚽ Fútbol · Ligas Principales';
+    if (sportFilter === 'SECONDARY_SOCCER') return '🌍 Fútbol · Ligas Secundarias';
+    if (sportFilter === 'NBA') return '🏀 Baloncesto · NBA';
+    return '🌐 Consolidado Global';
   };
-
-  const getSegmentThemeColor = () => {
-    if (sportFilter === 'NBA') return 'amber';
-    if (sportFilter === 'SECONDARY_SOCCER') return 'indigo';
-    if (sportFilter === 'ALL') return 'cyan';
-    return 'emerald';
-  };
-
-  const theme = getSegmentThemeColor();
 
   return (
-    <div className="space-y-4 font-sans text-slate-100">
-      {/* 0. Multi-Segment Switcher Bar (Separación Profesional de Informes) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 p-1 bg-slate-950/90 rounded-2xl border border-slate-800 gap-1 text-center font-mono text-xs">
+    <div className="space-y-3.5 font-sans text-slate-800">
+      {/* 0. Selector de Segmento */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 p-1 bg-slate-100 rounded-xl border border-slate-200 gap-1 text-center text-xs">
         <button
           type="button"
           onClick={() => setSportFilter('PRIME_SOCCER')}
-          className={`py-2 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer font-bold ${
+          className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer font-semibold ${
             sportFilter === 'PRIME_SOCCER'
-              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-white text-emerald-800 border border-emerald-300 shadow-2xs font-bold'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>⚽</span>
-          <span>Principales</span>
+          <span>⚽ Principales</span>
         </button>
 
         <button
           type="button"
           onClick={() => setSportFilter('SECONDARY_SOCCER')}
-          className={`py-2 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer font-bold ${
+          className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer font-semibold ${
             sportFilter === 'SECONDARY_SOCCER'
-              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-xs'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-white text-indigo-800 border border-indigo-300 shadow-2xs font-bold'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>🌍</span>
-          <span>Secundarias</span>
+          <span>🌍 Secundarias</span>
         </button>
 
         <button
           type="button"
           onClick={() => setSportFilter('NBA')}
-          className={`py-2 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer font-bold ${
+          className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer font-semibold ${
             sportFilter === 'NBA'
-              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-white text-amber-800 border border-amber-300 shadow-2xs font-bold'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>🏀</span>
-          <span>NBA</span>
+          <span>🏀 Baloncesto</span>
         </button>
 
         <button
           type="button"
           onClick={() => setSportFilter('ALL')}
-          className={`py-2 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer font-bold ${
+          className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer font-semibold ${
             sportFilter === 'ALL'
-              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-xs'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-white text-cyan-800 border border-cyan-300 shadow-2xs font-bold'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>🌐</span>
-          <span>Global</span>
+          <span>🌐 Global</span>
         </button>
       </div>
 
-      {/* 1. Metric Header Card con Exportación a Excel (Sin botón de imprimir) */}
-      <div className={`p-4 sm:p-5 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
-        theme === 'amber'
-          ? 'bg-gradient-to-br from-amber-950/30 via-slate-900 to-slate-950 border-amber-500/30'
-          : theme === 'indigo'
-          ? 'bg-gradient-to-br from-indigo-950/30 via-slate-900 to-slate-950 border-indigo-500/30'
-          : theme === 'cyan'
-          ? 'bg-gradient-to-br from-cyan-950/30 via-slate-900 to-slate-950 border-cyan-500/30'
-          : 'bg-gradient-to-br from-emerald-950/30 via-slate-900 to-slate-950 border-emerald-500/30'
-      }`}>
-        <div className="space-y-1.5 flex-1 min-w-0">
+      {/* 1. Resumen Principal y Exportación */}
+      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="space-y-1 flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-wide border flex items-center gap-1.5 ${
-              theme === 'amber'
-                ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                : theme === 'indigo'
-                ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
-                : theme === 'cyan'
-                ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
-                : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-            }`}>
-              <Sparkles className="w-3 h-3" />
-              <span>{getSegmentHeaderLabel()}</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+              {getSegmentHeaderLabel()}
             </span>
-
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
-              📅 Modo Día Vencido (Acta Oficial Cerrada)
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white text-slate-600 border border-slate-200">
+              📅 Acta Oficial Cerrada
             </span>
           </div>
 
           <div className="flex items-baseline gap-2 flex-wrap pt-0.5">
-            <h3 className="text-xl sm:text-2xl font-black text-white font-mono">
-              Efectividad Verificada:{' '}
-              <span className={
-                theme === 'amber'
-                  ? 'text-amber-400'
-                  : theme === 'indigo'
-                  ? 'text-indigo-400'
-                  : theme === 'cyan'
-                  ? 'text-cyan-400'
-                  : 'text-emerald-400'
-              }>
+            <h3 className="text-lg sm:text-xl font-bold text-slate-900 font-mono">
+              Efectividad:{' '}
+              <span className="text-emerald-700">
                 {activeStats.accuracyPercentage}%
               </span>
             </h3>
-            <span className="text-xs font-semibold text-slate-400">
-              ({activeStats.hits} aciertos / {activeStats.evaluatedMatches} verificados)
+            <span className="text-xs font-medium text-slate-500">
+              ({activeStats.hits} aciertos de {activeStats.evaluatedMatches} verificados)
             </span>
           </div>
-
-          <p className="text-xs text-slate-400 leading-relaxed max-w-2xl">
-            {sportFilter === 'SECONDARY_SOCCER'
-              ? 'Se respeta el pronóstico original del algoritmo. Los partidos sin acta oficial se marcan como anulados sin distorsionar el porcentaje.'
-              : sportFilter === 'NBA'
-              ? 'Estadísticas oficiales boxscore segundo a segundo: Triples de jugadores, puntos individuales y totales ($0 costo de cuota).'
-              : 'Resultados oficiales consolidados a día vencido con actas completas de córners, tarjetas y goles.'}
-          </p>
         </div>
 
-        {/* Action Buttons: Download XLSX & Reset Cycle (Sin botón de imprimir) */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={handleDownloadExcel}
-            className={`px-4 py-2.5 rounded-xl text-slate-950 font-black text-xs transition-all cursor-pointer flex items-center gap-2 shadow-lg active:scale-95 ${
-              theme === 'amber'
-                ? 'bg-amber-400 hover:bg-amber-300 shadow-amber-400/25'
-                : theme === 'indigo'
-                ? 'bg-indigo-400 hover:bg-indigo-300 shadow-indigo-400/25'
-                : theme === 'cyan'
-                ? 'bg-cyan-400 hover:bg-cyan-300 shadow-cyan-400/25'
-                : 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/25'
-            }`}
-            title="Descargar libro Excel oficial (.xlsx) con 4 hojas separadas por categoría"
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
           >
-            <Download className="w-4 h-4" />
-            <span>Descargar Libro Excel (.xlsx)</span>
+            <Download className="w-3.5 h-3.5" />
+            <span>Exportar Excel (.xlsx)</span>
           </button>
 
           {confirmResetCycle ? (
-            <div className="flex items-center gap-1.5 bg-rose-950/80 border border-rose-500/50 rounded-xl px-2.5 py-1.5 animate-fadeIn">
-              <span className="text-[11px] text-rose-200 font-bold">¿Reiniciar mes?</span>
+            <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-xl px-2.5 py-1.5 animate-fadeIn">
+              <span className="text-[11px] text-rose-800 font-bold">¿Reiniciar mes?</span>
               <button
                 type="button"
                 onClick={handleResetMonthlyCycle}
-                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-black cursor-pointer transition shadow-xs"
+                className="px-2 py-0.5 rounded bg-rose-600 text-white text-xs font-bold cursor-pointer"
               >
-                Sí, Limpiar
+                Sí
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmResetCycle(false)}
-                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer transition"
+                className="px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200 text-xs font-bold cursor-pointer"
               >
                 ✕
               </button>
@@ -2535,87 +2367,73 @@ const AuditTabContent: React.FC = () => {
             <button
               type="button"
               onClick={() => setConfirmResetCycle(true)}
-              className="px-3 py-2.5 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-700/80 hover:border-rose-500/30 font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
-              title="Reiniciar el historial para comenzar un nuevo mes desde cero"
+              className="px-2.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 text-xs font-medium transition cursor-pointer flex items-center gap-1"
+              title="Reiniciar ciclo mensual"
             >
-              <Trash2 className="w-4 h-4 text-slate-400 hover:text-rose-400" />
+              <Trash2 className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Nuevo Mes</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* 1.5 Segment Detail KPI Badges */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-xs">
-          <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Muestras</span>
-          <span className="text-base font-bold font-mono text-white">{activeStats.totalMatches}</span>
-          <span className="text-[10px] text-slate-500 block">partidos en registro</span>
+      {/* 1.5 Indicadores Rápidos */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+          <span className="text-slate-500 block text-[10px] uppercase font-semibold">Muestras</span>
+          <span className="text-base font-bold font-mono text-slate-900">{activeStats.totalMatches}</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-emerald-500/20 text-xs">
-          <span className="text-emerald-400 block text-[10px] uppercase font-bold">Aciertos Reales</span>
-          <span className="text-base font-bold font-mono text-emerald-300">{activeStats.hits}</span>
-          <span className="text-[10px] text-slate-400 block">pronósticos cumplidos</span>
+        <div className="p-2.5 rounded-xl bg-emerald-50/50 border border-emerald-200 text-xs">
+          <span className="text-emerald-800 block text-[10px] uppercase font-semibold">Aciertos</span>
+          <span className="text-base font-bold font-mono text-emerald-700">{activeStats.hits}</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-rose-500/20 text-xs">
-          <span className="text-rose-400 block text-[10px] uppercase font-bold">Fallos</span>
-          <span className="text-base font-bold font-mono text-rose-300">{activeStats.misses}</span>
-          <span className="text-[10px] text-slate-400 block">no acertados</span>
+        <div className="p-2.5 rounded-xl bg-rose-50/50 border border-rose-200 text-xs">
+          <span className="text-rose-800 block text-[10px] uppercase font-semibold">Fallos</span>
+          <span className="text-base font-bold font-mono text-rose-700">{activeStats.misses}</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-amber-500/20 text-xs">
-          <span className="text-amber-400 block text-[10px] uppercase font-bold">
-            {sportFilter === 'SECONDARY_SOCCER' ? '⚠️ Sin Acta Oficial' : 'Tasa de Cobertura'}
+        <div className="p-2.5 rounded-xl bg-amber-50/50 border border-amber-200 text-xs">
+          <span className="text-amber-800 block text-[10px] uppercase font-semibold">
+            {sportFilter === 'SECONDARY_SOCCER' ? 'Sin Acta' : 'Cobertura'}
           </span>
-          <span className="text-base font-bold font-mono text-amber-300">
-            {sportFilter === 'SECONDARY_SOCCER' ? `${activeStats.unverifiedCount} (Anulados)` : `${activeStats.coveragePercentage}%`}
-          </span>
-          <span className="text-[10px] text-slate-400 block">
-            {sportFilter === 'SECONDARY_SOCCER' ? 'no restan al promedio' : 'verificación oficial'}
+          <span className="text-base font-bold font-mono text-amber-800">
+            {sportFilter === 'SECONDARY_SOCCER' ? `${activeStats.unverifiedCount}` : `${activeStats.coveragePercentage}%`}
           </span>
         </div>
       </div>
 
-      {/* 2. Top 5 Ligas o Torneos con Mayor Efectividad (Ordenadas de Mayor a Menor) */}
-      <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-mono font-bold text-amber-300 uppercase tracking-tight flex items-center gap-1.5">
-            <Trophy className="w-4 h-4 text-amber-400" />
-            <span>Top 5 Ligas con Mayor Acierto (Ranking de Mayor a Menor)</span>
+      {/* 2. Top 5 Ligas */}
+      <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+            <Trophy className="w-3.5 h-3.5 text-amber-500" />
+            <span>Top 5 Ligas con Mayor Efectividad</span>
           </span>
-          <span className="text-[10px] font-mono text-slate-400">Ordenado por % Efectividad (+EV)</span>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {filteredTopLeagues.length === 0 ? (
-            <p className="text-xs text-slate-400 p-3 text-center">No hay ligas con partidos verificados en este segmento.</p>
+            <p className="text-xs text-slate-500 p-2 text-center">Sin registros verificados en este segmento.</p>
           ) : (
             filteredTopLeagues.map((league, idx) => {
               const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
               return (
                 <div
                   key={league.leagueName}
-                  className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between gap-3 text-xs"
+                  className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between gap-3 text-xs"
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className="w-6 h-6 rounded-lg bg-slate-800 text-amber-300 font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                    <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-800 font-mono text-xs font-bold flex items-center justify-center shrink-0">
                       {medal}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-white truncate flex items-center gap-1.5">
-                        <span>{league.leagueName}</span>
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          ({league.sport === 'NBA' ? '🏀 NBA' : league.leagueTier === 'SECONDARY' ? '🌍 Menor' : '⚽ Prime'})
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-800 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                      <span className="font-semibold text-slate-900 truncate block">{league.leagueName}</span>
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full mt-1 overflow-hidden">
                         <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            league.sport === 'NBA'
-                              ? 'bg-gradient-to-r from-amber-500 to-amber-300'
-                              : 'bg-gradient-to-r from-emerald-500 to-teal-300'
+                          className={`h-full rounded-full ${
+                            league.sport === 'NBA' ? 'bg-amber-500' : 'bg-emerald-500'
                           }`}
                           style={{ width: `${Math.min(100, Math.max(10, league.accuracyPercentage))}%` }}
                         />
@@ -2624,10 +2442,8 @@ const AuditTabContent: React.FC = () => {
                   </div>
 
                   <div className="text-right shrink-0 font-mono">
-                    <span className={`font-bold block text-sm ${league.sport === 'NBA' ? 'text-amber-400' : 'text-emerald-400'}`}>
-                      {league.accuracyPercentage}%
-                    </span>
-                    <span className="text-[10px] text-slate-400 block">{league.hits}/{league.evaluatedMatches} aciertos</span>
+                    <span className="font-bold text-slate-900 text-xs">{league.accuracyPercentage}%</span>
+                    <span className="text-[10px] text-slate-500 block">{league.hits}/{league.evaluatedMatches}</span>
                   </div>
                 </div>
               );
@@ -2636,120 +2452,77 @@ const AuditTabContent: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Gráfica Comparativa de Mercados (Ordenados de Mayor a Menor) */}
-      <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-mono font-bold text-slate-200 uppercase tracking-tight flex items-center gap-1.5">
-            <BarChart2 className="w-4 h-4 text-emerald-400" />
-            <span>Efectividad por Tipo de Pronóstico (De Mayor a Menor)</span>
-          </span>
-          <span className="text-[10px] font-mono text-slate-400">Rendimiento Estadístico Real</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {filteredCategories.map((m) => {
-            const actualProb = m.accuracyPercentage;
-            const isNba = m.sport === 'NBA';
-
-            return (
+      {/* 3. Efectividad por Mercado */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        {filteredCategories.map((m) => (
+          <div
+            key={m.id}
+            className="p-3 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1.5"
+          >
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-slate-900">{m.categoryLabel}</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                {m.accuracyPercentage}%
+              </span>
+            </div>
+            <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
               <div
-                key={m.id}
-                className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2.5"
-              >
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-200">{m.categoryLabel}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
-                    isNba
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                  }`}>
-                    {m.accuracyPercentage}% Acierto
-                  </span>
-                </div>
-
-                <div className="space-y-1.5 text-[10px] font-mono">
-                  <div>
-                    <div className="flex items-center justify-between text-slate-400 mb-0.5">
-                      <span>Efectividad Verificada:</span>
-                      <span className={`font-bold ${isNba ? 'text-amber-400' : 'text-emerald-400'}`}>
-                        {actualProb}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${isNba ? 'bg-amber-400' : 'bg-emerald-400'}`}
-                        style={{ width: `${actualProb}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800/80">
-                  <span>Muestras: <strong className="text-white">{m.evaluatedMatches}</strong></span>
-                  <span>Aciertos: <strong className={isNba ? 'text-amber-300' : 'text-emerald-400'}>{m.hits}</strong></span>
-                  <span>Fallos: <strong className="text-rose-400">{m.misses}</strong></span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                className="h-full rounded-full bg-emerald-500"
+                style={{ width: `${m.accuracyPercentage}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+              <span>Evaluados: {m.evaluatedMatches}</span>
+              <span className="text-emerald-700 font-semibold">✓ {m.hits}</span>
+              <span className="text-rose-600">✕ {m.misses}</span>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* 4. Tabla Detallada de Partidos Evaluados (con Estado Transparente) */}
-      <div className="p-3.5 rounded-2xl bg-slate-900/40 border border-slate-800/80 space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-mono font-bold text-slate-300 uppercase tracking-tight flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>Detalle Partido a Partido ({filteredMatches.length} registros)</span>
+      {/* 4. Tabla Detallada de Partidos Evaluados */}
+      <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Historial Verificado ({filteredMatches.length})</span>
           </span>
-          <span className="text-[10px] text-slate-500 font-mono">Actualizado: {summary.lastUpdated}</span>
+          <span className="text-[10px] text-slate-400 font-mono">{summary.lastUpdated}</span>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto bg-white rounded-xl border border-slate-200">
           <table className="w-full text-left text-xs font-mono">
             <thead>
-              <tr className="border-b border-slate-800 text-slate-400 text-[10px] uppercase">
-                <th className="py-2 px-2">Categoría</th>
-                <th className="py-2 px-2">Partido</th>
+              <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 text-[10px] uppercase">
+                <th className="py-2 px-2.5">Partido</th>
                 <th className="py-2 px-2">Mercado</th>
-                <th className="py-2 px-2">Pronóstico Original</th>
-                <th className="py-2 px-2">Resultado Real</th>
-                <th className="py-2 px-2 text-right">Estado</th>
+                <th className="py-2 px-2">Pronóstico</th>
+                <th className="py-2 px-2">Real</th>
+                <th className="py-2 px-2.5 text-right">Estado</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 text-slate-300">
+            <tbody className="divide-y divide-slate-100 text-slate-700">
               {filteredMatches.map((rec, i) => (
-                <tr key={`${rec.fixtureId}-${i}`} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-2 px-2 text-[10px] text-slate-400">
-                    {rec.sport === 'NBA'
-                      ? '🏀 NBA'
-                      : rec.leagueTier === 'SECONDARY'
-                      ? '🌍 L. Menor'
-                      : '⚽ L. Prime'}
-                  </td>
-                  <td className="py-2 px-2 font-semibold text-white">
+                <tr key={`${rec.fixtureId}-${i}`} className="hover:bg-slate-50 transition-colors">
+                  <td className="py-2 px-2.5 font-sans font-semibold text-slate-900">
                     <div>{rec.matchTitle}</div>
-                    <span className="text-[9px] text-slate-500 block">{rec.leagueName}</span>
+                    <span className="text-[10px] text-slate-400 font-normal block">{rec.leagueName}</span>
                   </td>
-                  <td className="py-2 px-2 text-slate-300">{rec.marketType}</td>
-                  <td className="py-2 px-2 text-amber-300">{rec.predictionLabel}</td>
-                  <td className="py-2 px-2 text-slate-200">{rec.actualResult}</td>
-                  <td className="py-2 px-2 text-right">
+                  <td className="py-2 px-2 text-slate-600 text-[11px]">{rec.marketType}</td>
+                  <td className="py-2 px-2 text-slate-900 font-semibold text-[11px]">{rec.predictionLabel}</td>
+                  <td className="py-2 px-2 text-slate-600 text-[11px]">{rec.actualResult}</td>
+                  <td className="py-2 px-2.5 text-right">
                     {rec.status === 'UNVERIFIED' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border bg-amber-500/15 text-amber-300 border-amber-500/30">
-                        ⚠️ SIN ACTA (ANULADO)
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                        ANULADO
                       </span>
                     ) : rec.isHit ? (
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
-                        rec.sport === 'NBA'
-                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                      }`}>
-                        ✓ ACERTADO
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        ✓ ACIERTO
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border bg-rose-500/20 text-rose-300 border-rose-500/30">
-                        ✕ FALLADO
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                        ✕ FALLO
                       </span>
                     )}
                   </td>
