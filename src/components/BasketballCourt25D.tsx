@@ -138,7 +138,30 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
   const [trackerPhase, setTrackerPhase] = useState<LiveTrackerAnimPhase>('SLIM_POSSESSION');
   const [simulatedPlayIdx, setSimulatedPlayIdx] = useState<number>(0);
 
-  // Smooth real-time game clock countdown while watching live court
+  // Detect official Halftime / Descanso state in NBA match
+  const isHalfTime = useMemo(() => {
+    if (!isLive) return false;
+    const p = (livePeriod || '').trim().toUpperCase();
+    if (
+      p === 'HT' ||
+      p === 'MT' ||
+      p === 'HALF' ||
+      p.includes('HALF') ||
+      p.includes('DESCANSO') ||
+      p.includes('ENTRETIEMPO')
+    ) {
+      return true;
+    }
+    if ((liveScore as any)?.isHalfTime || (liveScore as any)?.statusShort === 'HT') {
+      return true;
+    }
+    if ((p === 'Q2' || p === '2Q') && (liveClock === '00:00' || liveClock === '0:00')) {
+      return true;
+    }
+    return false;
+  }, [isLive, livePeriod, liveScore, liveClock]);
+
+  // Smooth real-time game clock countdown while watching live court (paused during halftime)
   const baseClockSec = useMemo(() => parseClockSeconds(liveClock), [liveClock]);
   const [clockTickDown, setClockTickDown] = useState<number>(0);
 
@@ -147,24 +170,25 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
   }, [liveClock, livePeriod]);
 
   useEffect(() => {
-    if (!isLive || baseClockSec === null) return;
+    if (!isLive || baseClockSec === null || isHalfTime) return;
     const interval = setInterval(() => {
       setClockTickDown((prev) => (baseClockSec - prev > 1 ? prev + 1 : prev));
     }, 1000);
     return () => clearInterval(interval);
-  }, [isLive, baseClockSec]);
+  }, [isLive, baseClockSec, isHalfTime]);
 
   const displayClockLabel = useMemo(() => {
     if (!isLive) return '';
+    if (isHalfTime) return 'DESCANSO';
     if (baseClockSec !== null) {
       return formatClockSeconds(Math.max(0, baseClockSec - clockTickDown));
     }
     return liveClock || 'VIVO';
-  }, [isLive, baseClockSec, clockTickDown, liveClock]);
+  }, [isLive, isHalfTime, baseClockSec, clockTickDown, liveClock]);
 
-  // Relaxed 5.2s cadence with a calm RADAR_BALL phase (zero popup spam)
+  // Relaxed 5.2s cadence with a calm RADAR_BALL phase (strictly paused during Halftime)
   useEffect(() => {
-    if (slideMode !== 'TRACKER') return;
+    if (slideMode !== 'TRACKER' || isHalfTime) return;
 
     const phases: LiveTrackerAnimPhase[] = ['SLIM_POSSESSION', 'RADAR_BALL', 'SLIM_STAT_PILL'];
     let step = 0;
@@ -179,7 +203,7 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
     }, 5200);
 
     return () => clearInterval(timer);
-  }, [slideMode, liveSituation?.id]);
+  }, [slideMode, liveSituation?.id, isHalfTime]);
 
   const resolvedPlay: NBALivePlaySituation & {
     ballX: number;
@@ -187,6 +211,22 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
     originX: number;
     originY: number;
   } = useMemo(() => {
+    if (isHalfTime) {
+      return {
+        id: 'halftime-break',
+        text: 'Pausa de descanso de medio tiempo',
+        quarter: 'MT',
+        actionKind: 'POSSESSION',
+        teamSide: 'HOME',
+        typeLabel: '⏸️ Medio Tiempo Oficial',
+        statSummary: `Pausa de descanso · Marcador parcial: ${quarterScores.awayTotal} - ${quarterScores.homeTotal}`,
+        ballX: 50,
+        ballY: 50,
+        originX: 50,
+        originY: 50
+      };
+    }
+
     const isHomeSide =
       liveSituation && simulatedPlayIdx % 2 === 0
         ? liveSituation.teamSide === 'HOME'
@@ -220,27 +260,27 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
       ballY: number;
     }> = [
       {
-        kind: 'SCORE_2PT',
-        label: '🏀 Canasta de 2 Pts',
-        stat: `Efectividad en pintura · ${player.ppg || 20.5} PPG`,
-        pts: 2,
-        ballX: isHomeSide ? 86 : 14,
-        ballY: 50
+        kind: 'POSSESSION',
+        label: '🏀 Circulación en Perímetro',
+        stat: `Creación ofensiva · ${player.ppg || 20.5} PPG`,
+        pts: 0,
+        ballX: isHomeSide ? 72 : 28,
+        ballY: 46
       },
       {
-        kind: 'SCORE_3PT',
-        label: '🎯 Triple Anotado (3P)',
-        stat: `Perímetro exterior · ${player.threePm || 2.5} 3PM`,
-        pts: 3,
-        ballX: isHomeSide ? 73 : 27,
-        ballY: 26
+        kind: 'POSSESSION',
+        label: '⚡ Rotación en Media Cancha',
+        stat: `Lectura de bloqueo · ${player.apg || 4.8} APG`,
+        pts: 0,
+        ballX: isHomeSide ? 66 : 34,
+        ballY: 28
       },
       {
         kind: 'REBOUND',
-        label: '🛡️ Rebote y Transición',
-        stat: `Control de tablero (${isHomeSide ? homeAbbr : awayAbbr})`,
+        label: '🛡️ Control de Tablero y Transición',
+        stat: `Posesión activa (${isHomeSide ? homeAbbr : awayAbbr})`,
         pts: 0,
-        ballX: isHomeSide ? 64 : 36,
+        ballX: isHomeSide ? 62 : 38,
         ballY: 64
       }
     ];
@@ -382,9 +422,116 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
   const svgOriginX = (resolvedPlay.originX / 100) * 280;
   const svgOriginY = (resolvedPlay.originY / 100) * 150;
 
+  const cleanQuarterLabel = useMemo(() => {
+    const p = (livePeriod || 'Q1').toUpperCase();
+    if (p === 'HT' || p.includes('HALF')) return 'MT (Descanso)';
+    return p;
+  }, [livePeriod]);
+
   const liveClockBadge = isLive
-    ? `${livePeriod || 'Q1'}${displayClockLabel ? ` • ${displayClockLabel}` : ''}`
+    ? cleanQuarterLabel === 'MT (Descanso)'
+      ? 'DESCANSO • MT'
+      : `EN VIVO • ${cleanQuarterLabel}`
     : matchTimeLabel || 'Programado';
+
+  // Persistent 14-second Compact In-Court Banner when score or quarter changes in live NBA game
+  const prevScoreRef = React.useRef<{ home: number; away: number; period: string; key: string }>({
+    home: quarterScores.homeTotal,
+    away: quarterScores.awayTotal,
+    period: livePeriod || 'Q1',
+    key: `${effectiveHomeName}_${effectiveAwayName}`
+  });
+  const [liveBasketBanner, setLiveBasketBanner] = useState<{
+    badgeText: string;
+    teamCode: string;
+    scoreText: string;
+    quarterText: string;
+    icon: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const matchKey = `${effectiveHomeName}_${effectiveAwayName}`;
+    const curHome = quarterScores.homeTotal;
+    const curAway = quarterScores.awayTotal;
+    const curPeriod = livePeriod || 'Q1';
+    if (prevScoreRef.current.key !== matchKey) {
+      prevScoreRef.current = { home: curHome, away: curAway, period: curPeriod, key: matchKey };
+      setLiveBasketBanner(null);
+      return;
+    }
+
+    if (isLive) {
+      const diffHome = curHome - prevScoreRef.current.home;
+      const diffAway = curAway - prevScoreRef.current.away;
+      const periodChanged = curPeriod !== prevScoreRef.current.period;
+
+      if (diffHome > 0 || diffAway > 0) {
+        const isHomeScore = diffHome >= diffAway;
+        const pts = Math.min(4, Math.max(1, isHomeScore ? diffHome : diffAway));
+        const teamCode = isHomeScore ? homeAbbr : awayAbbr;
+        const badgeText =
+          pts >= 3
+            ? `+${pts} TRIPLE`
+            : pts === 1
+            ? '+1 TIRO LIBRE'
+            : '+2 CANASTA';
+        const icon = pts >= 3 ? '🎯' : '🏀';
+
+        setLiveBasketBanner({
+          badgeText,
+          teamCode,
+          scoreText: `${curAway} - ${curHome}`,
+          quarterText: cleanQuarterLabel,
+          icon
+        });
+        prevScoreRef.current = { home: curHome, away: curAway, period: curPeriod, key: matchKey };
+
+        const timer = setTimeout(() => {
+          setLiveBasketBanner(null);
+        }, 12000);
+        return () => clearTimeout(timer);
+      } else if (diffHome < 0 || diffAway < 0) {
+        setLiveBasketBanner({
+          badgeText: 'AJUSTE OFICIAL',
+          teamCode: `${awayAbbr}/${homeAbbr}`,
+          scoreText: `${curAway} - ${curHome}`,
+          quarterText: cleanQuarterLabel,
+          icon: '⚠️'
+        });
+        prevScoreRef.current = { home: curHome, away: curAway, period: curPeriod, key: matchKey };
+
+        const timer = setTimeout(() => {
+          setLiveBasketBanner(null);
+        }, 10000);
+        return () => clearTimeout(timer);
+      } else if (periodChanged) {
+        setLiveBasketBanner({
+          badgeText: curPeriod === 'HT' ? 'MEDIO TIEMPO' : `INICIO ${curPeriod}`,
+          teamCode: `${awayAbbr}-${homeAbbr}`,
+          scoreText: `${curAway} - ${curHome}`,
+          quarterText: cleanQuarterLabel,
+          icon: '⏱️'
+        });
+        prevScoreRef.current = { home: curHome, away: curAway, period: curPeriod, key: matchKey };
+
+        const timer = setTimeout(() => {
+          setLiveBasketBanner(null);
+        }, 10000);
+        return () => clearTimeout(timer);
+      }
+    }
+    prevScoreRef.current = { home: curHome, away: curAway, period: curPeriod, key: matchKey };
+  }, [
+    quarterScores.homeTotal,
+    quarterScores.awayTotal,
+    effectiveHomeName,
+    effectiveAwayName,
+    homeAbbr,
+    awayAbbr,
+    isLive,
+    livePeriod,
+    cleanQuarterLabel
+  ]);
 
   return (
     <div className="w-full rounded-2xl bg-[#0B0F19] border border-slate-800/90 overflow-hidden shadow-xl">
@@ -746,8 +893,8 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
               strokeWidth="1.3"
             />
 
-            {/* SUBTLE LOCALIZED TACTICAL RADAR & VECTOR IN TRACKER MODE */}
-            {slideMode === 'TRACKER' && (
+            {/* SUBTLE LOCALIZED TACTICAL RADAR & VECTOR IN TRACKER MODE (Hidden during Halftime) */}
+            {slideMode === 'TRACKER' && !isHalfTime && (
               <g>
                 <circle
                   cx={svgBallX}
@@ -791,23 +938,83 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
           {/* ========================================================================= */}
           {slideMode === 'TRACKER' && (
             <>
-              {/* Live Ball Marker Node on Court */}
+              {/* STATIC HALFTIME / MEDIO TIEMPO ANNOUNCEMENT OVERLAY */}
+              {isHalfTime && (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/45 backdrop-blur-[2px] pointer-events-none p-3">
+                  <div className="px-5 py-3 rounded-2xl bg-slate-950/95 border border-amber-400/85 shadow-2xl flex flex-col items-center gap-1.5 text-center pointer-events-auto">
+                    <div className="inline-flex items-center gap-2 text-xs font-mono font-black text-amber-400 uppercase tracking-widest">
+                      <span className="text-sm">⏸️</span>
+                      <span>MEDIO TIEMPO · DESCANSO</span>
+                    </div>
+                    <div className="flex items-center gap-3 font-mono text-base sm:text-lg font-black text-white">
+                      <span>{awayAbbr} {quarterScores.awayTotal}</span>
+                      <span className="text-amber-400/80">-</span>
+                      <span>{quarterScores.homeTotal} {homeAbbr}</span>
+                    </div>
+                    <div className="text-[10.5px] font-mono text-slate-300">
+                      Pausa oficial · Fin de la primera mitad (Q1 + Q2)
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[9px] font-mono text-amber-300/80 bg-amber-500/10 border border-amber-400/30 px-2.5 py-0.5 rounded-full">
+                      <span>Cancha estática hasta el 3er cuarto (Q3)</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SLEEK COMPACT SINGLE-LINE BASKET / QUARTER PILL ON NBA COURT (Never covers court or truncates) */}
+              {liveBasketBanner && !isHalfTime && (
+                <div className="absolute top-1.5 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/95 border border-amber-400/90 shadow-md whitespace-nowrap">
+                    <span className="text-[10px] leading-none">{liveBasketBanner.icon}</span>
+                    <span className="text-[8.5px] font-black uppercase tracking-tight text-amber-300 leading-none">
+                      {liveBasketBanner.badgeText} {liveBasketBanner.teamCode}
+                    </span>
+                    <span className="text-[8.5px] font-mono font-bold text-white leading-none px-1 py-0.2 rounded bg-amber-500/20">
+                      {liveBasketBanner.scoreText}
+                    </span>
+                    <span className="text-[8px] font-mono text-slate-300 leading-none">
+                      {liveBasketBanner.quarterText}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setLiveBasketBanner(null)}
+                      className="text-slate-400 hover:text-white text-[9px] pl-0.5 cursor-pointer leading-none"
+                      aria-label="Cerrar alerta de puntos"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Live Ball Marker Node on Court (Static at center during halftime, dynamic during play) */}
               <div
-                style={{ left: `${resolvedPlay.ballX}%`, top: `${resolvedPlay.ballY}%` }}
-                className="absolute -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none transition-all duration-700"
+                style={{
+                  left: isHalfTime ? '50%' : `${resolvedPlay.ballX}%`,
+                  top: isHalfTime ? '50%' : `${resolvedPlay.ballY}%`
+                }}
+                className={`absolute -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none ${
+                  isHalfTime ? '' : 'transition-all duration-700'
+                }`}
               >
-                <span
-                  className={`w-4 h-4 rounded-full ${activeDotColor} opacity-35 animate-ping absolute -inset-0.5`}
-                />
+                {!isHalfTime && (
+                  <span
+                    className={`w-4 h-4 rounded-full ${activeDotColor} opacity-35 animate-ping absolute -inset-0.5`}
+                  />
+                )}
                 <div
-                  className={`w-3 h-3 rounded-full bg-white border-2 ${
-                    isActionHome ? 'border-amber-400' : 'border-sky-400'
+                  className={`w-3.5 h-3.5 rounded-full ${
+                    isHalfTime
+                      ? 'bg-amber-400 border-2 border-white'
+                      : isActionHome
+                      ? 'bg-white border-2 border-amber-400'
+                      : 'bg-white border-2 border-sky-400'
                   } shadow-md flex items-center justify-center`}
                 />
               </div>
 
               {/* PHASE 1: ULTRA-SLIM POSSESSION MICRO-PILL */}
-              {trackerPhase === 'SLIM_POSSESSION' && (
+              {trackerPhase === 'SLIM_POSSESSION' && !liveBasketBanner && !isHalfTime && (
                 <div
                   className={`absolute top-6 z-20 pointer-events-none transition-all duration-300 ${
                     isActionHome ? 'right-3' : 'left-3'
@@ -828,7 +1035,7 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
               )}
 
               {/* PHASE 2: CALM RADAR BALL VIEW (Tiny tag next to ball, zero notification banner) */}
-              {trackerPhase === 'RADAR_BALL' && (
+              {trackerPhase === 'RADAR_BALL' && !isHalfTime && (
                 <div
                   style={{
                     left: `${Math.min(82, Math.max(18, resolvedPlay.ballX))}%`,
@@ -845,7 +1052,7 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
               )}
 
               {/* PHASE 3: ULTRA-SLIM 2-LINE TACTICAL MICRO-HUD (Fine, compact, zero cut-off text) */}
-              {trackerPhase === 'SLIM_STAT_PILL' && (
+              {trackerPhase === 'SLIM_STAT_PILL' && !liveBasketBanner && !isHalfTime && (
                 <div
                   className={`absolute top-6 z-20 pointer-events-none transition-all duration-300 ${
                     isActionHome ? 'right-3' : 'left-3'

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, BarChart3, TrendingUp, ShieldCheck, History } from 'lucide-react';
+import { Calendar, Menu, TrendingUp, ShieldCheck, History } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
 export type MobileTab = 'MATCHES' | 'FILTERS' | 'PROBABILITY' | 'ADMIN';
@@ -11,6 +11,7 @@ interface MobileBottomNavProps {
   isAdmin?: boolean;
   onOpenAdmin: () => void;
   onOpenHistory?: () => void;
+  onOpenDrawer?: () => void;
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
@@ -19,13 +20,14 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   liveMatchesCount,
   isAdmin = false,
   onOpenAdmin,
-  onOpenHistory
+  onOpenHistory,
+  onOpenDrawer
 }) => {
   const { paletteConfig } = useTheme();
 
   return (
     <nav
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t backdrop-blur-xl transition-colors duration-200 bg-[#0b0e14]/92 border-[#30363d] shadow-[0_-8px_24px_rgba(0,0,0,0.4)] pb-[env(safe-area-inset-bottom,8px)]"
+      className="lg:hidden fixed bottom-0 left-0 right-0 z-40 border-t backdrop-blur-xl transition-colors duration-200 bg-white/95 border-slate-200/90 shadow-[0_-4px_20px_rgba(15,23,42,0.08)] pb-[env(safe-area-inset-bottom,6px)]"
       aria-label="Navegación móvil inferior"
     >
       <div className="grid grid-cols-4 items-center h-14 max-w-lg mx-auto px-2">
@@ -35,14 +37,14 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           type="button"
           className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-transform active:scale-95 cursor-pointer relative ${
             activeTab === 'MATCHES'
-              ? 'text-white font-bold'
-              : 'text-[#8b949e] font-medium hover:text-white'
+              ? 'text-slate-900 font-bold'
+              : 'text-slate-500 font-medium hover:text-slate-900'
           }`}
         >
           <div className="relative">
             <Calendar className="w-5 h-5" />
             {liveMatchesCount > 0 && (
-              <span className="absolute -top-1 -right-2 px-1 py-0.2 rounded-full bg-rose-500 text-white text-[9px] font-black animate-pulse leading-none">
+              <span className="absolute -top-1 -right-2 px-1 py-0.2 rounded-full bg-rose-600 text-white text-[9px] font-mono font-bold animate-pulse leading-none">
                 {liveMatchesCount}
               </span>
             )}
@@ -56,18 +58,24 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           )}
         </button>
 
-        {/* Tab 2: Filters & Markets */}
+        {/* Tab 2: Open Gmail-Style League & Sport Drawer */}
         <button
-          onClick={() => onTabChange('FILTERS')}
+          onClick={() => {
+            if (onOpenDrawer) {
+              onOpenDrawer();
+            } else {
+              onTabChange('FILTERS');
+            }
+          }}
           type="button"
           className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-transform active:scale-95 cursor-pointer relative ${
             activeTab === 'FILTERS'
-              ? 'text-white font-bold'
-              : 'text-[#8b949e] font-medium hover:text-white'
+              ? 'text-slate-900 font-bold'
+              : 'text-slate-500 font-medium hover:text-slate-900'
           }`}
         >
-          <BarChart3 className="w-5 h-5" />
-          <span className="text-[10px] tracking-tight mt-1">Filtros & Stats</span>
+          <Menu className="w-5 h-5" />
+          <span className="text-[10px] tracking-tight mt-1">Ligas y Menú</span>
           {activeTab === 'FILTERS' && (
             <span
               className="absolute bottom-1 w-6 h-0.5 rounded-full"
@@ -82,12 +90,12 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           type="button"
           className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-transform active:scale-95 cursor-pointer relative ${
             activeTab === 'PROBABILITY'
-              ? 'text-white font-bold'
-              : 'text-[#8b949e] font-medium hover:text-white'
+              ? 'text-emerald-700 font-bold'
+              : 'text-slate-500 font-medium hover:text-slate-900'
           }`}
         >
-          <TrendingUp className="w-5 h-5" />
-          <span className="text-[10px] tracking-tight mt-1">Valor +EV</span>
+          <TrendingUp className="w-5 h-5 text-emerald-600" />
+          <span className="text-[10px] tracking-tight mt-1">Top Picks +EV</span>
           {activeTab === 'PROBABILITY' && (
             <span
               className="absolute bottom-1 w-6 h-0.5 rounded-full"
@@ -101,18 +109,18 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           <button
             onClick={onOpenAdmin}
             type="button"
-            className="flex flex-col items-center justify-center h-full min-h-[44px] transition-transform active:scale-95 cursor-pointer text-[#8b949e] hover:text-white"
+            className="flex flex-col items-center justify-center h-full min-h-[44px] transition-transform active:scale-95 cursor-pointer text-amber-700 hover:text-amber-900 font-semibold"
           >
-            <ShieldCheck className="w-5 h-5 text-amber-400" />
+            <ShieldCheck className="w-5 h-5 text-amber-600" />
             <span className="text-[10px] tracking-tight mt-1">Panel Admin</span>
           </button>
         ) : (
           <button
             onClick={onOpenHistory}
             type="button"
-            className="flex flex-col items-center justify-center h-full min-h-[44px] transition-transform active:scale-95 cursor-pointer text-[#8b949e] hover:text-white"
+            className="flex flex-col items-center justify-center h-full min-h-[44px] transition-transform active:scale-95 cursor-pointer text-slate-600 hover:text-slate-900 font-medium"
           >
-            <History className="w-5 h-5 text-emerald-400" />
+            <History className="w-5 h-5 text-emerald-600" />
             <span className="text-[10px] tracking-tight mt-1">Mis Boletos</span>
           </button>
         )}

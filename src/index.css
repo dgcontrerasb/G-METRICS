@@ -64,8 +64,8 @@ body {
   max-width: 100%;
   overflow-x: hidden;
   box-sizing: border-box;
-  background-color: #0b0e14 !important;
-  color: #8b949e;
+  background-color: #f1f5f9 !important;
+  color: #0f172a;
   font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum" 1;
   -webkit-font-smoothing: antialiased;
@@ -76,7 +76,7 @@ body {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
-  background-color: #0b0e14;
+  background-color: #f1f5f9;
 }
 
 /* 1. Global Tabular Figures for All Numerical Blocks, Odds & Stats */
@@ -91,10 +91,10 @@ input[type="text"].font-mono {
   font-feature-settings: "tnum" 1, "zero" 1 !important;
 }
 
-/* 2. Cyber-Fintech Deep Dark Background Canvas */
+/* 2. Fintech Clean Deck Background Canvas with Wallpaper Support */
 .cr7-cinematic-bg {
   position: relative;
-  background-color: #0b0e14;
+  background-color: #f1f5f9;
   min-height: 100vh;
   width: 100%;
   max-width: 100%;
@@ -109,8 +109,8 @@ input[type="text"].font-mono {
   background-size: cover;
   background-position: center top;
   background-repeat: no-repeat;
-  opacity: var(--wallpaper-opacity, 0.18);
-  filter: brightness(0.6) contrast(1.2) grayscale(0.35) blur(var(--wallpaper-blur, 0px));
+  opacity: var(--wallpaper-opacity, 0.36);
+  filter: brightness(1.03) contrast(1.06) saturate(1.08) blur(var(--wallpaper-blur, 0px));
   pointer-events: none;
   z-index: 0;
 }
@@ -119,7 +119,7 @@ input[type="text"].font-mono {
   content: '';
   position: fixed;
   inset: 0;
-  background: radial-gradient(circle at 50% 10%, rgba(11, 14, 20, 0.28) 0%, rgba(11, 14, 20, 0.88) 100%);
+  background: radial-gradient(circle at 50% 12%, rgba(248, 250, 252, 0.25) 0%, rgba(241, 245, 249, 0.62) 100%);
   pointer-events: none;
   z-index: 0;
 }
@@ -235,15 +235,12 @@ table tbody tr:hover,
   border-radius: 8px !important;
 }
 
-/* 8. Global Form Controls (Inputs, Selects) in Cyber-Fintech Styling */
+/* 8. Global Form Controls (Inputs, Selects) in Fintech Light Styling */
 input[type="text"],
 input[type="password"],
 input[type="number"],
 select {
   border-radius: 6px !important;
-  border: 1px solid #30363d;
-  background-color: #161b22;
-  color: #ffffff;
   font-size: 0.8125rem;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -252,26 +249,39 @@ input[type="text"]:focus,
 input[type="password"]:focus,
 input[type="number"]:focus,
 select:focus {
-  border-color: var(--accent-cyber, #00ff66) !important;
   outline: none !important;
-  box-shadow: 0 0 0 1px var(--accent-cyber, #00ff66) !important;
 }
 
-/* 9. Scrollbars in Dark Fintech Style */
+/* 9. Scrollbars in Clean Fintech Light Style */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b0e14;
+  background: #f1f5f9;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #30363d;
+  background: #cbd5e1;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #8b949e;
+  background: #94a3b8;
 }
+
+/* 10. G METRICS Official 3D Charcoal & Metallic Gold Bevel Typography */
+.gmetrics-brand-title {
+  font-family: 'Orbitron', 'Cinzel', 'Plus Jakarta Sans', sans-serif;
+  font-weight: 900;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  color: #1a212b;
+  -webkit-text-stroke: 0.85px #c89d28;
+  paint-order: stroke fill;
+  text-shadow:
+    0 1px 0 #f8e28c,
+    0 2px 3px rgba(15, 23, 42, 0.35);
+}
+

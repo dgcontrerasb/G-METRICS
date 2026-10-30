@@ -17,7 +17,7 @@ export const SportStatsLogo: React.FC<SportStatsLogoProps> = ({
   subtitle,
   activeSport = 'SOCCER'
 }) => {
-  const [logoSrc, setLogoSrc] = useState('/logo.png');
+  const [logoSrc, setLogoSrc] = useState('/icon.png');
 
   const sizeDimensions = {
     xs: 'w-7 h-7 text-xs',
@@ -38,10 +38,10 @@ export const SportStatsLogo: React.FC<SportStatsLogoProps> = ({
       >
         <img
           src={logoSrc}
-          alt="SportStats Pro Logo"
+          alt="G METRICS Icon"
           onError={() => {
-            if (logoSrc !== '/apple-touch-icon.png') {
-              setLogoSrc('/apple-touch-icon.png');
+            if (logoSrc !== '/logo.png') {
+              setLogoSrc('/logo.png');
             }
           }}
           className="w-full h-full object-cover rounded-xl"
@@ -52,7 +52,7 @@ export const SportStatsLogo: React.FC<SportStatsLogoProps> = ({
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-sm sm:text-base font-black tracking-tight text-slate-900 dark:text-white uppercase truncate">
-              SportStats <span className="text-cyan-500 dark:text-cyan-400">Pro</span>
+              G <span className="text-cyan-500 dark:text-cyan-400">METRICS</span>
             </span>
           </div>
           {subtitle && (

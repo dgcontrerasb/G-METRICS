@@ -16,6 +16,7 @@ import { useToast } from '../context/ToastContext';
 import { LiveMatchTimeline } from './LiveMatchTimeline';
 import { LiveMarketCapsules } from './LiveMarketCapsules';
 import { LineupRosterTab } from './LineupRosterTab';
+import { formatCompactTeamName } from '../services/leagueCategorizer';
 
 export type DetailMatchPayload =
   | { type: 'SOCCER'; fixture: MatchFixture; analysis: MatchAnalysis }
@@ -150,15 +151,15 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/45 backdrop-blur-[5px] animate-fade-in transition-opacity"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/40 backdrop-blur-[5px] animate-fade-in transition-opacity"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
-      {/* Floating Card Window (Diffused background visible behind, zero double-blur lag) */}
+      {/* Floating Card Window (Fintech Light Deck) */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl h-[86vh] max-h-[660px] my-auto bg-[#0A0E17]/95 border border-slate-700/80 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/10 overscroll-contain"
+        className="w-full max-w-2xl h-[86vh] max-h-[660px] my-auto bg-white/98 border border-slate-200/90 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden ring-1 ring-slate-900/5 overscroll-contain text-slate-900"
       >
         {/* 1. HEADER FIJO COMPACTO: Duelo de Equipos y Marcador Minimalista */}
         {isSoccer ? (
@@ -182,7 +183,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
 
         {/* 2. TABS FIJOS SIMÉTRICOS */}
         <div
-          className={`p-1 bg-slate-900/90 border-b border-slate-800/80 shrink-0 text-center gap-1 ${
+          className={`p-1 bg-slate-100/90 border-b border-slate-200/90 shrink-0 text-center gap-1 ${
             isSoccer && payload.fixture.status === 'IN_PLAY'
               ? 'grid grid-cols-3'
               : 'grid grid-cols-4'
@@ -196,7 +197,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
                   onClick={() => setActiveTabSoccer('TIMELINE')}
                   label="⏱️ Minuto"
                   badge="VIVO"
-                  badgeClass="bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+                  badgeClass="bg-rose-50 text-rose-700 border-rose-200 animate-pulse"
                 />
                 <TabButton
                   active={activeTabSoccer === 'LIVE_MARKETS'}
@@ -215,7 +216,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
                 <TabButton
                   active={activeTabSoccer === 'PICKS'}
                   onClick={() => setActiveTabSoccer('PICKS')}
-                  label="🎯 Pronósticos"
+                  label="🎯 Picks"
                   badge="+EV"
                 />
                 <TabButton
@@ -240,7 +241,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
               <TabButton
                 active={activeTabNBA === 'PICKS'}
                 onClick={() => setActiveTabNBA('PICKS')}
-                label="🏀 Pronósticos"
+                label="🏀 Picks"
                 badge="+EV"
               />
               <TabButton
@@ -263,7 +264,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
         </div>
 
         {/* 3. CONTENIDO CON SCROLL INTERNO Y PADDING INFERIOR SEGURO */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 pb-6 space-y-3 text-slate-200 overscroll-contain">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 pb-6 space-y-3 text-slate-800 bg-slate-50/50 overscroll-contain">
           {isSoccer ? (
             <SoccerTabContent
               tab={activeTabSoccer}
@@ -295,7 +296,7 @@ const SoccerHeader: React.FC<{
   onToggleSelect?: (id: string) => void;
   onOpenSimulator?: (f: MatchFixture) => void;
   onClose: () => void;
-}> = ({ fixture, analysis, isSelected, onToggleSelect, onOpenSimulator, onClose }) => {
+}> = ({ fixture, analysis, isSelected, onToggleSelect, onClose }) => {
   const isLive = fixture.status === 'IN_PLAY';
   const isFinished = fixture.status === 'FINISHED';
   const isValueBet = Boolean(analysis.marketOdds?.valueBetDetected);
@@ -306,7 +307,7 @@ const SoccerHeader: React.FC<{
   const inParlay = isPickInParlay(fixture.id);
 
   return (
-    <div className="px-3.5 py-2 sm:px-5 sm:py-3 border-b border-slate-800/80 bg-slate-900/90 shrink-0 space-y-2">
+    <div className="px-3.5 py-2.5 sm:px-5 sm:py-3 border-b border-slate-200/90 bg-white shrink-0 space-y-2">
       {/* Top Bar: Liga + Badges + Botón Cerrar */}
       <div className="flex items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -314,7 +315,7 @@ const SoccerHeader: React.FC<{
             <img
               src={fixture.league.flag}
               alt=""
-              className="w-4 h-3 object-cover rounded shadow-xs inline-block shrink-0 border border-slate-700/60"
+              className="w-4 h-3 object-cover rounded shadow-2xs inline-block shrink-0 border border-slate-200"
               onError={(e) => {
                 e.currentTarget.style.display = 'none';
               }}
@@ -322,26 +323,26 @@ const SoccerHeader: React.FC<{
           ) : (
             <span className="text-xs shrink-0">{fixture.league.flag || '🏆'}</span>
           )}
-          <span className="font-semibold text-slate-200 tracking-wide uppercase text-[10px] sm:text-[11px] truncate">
+          <span className="font-semibold text-slate-700 tracking-wide uppercase text-[10px] sm:text-[11px] truncate">
             {fixture.league.name}
           </span>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
           {fixture.status === 'PENALTY_SHOOTOUT' || fixture.currentScore?.statusShort === 'PEN' ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 font-mono tracking-tight font-bold animate-pulse text-[10px]">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 font-mono tracking-tight font-bold animate-pulse text-[10px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
               <span>PENALES · 120'</span>
             </span>
           ) : isLive || fixture.status === 'EXTRA_TIME' || fixture.status === 'HALFTIME' || fixture.status === 'PAUSED' ? (
             fixture.currentScore?.isHalfTime || fixture.status === 'HALFTIME' || fixture.status === 'PAUSED' ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono tracking-tight font-bold text-[10px]">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-mono tracking-tight font-bold text-[10px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                 <span>DESCANSO · 45'</span>
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono tracking-tight font-bold animate-pulse text-[10px]">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-mono tracking-tight font-bold animate-pulse text-[10px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                 <span>
                   {(() => {
                     const m = fixture.currentScore?.minute;
@@ -355,19 +356,19 @@ const SoccerHeader: React.FC<{
               </span>
             )
           ) : isFinished ? (
-            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono text-[10px] font-bold">
+            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200 font-mono text-[10px] font-semibold">
               FIN
             </span>
           ) : (
-            <span className="text-amber-400 font-mono text-[10px] font-semibold flex items-center gap-1">
-              <Clock className="w-3 h-3 text-amber-400" />
+            <span className="text-slate-600 font-mono text-[10px] font-medium flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/80">
+              <Clock className="w-3 h-3 text-emerald-600" />
               <span>{fixture.time}</span>
             </span>
           )}
 
           {isValueBet && (
-            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 font-mono text-[9px] font-bold">
-              <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 font-mono text-[9px] font-bold">
+              <Sparkles className="w-2.5 h-2.5 text-amber-600" />
               +EV
             </span>
           )}
@@ -393,10 +394,10 @@ const SoccerHeader: React.FC<{
                 isEV: isValueBet
               });
             }}
-            className={`p-1.5 rounded-full text-xs transition-all cursor-pointer flex items-center ${
+            className={`p-1.5 rounded-lg text-xs transition-all cursor-pointer flex items-center border ${
               inParlay
-                ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
-                : 'bg-slate-800/80 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700'
+                ? 'bg-emerald-600 text-white border-emerald-600 font-semibold shadow-2xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200/90'
             }`}
             title={inParlay ? 'Quitar del boleto de combinadas' : 'Añadir al boleto de combinadas'}
             aria-label={inParlay ? 'Quitar del boleto' : 'Añadir al boleto'}
@@ -404,23 +405,13 @@ const SoccerHeader: React.FC<{
             <Ticket className="w-3.5 h-3.5" />
           </button>
 
-          {onOpenSimulator && (
-            <button
-              onClick={() => onOpenSimulator(fixture)}
-              className="p-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 transition-colors cursor-pointer hidden sm:block"
-              title="Simulador Monte Carlo"
-            >
-              <Sliders className="w-3.5 h-3.5" />
-            </button>
-          )}
-
           {/* Share Button (WhatsApp / Native Share) */}
           <button
             type="button"
             onClick={() => {
               const bestPick = analysis.verdict?.topSafePick;
               const title = `⚽ ${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`;
-              const text = `⚽ *SPORTSTATS PRO · ANÁLISIS DE PARTIDO*\n🔥 *${fixture.homeTeam.name} vs ${fixture.awayTeam.name}*\n🏆 ${fixture.league.name} · ${fixture.time} COT\n\n⭐ *PRONÓSTICO PRINCIPAL (+EV)*\n🎯 Opción: ${bestPick?.label || 'Más de 1.5 Goles'}\n📊 Certeza Calculada: ${bestPick?.probability || 75}%\n💰 Cuota Ref: @${bestPick?.fairOdd?.toFixed(2) || '1.35'}\n\n📱 Analizado en SportStats Pro`;
+              const text = `⚽ *G METRICS · ANÁLISIS DE PARTIDO*\n🔥 *${fixture.homeTeam.name} vs ${fixture.awayTeam.name}*\n🏆 ${fixture.league.name} · ${fixture.time} COT\n\n⭐ *PRONÓSTICO PRINCIPAL (+EV)*\n🎯 Opción: ${bestPick?.label || 'Más de 1.5 Goles'}\n📊 Certeza Calculada: ${bestPick?.probability || 75}%\n💰 Cuota Ref: @${bestPick?.fairOdd?.toFixed(2) || '1.35'}\n\n📱 Analizado en G METRICS`;
               if (navigator.share) {
                 navigator.share({ title, text, url: window.location.href }).catch(() => {
                   navigator.clipboard.writeText(text);
@@ -431,29 +422,29 @@ const SoccerHeader: React.FC<{
                 showToast('Análisis copiado al portapapeles para compartir', 'success');
               }
             }}
-            className="p-1.5 rounded-full bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/40 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
             title="Compartir pronóstico en WhatsApp / Redes"
           >
-            <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+            <Share2 className="w-3.5 h-3.5 text-emerald-600" />
           </button>
 
           {onToggleSelect && (
             <button
               onClick={() => onToggleSelect(fixture.id)}
-              className={`p-1.5 rounded-full text-xs transition-all cursor-pointer flex items-center ${
+              className={`p-1.5 rounded-lg text-xs transition-all cursor-pointer flex items-center border ${
                 isSelected
-                  ? 'bg-emerald-500 text-slate-950 font-bold shadow-xs'
-                  : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700'
+                  ? 'bg-emerald-600 text-white border-emerald-600 font-semibold shadow-2xs'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200/90'
               }`}
               title={isSelected ? 'Quitar de mi selección' : 'Añadir a selección'}
             >
-              <Check className={`w-3.5 h-3.5 ${isSelected ? 'stroke-[3]' : 'text-slate-400'}`} />
+              <Check className={`w-3.5 h-3.5 ${isSelected ? 'stroke-[3] text-white' : 'text-slate-500'}`} />
             </button>
           )}
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full bg-slate-800/80 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer ml-0.5"
+            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200/80 transition-colors cursor-pointer ml-0.5"
             aria-label="Cerrar modal"
             title="Cerrar (ESC)"
           >
@@ -462,57 +453,61 @@ const SoccerHeader: React.FC<{
         </div>
       </div>
 
-      {/* Face-off: Marcador Minimalista y Centrado (Amplio espacio horizontal para nombres) */}
-      <div className="grid grid-cols-12 items-center gap-1.5 pt-0.5">
+      {/* Face-off: Marcador Minimalista y Simétrico */}
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 pt-0.5">
         {/* Local */}
-        <div className="col-span-5 flex items-center justify-end gap-1.5 min-w-0">
+        <div className="flex items-center justify-end gap-2 min-w-0">
           <div className="min-w-0 text-right flex-1">
-            <div className="text-[8px] font-mono text-emerald-400 font-semibold uppercase truncate">
+            <div className="text-[9px] font-mono text-emerald-700 font-semibold uppercase truncate">
               Local · #{fixture.homeTeam.rank}
             </div>
-            <div className="font-sans font-bold text-[11px] sm:text-xs text-white leading-tight truncate" title={fixture.homeTeam.name}>
-              {fixture.homeTeam.name}
+            <div className="font-sans font-medium text-xs sm:text-sm text-slate-900 leading-tight truncate" title={fixture.homeTeam.name}>
+              {formatCompactTeamName(fixture.homeTeam.name)}
             </div>
           </div>
-          <img
-            src={fixture.homeTeam.logo}
-            alt=""
-            className="w-5 h-5 sm:w-7 sm:h-7 object-contain shrink-0"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
-          />
+          {fixture.homeTeam.logo?.trim() ? (
+            <img
+              src={fixture.homeTeam.logo}
+              alt=""
+              className="w-6 h-6 sm:w-7 sm:h-7 object-contain shrink-0"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : null}
         </div>
 
         {/* Marcador Central Minimalista */}
-        <div className="col-span-2 text-center flex items-center justify-center shrink-0 px-0.5">
-          <div className="px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-800 font-mono font-bold text-xs sm:text-sm shadow-inner whitespace-nowrap inline-flex items-center justify-center min-w-[48px]">
+        <div className="text-center flex items-center justify-center shrink-0 px-1">
+          <div className="px-2.5 py-0.5 rounded-lg bg-slate-100 border border-slate-200/90 font-mono font-semibold text-xs sm:text-sm whitespace-nowrap inline-flex items-center justify-center min-w-[48px]">
             {isLive || isFinished ? (
-              <span className={isLive ? 'text-emerald-400' : 'text-white'}>
+              <span className={isLive ? 'text-emerald-700 font-bold' : 'text-slate-900'}>
                 {fixture.currentScore ? `${fixture.currentScore.home} - ${fixture.currentScore.away}` : '0 - 0'}
               </span>
             ) : (
-              <span className="text-slate-400 text-[10px]">VS</span>
+              <span className="text-slate-500 text-[10px] font-medium">VS</span>
             )}
           </div>
         </div>
 
         {/* Visitante */}
-        <div className="col-span-5 flex items-center justify-start gap-1.5 min-w-0">
-          <img
-            src={fixture.awayTeam.logo}
-            alt=""
-            className="w-5 h-5 sm:w-7 sm:h-7 object-contain shrink-0"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
-          />
+        <div className="flex items-center justify-start gap-2 min-w-0">
+          {fixture.awayTeam.logo?.trim() ? (
+            <img
+              src={fixture.awayTeam.logo}
+              alt=""
+              className="w-6 h-6 sm:w-7 sm:h-7 object-contain shrink-0"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : null}
           <div className="min-w-0 text-left flex-1">
-            <div className="text-[8px] font-mono text-cyan-400 font-semibold uppercase truncate">
+            <div className="text-[9px] font-mono text-sky-700 font-semibold uppercase truncate">
               Visita · #{fixture.awayTeam.rank}
             </div>
-            <div className="font-sans font-bold text-[11px] sm:text-xs text-white leading-tight truncate" title={fixture.awayTeam.name}>
-              {fixture.awayTeam.name}
+            <div className="font-sans font-medium text-xs sm:text-sm text-slate-900 leading-tight truncate" title={fixture.awayTeam.name}>
+              {formatCompactTeamName(fixture.awayTeam.name)}
             </div>
           </div>
         </div>
@@ -539,37 +534,37 @@ const NBAHeader: React.FC<{
   const inParlay = isPickInParlay(fixture.id);
 
   return (
-    <div className="px-3.5 py-2 sm:px-5 sm:py-3 border-b border-slate-800/80 bg-slate-900/90 shrink-0 space-y-2">
+    <div className="px-3.5 py-2.5 sm:px-5 sm:py-3 border-b border-slate-200/90 bg-white shrink-0 space-y-2">
       <div className="flex items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="text-xs shrink-0">🏀</span>
-          <span className="font-mono font-bold text-amber-400 text-[11px] uppercase tracking-tight">NBA</span>
-          <span className="text-slate-600">·</span>
-          <span className="text-slate-400 text-[10px] truncate">
+          <span className="font-mono font-bold text-amber-700 text-[11px] uppercase tracking-tight">NBA</span>
+          <span className="text-slate-300">·</span>
+          <span className="text-slate-500 text-[10px] truncate">
             {fixture.arena.name}
           </span>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
           {isLive ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono tracking-tight font-bold animate-pulse text-[10px]">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-              <span>{fixture.livePeriod || 'VIVO'}</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-mono tracking-tight font-bold animate-pulse text-[10px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+              <span>EN VIVO • {fixture.livePeriod === 'HT' ? 'MT' : fixture.livePeriod || 'Q1'}</span>
             </span>
           ) : isFinished ? (
-            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono text-[10px] font-bold">
+            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200 font-mono text-[10px] font-semibold">
               FIN
             </span>
           ) : (
-            <span className="text-amber-400 font-mono text-[10px] font-semibold flex items-center gap-1">
-              <Clock className="w-3 h-3 text-amber-400" />
+            <span className="text-slate-600 font-mono text-[10px] font-medium flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/80">
+              <Clock className="w-3 h-3 text-amber-600" />
               <span>{fixture.time}</span>
             </span>
           )}
 
           {isValueBet && (
-            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 font-mono text-[9px] font-bold">
-              <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 font-mono text-[9px] font-bold">
+              <Sparkles className="w-2.5 h-2.5 text-amber-600" />
               +EV
             </span>
           )}
@@ -596,10 +591,10 @@ const NBAHeader: React.FC<{
                 isEV: isValueBet
               });
             }}
-            className={`p-1.5 rounded-full text-xs transition-all cursor-pointer flex items-center ${
+            className={`p-1.5 rounded-lg text-xs transition-all cursor-pointer flex items-center border ${
               inParlay
-                ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
-                : 'bg-slate-800/80 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700'
+                ? 'bg-amber-500 text-slate-950 border-amber-500 font-bold shadow-2xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200/90'
             }`}
             title={inParlay ? 'Quitar del boleto de combinadas' : 'Añadir al boleto de combinadas'}
             aria-label={inParlay ? 'Quitar del boleto' : 'Añadir al boleto'}
@@ -614,7 +609,7 @@ const NBAHeader: React.FC<{
               const favTeam = analysis.pHomeWin >= analysis.pAwayWin ? fixture.homeTeam : fixture.awayTeam;
               const favProb = Math.max(analysis.pHomeWin, analysis.pAwayWin);
               const title = `🏀 ${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`;
-              const text = `🏀 *SPORTSTATS PRO · ANÁLISIS NBA*\n🔥 *${fixture.homeTeam.name} vs ${fixture.awayTeam.name}*\n🏟️ ${fixture.arena?.name || 'NBA Regular'} · ${fixture.time} COT\n\n⭐ *PROYECCIÓN DE DUELA (+EV)*\n🎯 Ganador Probable: ${favTeam.name} (${favProb}%)\n🔥 Puntuación Total Proyectada: ${analysis.projectedTotalPoints} pts\n🎯 Triples Proyectados: ${analysis.threePointersMarket?.projectedTotal3PM || 26.5} 3PM\n\n📱 Analizado en SportStats Pro`;
+              const text = `🏀 *G METRICS · ANÁLISIS NBA*\n🔥 *${fixture.homeTeam.name} vs ${fixture.awayTeam.name}*\n🏟️ ${fixture.arena?.name || 'NBA Regular'} · ${fixture.time} COT\n\n⭐ *PROYECCIÓN DE DUELA (+EV)*\n🎯 Ganador Probable: ${favTeam.name} (${favProb}%)\n🔥 Puntuación Total Proyectada: ${analysis.projectedTotalPoints} pts\n🎯 Triples Proyectados: ${analysis.threePointersMarket?.projectedTotal3PM || 26.5} 3PM\n\n📱 Analizado en G METRICS`;
               if (navigator.share) {
                 navigator.share({ title, text, url: window.location.href }).catch(() => {
                   navigator.clipboard.writeText(text);
@@ -625,28 +620,28 @@ const NBAHeader: React.FC<{
                 showToast('Análisis NBA copiado al portapapeles para compartir', 'success');
               }
             }}
-            className="p-1.5 rounded-full bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 transition-colors cursor-pointer"
             title="Compartir pronóstico NBA en WhatsApp / Redes"
           >
-            <Share2 className="w-3.5 h-3.5 text-amber-400" />
+            <Share2 className="w-3.5 h-3.5 text-amber-600" />
           </button>
 
           {onToggleSelect && (
             <button
               onClick={() => onToggleSelect(fixture.id)}
-              className={`p-1.5 rounded-full transition-all cursor-pointer flex items-center ${
+              className={`p-1.5 rounded-lg transition-all cursor-pointer flex items-center border ${
                 isSelected
-                  ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-                  : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700'
+                  ? 'bg-amber-500 text-slate-950 border-amber-500 font-bold shadow-2xs'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200/90'
               }`}
             >
-              <Check className={`w-3.5 h-3.5 ${isSelected ? 'stroke-[3]' : 'text-slate-400'}`} />
+              <Check className={`w-3.5 h-3.5 ${isSelected ? 'stroke-[3] text-slate-950' : 'text-slate-500'}`} />
             </button>
           )}
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full bg-slate-800/80 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer ml-0.5"
+            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200/80 transition-colors cursor-pointer ml-0.5"
             aria-label="Cerrar modal"
           >
             <X className="w-4 h-4" />
@@ -654,53 +649,57 @@ const NBAHeader: React.FC<{
         </div>
       </div>
 
-      <div className="grid grid-cols-12 items-center gap-1.5 pt-0.5">
-        <div className="col-span-5 flex items-center justify-end gap-1.5 min-w-0">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 pt-0.5">
+        <div className="flex items-center justify-end gap-2 min-w-0">
           <div className="min-w-0 text-right flex-1">
-            <div className="text-[9px] font-mono text-amber-400 font-semibold uppercase truncate">
+            <div className="text-[9px] font-mono text-amber-700 font-semibold uppercase truncate">
               Local · {fixture.homeTeam.wins}V-{fixture.homeTeam.losses}D
             </div>
-            <div className="font-sans font-bold text-[11px] sm:text-xs text-white leading-tight truncate" title={fixture.homeTeam.name}>
-              {fixture.homeTeam.name}
+            <div className="font-sans font-medium text-xs sm:text-sm text-slate-900 leading-tight truncate" title={fixture.homeTeam.name}>
+              {formatCompactTeamName(fixture.homeTeam.name)}
             </div>
           </div>
-          <img
-            src={fixture.homeTeam.logo}
-            alt=""
-            className="w-6 h-6 sm:w-8 sm:h-8 object-contain shrink-0"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
-          />
+          {fixture.homeTeam.logo?.trim() ? (
+            <img
+              src={fixture.homeTeam.logo}
+              alt=""
+              className="w-6 h-6 sm:w-8 sm:h-8 object-contain shrink-0"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : null}
         </div>
 
-        <div className="col-span-2 text-center flex items-center justify-center shrink-0 px-0.5">
-          <div className="px-2 sm:px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 font-mono font-bold text-xs sm:text-sm shadow-inner whitespace-nowrap inline-flex items-center justify-center gap-1">
+        <div className="text-center flex items-center justify-center shrink-0 px-1">
+          <div className="px-2.5 py-0.5 rounded-lg bg-slate-100 border border-slate-200/90 font-mono font-semibold text-xs sm:text-sm whitespace-nowrap inline-flex items-center justify-center gap-1 min-w-[48px]">
             {isLive || isFinished ? (
-              <span className={isLive ? 'text-amber-400' : 'text-white'}>
+              <span className={isLive ? 'text-amber-700 font-bold' : 'text-slate-900'}>
                 {fixture.currentScore ? `${fixture.currentScore.home} - ${fixture.currentScore.away}` : '0 - 0'}
               </span>
             ) : (
-              <span className="text-slate-400 text-[10px]">VS</span>
+              <span className="text-slate-500 text-[10px] font-medium">VS</span>
             )}
           </div>
         </div>
 
-        <div className="col-span-5 flex items-center justify-start gap-1.5 min-w-0">
-          <img
-            src={fixture.awayTeam.logo}
-            alt=""
-            className="w-6 h-6 sm:w-8 sm:h-8 object-contain shrink-0"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
-          />
+        <div className="flex items-center justify-start gap-2 min-w-0">
+          {fixture.awayTeam.logo?.trim() ? (
+            <img
+              src={fixture.awayTeam.logo}
+              alt=""
+              className="w-6 h-6 sm:w-8 sm:h-8 object-contain shrink-0"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : null}
           <div className="min-w-0 text-left flex-1">
-            <div className="text-[9px] font-mono text-blue-400 font-semibold uppercase truncate">
+            <div className="text-[9px] font-mono text-sky-700 font-semibold uppercase truncate">
               Visita · {fixture.awayTeam.wins}V-{fixture.awayTeam.losses}D
             </div>
-            <div className="font-sans font-bold text-[11px] sm:text-xs text-white leading-tight truncate" title={fixture.awayTeam.name}>
-              {fixture.awayTeam.name}
+            <div className="font-sans font-medium text-xs sm:text-sm text-slate-900 leading-tight truncate" title={fixture.awayTeam.name}>
+              {formatCompactTeamName(fixture.awayTeam.name)}
             </div>
           </div>
         </div>
@@ -710,7 +709,7 @@ const NBAHeader: React.FC<{
 };
 
 // ==========================================
-// PESTAÑAS (TAB BUTTON - 33.3% CADA UNA)
+// PESTAÑAS (TAB BUTTON - ESTÉTICA FINTECH LIGHT)
 // ==========================================
 
 const TabButton: React.FC<{
@@ -723,15 +722,15 @@ const TabButton: React.FC<{
   <button
     type="button"
     onClick={onClick}
-    className={`py-1.5 px-1.5 sm:px-2 rounded-xl text-[11px] sm:text-xs font-mono font-semibold tracking-tight transition-all cursor-pointer flex items-center justify-center gap-1 min-w-0 ${
+    className={`py-1.5 px-1.5 sm:px-2 rounded-lg text-[11px] sm:text-xs font-sans font-medium tracking-tight transition-all cursor-pointer flex items-center justify-center gap-1 min-w-0 ${
       active
-        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
+        ? 'bg-white text-slate-900 border border-slate-200/90 shadow-2xs font-semibold'
+        : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 border border-transparent'
     }`}
   >
     <span className="truncate">{label}</span>
     {badge && (
-      <span className={`px-1 py-0.2 rounded-full text-[8px] font-bold shrink-0 border ${badgeClass || 'bg-amber-500/20 text-amber-300 border-amber-500/30'}`}>
+      <span className={`px-1 py-0.2 rounded text-[8px] font-mono font-bold shrink-0 border ${badgeClass || 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
         {badge}
       </span>
     )}
@@ -747,7 +746,7 @@ const SoccerTabContent: React.FC<{
   fixture: MatchFixture;
   analysis: MatchAnalysis;
   onOpenSimulator?: (fixture: MatchFixture) => void;
-}> = ({ tab, fixture, analysis, onOpenSimulator }) => {
+}> = ({ tab, fixture, analysis }) => {
   const didacticAdvice = getSoccerDidacticAdvice(fixture, analysis);
   const bestPick = analysis.verdict?.topSafePick;
   const { dixonColes, goalsMarket, cornersMarket, refereeCards } = analysis;
@@ -781,27 +780,27 @@ const SoccerTabContent: React.FC<{
     return (
       <div className="space-y-3">
         {/* Selección Principal de Mayor Valor (+EV) */}
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent border border-emerald-500/30 text-center">
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-white to-emerald-50/70 border border-emerald-200/90 text-center shadow-2xs">
           <div className="flex items-center justify-center gap-2 mb-1">
-            <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-emerald-400" />
+            <span className="text-[10px] font-mono font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-emerald-600" />
               {didacticAdvice.badgeLabel}
             </span>
-            <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.2 rounded-full">
+            <span className="text-[10px] font-mono font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
               Cuota Justa: @{bestPick?.fairOdd?.toFixed(2) || '1.30'}
             </span>
           </div>
 
-          <div className="text-base sm:text-lg font-sans font-bold text-white mb-1">
+          <div className="text-base sm:text-lg font-sans font-semibold text-slate-900 mb-1">
             {bestPick?.label || didacticAdvice.headline}
           </div>
 
-          <div className="flex items-center justify-center gap-4 text-xs font-mono text-slate-300">
+          <div className="flex items-center justify-center gap-4 text-xs font-mono text-slate-600">
             <div>
-              Probabilidad: <strong className="text-emerald-300">{bestPick?.probability || 75}%</strong>
+              Probabilidad: <strong className="text-emerald-700">{bestPick?.probability || 75}%</strong>
             </div>
             <div>
-              Riesgo: <strong className="text-slate-200">{bestPick?.riskLevel || 'Bajo'}</strong>
+              Riesgo: <strong className="text-slate-800">{bestPick?.riskLevel || 'Bajo'}</strong>
             </div>
           </div>
 
@@ -827,10 +826,10 @@ const SoccerTabContent: React.FC<{
                   isEV: Boolean(analysis.marketOdds?.valueBetDetected)
                 });
               }}
-              className={`px-3 py-1.5 rounded-xl font-sans text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-xl font-sans text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                 inParlay
-                  ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/40'
-                  : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs'
               }`}
             >
               <Ticket className="w-3.5 h-3.5" />
@@ -840,42 +839,42 @@ const SoccerTabContent: React.FC<{
         </div>
 
         {/* Matriz 1X2 Dixon-Coles */}
-        <div className="p-3 rounded-2xl bg-slate-900/40 border border-slate-800/60 text-center">
-          <div className="text-[10px] font-mono font-bold text-slate-400 mb-2 uppercase tracking-wider">
+        <div className="p-3 rounded-2xl bg-white border border-slate-200/90 text-center shadow-2xs">
+          <div className="text-[10px] font-mono font-semibold text-slate-500 mb-2 uppercase tracking-wider">
             Probabilidad de Victoria 1X2 (Dixon-Coles)
           </div>
           <div className="grid grid-cols-3 gap-2">
-            <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800">
-              <div className="text-[9px] font-mono text-slate-400 uppercase">1 (Local)</div>
-              <div className="text-sm font-mono font-bold text-emerald-400">{dixonColes.pHomeWin}%</div>
+            <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/80">
+              <div className="text-[9px] font-mono text-slate-500 uppercase">1 (Local)</div>
+              <div className="text-sm font-mono font-bold text-emerald-700">{dixonColes.pHomeWin}%</div>
               <div className="text-[9px] font-mono text-slate-500">@{dixonColes.fairOddsHome.toFixed(2)}</div>
             </div>
-            <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800">
-              <div className="text-[9px] font-mono text-slate-400 uppercase">X (Empate)</div>
-              <div className="text-sm font-mono font-bold text-amber-400">{dixonColes.pDraw}%</div>
+            <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/80">
+              <div className="text-[9px] font-mono text-slate-500 uppercase">X (Empate)</div>
+              <div className="text-sm font-mono font-bold text-amber-700">{dixonColes.pDraw}%</div>
               <div className="text-[9px] font-mono text-slate-500">@{dixonColes.fairOddsDraw.toFixed(2)}</div>
             </div>
-            <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800">
-              <div className="text-[9px] font-mono text-slate-400 uppercase">2 (Visita)</div>
-              <div className="text-sm font-mono font-bold text-cyan-400">{dixonColes.pAwayWin}%</div>
+            <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/80">
+              <div className="text-[9px] font-mono text-slate-500 uppercase">2 (Visita)</div>
+              <div className="text-sm font-mono font-bold text-sky-700">{dixonColes.pAwayWin}%</div>
               <div className="text-[9px] font-mono text-slate-500">@{dixonColes.fairOddsAway.toFixed(2)}</div>
             </div>
           </div>
         </div>
 
         {/* Top 3 Marcadores Exactos */}
-        <div className="p-3 rounded-2xl bg-slate-900/40 border border-slate-800/60 text-center">
-          <div className="text-[10px] font-mono font-bold text-slate-400 mb-2 uppercase tracking-wider">
+        <div className="p-3 rounded-2xl bg-white border border-slate-200/90 text-center shadow-2xs">
+          <div className="text-[10px] font-mono font-semibold text-slate-500 mb-2 uppercase tracking-wider">
             Top 3 Marcadores Exactos Más Probables
           </div>
           <div className="grid grid-cols-3 gap-2">
             {dixonColes.mostLikelyScores.slice(0, 3).map((scoreItem) => (
               <div
                 key={scoreItem.score}
-                className="p-1.5 rounded-xl bg-slate-950/60 border border-slate-800 text-center"
+                className="p-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center"
               >
-                <div className="text-xs font-mono font-bold text-white">{scoreItem.score}</div>
-                <div className="text-[9px] font-mono text-emerald-400 font-semibold">
+                <div className="text-xs font-mono font-bold text-slate-900">{scoreItem.score}</div>
+                <div className="text-[9px] font-mono text-emerald-700 font-semibold">
                   {scoreItem.probability.toFixed(1)}% prob.
                 </div>
               </div>
@@ -890,8 +889,8 @@ const SoccerTabContent: React.FC<{
     return (
       <div className="space-y-3">
         {/* Mercado de Goles */}
-        <div className="p-3 rounded-2xl bg-slate-900/40 border border-slate-800/60 text-center">
-          <div className="text-[10px] font-mono font-bold text-slate-400 mb-2 uppercase tracking-wider">
+        <div className="p-3 rounded-2xl bg-white border border-slate-200/90 text-center shadow-2xs">
+          <div className="text-[10px] font-mono font-semibold text-slate-500 mb-2 uppercase tracking-wider">
             Mercado de Goles (Líneas Over / Under)
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -903,10 +902,10 @@ const SoccerTabContent: React.FC<{
         </div>
 
         {/* Mercado de Córners */}
-        <div className="p-3 rounded-2xl bg-slate-900/40 border border-slate-800/60 text-center">
-          <div className="text-[10px] font-mono font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center justify-between px-1">
+        <div className="p-3 rounded-2xl bg-white border border-slate-200/90 text-center shadow-2xs">
+          <div className="text-[10px] font-mono font-semibold text-slate-500 mb-2 uppercase tracking-wider flex items-center justify-between px-1">
             <span>Mercado de Córners</span>
-            <span className="text-emerald-400 font-mono text-[10px] font-bold">
+            <span className="text-emerald-700 font-mono text-[10px] font-bold">
               Proyección: ~{cornersMarket.expectedTotalCorners} córners
             </span>
           </div>
@@ -928,15 +927,15 @@ const SoccerTabContent: React.FC<{
   // tab === 'REFEREE'
   return (
     <div className="space-y-3">
-      <div className="p-3.5 rounded-2xl bg-slate-900/40 border border-slate-800/60 text-center">
+      <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 text-center shadow-2xs">
         <div className="flex items-center justify-between gap-2 mb-2.5 px-1">
           <div className="text-left">
-            <div className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider">
+            <div className="text-[9px] font-mono font-semibold text-slate-500 uppercase tracking-wider">
               Árbitro Principal
             </div>
-            <div className="text-sm font-sans font-bold text-white">{fixture.referee.name}</div>
+            <div className="text-sm font-sans font-semibold text-slate-900">{fixture.referee.name}</div>
           </div>
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-amber-50 text-amber-800 border border-amber-200">
             Rigor: {fixture.referee.rigor}
           </span>
         </div>
@@ -947,9 +946,9 @@ const SoccerTabContent: React.FC<{
           <MetricBox label="Faltas / Tarj." value={`${fixture.referee.foulsPerCard}`} sub="fricción" />
         </div>
 
-        <div className="mt-2.5 p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between text-xs font-mono px-3">
-          <span className="text-slate-300 truncate">{refereeCards.recommendedCardPick}</span>
-          <span className="text-emerald-400 font-bold shrink-0 ml-2">{refereeCards.recommendedCardProb}% Probabilidad</span>
+        <div className="mt-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs font-mono px-3">
+          <span className="text-slate-700 truncate">{refereeCards.recommendedCardPick}</span>
+          <span className="text-emerald-700 font-bold shrink-0 ml-2">{refereeCards.recommendedCardProb}% Probabilidad</span>
         </div>
       </div>
     </div>
@@ -979,30 +978,30 @@ const NBATabContent: React.FC<{
   if (tab === 'PICKS') {
     return (
       <div className="space-y-3 text-center">
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border border-amber-500/30">
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50/90 via-white to-amber-50/70 border border-amber-200/90 shadow-2xs">
           <div className="flex items-center justify-center gap-2 mb-1">
-            <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
-              <Flame className="w-3 h-3 text-amber-400" />
+            <span className="text-[10px] font-mono font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
+              <Flame className="w-3 h-3 text-amber-600" />
               {didacticAdvice.badgeLabel}
             </span>
-            <span className="text-[10px] font-mono font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.2 rounded-full">
+            <span className="text-[10px] font-mono font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
               Puntos Proyectados: {analysis.projectedTotalPoints} pts
             </span>
           </div>
 
-          <div className="text-base sm:text-lg font-sans font-bold text-white mb-1">
+          <div className="text-base sm:text-lg font-sans font-semibold text-slate-900 mb-1">
             {didacticAdvice.headline}
           </div>
 
-          <div className="flex items-center justify-center gap-4 text-xs font-mono text-slate-300">
+          <div className="flex items-center justify-center gap-4 text-xs font-mono text-slate-600">
             <div>
               Hándicap Justo:{' '}
-              <strong className="text-amber-300">
+              <strong className="text-amber-700">
                 {analysis.fairSpread > 0 ? `+${analysis.fairSpread}` : analysis.fairSpread}
               </strong>
             </div>
             <div>
-              Línea Totales: <strong className="text-slate-200">{analysis.fairTotalLine} pts</strong>
+              Línea Totales: <strong className="text-slate-900">{analysis.fairTotalLine} pts</strong>
             </div>
           </div>
 
@@ -1029,10 +1028,10 @@ const NBATabContent: React.FC<{
                   isEV: Boolean(analysis.marketOdds?.valueBetDetected)
                 });
               }}
-              className={`px-3 py-1.5 rounded-xl font-sans text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-xl font-sans text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                 inParlay
-                  ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-400/40'
-                  : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-2xs'
               }`}
             >
               <Ticket className="w-3.5 h-3.5" />
@@ -1042,14 +1041,14 @@ const NBATabContent: React.FC<{
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <div className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800">
-            <div className="text-[9px] font-mono text-slate-400 uppercase truncate">{fixture.homeTeam.name}</div>
-            <div className="text-sm font-mono font-bold text-emerald-400">{analysis.pHomeWin}%</div>
+          <div className="p-2.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
+            <div className="text-[9px] font-mono text-slate-500 uppercase truncate">{formatCompactTeamName(fixture.homeTeam.name)}</div>
+            <div className="text-sm font-mono font-bold text-emerald-700">{analysis.pHomeWin}%</div>
             <div className="text-[9px] font-mono text-slate-500">ML Justo @{(100 / Math.max(analysis.pHomeWin, 1)).toFixed(2)}</div>
           </div>
-          <div className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800">
-            <div className="text-[9px] font-mono text-slate-400 uppercase truncate">{fixture.awayTeam.name}</div>
-            <div className="text-sm font-mono font-bold text-cyan-400">{analysis.pAwayWin}%</div>
+          <div className="p-2.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
+            <div className="text-[9px] font-mono text-slate-500 uppercase truncate">{formatCompactTeamName(fixture.awayTeam.name)}</div>
+            <div className="text-sm font-mono font-bold text-sky-700">{analysis.pAwayWin}%</div>
             <div className="text-[9px] font-mono text-slate-500">ML Justo @{(100 / Math.max(analysis.pAwayWin, 1)).toFixed(2)}</div>
           </div>
         </div>
@@ -1061,8 +1060,8 @@ const NBATabContent: React.FC<{
     return (
       <div className="space-y-3 text-center">
         {analysis.threePointersMarket && (
-          <div className="p-3 rounded-2xl bg-slate-900/40 border border-slate-800/60">
-            <div className="text-[10px] font-mono font-bold text-slate-400 mb-2 uppercase tracking-wider">
+          <div className="p-3 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+            <div className="text-[10px] font-mono font-semibold text-slate-500 mb-2 uppercase tracking-wider">
               Mercado de Triples (3PM Proyectados)
             </div>
             <div className="grid grid-cols-3 gap-2">
@@ -1074,8 +1073,8 @@ const NBATabContent: React.FC<{
         )}
 
         {analysis.quarterProjections && (
-          <div className="p-3 rounded-2xl bg-slate-900/40 border border-slate-800/60">
-            <div className="text-[10px] font-mono font-bold text-slate-400 mb-2 uppercase tracking-wider">
+          <div className="p-3 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+            <div className="text-[10px] font-mono font-semibold text-slate-500 mb-2 uppercase tracking-wider">
               Desglose Proyectado por Cuartos
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -1097,8 +1096,8 @@ const NBATabContent: React.FC<{
   // tab === 'PACE_STREAK'
   return (
     <div className="space-y-3 text-center">
-      <div className="p-3.5 rounded-2xl bg-slate-900/40 border border-slate-800/60">
-        <div className="text-[10px] font-mono font-bold text-slate-400 mb-2 uppercase tracking-wider">
+      <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+        <div className="text-[10px] font-mono font-semibold text-slate-500 mb-2 uppercase tracking-wider">
           Ritmo de Posesiones (Pace) y Racha
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -1123,16 +1122,17 @@ const MetricBox: React.FC<{
   <div
     className={`p-2 rounded-xl border transition-all text-center flex flex-col items-center justify-center ${
       highlight
-        ? 'bg-emerald-500/10 border-emerald-500/30 ring-1 ring-emerald-500/20'
-        : 'bg-slate-950/50 border-slate-800/80'
+        ? 'bg-emerald-50/90 border-emerald-200 ring-1 ring-emerald-500/15'
+        : 'bg-slate-50/90 border-slate-200/80'
     }`}
   >
-    <div className="text-[9px] font-mono text-slate-400 uppercase leading-tight line-clamp-1 max-w-full" title={label}>
+    <div className="text-[9px] font-mono text-slate-500 uppercase leading-tight line-clamp-1 max-w-full" title={label}>
       {label}
     </div>
-    <div className={`text-xs sm:text-sm font-mono font-bold mt-0.5 ${highlight ? 'text-emerald-400' : 'text-white'}`}>
+    <div className={`text-xs sm:text-sm font-mono font-bold mt-0.5 ${highlight ? 'text-emerald-700' : 'text-slate-900'}`}>
       {value}
     </div>
     {sub && <div className="text-[8px] font-mono text-slate-500 truncate max-w-full mt-0.5">{sub}</div>}
   </div>
 );
+

@@ -1,28 +1,48 @@
 <!doctype html>
-<html lang="es" class="dark">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SportStats Pro - Analítica Deportiva Avanzada & Pronósticos</title>
-    <meta name="description" content="Plataforma de análisis probabilístico avanzado multideporte (Fútbol & NBA) con modelo Dixon-Coles bivariado, cálculo de xG, árbitros, fatiga y valor esperado +EV." />
-    <meta property="og:title" content="SportStats Pro - Analítica Deportiva Avanzada & Pronósticos" />
-    <meta property="og:description" content="Plataforma de análisis probabilístico avanzado multideporte (Fútbol & NBA) con modelo Dixon-Coles bivariado, cálculo de xG, árbitros, fatiga y valor esperado +EV." />
+    <title>G METRICS | La ciencia detrás de cada victoria</title>
+    <meta name="description" content="Modelos probabilísticos avanzados y analítica deportiva de precisión. Deja el azar a un lado y toma decisiones con ventaja estadística." />
+    <meta property="og:title" content="G METRICS | La ciencia detrás de cada victoria" />
+    <meta property="og:description" content="Modelos probabilísticos avanzados y analítica deportiva de precisión. Deja el azar a un lado y toma decisiones con ventaja estadística." />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="G METRICS" />
+    <meta property="og:image" content="/icon.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:image:alt" content="G METRICS" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="G METRICS | La ciencia detrás de cada victoria" />
+    <meta name="twitter:description" content="Modelos probabilísticos avanzados y analítica deportiva de precisión. Deja el azar a un lado y toma decisiones con ventaja estadística." />
+    <meta name="twitter:image" content="/icon.png" />
+    <meta name="twitter:image:alt" content="G METRICS" />
     <meta name="theme-color" content="#06B6D4" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="SportStats Pro" />
-    <link rel="icon" type="image/png" href="/logo.png" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="G METRICS" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
     <link rel="manifest" href="/manifest.json" />
-    <link rel="shortcut icon" href="/logo.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png?v=2" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/pwa-512x512.png?v=2" />
+    <link rel="shortcut icon" href="/icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon.png" />
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SportsApplication",
+      "name": "G METRICS",
+      "alternateName": "G METRICS - La ciencia detrás de cada victoria",
+      "description": "Modelos probabilísticos avanzados y analítica deportiva de precisión. Deja el azar a un lado y toma decisiones con ventaja estadística.",
+      "applicationCategory": "SportsApplication",
+      "operatingSystem": "All"
+    }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@800;900&family=Orbitron:wght@800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <script>
       // Interceptar y silenciar conexiones WebSocket de Vite HMR en el entorno de iframe de AI Studio
       (() => {
@@ -68,6 +88,9 @@
           if (
             fullText.includes('WebSocket closed') ||
             fullText.includes('WebSocket') ||
+            fullText.includes('ServiceWorker') ||
+            fullText.includes('sw.js') ||
+            fullText.includes('ResizeObserver') ||
             (fullText.includes('[vite]') && (fullText.includes('WebSocket') || fullText.includes('closed') || fullText.includes('connect')))
           ) {
             return;
@@ -81,7 +104,10 @@
           if (
             msg.includes('WebSocket') ||
             msg.includes('[vite]') ||
-            filename.includes('@vite/client')
+            msg.includes('ResizeObserver') ||
+            msg.includes('ServiceWorker') ||
+            filename.includes('@vite/client') ||
+            filename.includes('sw.js')
           ) {
             e.preventDefault();
             e.stopImmediatePropagation();
@@ -94,17 +120,31 @@
           if (
             reasonStr.includes('WebSocket') ||
             reasonStr.includes('[vite]') ||
-            reasonStr.includes('@vite/client')
+            reasonStr.includes('@vite/client') ||
+            reasonStr.includes('ServiceWorker') ||
+            reasonStr.includes('sw.js') ||
+            reasonStr.includes('Failed to register')
           ) {
             e.preventDefault();
             e.stopImmediatePropagation();
             return false;
           }
         }, true);
+
+        // Limpiar cualquier Service Worker antiguo en caché de desarrollo dentro del iframe de AI Studio
+        if ('serviceWorker' in navigator && (window.location.hostname.includes('run.app') || window.location.hostname === 'localhost')) {
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            for (const reg of registrations) {
+              if (reg.active && reg.active.scriptURL && reg.active.scriptURL.includes('dev-sw')) {
+                reg.unregister().catch(() => {});
+              }
+            }
+          }).catch(() => {});
+        }
       })();
     </script>
   </head>
-  <body class="bg-[#0A0E17] text-slate-100 antialiased selection:bg-emerald-500 selection:text-white min-h-screen">
+  <body class="bg-slate-100 text-slate-900 antialiased selection:bg-emerald-500 selection:text-white min-h-screen overflow-x-hidden">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

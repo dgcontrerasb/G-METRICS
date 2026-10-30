@@ -59,29 +59,29 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
     return (
       <div className="space-y-2.5 text-xs">
         {/* View Mode Conmutador (Vista Cancha vs Lista por Equipo) */}
-        <div className="flex items-center justify-between p-0.5 bg-slate-900/90 rounded-xl border border-slate-800 gap-1 font-mono">
+        <div className="flex items-center justify-between p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1 font-mono">
           <button
             type="button"
             onClick={() => setCourtViewMode('COURT')}
-            className={`flex-1 py-1 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
+            className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
               courtViewMode === 'COURT'
-                ? 'bg-emerald-500/25 border-emerald-400 text-emerald-300 shadow-xs'
-                : 'bg-transparent border-transparent text-slate-400 hover:text-white'
+                ? 'bg-white border-slate-200 text-slate-900 shadow-2xs'
+                : 'bg-transparent border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
-            <LayoutGrid className="w-3 h-3 shrink-0" />
+            <LayoutGrid className="w-3 h-3 shrink-0 text-emerald-600" />
             <span>Vista Cancha</span>
           </button>
           <button
             type="button"
             onClick={() => setCourtViewMode('LIST')}
-            className={`flex-1 py-1 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
+            className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
               courtViewMode === 'LIST'
-                ? 'bg-emerald-500/25 border-emerald-400 text-emerald-300 shadow-xs'
-                : 'bg-transparent border-transparent text-slate-400 hover:text-white'
+                ? 'bg-white border-slate-200 text-slate-900 shadow-2xs'
+                : 'bg-transparent border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
-            <List className="w-3 h-3 shrink-0" />
+            <List className="w-3 h-3 shrink-0 text-emerald-600" />
             <span>Lista por Equipo</span>
           </button>
         </div>
@@ -109,24 +109,26 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
         {courtViewMode === 'LIST' && (
           <div className="space-y-3">
             {/* Team Selector Switcher */}
-            <div className="grid grid-cols-2 p-1 bg-slate-900/90 rounded-2xl border border-slate-800 gap-1 text-center font-mono">
+            <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1 text-center font-mono">
               <button
                 type="button"
                 onClick={() => setSelectedTeam('HOME')}
-                className={`py-1.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold ${
+                className={`py-1.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold ${
                   selectedTeam === 'HOME'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-white text-slate-900 border border-slate-200/90 shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
-                <img
-                  src={homeTeam.logo}
-                  alt=""
-                  className="w-4 h-4 object-contain shrink-0"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
+                {homeTeam.logo?.trim() ? (
+                  <img
+                    src={homeTeam.logo}
+                    alt=""
+                    className="w-4 h-4 object-contain shrink-0"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : null}
                 <span className="truncate">{homeTeam.name}</span>
               </button>
               <button
@@ -134,51 +136,55 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
                 onClick={() => setSelectedTeam('AWAY')}
                 className={`py-1.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold ${
                   selectedTeam === 'AWAY'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-white text-slate-900 border border-slate-200/90 shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
-                <img
-                  src={awayTeam.logo}
-                  alt=""
-                  className="w-4 h-4 object-contain shrink-0"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
+                {awayTeam.logo?.trim() ? (
+                  <img
+                    src={awayTeam.logo}
+                    alt=""
+                    className="w-4 h-4 object-contain shrink-0"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : null}
                 <span className="truncate">{awayTeam.name}</span>
               </button>
             </div>
 
             {/* Header: Formation & DT */}
-            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/50 border border-slate-800/80">
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
               <div className="flex items-center gap-2">
-                <img
-                  src={currentLogo}
-                  alt=""
-                  className="w-4 h-4 object-contain"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-                <span className="font-bold text-white text-xs">{currentTeamName}</span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-bold text-[10px] border border-emerald-500/30">
+                {currentLogo?.trim() ? (
+                  <img
+                    src={currentLogo}
+                    alt=""
+                    className="w-4 h-4 object-contain"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : null}
+                <span className="font-semibold text-slate-900 text-xs">{currentTeamName}</span>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-mono font-semibold text-[10px] border border-emerald-200">
                   Esquema {currentFormation}
                 </span>
               </div>
-              <div className="text-[11px] font-mono text-slate-400">
+              <div className="text-[11px] font-mono text-slate-500">
                 📋 {currentCoach}
               </div>
             </div>
 
         {/* 11 Titulares (Starting XI) Grid */}
         <div className="space-y-2">
-          <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 px-1">
+          <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 px-1">
             <span className="flex items-center gap-1">
-              <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
               <span>Alineación Confirmada (11 Titulares)</span>
             </span>
-            <span className="text-emerald-400 font-bold text-[10px]">OFICIAL</span>
+            <span className="text-emerald-700 font-semibold text-[10px]">OFICIAL</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -210,74 +216,70 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
               return (
                 <div
                   key={player.id}
-                  className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between gap-2 hover:bg-slate-800/60 transition-colors"
+                  className="p-2.5 rounded-xl bg-white border border-slate-200/90 flex items-center justify-between gap-2 hover:bg-slate-50 transition-colors shadow-2xs"
                 >
                   <div
                     onClick={handleOpenModal}
-                    className="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1 group"
+                    className="flex items-center gap-2 min-w-0 cursor-pointer flex-1 group"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-mono font-bold text-xs text-amber-300 shrink-0 shadow-inner group-hover:border-emerald-500/50 transition-colors">
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 border border-slate-200/90 flex items-center justify-center font-mono font-semibold text-xs text-slate-800 shrink-0 group-hover:border-emerald-400 transition-colors">
                       {player.number}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-slate-100 text-xs truncate flex items-center gap-1 group-hover:text-emerald-300 transition-colors">
-                        <span>{player.name}</span>
+                      <div className="font-medium text-slate-900 text-xs flex items-center gap-1.5 flex-wrap group-hover:text-emerald-700 transition-colors">
+                        <span className="truncate">{player.name}</span>
                         {player.isCaptain && (
-                          <span className="px-1 rounded bg-amber-500/30 text-amber-300 font-mono text-[9px] font-bold">C</span>
+                          <span className="px-1 rounded bg-amber-100 text-amber-800 font-mono text-[9px] font-bold shrink-0">C</span>
+                        )}
+                        {isMatchStarted ? (
+                          <>
+                            {player.matchYellowCards === 1 && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 font-mono text-[9.5px] font-semibold border border-amber-300 shrink-0" title="Tarjeta Amarilla recibida en este partido">
+                                🟨 1
+                              </span>
+                            )}
+                            {player.matchYellowCards >= 2 && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-rose-50 text-rose-800 font-mono text-[9.5px] font-semibold border border-rose-300 shrink-0" title="Doble Amarilla - Expulsado del partido">
+                                🟨🟨 📕 Expulsado
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {player.hasPreviousYellow && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 font-mono text-[9.5px] font-semibold border border-amber-300 shrink-0" title="Llega con 1 amarilla del partido anterior">
+                                🟨 1
+                              </span>
+                            )}
+                          </>
+                        )}
+                        {player.isInjured && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-rose-50 text-rose-700 font-mono text-[9.5px] font-semibold border border-rose-200 shrink-0" title={player.injuryNote || 'Baja por lesión'}>
+                            🚑 Baja
+                          </span>
                         )}
                       </div>
-                      <span className="text-[10px] font-mono text-slate-400 uppercase tracking-tight">
+                      <span className="text-[10px] font-mono text-slate-500 uppercase tracking-tight">
                         Posición: {player.position}
                       </span>
                     </div>
                   </div>
 
-                  {/* Status Badges & Stats & Props Button */}
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Symmetric Right Action Button */}
+                  <div className="flex items-center shrink-0">
                     <button
                       type="button"
                       onClick={handleOpenModal}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1 border ${
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold transition-all cursor-pointer flex items-center gap-1 border ${
                         isPickInParlay(payload.fixture.id)
-                          ? 'bg-emerald-400 text-black border-emerald-400 shadow-xs'
-                          : 'bg-slate-800 hover:bg-slate-700 text-emerald-300 border-slate-700 hover:border-emerald-500/40'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200/90'
                       }`}
                       title="Ver estadísticas completas y mercados del jugador para el boleto"
                     >
-                      <BarChart2 className="w-3 h-3 text-emerald-400" />
+                      <BarChart2 className="w-3 h-3 text-emerald-600" />
                       <span>Stats & Props</span>
                     </button>
-
-                    {isMatchStarted ? (
-                      // EN VIVO O FINALIZADO: Muestra únicamente tarjetas recibidas en ESTE partido
-                      <>
-                        {player.matchYellowCards === 1 && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-300 font-mono text-[10px] font-bold border border-yellow-500/40" title="Tarjeta Amarilla recibida en este partido">
-                            🟨 1
-                          </span>
-                        )}
-                        {player.matchYellowCards >= 2 && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono text-[10px] font-bold border border-rose-500/40" title="Doble Amarilla - Expulsado del partido">
-                            🟨🟨 📕 Expulsado
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      // PRE-PARTIDO (SCHEDULED): Muestra si llega con 1 amarilla del partido anterior
-                      <>
-                        {player.hasPreviousYellow && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold border border-amber-500/40" title="Llega con 1 amarilla del partido anterior">
-                            🟨 1
-                          </span>
-                        )}
-                      </>
-                    )}
-
-                    {player.isInjured && (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono text-[10px] font-bold border border-rose-500/40" title={player.injuryNote || 'Baja por lesión'}>
-                        🚑 Baja
-                      </span>
-                    )}
                   </div>
                 </div>
               );
@@ -286,8 +288,8 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
         </div>
 
         {/* Substitutes & Bajas (Banco de Suplentes) */}
-        <div className="space-y-2 pt-2 border-t border-slate-800/60">
-          <span className="text-[11px] font-mono text-slate-400 block px-1">
+        <div className="space-y-2 pt-2 border-t border-slate-200/90">
+          <span className="text-[11px] font-mono text-slate-600 font-medium block px-1">
             🔄 Banco de Suplentes & Bajas
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -317,29 +319,28 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
                 <div
                   key={sub.id}
                   onClick={handleOpenSubModal}
-                  className={`p-2 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-colors group ${
+                  className={`p-2 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-colors group shadow-2xs ${
                     sub.isInjured
-                      ? 'bg-rose-950/20 hover:bg-rose-900/30 border-rose-500/30 text-rose-200'
-                      : 'bg-slate-900/40 hover:bg-slate-800/60 border-slate-800/60 text-slate-300'
+                      ? 'bg-rose-50/70 hover:bg-rose-50 border-rose-200 text-rose-900'
+                      : 'bg-white hover:bg-slate-50 border-slate-200/90 text-slate-800'
                   }`}
                   title="Haz clic para ver estadísticas y cuotas del jugador"
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className="w-5 h-5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] font-bold flex items-center justify-center shrink-0 group-hover:border group-hover:border-emerald-500/50">
+                    <span className="w-5 h-5 rounded bg-slate-100 border border-slate-200/90 text-slate-700 font-mono text-[10px] font-semibold flex items-center justify-center shrink-0 group-hover:border-emerald-400">
                       {sub.number}
                     </span>
-                    <span className="text-xs truncate font-medium group-hover:text-emerald-300 transition-colors">{sub.name}</span>
+                    <span className="text-xs truncate font-medium group-hover:text-emerald-700 transition-colors">{sub.name}</span>
+                    {sub.isInjured && (
+                      <span className="px-1.5 py-0.2 rounded bg-rose-100 text-rose-700 border border-rose-200 text-[9.5px] font-mono font-semibold shrink-0">
+                        🚑 {sub.injuryNote || 'Baja'}
+                      </span>
+                    )}
                   </div>
-                  {sub.isInjured ? (
-                    <span className="text-[10px] font-mono text-rose-400 font-bold shrink-0">
-                      🚑 {sub.injuryNote || 'Lesionado'}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-mono text-emerald-400 group-hover:underline shrink-0 font-semibold flex items-center gap-1">
-                      <BarChart2 className="w-3 h-3 text-emerald-400" />
-                      <span>Stats</span>
-                    </span>
-                  )}
+                  <span className="text-[10px] font-mono text-emerald-700 group-hover:underline shrink-0 font-semibold flex items-center gap-1">
+                    <BarChart2 className="w-3 h-3 text-emerald-600" />
+                    <span>Stats</span>
+                  </span>
                 </div>
               );
             })}
@@ -396,29 +397,29 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
   return (
     <div className="space-y-3 text-xs">
       {/* View Mode Conmutador (Vista Cancha vs Lista por Equipo) */}
-      <div className="flex items-center justify-between p-0.5 bg-slate-900/90 rounded-xl border border-slate-800 gap-1 font-mono">
+      <div className="flex items-center justify-between p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1 font-mono">
         <button
           type="button"
           onClick={() => setCourtViewMode('COURT')}
-          className={`flex-1 py-1 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
+          className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
             courtViewMode === 'COURT'
-              ? 'bg-amber-500/25 border-amber-400 text-amber-300 shadow-xs'
-              : 'bg-transparent border-transparent text-slate-400 hover:text-white'
+              ? 'bg-white border-slate-200 text-slate-900 shadow-2xs'
+              : 'bg-transparent border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          <LayoutGrid className="w-3 h-3 shrink-0" />
+          <LayoutGrid className="w-3 h-3 shrink-0 text-amber-600" />
           <span>Vista Cancha</span>
         </button>
         <button
           type="button"
           onClick={() => setCourtViewMode('LIST')}
-          className={`flex-1 py-1 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
+          className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 border whitespace-nowrap ${
             courtViewMode === 'LIST'
-              ? 'bg-amber-500/25 border-amber-400 text-amber-300 shadow-xs'
-              : 'bg-transparent border-transparent text-slate-400 hover:text-white'
+              ? 'bg-white border-slate-200 text-slate-900 shadow-2xs'
+              : 'bg-transparent border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          <List className="w-3 h-3 shrink-0" />
+          <List className="w-3 h-3 shrink-0 text-amber-600" />
           <span>Lista por Equipo</span>
         </button>
       </div>
@@ -449,75 +450,81 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
 
       {/* LIST VIEW (Team by Team) */}
       {courtViewMode === 'LIST' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {/* Team Selector Switcher */}
-          <div className="grid grid-cols-2 p-1 bg-slate-900/90 rounded-2xl border border-slate-800 gap-1 text-center font-mono">
+          <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl border border-slate-200/90 gap-1 text-center font-mono">
             <button
               type="button"
               onClick={() => setSelectedTeam('HOME')}
-              className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold ${
+              className={`py-1.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold ${
                 selectedTeam === 'HOME'
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-white text-slate-900 border border-slate-200/90 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <img
-                src={homeTeam.logo}
-                alt=""
-                className="w-4 h-4 object-contain shrink-0"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
+              {homeTeam.logo?.trim() ? (
+                <img
+                  src={homeTeam.logo}
+                  alt=""
+                  className="w-4 h-4 object-contain shrink-0"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : null}
               <span className="truncate">{homeTeam.name}</span>
             </button>
             <button
               type="button"
               onClick={() => setSelectedTeam('AWAY')}
-              className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold ${
+              className={`py-1.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold ${
                 selectedTeam === 'AWAY'
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-white text-slate-900 border border-slate-200/90 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <img
-                src={awayTeam.logo}
-                alt=""
-                className="w-4 h-4 object-contain shrink-0"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
+              {awayTeam.logo?.trim() ? (
+                <img
+                  src={awayTeam.logo}
+                  alt=""
+                  className="w-4 h-4 object-contain shrink-0"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : null}
               <span className="truncate">{awayTeam.name}</span>
             </button>
           </div>
 
           {/* Header: DT */}
-          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/50 border border-slate-800/80">
+          <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
             <div className="flex items-center gap-2">
-              <img
-                src={currentLogo}
-                alt=""
-                className="w-5 h-5 object-contain"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-              <span className="font-bold text-white text-xs">{currentTeamName}</span>
+              {currentLogo?.trim() ? (
+                <img
+                  src={currentLogo}
+                  alt=""
+                  className="w-5 h-5 object-contain"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : null}
+              <span className="font-semibold text-slate-900 text-xs">{currentTeamName}</span>
             </div>
-            <div className="text-[11px] font-mono text-slate-400">
+            <div className="text-[11px] font-mono text-slate-500">
               📋 {currentCoach}
             </div>
           </div>
 
           {/* Starters List */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 px-1">
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 px-1">
               <span className="flex items-center gap-1">
-                <UserCheck className="w-3.5 h-3.5 text-amber-400" />
+                <UserCheck className="w-3.5 h-3.5 text-amber-600" />
                 <span>Quinteto Inicial Titular</span>
               </span>
-              <span className="text-amber-400 font-bold text-[10px]">OFICIAL</span>
+              <span className="text-amber-700 font-semibold text-[10px]">OFICIAL</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -549,21 +556,26 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
                 return (
                   <div
                     key={player.id}
-                    className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between gap-2 hover:bg-slate-800/60 transition-colors"
+                    className="p-2.5 rounded-xl bg-white border border-slate-200/90 flex items-center justify-between gap-2 hover:bg-slate-50 transition-colors shadow-2xs"
                   >
                     <div
                       onClick={handleOpenNBAModal}
-                      className="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1 group"
+                      className="flex items-center gap-2 min-w-0 cursor-pointer flex-1 group"
                     >
-                      <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center font-mono font-bold text-xs text-amber-300 shrink-0 shadow-inner group-hover:border-amber-400/60 transition-colors">
+                      <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center font-mono font-semibold text-xs text-amber-800 shrink-0 group-hover:border-amber-400 transition-colors">
                         {player.position}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-slate-100 text-xs truncate group-hover:text-amber-300 transition-colors">
-                          #{player.number} {player.name}
+                        <div className="font-medium text-slate-900 text-xs flex items-center gap-1.5 flex-wrap group-hover:text-amber-700 transition-colors">
+                          <span className="truncate">#{player.number} {player.name}</span>
+                          {player.isInjured && (
+                            <span className="px-1.5 py-0.2 rounded bg-rose-50 text-rose-700 font-mono text-[9.5px] font-semibold border border-rose-200 shrink-0">
+                              🚑 {player.injuryStatus || 'GTD'}
+                            </span>
+                          )}
                         </div>
-                        <div className="text-[10px] font-mono text-slate-400 tracking-tight flex items-center gap-1.5">
-                          <span className="text-amber-300 font-bold">{player.ppg} PPG</span>
+                        <div className="text-[10px] font-mono text-slate-500 tracking-tight flex items-center gap-1.5">
+                          <span className="text-amber-700 font-semibold">{player.ppg} PPG</span>
                           <span>·</span>
                           <span>{player.threePm} 3PM</span>
                           <span>·</span>
@@ -572,26 +584,20 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center shrink-0">
                       <button
                         type="button"
                         onClick={handleOpenNBAModal}
-                        className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1 border ${
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold transition-all cursor-pointer flex items-center gap-1 border ${
                           isPickInParlay(payload.fixture.id)
-                            ? 'bg-amber-400 text-black border-amber-400 shadow-xs'
-                            : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border-slate-700 hover:border-amber-500/40'
+                            ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-2xs'
+                            : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200/90'
                         }`}
                         title="Ver estadísticas completas y mercados del jugador para el boleto"
                       >
-                        <BarChart2 className="w-3 h-3 text-amber-400" />
+                        <BarChart2 className="w-3 h-3 text-amber-600" />
                         <span>Stats & Props</span>
                       </button>
-
-                      {player.isInjured && (
-                        <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono text-[10px] font-bold border border-rose-500/40 shrink-0">
-                          🚑 {player.injuryStatus || 'GTD'}
-                        </span>
-                      )}
                     </div>
                   </div>
                 );
@@ -600,8 +606,8 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
           </div>
 
           {/* Bench & Injuries for List View */}
-          <div className="space-y-2 pt-2 border-t border-slate-800/60">
-            <span className="text-[11px] font-mono text-slate-400 block px-1">
+          <div className="space-y-2 pt-2 border-t border-slate-200/90">
+            <span className="text-[11px] font-mono text-slate-600 font-medium block px-1">
               🔄 Rotación de Banco & Bajas
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -632,29 +638,28 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
                   <div
                     key={sub.id}
                     onClick={handleOpenNBABenchModal}
-                    className={`p-2 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-colors group ${
+                    className={`p-2 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-colors group shadow-2xs ${
                       sub.isInjured
-                        ? 'bg-rose-950/20 hover:bg-rose-900/30 border-rose-500/30 text-rose-200'
-                        : 'bg-slate-900/40 hover:bg-slate-800/60 border-slate-800/60 text-slate-300'
+                        ? 'bg-rose-50/70 hover:bg-rose-50 border-rose-200 text-rose-900'
+                        : 'bg-white hover:bg-slate-50 border-slate-200/90 text-slate-800'
                     }`}
                     title="Haz clic para ver estadísticas y cuotas del jugador"
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="w-5 h-5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] font-bold flex items-center justify-center shrink-0 group-hover:border group-hover:border-amber-500/50">
+                      <span className="w-5 h-5 rounded bg-slate-100 border border-slate-200/90 text-slate-700 font-mono text-[10px] font-semibold flex items-center justify-center shrink-0 group-hover:border-amber-400">
                         {sub.position}
                       </span>
-                      <span className="text-xs truncate font-medium group-hover:text-amber-300 transition-colors">#{sub.number} {sub.name}</span>
+                      <span className="text-xs truncate font-medium group-hover:text-amber-700 transition-colors">#{sub.number} {sub.name}</span>
+                      {sub.isInjured && (
+                        <span className="px-1.5 py-0.2 rounded bg-rose-100 text-rose-700 border border-rose-200 text-[9.5px] font-mono font-semibold shrink-0">
+                          🚑 {sub.injuryStatus || 'Out'}
+                        </span>
+                      )}
                     </div>
-                    {sub.isInjured ? (
-                      <span className="text-[10px] font-mono text-rose-400 font-bold shrink-0">
-                        🚑 {sub.injuryStatus || 'Out'}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono text-amber-400 group-hover:underline shrink-0 font-semibold flex items-center gap-1">
-                        <BarChart2 className="w-3 h-3 text-amber-400" />
-                        <span>{sub.ppg} PTS</span>
-                      </span>
-                    )}
+                    <span className="text-[10px] font-mono text-amber-700 group-hover:underline shrink-0 font-semibold flex items-center gap-1">
+                      <BarChart2 className="w-3 h-3 text-amber-600" />
+                      <span>{sub.ppg} PTS</span>
+                    </span>
                   </div>
                 );
               })}

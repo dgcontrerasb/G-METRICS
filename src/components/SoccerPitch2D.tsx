@@ -31,14 +31,14 @@ export interface SoccerPitch2DProps {
   onSelectPlayer: (player: SoccerPlayerInfo, teamName: string) => void;
 }
 
-type PitchSlideMode = 'TRACKER' | 'LINEUPS' | 'HEATMAP';
+type PitchSlideMode = 'TRACKER' | 'LINEUPS' | 'HEATMAP' | 'PENALTIES';
 // 3 subtle, non-intrusive phases:
 // 1. RADAR_BALL: Only ball & subtle vector arrow on pitch (no notification box)
 // 2. SLIM_POSSESSION: Ultra-thin micro-pill showing possession/attack at current minute
 // 3. SLIM_STAT_PILL: Ultra-thin 2-line micro-HUD with current minute & live stat/incident
 type PitchAnimPhase = 'RADAR_BALL' | 'SLIM_POSSESSION' | 'SLIM_STAT_PILL';
 
-const SLIDE_ORDER: PitchSlideMode[] = ['TRACKER', 'LINEUPS', 'HEATMAP'];
+const DEFAULT_SLIDE_ORDER: PitchSlideMode[] = ['TRACKER', 'LINEUPS', 'HEATMAP'];
 
 function buildTeamCode(name: string, shortName?: string): string {
   const candidate = (shortName || name || '').trim();
@@ -67,7 +67,12 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
   refereeName,
   onSelectPlayer
 }) => {
-  const isLive = fixture.status === 'IN_PLAY';
+  const isPenaltyShootout =
+    fixture.status === 'PENALTY_SHOOTOUT' ||
+    fixture.currentScore?.statusShort === 'PEN' ||
+    fixture.currentScore?.statusShort === 'PK';
+
+  const isLive = fixture.status === 'IN_PLAY' || isPenaltyShootout;
   const isHalfTime = Boolean(fixture.currentScore?.isHalfTime);
   const currentMinute = fixture.currentScore?.minute ?? 45;
   const homeTeam = fixture.homeTeam;
@@ -83,14 +88,95 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
     [awayTeam.name, awayTeam.shortName]
   );
 
-  const [slideMode, setSlideMode] = useState<PitchSlideMode>(isLive ? 'TRACKER' : 'LINEUPS');
+  const slideOrder: PitchSlideMode[] = useMemo(() => {
+    return isPenaltyShootout
+      ? ['PENALTIES', 'TRACKER', 'LINEUPS', 'HEATMAP']
+      : DEFAULT_SLIDE_ORDER;
+  }, [isPenaltyShootout]);
+
+  const [slideMode, setSlideMode] = useState<PitchSlideMode>(
+    isPenaltyShootout ? 'PENALTIES' : isLive ? 'TRACKER' : 'LINEUPS'
+  );
   const [activeBench, setActiveBench] = useState<'HOME' | 'AWAY' | null>(null);
   const [trackerPhase, setTrackerPhase] = useState<PitchAnimPhase>('SLIM_POSSESSION');
   const [stepCursor, setStepCursor] = useState<number>(0);
 
-  // Relaxed, natural cadence (5.5s per phase, including a calm RADAR_BALL phase with zero popup)
   useEffect(() => {
-    if (slideMode !== 'TRACKER') return;
+    if (isPenaltyShootout) {
+      setSlideMode('PENALTIES');
+    }
+  }, [isPenaltyShootout]);
+
+  const penaltyScore = fixture.score?.penalties || fixture.currentScore?.penalties;
+  const homePenGoals = penaltyScore?.home ?? 0;
+  const awayPenGoals = penaltyScore?.away ?? 0;
+
+  // Indicadores de la tanda de penales (5 disparos oficiales o muerte súbita)
+  const penaltyDots = useMemo(() => {
+    const maxGoals = Math.max(homePenGoals, awayPenGoals);
+    const slots = Math.max(5, maxGoals);
+    const home: ('SCORED' | 'MISSED' | 'PENDING')[] = [];
+    const away: ('SCORED' | 'MISSED' | 'PENDING')[] = [];
+
+    for (let i = 0; i < slots; i++) {
+      if (i < homePenGoals) {
+        home.push('SCORED');
+      } else if (i < maxGoals && homePenGoals < awayPenGoals && i === homePenGoals) {
+        home.push('MISSED');
+      } else {
+        home.push('PENDING');
+      }
+
+      if (i < awayPenGoals) {
+        away.push('SCORED');
+      } else if (i < maxGoals && awayPenGoals < homePenGoals && i === awayPenGoals) {
+        away.push('MISSED');
+      } else {
+        away.push('PENDING');
+      }
+    }
+
+    return {
+      home: home.slice(0, Math.max(5, slots)),
+      away: away.slice(0, Math.max(5, slots))
+    };
+  }, [homePenGoals, awayPenGoals]);
+
+  // Selección 100% en memoria de Arquero y Ejecutante (0 consumo de API)
+  const isHomeShooting = (homePenGoals + awayPenGoals) % 2 === 0;
+  const activeGK = useMemo(() => {
+    const starters = isHomeShooting ? awayStarters : homeStarters;
+    return (
+      starters.find((p) => p.position === 'POR') ||
+      starters[0] || {
+        id: 'gk',
+        name: isHomeShooting ? 'Arquero Visitante' : 'Arquero Local',
+        number: 1,
+        position: 'POR' as const,
+        matchYellowCards: 0
+      }
+    );
+  }, [isHomeShooting, homeStarters, awayStarters]);
+
+  const activeKicker = useMemo(() => {
+    const starters = isHomeShooting ? homeStarters : awayStarters;
+    const outfield = starters.filter((p) => p.position !== 'POR');
+    const roundIdx = Math.floor((homePenGoals + awayPenGoals) / 2);
+    return (
+      outfield[roundIdx % Math.max(1, outfield.length)] ||
+      starters[starters.length - 1] || {
+        id: 'kck',
+        name: isHomeShooting ? 'Ejecutante Local' : 'Ejecutante Visita',
+        number: 9,
+        position: 'DEL' as const,
+        matchYellowCards: 0
+      }
+    );
+  }, [isHomeShooting, homeStarters, awayStarters, homePenGoals, awayPenGoals]);
+
+  // Relaxed, natural cadence (5.5s per phase, strictly paused during halftime)
+  useEffect(() => {
+    if (slideMode !== 'TRACKER' || isHalfTime) return;
 
     const phases: PitchAnimPhase[] = ['SLIM_POSSESSION', 'RADAR_BALL', 'SLIM_STAT_PILL'];
     let idx = 0;
@@ -105,7 +191,7 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
     }, 5200);
 
     return () => clearInterval(timer);
-  }, [slideMode, fixture.currentScore?.home, fixture.currentScore?.away]);
+  }, [slideMode, fixture.currentScore?.home, fixture.currentScore?.away, isHalfTime]);
 
   // Synchronized live telemetry metrics for the compact header table
   const statsRow = useMemo(() => {
@@ -127,39 +213,169 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
     };
   }, [fixture.liveStats, fixture.currentScore]);
 
+  // Persistent 14-second Compact In-Pitch Banner when score, VAR, red card, or half changes
+  const prevScoreRef = React.useRef<{
+    home: number;
+    away: number;
+    reds: number;
+    isHT: boolean;
+    id: string;
+  }>({
+    home: fixture.currentScore?.home ?? 0,
+    away: fixture.currentScore?.away ?? 0,
+    reds: (fixture.liveStats?.home.redCards ?? 0) + (fixture.liveStats?.away.redCards ?? 0),
+    isHT: isHalfTime,
+    id: fixture.id
+  });
+  const [liveGoalBanner, setLiveGoalBanner] = useState<{
+    badgeText: string;
+    teamCode: string;
+    scoreText: string;
+    minuteText: string;
+    icon: string;
+    tone: 'GOAL' | 'VAR' | 'RED' | 'PERIOD';
+  } | null>(null);
+
+  useEffect(() => {
+    const curHome = fixture.currentScore?.home ?? 0;
+    const curAway = fixture.currentScore?.away ?? 0;
+    const curReds = (fixture.liveStats?.home.redCards ?? 0) + (fixture.liveStats?.away.redCards ?? 0);
+    if (prevScoreRef.current.id !== fixture.id) {
+      prevScoreRef.current = { home: curHome, away: curAway, reds: curReds, isHT: isHalfTime, id: fixture.id };
+      setLiveGoalBanner(null);
+      return;
+    }
+    if (isLive) {
+      if (curHome > prevScoreRef.current.home || curAway > prevScoreRef.current.away) {
+        const isHomeGoal = curHome > prevScoreRef.current.home;
+        const goalEvents = (fixture.liveEvents || []).filter((e) => e.type === 'GOAL');
+        const latestGoalEv = goalEvents[goalEvents.length - 1];
+        const exactMin = latestGoalEv?.minute || currentMinute;
+
+        setLiveGoalBanner({
+          badgeText: '¡GOL!',
+          teamCode: isHomeGoal ? homeAbbr : awayAbbr,
+          scoreText: `${curHome} - ${curAway}`,
+          minuteText: `${exactMin}'`,
+          icon: '⚽',
+          tone: 'GOAL'
+        });
+        prevScoreRef.current = { home: curHome, away: curAway, reds: curReds, isHT: isHalfTime, id: fixture.id };
+        const timer = setTimeout(() => setLiveGoalBanner(null), 15000);
+        return () => clearTimeout(timer);
+      } else if (curHome < prevScoreRef.current.home || curAway < prevScoreRef.current.away) {
+        const isHomeDisallowed = curHome < prevScoreRef.current.home;
+        setLiveGoalBanner({
+          badgeText: 'GOL ANULADO (VAR)',
+          teamCode: isHomeDisallowed ? homeAbbr : awayAbbr,
+          scoreText: `${curHome} - ${curAway}`,
+          minuteText: `${currentMinute}'`,
+          icon: '⚠️',
+          tone: 'VAR'
+        });
+        prevScoreRef.current = { home: curHome, away: curAway, reds: curReds, isHT: isHalfTime, id: fixture.id };
+        const timer = setTimeout(() => setLiveGoalBanner(null), 14000);
+        return () => clearTimeout(timer);
+      } else if (curReds > prevScoreRef.current.reds) {
+        setLiveGoalBanner({
+          badgeText: 'TARJETA ROJA',
+          teamCode: `${homeAbbr}/${awayAbbr}`,
+          scoreText: `${curHome} - ${curAway}`,
+          minuteText: `${currentMinute}'`,
+          icon: '🟥',
+          tone: 'RED'
+        });
+        prevScoreRef.current = { home: curHome, away: curAway, reds: curReds, isHT: isHalfTime, id: fixture.id };
+        const timer = setTimeout(() => setLiveGoalBanner(null), 14000);
+        return () => clearTimeout(timer);
+      } else if (isHalfTime !== prevScoreRef.current.isHT) {
+        setLiveGoalBanner({
+          badgeText: isHalfTime ? 'ENTRETIEMPO (HT)' : 'INICIO 2T',
+          teamCode: `${homeAbbr}-${awayAbbr}`,
+          scoreText: `${curHome} - ${curAway}`,
+          minuteText: isHalfTime ? "45'" : `${currentMinute}'`,
+          icon: isHalfTime ? '⏸️' : '▶️',
+          tone: 'PERIOD'
+        });
+        prevScoreRef.current = { home: curHome, away: curAway, reds: curReds, isHT: isHalfTime, id: fixture.id };
+        const timer = setTimeout(() => setLiveGoalBanner(null), 12000);
+        return () => clearTimeout(timer);
+      }
+    }
+    prevScoreRef.current = { home: curHome, away: curAway, reds: curReds, isHT: isHalfTime, id: fixture.id };
+  }, [
+    fixture.id,
+    fixture.currentScore?.home,
+    fixture.currentScore?.away,
+    fixture.liveStats?.home.redCards,
+    fixture.liveStats?.away.redCards,
+    fixture.liveEvents,
+    isLive,
+    isHalfTime,
+    currentMinute,
+    homeAbbr,
+    awayAbbr
+  ]);
+
   // STRICT REAL-TIME TRACKER STATE:
-  // Never shows old minutes (e.g., 46' when match is at 73') as live notifications.
-  // Only shows an official event if it occurred within +/- 1 minute of `currentMinute`;
-  // otherwise shows live tactical progression synchronized to the exact `currentMinute`.
+  // Always stamps official events with their true event minute (`ev.minute`, e.g. 87')
+  // and places corners at the exact corner flag coordinates ([96%, 8%] or [4%, 8%]).
   const activeLivePlay = useMemo(() => {
     const events = fixture.liveEvents || [];
     const minuteLabel = isLive
       ? isHalfTime
-        ? 'MT · 45\''
+        ? "MT · 45'"
         : `${currentMinute}'`
       : fixture.time;
 
-    // Check if an official event just happened right now (within 1 minute of current live clock)
-    const justHappenedEvent = isLive
+    // Check if an official event happened within 4 minutes of the live clock (accounts for broadcast delay)
+    const justHappenedEvent = isLive && !isHalfTime
       ? [...events]
           .reverse()
-          .find((ev) => typeof ev.minute === 'number' && Math.abs(currentMinute - ev.minute) <= 1)
+          .find(
+            (ev) =>
+              typeof ev.minute === 'number' &&
+              ev.type !== 'PERIOD_HALF' &&
+              ev.type !== 'PERIOD_START' &&
+              ev.type !== 'PERIOD_END' &&
+              Math.abs(currentMinute - ev.minute) <= 4
+          )
       : undefined;
 
     if (justHappenedEvent) {
       const isHome = justHappenedEvent.teamSide === 'HOME';
-      const typeLabel =
-        justHappenedEvent.type === 'GOAL'
-          ? '⚽ ¡Gol Oficial!'
-          : justHappenedEvent.type === 'RED_CARD'
-          ? '📕 Tarjeta Roja'
-          : justHappenedEvent.type === 'YELLOW_CARD'
-          ? '🟨 Tarjeta Amarilla'
-          : justHappenedEvent.type === 'CORNER'
-          ? '🚩 Tiro de Esquina'
-          : '🔄 Cambio Oficial';
+      const isCorner = justHappenedEvent.type === 'CORNER';
+      const isGoal = justHappenedEvent.type === 'GOAL';
+      const typeLabel = isGoal
+        ? '⚽ ¡Gol Oficial!'
+        : justHappenedEvent.type === 'RED_CARD'
+        ? '📕 Tarjeta Roja'
+        : justHappenedEvent.type === 'YELLOW_CARD'
+        ? '🟨 Tarjeta Amarilla'
+        : isCorner
+        ? '🚩 Tiro de Esquina'
+        : '🔄 Cambio Oficial';
+
+      // Exact corner flag coordinates vs Goal mouth vs Pitch zone
+      const cornerTopOrBottom = justHappenedEvent.minute % 2 === 0 ? 8 : 92;
+      const ballX = isCorner
+        ? isHome
+          ? 96
+          : 4
+        : isGoal
+        ? isHome
+          ? 96
+          : 4
+        : isHome
+        ? 78
+        : 22;
+      const ballY = isCorner ? cornerTopOrBottom : isGoal ? 50 : 42;
+      const originX = isCorner ? (isHome ? 85 : 15) : isGoal ? (isHome ? 82 : 18) : isHome ? 52 : 48;
+      const originY = isCorner ? 50 : 50;
 
       return {
+        isOfficialEvent: true,
+        isGoalEvent: isGoal,
         isHome,
         teamName: isHome ? homeTeam.name : awayTeam.name,
         teamCode: isHome ? homeAbbr : awayAbbr,
@@ -167,14 +383,33 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
           justHappenedEvent.playerPrimary ||
           (isHome ? homeStarters[9]?.name : awayStarters[9]?.name) ||
           (isHome ? homeTeam.name : awayTeam.name),
-        minuteLabel: `${currentMinute}'`,
+        minuteLabel: `${justHappenedEvent.minute}'`,
         typeLabel,
         subLabel:
           justHappenedEvent.detail ||
-          `Marcador en vivo: ${statsRow.homeGoals} - ${statsRow.awayGoals}`,
-        ballX: isHome ? 82 : 18,
-        ballY: justHappenedEvent.type === 'CORNER' ? 16 : 50,
-        originX: isHome ? 52 : 48,
+          `Minuto oficial ${justHappenedEvent.minute}' · Marcador: ${statsRow.homeGoals} - ${statsRow.awayGoals}`,
+        ballX,
+        ballY,
+        originX,
+        originY
+      };
+    }
+
+    // Si el partido está en Entretiempo / Descanso (HT 45'), congelar el balón en el círculo central
+    if (isHalfTime) {
+      return {
+        isOfficialEvent: false,
+        isGoalEvent: false,
+        isHome: true,
+        teamName: `${homeAbbr} vs ${awayAbbr}`,
+        teamCode: 'MT',
+        playerName: 'Entretiempo',
+        minuteLabel: "MT · 45'",
+        typeLabel: '☕ Descanso Oficial',
+        subLabel: `Pausa de medio tiempo · Marcador parcial: ${statsRow.homeGoals} - ${statsRow.awayGoals}`,
+        ballX: 50,
+        ballY: 50,
+        originX: 50,
         originY: 50
       };
     }
@@ -221,6 +456,8 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
     const chosen = liveStates[stepCursor % liveStates.length];
 
     return {
+      isOfficialEvent: false,
+      isGoalEvent: false,
       isHome,
       teamName: isHome ? homeTeam.name : awayTeam.name,
       teamCode: isHome ? homeAbbr : awayAbbr,
@@ -285,9 +522,9 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
   };
 
   const handleCycleSlide = (dir: -1 | 1) => {
-    const idx = SLIDE_ORDER.indexOf(slideMode);
-    const nextIdx = (idx + dir + SLIDE_ORDER.length) % SLIDE_ORDER.length;
-    setSlideMode(SLIDE_ORDER[nextIdx]);
+    const idx = slideOrder.indexOf(slideMode);
+    const nextIdx = (idx + dir + slideOrder.length) % slideOrder.length;
+    setSlideMode(slideOrder[nextIdx]);
   };
 
   const isActionHome = activeLivePlay.isHome;
@@ -302,11 +539,11 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
   const svgOriginY = (activeLivePlay.originY / 100) * 145;
 
   return (
-    <div className="w-full rounded-2xl bg-[#0B0F19] border border-slate-800/90 overflow-hidden shadow-xl">
+    <div className="w-full rounded-2xl bg-slate-900 border border-slate-700/90 overflow-hidden shadow-lg">
       {/* 1. ULTRA-COMPACT SCOREBOARD & TELEMETRY HEADER */}
-      <div className="px-3 py-1.5 bg-[#080C14] border-b border-slate-800/90">
+      <div className="px-3 py-2 bg-slate-900/95 border-b border-slate-800">
         {/* Top Row: Live Status + Full Stadium Name + Stat Columns */}
-        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[9.5px] font-mono text-slate-400 pb-1 border-b border-slate-800/70">
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[9.5px] font-mono text-slate-300 pb-1.5 border-b border-slate-800">
           <div className="flex flex-wrap items-center gap-1.5 min-w-0">
             {isLive ? (
               isHalfTime ? (
@@ -321,52 +558,56 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
                 </span>
               )
             ) : (
-              <span className="text-slate-300 font-semibold shrink-0">
+              <span className="text-slate-200 font-semibold shrink-0">
                 {fixture.date} • {fixture.time}
               </span>
             )}
 
-            <span className="text-slate-400 inline-flex items-center gap-1 border-l border-slate-800 pl-1.5 text-[8.5px]">
+            <span className="text-slate-300 inline-flex items-center gap-1 border-l border-slate-700 pl-1.5 text-[8.5px]">
               <MapPin className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
-              <span>{stadiumName}</span>
-              {refereeName && <span className="hidden sm:inline text-slate-500">· ⚖️ {refereeName}</span>}
+              <span className="truncate max-w-[140px] sm:max-w-none">{stadiumName}</span>
+              {refereeName && <span className="hidden sm:inline text-slate-400">· ⚖️ {refereeName}</span>}
             </span>
           </div>
 
-          <div className="flex items-center gap-2 text-[8.5px] font-bold tracking-wider text-slate-400 shrink-0 ml-auto">
-            <span className="w-6 text-center">POS</span>
-            <span className="w-4 text-center" title="Tiros a Puerta">TIR</span>
-            <span className="w-4 text-center" title="Córners">CÓR</span>
-            <span className="w-4 text-center" title="Tarjetas Amarillas">🟨</span>
-            <span className="w-6 text-center text-emerald-400">GOL</span>
+          <div className="grid grid-cols-[44px_26px_26px_26px_28px] items-center gap-1 text-[8.5px] font-mono tabular-nums font-bold tracking-wider text-slate-300 shrink-0 ml-auto">
+            <span className="text-center" title="Posesión de balón">POS</span>
+            <span className="text-center" title="Tiros a Puerta">TIR</span>
+            <span className="text-center" title="Tiros de Esquina (Córners)">CÓR</span>
+            <span className="flex items-center justify-center" title="Tarjetas Amarillas">
+              <span className="inline-block w-2 h-2.5 rounded-[1.5px] bg-amber-400 border border-amber-200/80 shadow-2xs" />
+            </span>
+            <span className="text-center text-emerald-400" title="Goles">GOL</span>
           </div>
         </div>
 
         {/* Team Rows */}
-        <div className="pt-1 space-y-1">
+        <div className="pt-1.5 space-y-1.5">
           {/* Home Team Row */}
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <img
-                src={homeTeam.logo}
-                alt=""
-                className="w-3.5 h-3.5 object-contain shrink-0"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-              <span className="text-[11px] font-bold text-white">{homeTeam.name}</span>
-              <span className="text-[8.5px] font-mono text-emerald-400/80 hidden sm:inline">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              {homeTeam.logo?.trim() ? (
+                <img
+                  src={homeTeam.logo}
+                  alt=""
+                  className="w-3.5 h-3.5 object-contain shrink-0"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : null}
+              <span className="text-[11px] font-bold text-white truncate">{homeTeam.name}</span>
+              <span className="text-[8.5px] font-mono text-emerald-400/90 hidden sm:inline shrink-0">
                 ({homeFormation})
               </span>
             </div>
 
-            <div className="flex items-center gap-2 font-mono text-[10.5px] shrink-0">
-              <span className="w-6 text-center text-slate-300">{statsRow.homePoss}%</span>
-              <span className="w-4 text-center text-slate-300">{statsRow.homeShots}</span>
-              <span className="w-4 text-center text-slate-300">{statsRow.homeCorners}</span>
-              <span className="w-4 text-center text-amber-300">{statsRow.homeYellows}</span>
-              <span className="w-6 py-0.2 rounded bg-slate-800/90 border border-emerald-500/40 text-center font-black text-emerald-300 text-[11px]">
+            <div className="grid grid-cols-[44px_26px_26px_26px_28px] items-center gap-1 font-mono tabular-nums text-[10.5px] shrink-0">
+              <span className="text-center text-slate-200 font-semibold">{statsRow.homePoss}%</span>
+              <span className="text-center text-slate-200">{statsRow.homeShots}</span>
+              <span className="text-center text-slate-200">{statsRow.homeCorners}</span>
+              <span className="text-center text-amber-300 font-semibold">{statsRow.homeYellows}</span>
+              <span className="py-0.2 rounded bg-slate-800 border border-emerald-500/50 text-center font-black text-emerald-300 text-[11px]">
                 {statsRow.homeGoals}
               </span>
             </div>
@@ -374,27 +615,29 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
 
           {/* Away Team Row */}
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <img
-                src={awayTeam.logo}
-                alt=""
-                className="w-3.5 h-3.5 object-contain shrink-0"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-              <span className="text-[11px] font-bold text-white">{awayTeam.name}</span>
-              <span className="text-[8.5px] font-mono text-sky-400/80 hidden sm:inline">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              {awayTeam.logo?.trim() ? (
+                <img
+                  src={awayTeam.logo}
+                  alt=""
+                  className="w-3.5 h-3.5 object-contain shrink-0"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : null}
+              <span className="text-[11px] font-bold text-white truncate">{awayTeam.name}</span>
+              <span className="text-[8.5px] font-mono text-sky-400/90 hidden sm:inline shrink-0">
                 ({awayFormation})
               </span>
             </div>
 
-            <div className="flex items-center gap-2 font-mono text-[10.5px] shrink-0">
-              <span className="w-6 text-center text-slate-300">{statsRow.awayPoss}%</span>
-              <span className="w-4 text-center text-slate-300">{statsRow.awayShots}</span>
-              <span className="w-4 text-center text-slate-300">{statsRow.awayCorners}</span>
-              <span className="w-4 text-center text-amber-300">{statsRow.awayYellows}</span>
-              <span className="w-6 py-0.2 rounded bg-slate-800/90 border border-sky-500/40 text-center font-black text-sky-300 text-[11px]">
+            <div className="grid grid-cols-[44px_26px_26px_26px_28px] items-center gap-1 font-mono tabular-nums text-[10.5px] shrink-0">
+              <span className="text-center text-slate-200 font-semibold">{statsRow.awayPoss}%</span>
+              <span className="text-center text-slate-200">{statsRow.awayShots}</span>
+              <span className="text-center text-slate-200">{statsRow.awayCorners}</span>
+              <span className="text-center text-amber-300 font-semibold">{statsRow.awayYellows}</span>
+              <span className="py-0.2 rounded bg-slate-800 border border-sky-500/50 text-center font-black text-sky-300 text-[11px]">
                 {statsRow.awayGoals}
               </span>
             </div>
@@ -402,9 +645,24 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
         </div>
       </div>
 
-      {/* 2. SUB-TOOLBAR: Mode Tabs (Tracker En Vivo | 11 vs 11 Props | Zonas xG) */}
-      <div className="px-2.5 py-1 bg-[#0D1322] border-b border-slate-800/80 flex items-center justify-between gap-2">
+      {/* 2. SUB-TOOLBAR: Mode Tabs (Tracker En Vivo | 11 vs 11 Props | Zonas xG | Penales) */}
+      <div className="px-2.5 py-1.5 bg-slate-800/95 border-b border-slate-700/80 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">
+          {isPenaltyShootout && (
+            <button
+              type="button"
+              onClick={() => setSlideMode('PENALTIES')}
+              className={`px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-bold flex items-center gap-1 transition cursor-pointer ${
+                slideMode === 'PENALTIES'
+                  ? 'bg-purple-500/25 text-purple-300 border border-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.3)]'
+                  : 'text-purple-400 hover:text-white'
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+              <span>Tanda Penales (PEN)</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setSlideMode('TRACKER')}
@@ -446,7 +704,11 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
         </div>
 
         <span className="text-[8.5px] font-mono text-slate-400 hidden sm:inline">
-          {slideMode === 'LINEUPS' ? 'Toca un jugador para Props' : 'Reloj sincronizado en vivo'}
+          {slideMode === 'PENALTIES'
+            ? `Tanda de Penales: ${homePenGoals} - ${awayPenGoals}`
+            : slideMode === 'LINEUPS'
+            ? 'Toca un jugador para Props'
+            : 'Reloj sincronizado en vivo'}
         </span>
       </div>
 
@@ -600,8 +862,8 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
               strokeWidth="1"
             />
 
-            {/* SUBTLE LOCALIZED TACTICAL RADAR & VECTOR IN TRACKER MODE */}
-            {slideMode === 'TRACKER' && (
+            {/* SUBTLE LOCALIZED TACTICAL RADAR & VECTOR IN TRACKER MODE (Hidden during Halftime) */}
+            {slideMode === 'TRACKER' && !isHalfTime && (
               <g>
                 {/* Localized soft radar halo around the ball (takes <8% of pitch) */}
                 <circle
@@ -647,68 +909,105 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
           {/* ========================================================================= */}
           {slideMode === 'TRACKER' && (
             <>
-              {/* Live Ball Marker Node on Pitch */}
-              <div
-                style={{ left: `${activeLivePlay.ballX}%`, top: `${activeLivePlay.ballY}%` }}
-                className="absolute -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none transition-all duration-700"
-              >
-                <span
-                  className={`w-4 h-4 rounded-full ${activeDotColor} opacity-35 animate-ping absolute -inset-0.5`}
-                />
-                <div
-                  className={`w-3 h-3 rounded-full bg-white border-2 ${
-                    isActionHome ? 'border-emerald-400' : 'border-sky-400'
-                  } shadow-md flex items-center justify-center`}
-                />
-              </div>
-
-              {/* PHASE 1: ULTRA-SLIM POSSESSION MICRO-PILL */}
-              {trackerPhase === 'SLIM_POSSESSION' && (
-                <div
-                  className={`absolute top-6 z-20 pointer-events-none transition-all duration-300 ${
-                    isActionHome ? 'right-3' : 'left-3'
-                  }`}
-                >
-                  <div
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#070B12]/95 border ${activeBorderColor} shadow-lg`}
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full ${activeDotColor} shrink-0`} />
-                    <span className="text-[9px] font-bold text-white leading-none">
-                      {activeLivePlay.teamName}
-                    </span>
-                    <span className={`text-[8.5px] font-mono ${activeTextColor} leading-none`}>
-                      · {isLive ? `Posesión (${isActionHome ? statsRow.homePoss : statsRow.awayPoss}%)` : 'Ritmo Ofensivo'} · {activeLivePlay.minuteLabel}
-                    </span>
+              {/* STATIC HALFTIME / ENTRETIEMPO ANNOUNCEMENT OVERLAY */}
+              {isHalfTime && (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/45 backdrop-blur-[2px] pointer-events-none p-3">
+                  <div className="px-5 py-3 rounded-2xl bg-[#070B12]/95 border border-amber-400/85 shadow-2xl flex flex-col items-center gap-1.5 text-center pointer-events-auto">
+                    <div className="inline-flex items-center gap-2 text-xs font-mono font-black text-amber-400 uppercase tracking-widest">
+                      <span className="text-sm">⏸️</span>
+                      <span>ENTRETIEMPO · DESCANSO</span>
+                    </div>
+                    <div className="flex items-center gap-3 font-mono text-base sm:text-lg font-black text-white">
+                      <span>{homeAbbr} {statsRow.homeGoals}</span>
+                      <span className="text-amber-400/80">-</span>
+                      <span>{statsRow.awayGoals} {awayAbbr}</span>
+                    </div>
+                    <div className="text-[10.5px] font-mono text-slate-300">
+                      Pausa oficial · Fin del primer tiempo (45')
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[9px] font-mono text-amber-300/80 bg-amber-500/10 border border-amber-400/30 px-2.5 py-0.5 rounded-full">
+                      <span>Cancha estática hasta el inicio del segundo tiempo</span>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* PHASE 2: CALM RADAR BALL VIEW (Tiny minute tag next to ball, zero notification banner) */}
-              {trackerPhase === 'RADAR_BALL' && (
-                <div
-                  style={{
-                    left: `${Math.min(82, Math.max(18, activeLivePlay.ballX))}%`,
-                    top: `${Math.max(18, activeLivePlay.ballY - 12)}%`
-                  }}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none transition-all duration-500"
-                >
-                  <span
-                    className={`px-1.5 py-0.5 rounded bg-[#070B12]/90 border ${activeBorderColor} text-[8px] font-mono font-bold text-white shadow`}
+              {/* SLEEK COMPACT SINGLE-LINE GOAL / VAR / RED CARD PILL ON 2D PITCH */}
+              {(liveGoalBanner || activeLivePlay.isGoalEvent) && !isHalfTime && (
+                <div className="absolute top-1.5 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+                  <div
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/95 border shadow-md whitespace-nowrap ${
+                      liveGoalBanner?.tone === 'VAR' || liveGoalBanner?.tone === 'RED'
+                        ? 'border-rose-400/90'
+                        : 'border-emerald-400/90'
+                    }`}
                   >
-                    {activeLivePlay.teamCode} · {activeLivePlay.minuteLabel}
-                  </span>
+                    <span className="text-[10px] leading-none">
+                      {liveGoalBanner ? liveGoalBanner.icon : '⚽'}
+                    </span>
+                    <span
+                      className={`text-[8.5px] font-black uppercase tracking-tight leading-none ${
+                        liveGoalBanner?.tone === 'VAR' || liveGoalBanner?.tone === 'RED'
+                          ? 'text-rose-300'
+                          : 'text-emerald-300'
+                      }`}
+                    >
+                      {liveGoalBanner
+                        ? `${liveGoalBanner.badgeText} ${liveGoalBanner.teamCode}`
+                        : `¡GOL! ${activeLivePlay.teamCode}`}
+                    </span>
+                    <span className="text-[8.5px] font-mono font-bold text-white leading-none px-1 py-0.2 rounded bg-emerald-500/20">
+                      {liveGoalBanner ? liveGoalBanner.scoreText : `${statsRow.homeGoals} - ${statsRow.awayGoals}`}
+                    </span>
+                    <span className="text-[8px] font-mono text-slate-300 leading-none">
+                      {liveGoalBanner ? liveGoalBanner.minuteText : activeLivePlay.minuteLabel}
+                    </span>
+                    {liveGoalBanner && (
+                      <button
+                        type="button"
+                        onClick={() => setLiveGoalBanner(null)}
+                        className="text-slate-400 hover:text-white text-[9px] pl-0.5 cursor-pointer leading-none"
+                        aria-label="Cerrar alerta de gol"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* PHASE 3: ULTRA-SLIM 2-LINE TACTICAL MICRO-HUD (Fine, compact, zero cut-off text) */}
-              {trackerPhase === 'SLIM_STAT_PILL' && (
+              {/* Live Ball Marker Node on Pitch */}
+              <div
+                style={{ left: `${activeLivePlay.ballX}%`, top: `${activeLivePlay.ballY}%` }}
+                className={`absolute -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none ${
+                  isHalfTime ? '' : 'transition-all duration-700'
+                }`}
+              >
+                {!isHalfTime && (
+                  <span
+                    className={`w-4 h-4 rounded-full ${activeDotColor} opacity-35 animate-ping absolute -inset-0.5`}
+                  />
+                )}
+                <div
+                  className={`w-3.5 h-3.5 rounded-full ${
+                    isHalfTime
+                      ? 'bg-amber-400 border-2 border-white'
+                      : isActionHome
+                      ? 'bg-white border-2 border-emerald-400'
+                      : 'bg-white border-2 border-sky-400'
+                  } shadow-md flex items-center justify-center`}
+                />
+              </div>
+
+              {/* Si hay un evento oficial reciente (Córner, Tarjeta, Cambio), mostrar siempre el HUD con el minuto real del evento */}
+              {activeLivePlay.isOfficialEvent && !activeLivePlay.isGoalEvent && !liveGoalBanner && !isHalfTime ? (
                 <div
                   className={`absolute top-6 z-20 pointer-events-none transition-all duration-300 ${
                     isActionHome ? 'right-3' : 'left-3'
                   }`}
                 >
                   <div
-                    className={`max-w-[235px] sm:max-w-[280px] px-2.5 py-1 rounded-lg bg-[#070B12]/95 border ${activeBorderColor} shadow-lg space-y-0.5`}
+                    className={`max-w-[245px] sm:max-w-[290px] px-2.5 py-1 rounded-lg bg-[#070B12]/95 border ${activeBorderColor} shadow-lg space-y-0.5`}
                   >
                     <div className="flex items-center justify-between gap-2 text-[9px] leading-tight">
                       <span className="font-bold text-white">
@@ -718,11 +1017,84 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
                         {statsRow.homeGoals} - {statsRow.awayGoals}
                       </span>
                     </div>
-                    <div className="text-[8px] font-mono text-slate-300 leading-tight">
-                      <span className={activeTextColor}>{activeLivePlay.typeLabel}:</span> {activeLivePlay.subLabel}
+                    <div className="text-[8px] font-mono text-slate-200 leading-tight">
+                      <span className={`font-bold ${activeTextColor}`}>{activeLivePlay.typeLabel} ({activeLivePlay.minuteLabel}):</span>{' '}
+                      {activeLivePlay.subLabel}
                     </div>
                   </div>
                 </div>
+              ) : (
+                <>
+                  {/* PHASE 1: ULTRA-SLIM POSSESSION MICRO-PILL */}
+                  {trackerPhase === 'SLIM_POSSESSION' && !liveGoalBanner && !isHalfTime && (
+                    <div
+                      className={`absolute top-6 z-20 pointer-events-none transition-all duration-300 ${
+                        isActionHome ? 'right-3' : 'left-3'
+                      }`}
+                    >
+                      <div
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/95 border ${activeBorderColor} shadow-lg`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${activeDotColor} shrink-0`}
+                        />
+                        <span className="text-[9px] font-bold text-white leading-none">
+                          {activeLivePlay.teamName}
+                        </span>
+                        <span
+                          className={`text-[8.5px] font-mono ${activeTextColor} leading-none`}
+                        >
+                          ·{' '}
+                          {isLive
+                            ? `Posesión (${isActionHome ? statsRow.homePoss : statsRow.awayPoss}%) · ${activeLivePlay.minuteLabel}`
+                            : `Ritmo Ofensivo · ${activeLivePlay.minuteLabel}`}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PHASE 2: CALM RADAR BALL VIEW (Tiny minute tag next to ball, zero notification banner) */}
+                  {trackerPhase === 'RADAR_BALL' && !isHalfTime && (
+                    <div
+                      style={{
+                        left: `${Math.min(88, Math.max(12, activeLivePlay.ballX))}%`,
+                        top: `${Math.max(16, activeLivePlay.ballY > 22 ? activeLivePlay.ballY - 12 : activeLivePlay.ballY + 12)}%`
+                      }}
+                      className="absolute -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none transition-all duration-500"
+                    >
+                      <span
+                        className={`px-1.5 py-0.5 rounded bg-[#070B12]/90 border ${activeBorderColor} text-[8px] font-mono font-bold text-white shadow`}
+                      >
+                        {activeLivePlay.teamCode} · {activeLivePlay.minuteLabel}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* PHASE 3: ULTRA-SLIM 2-LINE TACTICAL MICRO-HUD */}
+                  {trackerPhase === 'SLIM_STAT_PILL' && !liveGoalBanner && !isHalfTime && (
+                    <div
+                      className={`absolute top-6 z-20 pointer-events-none transition-all duration-300 ${
+                        isActionHome ? 'right-3' : 'left-3'
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[235px] sm:max-w-[280px] px-2.5 py-1 rounded-lg bg-[#070B12]/95 border ${activeBorderColor} shadow-lg space-y-0.5`}
+                      >
+                        <div className="flex items-center justify-between gap-2 text-[9px] leading-tight">
+                          <span className="font-bold text-white">
+                            {activeLivePlay.teamName} · <span className={activeTextColor}>{activeLivePlay.minuteLabel}</span>
+                          </span>
+                          <span className="px-1.5 py-0.2 rounded bg-slate-800 text-[8.5px] font-mono font-bold text-slate-200 shrink-0">
+                            {statsRow.homeGoals} - {statsRow.awayGoals}
+                          </span>
+                        </div>
+                        <div className="text-[8px] font-mono text-slate-300 leading-tight">
+                          <span className={activeTextColor}>{activeLivePlay.typeLabel}:</span> {activeLivePlay.subLabel}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -805,6 +1177,153 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
             </>
           )}
 
+          {/* ========================================================================= */}
+          {/* MODE 4: TANDA DE PENALES FOCALIZADA (11m, Arco, Arquero, Ejecutante)       */}
+          {/* ========================================================================= */}
+          {slideMode === 'PENALTIES' && (
+            <>
+              {/* Marcador Central de Tanda con Indicadores de Disparo (Verde/Rojo/Gris) */}
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-25 flex flex-col items-center pointer-events-none">
+                <div className="px-3 py-1 rounded-xl bg-[#070B12]/95 border border-purple-500/50 shadow-xl flex items-center gap-2.5 sm:gap-3 backdrop-blur-md">
+                  {/* Local */}
+                  <div className="flex items-center gap-1.5">
+                    {homeTeam.logo?.trim() ? (
+                      <img
+                        src={homeTeam.logo}
+                        alt=""
+                        className="w-3.5 h-3.5 object-contain"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : null}
+                    <span className="text-[10px] font-bold text-white">{homeAbbr}</span>
+                    {/* Indicadores de 5 tiros */}
+                    <div className="flex items-center gap-0.5 ml-1">
+                      {penaltyDots.home.map((dot, i) => (
+                        <span
+                          key={`pen-hm-dot-${i}`}
+                          className={`w-2 h-2 rounded-full border ${
+                            dot === 'SCORED'
+                              ? 'bg-emerald-400 border-emerald-300 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
+                              : dot === 'MISSED'
+                              ? 'bg-rose-500 border-rose-400'
+                              : 'bg-slate-800 border-slate-600'
+                          }`}
+                          title={`Tiro ${i + 1}: ${dot === 'SCORED' ? 'Anotado' : dot === 'MISSED' ? 'Fallado' : 'Pendiente'}`}
+                        />
+                      ))}
+                    </div>
+                    <span className="font-mono font-black text-sm text-emerald-300 ml-1">
+                      {homePenGoals}
+                    </span>
+                  </div>
+
+                  <span className="text-[8.5px] font-mono font-bold text-purple-300 px-1 py-0.5 rounded bg-purple-950/80 border border-purple-700/60 shrink-0">
+                    PEN
+                  </span>
+
+                  {/* Visitante */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono font-black text-sm text-sky-300 mr-1">
+                      {awayPenGoals}
+                    </span>
+                    {/* Indicadores de 5 tiros */}
+                    <div className="flex items-center gap-0.5 mr-1">
+                      {penaltyDots.away.map((dot, i) => (
+                        <span
+                          key={`pen-aw-dot-${i}`}
+                          className={`w-2 h-2 rounded-full border ${
+                            dot === 'SCORED'
+                              ? 'bg-emerald-400 border-emerald-300 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
+                              : dot === 'MISSED'
+                              ? 'bg-rose-500 border-rose-400'
+                              : 'bg-slate-800 border-slate-600'
+                          }`}
+                          title={`Tiro ${i + 1}: ${dot === 'SCORED' ? 'Anotado' : dot === 'MISSED' ? 'Fallado' : 'Pendiente'}`}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-[10px] font-bold text-white">{awayAbbr}</span>
+                    {awayTeam.logo?.trim() ? (
+                      <img
+                        src={awayTeam.logo}
+                        alt=""
+                        className="w-3.5 h-3.5 object-contain"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              {/* Foco Táctico en el Área de Penal y Arco */}
+              {/* Arquero en la línea de meta */}
+              <div
+                style={{ left: isHomeShooting ? '93%' : '7%', top: '50%' }}
+                className="absolute -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center"
+              >
+                <div
+                  className={`px-1.5 py-0.5 rounded-full ${
+                    isHomeShooting
+                      ? 'bg-sky-500 text-slate-950 border-sky-300'
+                      : 'bg-emerald-500 text-slate-950 border-emerald-300'
+                  } font-mono font-black text-[8.5px] shadow-lg flex items-center gap-1 border`}
+                >
+                  <span>🧤</span>
+                  <span>#{activeGK.number}</span>
+                </div>
+                <span className="mt-0.5 px-1 rounded bg-slate-950/90 text-[7px] font-mono font-semibold text-slate-200 whitespace-nowrap">
+                  {activeGK.name.split(' ').pop() || activeGK.name}
+                </span>
+              </div>
+
+              {/* Balón en el punto de penal (11 metros) */}
+              <div
+                style={{ left: isHomeShooting ? '86%' : '14%', top: '50%' }}
+                className="absolute -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center pointer-events-none"
+              >
+                <div className="w-3.5 h-3.5 rounded-full bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)] border border-slate-300 flex items-center justify-center animate-bounce text-[8px]">
+                  ⚽
+                </div>
+                <span className="mt-0.5 text-[6.5px] font-mono text-emerald-300 font-bold bg-slate-950/80 px-1 rounded">
+                  11m
+                </span>
+              </div>
+
+              {/* Ejecutante detrás del balón */}
+              <div
+                style={{ left: isHomeShooting ? '74%' : '26%', top: '50%' }}
+                className="absolute -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center"
+              >
+                <div
+                  className={`px-1.5 py-0.5 rounded-full ${
+                    isHomeShooting
+                      ? 'bg-emerald-400 text-slate-950 border-emerald-200'
+                      : 'bg-sky-400 text-slate-950 border-sky-200'
+                  } font-mono font-black text-[8.5px] shadow-lg border animate-pulse`}
+                >
+                  #{activeKicker.number} {activeKicker.position}
+                </div>
+                <span className="mt-0.5 px-1 rounded bg-slate-950/90 text-[7px] font-mono font-bold text-amber-300 whitespace-nowrap">
+                  {activeKicker.name.split(' ').pop() || activeKicker.name}
+                </span>
+              </div>
+
+              {/* Micro-HUD de Ronda y Turno Activo */}
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-none max-w-[90%] text-center">
+                <span className="px-2 py-0.5 rounded-full bg-[#070B12]/95 border border-purple-500/40 text-[8px] font-mono text-purple-200 shadow flex items-center gap-1.5 whitespace-nowrap">
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping shrink-0" />
+                  <span>
+                    Turno: <strong>{activeKicker.name}</strong> ({isHomeShooting ? homeAbbr : awayAbbr}) vs <strong>{activeGK.name}</strong>
+                  </span>
+                </span>
+              </div>
+            </>
+          )}
+
           {/* Bottom Carousel Pager Controls (`< — • • >`) */}
           <div className="absolute bottom-1 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-950/85 border border-slate-800/90">
             <button
@@ -817,7 +1336,7 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
             </button>
 
             <div className="flex items-center gap-1">
-              {SLIDE_ORDER.map((mode) => (
+              {slideOrder.map((mode) => (
                 <button
                   key={mode}
                   type="button"
@@ -843,7 +1362,7 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
       </div>
 
       {/* 4. COMPACT COLLAPSIBLE BENCHES FOOTER */}
-      <div className="px-2.5 pb-2 pt-0.5 bg-[#0B0F19] space-y-1.5">
+      <div className="px-2.5 pb-2 pt-1 bg-slate-900 space-y-1.5">
         <div className="grid grid-cols-2 gap-1.5">
           <button
             type="button"
@@ -851,7 +1370,7 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
             className={`py-1 px-2 rounded-lg border flex items-center justify-between text-[9.5px] font-mono font-semibold transition cursor-pointer ${
               activeBench === 'HOME'
                 ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
-                : 'bg-slate-900/70 border-slate-800 text-slate-300 hover:text-white'
+                : 'bg-slate-800/80 border-slate-700 text-slate-200 hover:text-white'
             }`}
           >
             <div className="flex items-center gap-1 min-w-0">

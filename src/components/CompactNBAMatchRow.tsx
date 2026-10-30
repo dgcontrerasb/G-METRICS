@@ -1,13 +1,16 @@
 import React from 'react';
 import { NBAMatchFixture, NBAAnalysis } from '../types';
-import { Clock, ChevronDown, ChevronUp, CheckSquare, Square, BarChart2 } from 'lucide-react';
+import { Check, BarChart2, Star } from 'lucide-react';
 import { NBAPredictionCard } from './NBAPredictionCard';
+import { formatCompactTeamName } from '../services/leagueCategorizer';
 
 interface CompactNBAMatchRowProps {
   fixture: NBAMatchFixture;
   analysis: NBAAnalysis;
   isSelected?: boolean;
   onToggleSelect?: (fixtureId: string) => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: (fixtureId: string) => void;
   isExpanded?: boolean;
   onToggleExpand: () => void;
   onOpenDetail?: (fixture: NBAMatchFixture, analysis: NBAAnalysis) => void;
@@ -20,6 +23,8 @@ export const CompactNBAMatchRow: React.FC<CompactNBAMatchRowProps> = React.memo(
   analysis,
   isSelected = false,
   onToggleSelect,
+  isFavorite = false,
+  onToggleFavorite,
   isExpanded = false,
   onToggleExpand,
   onOpenDetail,
@@ -29,61 +34,37 @@ export const CompactNBAMatchRow: React.FC<CompactNBAMatchRowProps> = React.memo(
   const { homeTeam, awayTeam, status } = fixture;
   const isLive = status === 'IN_PLAY';
   const isFinished = status === 'FINISHED';
-  const isValueBet = Boolean(analysis.marketOdds?.valueBetDetected);
+  if (!analysis) return null;
+  const isValueBet = Boolean(analysis?.marketOdds?.valueBetDetected);
 
   return (
-    <div className={`transition-all duration-300 rounded-xl overflow-hidden border ${
+    <div className={`transition-all duration-200 rounded-xl overflow-hidden border shadow-2xs ${
       isRecentlyUpdated
-        ? 'border-amber-400 bg-amber-950/40 ring-2 ring-amber-400/90 shadow-[0_0_20px_rgba(251,191,36,0.5)] animate-pulse'
+        ? 'border-amber-500 bg-amber-50/95 ring-2 ring-amber-400/70'
         : isSelected
-        ? 'border-amber-500/60 bg-slate-950/60 ring-1 ring-amber-500/30'
+        ? 'border-amber-500 bg-amber-50/40 ring-1 ring-amber-500/30'
         : isValueBet
-        ? 'border-amber-500/30 bg-slate-950/40 hover:bg-slate-900/40'
-        : 'border-slate-800/40 bg-slate-950/30 hover:bg-slate-900/40'
+        ? 'border-amber-300/90 bg-white/95 hover:bg-slate-50/95'
+        : 'border-slate-200/80 bg-white/95 hover:bg-slate-50/95'
     } backdrop-blur-md`}>
-      {/* 52px Compact Row */}
-      {/* 2-Tier Clean Row: Línea 1 Duelo y Marcador / Línea 2 Datos y Acciones */}
       <div
         onClick={() => {
           if (onOpenDetail) onOpenDetail(fixture, analysis);
           else onToggleExpand();
         }}
-        className="px-3 sm:px-4 py-2 sm:py-2.5 flex flex-col gap-2 cursor-pointer select-none"
+        className="px-3 sm:px-4 py-2 flex flex-col gap-1.5 cursor-pointer select-none"
       >
-        {/* LÍNEA 1: ESTADO + DUELO DE EQUIPOS + MARCADOR CENTRAL */}
-        <div className="flex items-center justify-between gap-2 min-w-0">
-          {/* Minuto / Tiempo / Estado */}
-          <div className="shrink-0 flex items-center gap-1.5">
-            {isRecentlyUpdated && (
-              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black font-mono font-black text-[10px] uppercase tracking-tight animate-bounce shadow-md flex items-center gap-1">
-                <span>🏀</span>
-                <span className="hidden sm:inline">¡Puntos!</span>
-              </span>
-            )}
-            {isLive ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-mono tracking-tight font-bold text-[10px] animate-pulse border border-rose-500/40">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                <span>{fixture.livePeriod || 'VIVO'}</span>
-              </span>
-            ) : isFinished ? (
-              <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono tracking-tight text-[10px] font-semibold border border-slate-700/50">
-                FIN
-              </span>
-            ) : (
-              <span className="font-mono tracking-tight font-semibold text-amber-400 text-xs flex items-center gap-1">
-                <Clock className="w-3 h-3 text-amber-400 shrink-0" />
-                <span>{fixture.time}</span>
-              </span>
-            )}
-          </div>
-
-          {/* Duelo de Equipos con Marcador Central en Cápsula */}
-          <div className="flex items-center justify-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
-            {/* Local */}
-            <div className="flex items-center justify-end gap-1.5 min-w-0 flex-1 text-right">
-              <span className="font-sans font-semibold text-xs sm:text-sm text-slate-100 truncate" title={homeTeam.name}>
-                {homeTeam.name}
-              </span>
+        {/* LÍNEA 1: EJE SIMÉTRICO 3 COLUMNAS (LOCAL · VS/MARCADOR · VISITANTE) */}
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 min-w-0">
+          {/* Columna 1: Local (Alineado a la derecha hacia el centro) */}
+          <div className="flex items-center justify-end gap-1.5 min-w-0 text-right">
+            <span
+              className="font-sans font-medium text-xs sm:text-[13px] tracking-tight text-slate-900 truncate"
+              title={homeTeam.name}
+            >
+              {formatCompactTeamName(homeTeam.name)}
+            </span>
+            {homeTeam.logo?.trim() ? (
               <img
                 src={homeTeam.logo}
                 alt=""
@@ -92,21 +73,23 @@ export const CompactNBAMatchRow: React.FC<CompactNBAMatchRowProps> = React.memo(
                   e.currentTarget.style.display = 'none';
                 }}
               />
-            </div>
+            ) : null}
+          </div>
 
-            {/* Marcador Central en Recuadro / Cápsula Elegante */}
-            <div className="px-2.5 py-0.5 rounded-lg bg-slate-900/90 border border-slate-800 font-mono font-bold text-xs sm:text-sm shrink-0 whitespace-nowrap text-center shadow-inner">
-              {isLive || isFinished ? (
-                <span className={isLive ? 'text-amber-400' : 'text-slate-200'}>
-                  {fixture.currentScore ? `${fixture.currentScore.home} - ${fixture.currentScore.away}` : '0 - 0'}
-                </span>
-              ) : (
-                <span className="text-slate-500 text-[10px]">VS</span>
-              )}
-            </div>
+          {/* Columna 2: Marcador Central Simétrico (100% centrado respecto a la tarjeta) */}
+          <div className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200/90 font-mono tabular-nums font-semibold text-[11px] sm:text-xs shrink-0 whitespace-nowrap text-center min-w-[44px] flex items-center justify-center">
+            {isLive || isFinished ? (
+              <span className={isLive ? 'text-amber-700 font-bold' : 'text-slate-900'}>
+                {fixture.currentScore ? `${fixture.currentScore.home} - ${fixture.currentScore.away}` : '0 - 0'}
+              </span>
+            ) : (
+              <span className="text-slate-500 text-[10px] font-medium">VS</span>
+            )}
+          </div>
 
-            {/* Visitante */}
-            <div className="flex items-center justify-start gap-1.5 min-w-0 flex-1 text-left">
+          {/* Columna 3: Visitante (Alineado a la izquierda desde el centro) */}
+          <div className="flex items-center justify-start gap-1.5 min-w-0 text-left">
+            {awayTeam.logo?.trim() ? (
               <img
                 src={awayTeam.logo}
                 alt=""
@@ -115,71 +98,101 @@ export const CompactNBAMatchRow: React.FC<CompactNBAMatchRowProps> = React.memo(
                   e.currentTarget.style.display = 'none';
                 }}
               />
-              <span className="font-sans font-semibold text-xs sm:text-sm text-slate-100 truncate" title={awayTeam.name}>
-                {awayTeam.name}
-              </span>
-            </div>
+            ) : null}
+            <span
+              className="font-sans font-medium text-xs sm:text-[13px] tracking-tight text-slate-900 truncate"
+              title={awayTeam.name}
+            >
+              {formatCompactTeamName(awayTeam.name)}
+            </span>
           </div>
         </div>
 
-        {/* LÍNEA 2: SEDE Y ACCESO DIRECTO A CUOTAS Y MERCADOS NBA */}
-        <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-800/40 text-xs">
-          {/* Izquierda: Sede / Torneo y botón para ver cuotas */}
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold text-[9px] uppercase border border-amber-500/30 shrink-0">
+        {/* LÍNEA 2: HORA COMPACTA + TORNEO + VER CUOTAS + CHECKBOX SUTIL */}
+        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 text-[11px]">
+          {/* Izquierda: Hora / Estado + Liga + sede */}
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            {isRecentlyUpdated && (
+              <span className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 font-mono font-bold text-[9.5px] uppercase tracking-tight animate-bounce shrink-0 shadow-xs">
+                🏀 ¡PUNTOS! {fixture.currentScore ? `${fixture.currentScore.home}-${fixture.currentScore.away}` : ''}
+              </span>
+            )}
+            {isLive ? (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 font-mono tabular-nums tracking-tight font-semibold text-[10px] animate-pulse border border-rose-200 shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
+                <span>EN VIVO • {fixture.livePeriod === 'HT' ? 'MT' : fixture.livePeriod || 'Q1'}</span>
+              </span>
+            ) : isFinished ? (
+              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono tabular-nums text-[10px] font-medium border border-slate-200/80 shrink-0">
+                FIN
+              </span>
+            ) : (
+              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono tabular-nums text-[10px] font-medium border border-slate-200/70 shrink-0">
+                {fixture.time}
+              </span>
+            )}
+
+            <span className="text-slate-300 shrink-0">·</span>
+
+            <span
+              className="text-[11px] font-normal text-slate-500 truncate"
+              title={`${fixture.league?.name || 'NBA'} · ${fixture.arena?.name || ''}`}
+            >
               {fixture.league?.name || 'NBA'}
-            </span>
-            <span className="text-[11px] font-medium text-slate-400 truncate max-w-[130px] sm:max-w-[190px]" title={fixture.arena?.name || fixture.league?.country || 'Baloncesto'}>
-              {fixture.arena?.name || fixture.league?.country || 'Baloncesto'}
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-semibold transition-colors shrink-0">
-              <BarChart2 className="w-3.5 h-3.5 text-amber-400" />
-              <span>Ver Cuotas y Datos</span>
+              {fixture.arena?.name ? ` · ${fixture.arena.name}` : ''}
             </span>
           </div>
 
-          {/* Derecha: Botones de Acción Táctiles */}
-          <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-            {onToggleSelect && (
+          {/* Derecha: Botón Ver Cuotas y Datos + Estrella Favorito + Checkbox fino de 20px */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50/90 hover:bg-amber-100 text-amber-800 border border-amber-200/90 text-[10.5px] font-medium transition-colors shrink-0">
+              <BarChart2 className="w-3 h-3 text-amber-600" />
+              <span>Ver Cuotas y Datos</span>
+            </span>
+
+            {onToggleFavorite && (
               <button
                 type="button"
-                onClick={() => onToggleSelect(fixture.id)}
-                className={`p-1.5 rounded-lg transition-colors cursor-pointer border flex items-center justify-center min-w-[32px] min-h-[32px] ${
-                  isSelected
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
-                    : 'bg-slate-900/90 text-slate-400 hover:text-white border-slate-700/80 hover:bg-slate-800'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleFavorite(fixture.id);
+                }}
+                className={`w-6 h-6 rounded-md transition-colors cursor-pointer border flex items-center justify-center shrink-0 ${
+                  isFavorite
+                    ? 'bg-amber-50 text-amber-500 border-amber-300 shadow-2xs'
+                    : 'bg-white text-slate-400 hover:text-amber-500 hover:border-amber-300 border-slate-200/90'
                 }`}
-                title={isSelected ? 'Quitar de selección' : 'Añadir a mi selección'}
+                title={isFavorite ? 'Quitar de Favoritos (Alertas activas)' : 'Añadir a Favoritos para recibir alertas en vivo'}
+                aria-label={isFavorite ? 'Quitar de Favoritos' : 'Añadir a Favoritos'}
               >
-                {isSelected ? <CheckSquare className="w-3.5 h-3.5 text-slate-950" /> : <Square className="w-3.5 h-3.5" />}
+                <Star className={`w-3.5 h-3.5 ${isFavorite ? 'fill-amber-400 text-amber-500' : ''}`} />
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                if (onOpenDetail) onOpenDetail(fixture, analysis);
-                else onToggleExpand();
-              }}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center min-w-[32px] min-h-[32px]"
-              aria-label={onOpenDetail ? 'Ver análisis detallado' : isExpanded ? 'Contraer' : 'Expandir'}
-              title="Ver análisis completo"
-            >
-              {onOpenDetail ? (
-                <ChevronDown className="w-4 h-4 text-amber-400" />
-              ) : isExpanded ? (
-                <ChevronUp className="w-4 h-4 text-amber-400" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-slate-400" />
-              )}
-            </button>
+            {onToggleSelect && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect(fixture.id);
+                }}
+                className={`w-5 h-5 rounded-md transition-colors cursor-pointer border flex items-center justify-center shrink-0 ${
+                  isSelected
+                    ? 'bg-amber-500 text-slate-950 border-amber-500'
+                    : 'bg-white text-transparent hover:border-slate-400 border-slate-300'
+                }`}
+                title={isSelected ? 'Quitar de selección' : 'Seleccionar partido'}
+                aria-label={isSelected ? 'Quitar de selección' : 'Seleccionar partido'}
+              >
+                <Check className={`w-3 h-3 ${isSelected ? 'text-slate-950 stroke-[2.5]' : 'opacity-0'}`} />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Expanded Details: Renders only if onOpenDetail is not supplied */}
       {!onOpenDetail && isExpanded && (
-        <div className="border-t border-slate-800/40 p-2 sm:p-3 bg-slate-950/40">
+        <div className="border-t border-slate-200/80 p-2 sm:p-3 bg-slate-50/70">
           <NBAPredictionCard
             fixture={fixture}
             analysis={analysis}
@@ -194,3 +207,4 @@ export const CompactNBAMatchRow: React.FC<CompactNBAMatchRowProps> = React.memo(
     </div>
   );
 });
+

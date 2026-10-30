@@ -343,10 +343,76 @@ const ALLOWED_PRIME_COUNTRIES: Record<string, {
   }
 };
 
+const NATIONAL_TEAM_COUNTRIES = new Set([
+  'colombia', 'argentina', 'brazil', 'brasil', 'uruguay', 'chile', 'ecuador', 'peru', 'paraguay', 'bolivia', 'venezuela',
+  'spain', 'espana', 'england', 'inglaterra', 'france', 'francia', 'germany', 'alemania', 'italy', 'italia', 'portugal',
+  'netherlands', 'paises bajos', 'holanda', 'belgium', 'belgica', 'croatia', 'croacia', 'switzerland', 'suiza', 'austria',
+  'denmark', 'dinamarca', 'sweden', 'suecia', 'norway', 'noruega', 'poland', 'polonia', 'serbia', 'ukraine', 'ucrania',
+  'turkey', 'turquia', 'turkiye', 'scotland', 'escocia', 'wales', 'gales', 'ireland', 'republic of ireland', 'irlanda',
+  'northern ireland', 'irlanda del norte', 'czech republic', 'czechia', 'republica checa', 'hungary', 'hungria',
+  'romania', 'rumania', 'greece', 'grecia', 'slovakia', 'eslovaquia', 'slovenia', 'eslovenia', 'finland', 'finlandia',
+  'iceland', 'islandia', 'georgia', 'albania', 'north macedonia', 'macedonia del norte', 'montenegro',
+  'bosnia and herzegovina', 'bosnia', 'israel', 'bulgaria', 'kosovo', 'luxembourg', 'belarus', 'armenia',
+  'azerbaijan', 'kazakhstan', 'cyprus', 'estonia', 'latvia', 'lithuania', 'malta', 'moldova',
+  'usa', 'u.s.', 'us', 'united states', 'estados unidos', 'ee. uu.', 'ee.uu.', 'mexico', 'canada', 'costa rica',
+  'panama', 'honduras', 'jamaica', 'el salvador', 'guatemala', 'nicaragua', 'dominican republic', 'republica dominicana',
+  'haiti', 'cuba', 'trinidad and tobago', 'puerto rico', 'curacao', 'suriname',
+  'japan', 'japon', 'south korea', 'korea republic', 'corea del sur', 'rep. of korea', 'north korea', 'korea dpr',
+  'corea del norte', 'australia', 'new zealand', 'nueva zelanda', 'saudi arabia', 'arabia saudita', 'qatar', 'catar',
+  'iran', 'iraq', 'irak', 'uzbekistan', 'jordan', 'jordania', 'united arab emirates', 'uae', 'emiratos arabes unidos',
+  'bahrain', 'oman', 'syria', 'siria', 'palestine', 'palestina', 'china', 'china pr', 'thailand', 'tailandia',
+  'vietnam', 'indonesia', 'malaysia', 'philippines', 'filipinas', 'india', 'tajikistan',
+  'morocco', 'marruecos', 'senegal', 'nigeria', 'ghana', 'cameroon', 'camerun', 'egypt', 'egipto', 'algeria', 'argelia',
+  'tunisia', 'tunez', 'ivory coast', 'cote d ivoire', 'costa de marfil', 'south africa', 'sudafrica', 'mali', 'zambia',
+  'kenya', 'kenia', 'guinea', 'burkina faso', 'cape verde', 'dr congo', 'congo dr', 'angola', 'tanzania', 'uganda', 'zimbabwe'
+]);
+
+export function isNationalTeamName(teamName?: string): boolean {
+  const norm = (teamName || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’`]/g, ' ')
+    .trim();
+  if (!norm) return false;
+
+  if (
+    /\b(fc|cf|sc|ac|cd|ud|sd|rcd|ca|club|sporting|atletico|real|deportivo|dynamo|dinamo|borussia|bayern|inter|milan|juventus|arsenal|chelsea|liverpool|barcelona|madrid|psg|benfica|porto|ajax|boca|river|flamengo|palmeiras|corinthians|santos|gremio|nacional|millonarios|junior|medellin|cali|tolima|once caldas|santa fe|pachuca|chivas|tigres|monterrey|cruz azul|pumas|al ahly|al hilal|al nassr)\b/i.test(
+      norm
+    )
+  ) {
+    return false;
+  }
+
+  const base = norm
+    .replace(
+      /\b(u-?17|u-?18|u-?19|u-?20|u-?21|u-?22|u-?23|sub-?17|sub-?18|sub-?19|sub-?20|sub-?21|sub-?22|sub-?23|women s?|femenin[ao]s?|femenil|frauen|femminile|feminino|olimpic[oa]|olympic|national team|seleccion|selecao|w)\b/gi,
+      ' '
+    )
+    .replace(/[()[\]\-_/.,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return NATIONAL_TEAM_COUNTRIES.has(base);
+}
+
+export function isNationalTeamSub17PlusMatch(
+  leagueName?: string,
+  countryName?: string,
+  teamHome?: string,
+  teamAway?: string
+): boolean {
+  const combined = `${leagueName || ''} ${countryName || ''} ${teamHome || ''} ${teamAway || ''}`.toLowerCase();
+  if (/\b(u-?1[1-6]|sub-?1[1-6])\b/i.test(combined)) {
+    return false;
+  }
+  return isNationalTeamName(teamHome) && isNationalTeamName(teamAway);
+}
+
 /**
- * Excludes youth (U17, U19, U20, U21, U23), reserve, amateur, and non-prime countries/leagues
+ * Excludes club youth (U17, U19, U20, U21, U23), reserve, amateur, and non-prime countries/leagues
  * that lack reliable real-time telemetry (e.g., DR Congo Ligue 1, Ethiopia Premier League, Kyrgyzstan Premier League)
- * or are not main attractions for sports bettors.
+ * while allowing National Team matches from Sub-17 and above (Men & Women).
  */
 export function isExcludedYouthOrAmateurLeague(
   leagueName?: string,
@@ -358,7 +424,17 @@ export function isExcludedYouthOrAmateurLeague(
   const cName = (countryName || '').toLowerCase().trim();
   const combined = `${lName} ${cName} ${teamHome || ''} ${teamAway || ''}`.toLowerCase();
 
-  // 1. Always block youth, reserve, amateur, regional, and lower divisions
+  // 0. Always exclude categories below Sub-17 (Sub-15, Sub-16, etc.)
+  if (/\b(u-?1[1-6]|sub-?1[1-6])\b/i.test(combined)) {
+    return true;
+  }
+
+  // 1. Allow National Team matches from Sub-17 and above (Sub-17, Sub-19, Sub-20, Sub-21, Sub-23, Senior — Men & Women)
+  if (isNationalTeamSub17PlusMatch(lName, cName, teamHome, teamAway)) {
+    return false;
+  }
+
+  // 2. Block all club youth, reserve, amateur, regional, lower divisions, and club women's leagues
   if (
     /\b(u15|u16|u17|u18|u19|u20|u21|u22|u23|sub-15|sub-17|sub-19|sub-20|sub-21|sub-23|youth|juvenil|reservas|reserve|amateur|regional|tercera|fourth division|national league north|national league south|non-league|oberliga|regionalliga|primavera|premier league 2|femenin[ao]|women|frauen|femminile|femenil)\b/i.test(
       combined
@@ -433,12 +509,21 @@ export function isColombianBookmakerPrimeLeague(fixture: MatchFixture): boolean 
 /**
  * Determines whether a league is an international tournament
  */
-export function isInternationalCompetition(leagueName: string, countryName?: string): boolean {
+export function isInternationalCompetition(
+  leagueName: string,
+  countryName?: string,
+  teamHome?: string,
+  teamAway?: string
+): boolean {
   const l = (leagueName || '').toLowerCase().trim();
   const c = (countryName || '').toLowerCase().trim();
 
+  if (isNationalTeamSub17PlusMatch(l, c, teamHome, teamAway)) {
+    return true;
+  }
+
   // Country matches international regions
-  if (INTL_COUNTRIES.some(ic => c === ic || c.includes(ic))) {
+  if (INTL_COUNTRIES.some(ic => c === ic || c.includes(ic) || c === 'internacional')) {
     return true;
   }
 
@@ -458,7 +543,12 @@ export function isInternationalCompetition(leagueName: string, countryName?: str
  * Strictly prioritizes exact country match FIRST so homonym league names (like "Ligue 1" or "Premier League")
  * never misclassify foreign countries.
  */
-export function identifyCompetitionCategory(leagueName: string, countryName?: string): {
+export function identifyCompetitionCategory(
+  leagueName: string,
+  countryName?: string,
+  teamHome?: string,
+  teamAway?: string
+): {
   key: string;
   name: string;
   displayName: string;
@@ -471,8 +561,8 @@ export function identifyCompetitionCategory(leagueName: string, countryName?: st
   const lLower = l.toLowerCase();
   const cLower = c.toLowerCase();
 
-  // 1. Check International Tournament
-  if (isInternationalCompetition(l, c)) {
+  // 1. Check International Tournament or National Team Sub-17+ Match
+  if (isInternationalCompetition(l, c, teamHome, teamAway)) {
     let flag = '🏆';
     if (lLower.includes('libertadores') || lLower.includes('sudamericana') || lLower.includes('conmebol')) {
       flag = '🌎';
@@ -480,7 +570,7 @@ export function identifyCompetitionCategory(leagueName: string, countryName?: st
       flag = '⭐';
     } else if (lLower.includes('concacaf') || lLower.includes('gold cup')) {
       flag = '🏆';
-    } else if (lLower.includes('mundial') || lLower.includes('world cup')) {
+    } else if (lLower.includes('mundial') || lLower.includes('world cup') || lLower.includes('selecciones')) {
       flag = '🌍';
     }
 
@@ -565,8 +655,10 @@ export function groupFixturesByCompetition(fixtures: MatchFixture[]): Competitio
     const lName = fixture.league?.name || 'Competición';
     const cName = fixture.league?.country || '';
     const lId = fixture.league?.id || `${lName}-${cName}`;
+    const hName = fixture.homeTeam?.name || '';
+    const aName = fixture.awayTeam?.name || '';
 
-    const cat = identifyCompetitionCategory(lName, cName);
+    const cat = identifyCompetitionCategory(lName, cName, hName, aName);
 
     if (!groupsMap.has(cat.key)) {
       groupsMap.set(cat.key, {
@@ -735,3 +827,84 @@ export function matchesLeagueSelection(fixture: MatchFixture, selectedLeague: st
   // If a specific filter was provided but didn't match, return false!
   return false;
 }
+
+/**
+ * Pure visual helper to abbreviate common verbose club prefixes/suffixes
+ * (e.g., "Club Deportivo" -> "CD", "Fútbol Club" -> "FC", "Club Atlético" -> "CA")
+ * without mutating the underlying team.name used by analytics or API matching.
+ */
+export function formatCompactTeamName(name: string): string {
+  if (!name) return '';
+  let formatted = name.trim();
+
+  const replacements: [RegExp, string][] = [
+    [/\bClub Social y Deportivo\b/gi, 'CSD'],
+    [/\bReal Club Deportivo\b/gi, 'RCD'],
+    [/\bCorporaci[oó]n Deportiva\b/gi, 'CD'],
+    [/\bClub Deportivo\b/gi, 'CD'],
+    [/\bClub Atl[eé]tico\b/gi, 'CA'],
+    [/\bAsociaci[oó]n Deportiva\b/gi, 'AD'],
+    [/\bSociedad Deportiva\b/gi, 'SD'],
+    [/\bUni[oó]n Deportiva\b/gi, 'UD'],
+    [/\bF[uú]tbol Club\b/gi, 'FC'],
+    [/\bFootball Club\b/gi, 'FC'],
+    [/\bDeportivo Independiente Medell[ií]n\b/gi, 'Ind. Medellín'],
+    [/\bAtl[eé]tico Nacional\b/gi, 'Atl. Nacional'],
+    [/\bAtl[eé]tico Bucaramanga\b/gi, 'Atl. Bucaramanga'],
+    [/\bAtl[eé]tico Madrid\b/gi, 'Atl. Madrid'],
+    [/\bAtl[eé]tico Mineiro\b/gi, 'Atl. Mineiro'],
+    [/\bAthletico Paranaense\b/gi, 'Ath. Paranaense']
+  ];
+
+  for (const [pattern, abbr] of replacements) {
+    formatted = formatted.replace(pattern, abbr);
+  }
+
+  return formatted.replace(/\s{2,}/g, ' ').trim();
+}
+
+export interface StaticCatalogLeagueItem {
+  key: string;
+  displayName: string;
+  flag: string;
+  tier: 'PRIMARY' | 'SECONDARY';
+}
+
+export const STATIC_SOCCER_CATALOG: StaticCatalogLeagueItem[] = [
+  // Ligas Principales
+  { key: 'GROUP_INTL', displayName: 'Torneos Internacionales (UEFA / CONMEBOL)', flag: '🏆', tier: 'PRIMARY' },
+  { key: 'COUNTRY_COLOMBIA', displayName: 'Colombia (Liga y Copa BetPlay)', flag: '🇨🇴', tier: 'PRIMARY' },
+  { key: 'COUNTRY_ENGLAND', displayName: 'Inglaterra (Premier League / FA Cup)', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', tier: 'PRIMARY' },
+  { key: 'COUNTRY_SPAIN', displayName: 'España (LaLiga / Copa del Rey)', flag: '🇪🇸', tier: 'PRIMARY' },
+  { key: 'COUNTRY_ITALY', displayName: 'Italia (Serie A / Coppa Italia)', flag: '🇮🇹', tier: 'PRIMARY' },
+  { key: 'COUNTRY_GERMANY', displayName: 'Alemania (Bundesliga / DFB Pokal)', flag: '🇩🇪', tier: 'PRIMARY' },
+  { key: 'COUNTRY_FRANCE', displayName: 'Francia (Ligue 1 / Coupe de France)', flag: '🇫🇷', tier: 'PRIMARY' },
+  { key: 'COUNTRY_ARGENTINA', displayName: 'Argentina (Liga Profesional)', flag: '🇦🇷', tier: 'PRIMARY' },
+  { key: 'COUNTRY_BRAZIL', displayName: 'Brasil (Brasileirão Série A)', flag: '🇧🇷', tier: 'PRIMARY' },
+
+  // Ligas Secundarias
+  { key: 'COUNTRY_PORTUGAL', displayName: 'Portugal (Primeira Liga)', flag: '🇵🇹', tier: 'SECONDARY' },
+  { key: 'COUNTRY_NETHERLANDS', displayName: 'Países Bajos (Eredivisie)', flag: '🇳🇱', tier: 'SECONDARY' },
+  { key: 'COUNTRY_MEXICO', displayName: 'México (Liga MX)', flag: '🇲🇽', tier: 'SECONDARY' },
+  { key: 'COUNTRY_USA', displayName: 'Estados Unidos (MLS)', flag: '🇺🇸', tier: 'SECONDARY' },
+  { key: 'COUNTRY_TURKEY', displayName: 'Turquía (Süper Lig)', flag: '🇹🇷', tier: 'SECONDARY' },
+  { key: 'COUNTRY_BELGIUM', displayName: 'Bélgica (Pro League)', flag: '🇧🇪', tier: 'SECONDARY' },
+  { key: 'COUNTRY_SAUDI_ARABIA', displayName: 'Arabia Saudita (Saudi Pro League)', flag: '🇸🇦', tier: 'SECONDARY' },
+  { key: 'COUNTRY_CHILE', displayName: 'Chile (Primera División)', flag: '🇨🇱', tier: 'SECONDARY' },
+  { key: 'COUNTRY_ECUADOR', displayName: 'Ecuador (LigaPro)', flag: '🇪🇨', tier: 'SECONDARY' },
+  { key: 'COUNTRY_URUGUAY', displayName: 'Uruguay (Primera División)', flag: '🇺🇾', tier: 'SECONDARY' },
+  { key: 'COUNTRY_PERU', displayName: 'Perú (Liga 1)', flag: '🇵🇪', tier: 'SECONDARY' },
+  { key: 'COUNTRY_PARAGUAY', displayName: 'Paraguay (Primera División)', flag: '🇵🇾', tier: 'SECONDARY' }
+];
+
+export const STATIC_BASKETBALL_CATALOG: StaticCatalogLeagueItem[] = [
+  // Principales
+  { key: 'NBA', displayName: 'NBA (Temporada Regular & Playoffs)', flag: '🏀', tier: 'PRIMARY' },
+  { key: 'Este', displayName: 'NBA · Conferencia Este', flag: '🗽', tier: 'PRIMARY' },
+  { key: 'Oeste', displayName: 'NBA · Conferencia Oeste', flag: '🌉', tier: 'PRIMARY' },
+  // Secundarias
+  { key: 'NCAA', displayName: 'NCAA Basketball (Universitario)', flag: '🎓', tier: 'SECONDARY' },
+  { key: 'WNBA', displayName: 'WNBA (Baloncesto Femenino)', flag: '⚡', tier: 'SECONDARY' },
+  { key: 'FIBA', displayName: 'Euroliga / FIBA Internacional', flag: '🌍', tier: 'SECONDARY' }
+];
+

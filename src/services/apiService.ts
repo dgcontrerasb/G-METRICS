@@ -3,8 +3,8 @@ import { resolveTeamStarPlayerName, isContaminatedForeignStar } from './lineupSe
 import { isExcludedYouthOrAmateurLeague } from './leagueCategorizer';
 
 export const API_KEY_STORAGE_KEY = 'futbolstats_apikey';
-export const CACHE_PREFIX = 'futbolstats_fixtures_v10_';
-export const CACHE_META_PREFIX = 'futbolstats_cache_meta_v10_';
+export const CACHE_PREFIX = 'futbolstats_fixtures_v11_';
+export const CACHE_META_PREFIX = 'futbolstats_cache_meta_v11_';
 
 export function getStoredApiKey(): string {
   try {
@@ -448,9 +448,9 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
       resolvedMinute = Math.min(125, Math.max(1, elapsed));
     } else if (minutesSinceKickoff > 0) {
       resolvedMinute =
-        minutesSinceKickoff <= 47
-          ? Math.min(45, Math.max(1, Math.floor(minutesSinceKickoff)))
-          : Math.min(90, Math.max(46, 45 + Math.floor(minutesSinceKickoff - 64)));
+        minutesSinceKickoff <= 48
+          ? Math.min(45, Math.max(1, Math.floor(minutesSinceKickoff - 1)))
+          : Math.min(90, Math.max(46, 45 + Math.floor(minutesSinceKickoff - 66)));
     } else {
       resolvedMinute = 45;
     }
@@ -1110,6 +1110,7 @@ function clientSingleTeamMatch(k1: string, k2: string): boolean {
 
 export interface LivePulseSyncResult {
   updatedFixtures: MatchFixture[];
+  allUpdatedFixtures?: MatchFixture[];
   changedIds: string[];
   scoreChangedIds: string[];
   liveCount: number;
@@ -1214,8 +1215,12 @@ export async function syncLivePulseFixtures(
             }, 0)
           : 0;
 
-        // Evitar que el reloj retroceda dentro del mismo tiempo por diferencias de caché
-        const resolvedMin = nextHT ? 45 : Math.max(prevMin, delta.minute, maxEventMin);
+        // Calibrar con el minuto oficial reportado por la señal en vivo y los eventos reales
+        const officialLiveMin =
+          typeof delta.minute === 'number' && delta.minute > 0
+            ? Math.max(delta.minute, maxEventMin)
+            : Math.max(prevMin, maxEventMin);
+        const resolvedMin = nextHT ? 45 : officialLiveMin;
 
         const statsUpdated =
           (delta.liveStats && !fix.liveStats) ||
@@ -1273,13 +1278,14 @@ export async function syncLivePulseFixtures(
 
     return {
       updatedFixtures: activeUpdatedFixtures,
+      allUpdatedFixtures: updatedFixtures,
       changedIds,
       scoreChangedIds,
       liveCount,
       syncedAt: Date.now()
     };
   } catch {
-    return { updatedFixtures: currentFixtures, changedIds: [], scoreChangedIds: [], liveCount: 0, syncedAt: Date.now() };
+    return { updatedFixtures: currentFixtures, allUpdatedFixtures: currentFixtures, changedIds: [], scoreChangedIds: [], liveCount: 0, syncedAt: Date.now() };
   }
 }
 

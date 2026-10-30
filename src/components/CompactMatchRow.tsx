@@ -1,13 +1,16 @@
 import React from 'react';
 import { MatchFixture, MatchAnalysis } from '../types';
-import { Clock, ChevronDown, ChevronUp, CheckSquare, Square, BarChart2 } from 'lucide-react';
+import { Check, BarChart2, Star } from 'lucide-react';
 import { FriendlyPredictionCard } from './FriendlyPredictionCard';
+import { formatCompactTeamName } from '../services/leagueCategorizer';
 
 interface CompactMatchRowProps {
   fixture: MatchFixture;
   analysis: MatchAnalysis;
   isSelected?: boolean;
   onToggleSelect?: (fixtureId: string) => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: (fixtureId: string) => void;
   isExpanded?: boolean;
   onToggleExpand: () => void;
   onOpenDetail?: (fixture: MatchFixture, analysis: MatchAnalysis) => void;
@@ -21,6 +24,8 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
   analysis,
   isSelected = false,
   onToggleSelect,
+  isFavorite = false,
+  onToggleFavorite,
   isExpanded = false,
   onToggleExpand,
   onOpenDetail,
@@ -59,7 +64,7 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
     !isFinished &&
     !isHaltOrInterrupted;
 
-  const isValueBet = Boolean(analysis.marketOdds?.valueBetDetected);
+  const isValueBet = Boolean(analysis?.marketOdds?.valueBetDetected);
 
   // Control anti-obsolescencia: no alertar jugadas/goles si el evento ocurrió hace más de 3 minutos (180s)
   const isFreshEvent = React.useMemo(() => {
@@ -79,7 +84,7 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
     (penaltyScore.home !== undefined || penaltyScore.away !== undefined)
   );
 
-  // Base minute reconciliado con los eventos reales reportados en la cronología
+  // Base minute reconciliado fielmente con la señal en vivo y eventos reales (sin adelantar artificialmente)
   const reconciledBaseMinute = React.useMemo(() => {
     const base = fixture.currentScore?.minute ?? 0;
     if (isHalfTime) return 45;
@@ -91,28 +96,13 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
     return Math.max(base, maxEvMin);
   }, [fixture.currentScore?.minute, fixture.liveEvents, isHalfTime]);
 
-  // Avance local de 60 segundos entre sincronizaciones de red, respetando topes estrictos
-  const [liveMinuteOffset, setLiveMinuteOffset] = React.useState<number>(0);
-
-  React.useEffect(() => {
-    setLiveMinuteOffset(0);
-  }, [fixture.id, reconciledBaseMinute, isHalfTime, status]);
-
-  React.useEffect(() => {
-    if (status !== 'IN_PLAY' || isHalfTime || isFinished || isHaltOrInterrupted) {
-      return;
-    }
-    const ticker = setInterval(() => {
-      setLiveMinuteOffset((prev) => prev + 1);
-    }, 60000);
-    return () => clearInterval(ticker);
-  }, [status, isHalfTime, isFinished, isHaltOrInterrupted]);
+  if (!analysis) return null;
 
   // Reloj oficial sincronizado con topes de seguridad y estados estrictos
   const renderClock = () => {
     if (isFinished) {
       return (
-        <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono tracking-tight text-[10px] font-semibold border border-slate-700/50">
+        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-mono tabular-nums tracking-tight text-[10px] font-bold border border-slate-200/80">
           FIN
         </span>
       );
@@ -120,7 +110,7 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
 
     if (isSuspended) {
       return (
-        <span className="px-2 py-0.5 rounded-full bg-amber-950/70 text-amber-300 font-mono tracking-tight text-[10px] font-bold border border-amber-600/60" title="Partido Suspendido">
+        <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-mono tabular-nums tracking-tight text-[10px] font-bold border border-amber-300" title="Partido Suspendido">
           SUSP
         </span>
       );
@@ -128,7 +118,7 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
 
     if (isPostponed) {
       return (
-        <span className="px-2 py-0.5 rounded-full bg-slate-800/90 text-slate-300 font-mono tracking-tight text-[10px] font-bold border border-slate-700/60" title="Partido Aplazado">
+        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono tabular-nums tracking-tight text-[10px] font-bold border border-slate-300" title="Partido Aplazado">
           APLAZ
         </span>
       );
@@ -136,7 +126,7 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
 
     if (isCancelled) {
       return (
-        <span className="px-2 py-0.5 rounded-full bg-rose-950/70 text-rose-300 font-mono tracking-tight text-[10px] font-bold border border-rose-600/60" title="Partido Cancelado">
+        <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-mono tabular-nums tracking-tight text-[10px] font-bold border border-rose-200" title="Partido Cancelado">
           CANC
         </span>
       );
@@ -145,8 +135,8 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
     // Tanda de Penales
     if (isPenaltyShootout) {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono tracking-tight font-bold text-[10px] border border-purple-500/40" title="Tanda de Penales en curso (120')">
-          <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></span>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-mono tabular-nums tracking-tight font-bold text-[10px] border border-purple-200" title="Tanda de Penales en curso (120')">
+          <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse"></span>
           <span>PEN</span>
         </span>
       );
@@ -155,8 +145,8 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
     // Entretiempo / Pausa regular (Congelado estrictamente en 45')
     if (isHalfTime) {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono tracking-tight font-bold text-[10px] border border-amber-500/40" title="Partido en Descanso / Entretiempo (45')">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-mono tabular-nums tracking-tight font-bold text-[10px] border border-amber-200" title="Partido en Descanso / Entretiempo (45')">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
           <span>HT</span>
         </span>
       );
@@ -184,8 +174,8 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
       }
 
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-mono tracking-tight font-bold text-[10px] animate-pulse border border-rose-500/40">
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-mono tabular-nums tracking-tight font-bold text-[10px] animate-pulse border border-rose-200">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
           <span>{displayET}</span>
         </span>
       );
@@ -199,78 +189,63 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
       if (typeof rawMin === 'number' && rawMin > 0) {
         const isFirstHalf = statusShort === '1H' || (statusShort !== '2H' && rawMin <= 45);
         if (isFirstHalf) {
-          // Tope estricto 1T en 45' (formato 45+X' si la API reportó adición oficial)
           if (rawMin > 45) {
             displayMin = `45+${rawMin - 45}'`;
           } else {
-            const progressed = Math.min(45, Math.max(1, rawMin + liveMinuteOffset));
-            displayMin = `${progressed}'`;
+            displayMin = `${Math.min(45, Math.max(1, rawMin))}'`;
           }
         } else {
-          // Tope estricto 2T en 90' (formato 90+X' si la API reportó compensación)
           if (rawMin > 90) {
             displayMin = `90+${rawMin - 90}'`;
           } else {
-            const progressed = Math.min(90, Math.max(46, rawMin + liveMinuteOffset));
-            displayMin = `${progressed}'`;
+            displayMin = `${Math.min(90, Math.max(46, rawMin))}'`;
           }
         }
       }
 
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-mono tracking-tight font-bold text-[10px] animate-pulse border border-rose-500/40">
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 font-mono tabular-nums tracking-tight font-semibold text-[10px] animate-pulse border border-rose-200 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
           <span>{displayMin}</span>
         </span>
       );
     }
 
     return (
-      <span className="font-mono tracking-tight font-semibold text-amber-400 text-xs flex items-center gap-1">
-        <Clock className="w-3 h-3 text-amber-400 shrink-0" />
-        <span>{fixture.time}</span>
+      <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono tabular-nums tracking-tight font-medium text-[10px] border border-slate-200/70 shrink-0">
+        {fixture.time}
       </span>
     );
   };
 
   return (
-    <div className={`transition-all duration-300 rounded-xl overflow-hidden border ${
+    <div className={`transition-all duration-200 rounded-xl overflow-hidden border shadow-2xs ${
       !isHaltOrInterrupted && isFreshEvent
-        ? 'border-emerald-400 bg-emerald-950/40 ring-2 ring-emerald-400/90 shadow-[0_0_20px_rgba(16,185,129,0.5)] animate-pulse'
+        ? 'border-emerald-500 bg-emerald-50/95 ring-2 ring-emerald-400/70'
         : isSelected
-        ? 'border-emerald-500/60 bg-slate-950/60 ring-1 ring-emerald-500/30'
+        ? 'border-emerald-500 bg-emerald-50/40 ring-1 ring-emerald-500/30'
         : isValueBet
-        ? 'border-emerald-500/30 bg-slate-950/40 hover:bg-slate-900/40'
-        : 'border-slate-800/40 bg-slate-950/30 hover:bg-slate-900/40'
+        ? 'border-emerald-300/90 bg-white/95 hover:bg-slate-50/95'
+        : 'border-slate-200/80 bg-white/95 hover:bg-slate-50/95'
     } backdrop-blur-md`}>
-      {/* 2-Tier Clean Row: Línea 1 Duelo y Marcador / Línea 2 Datos y Acciones */}
       <div
         onClick={() => {
           if (onOpenDetail) onOpenDetail(fixture, analysis);
           else onToggleExpand();
         }}
-        className="px-3 sm:px-4 py-2 sm:py-2.5 flex flex-col gap-2 cursor-pointer select-none"
+        className="px-3 sm:px-4 py-2 flex flex-col gap-1.5 cursor-pointer select-none"
       >
-        {/* LÍNEA 1: ESTADO + DUELO DE EQUIPOS + MARCADOR CENTRAL */}
-        <div className="flex items-center justify-between gap-2 min-w-0">
-          {/* Minuto / Tiempo / Estado */}
-          <div className="shrink-0 flex items-center gap-1.5">
-            {!isHaltOrInterrupted && isFreshEvent && (
-              <span className="px-2 py-0.5 rounded-full bg-emerald-400 text-black font-mono font-black text-[10px] uppercase tracking-tight animate-bounce shadow-md flex items-center gap-1">
-                <span>⚡</span>
-                <span className="hidden sm:inline">¡Marcador!</span>
-              </span>
-            )}
-            {renderClock()}
-          </div>
-
-          {/* Duelo de Equipos con Marcador Central en Cápsula */}
-          <div className="flex items-center justify-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
-            {/* Local */}
-            <div className="flex items-center justify-end gap-1.5 min-w-0 flex-1 text-right">
-              <span className="font-sans font-semibold text-xs sm:text-sm text-slate-100 truncate" title={homeTeam.name}>
-                {homeTeam.name}
-              </span>
+        {/* LÍNEA 1: EJE SIMÉTRICO 3 COLUMNAS (LOCAL · VS/MARCADOR · VISITANTE) */}
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 min-w-0">
+          {/* Columna 1: Local (Alineado a la derecha hacia el centro) */}
+          <div className="flex items-center justify-end gap-1.5 min-w-0 text-right">
+            <span
+              className="font-sans font-medium text-xs sm:text-[13px] tracking-tight text-slate-900 truncate"
+              title={homeTeam.name}
+            >
+              {formatCompactTeamName(homeTeam.name)}
+            </span>
+            {homeTeam.logo?.trim() ? (
               <img
                 src={homeTeam.logo}
                 alt=""
@@ -279,28 +254,30 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
                   e.currentTarget.style.display = 'none';
                 }}
               />
-            </div>
+            ) : null}
+          </div>
 
-            {/* Marcador Central en Recuadro / Cápsula Elegante */}
-            <div className="px-2.5 py-0.5 rounded-lg bg-slate-900/90 border border-slate-800 font-mono font-bold text-xs sm:text-sm shrink-0 whitespace-nowrap text-center shadow-inner flex items-center justify-center gap-1.5">
-              {isLive || isFinished || isSuspended ? (
-                <>
-                  <span className={isLive && !isSuspended ? 'text-emerald-400' : 'text-slate-200'}>
-                    {fixture.currentScore ? `${fixture.currentScore.home} - ${fixture.currentScore.away}` : '0 - 0'}
+          {/* Columna 2: Marcador Central Simétrico (100% centrado respecto a la tarjeta) */}
+          <div className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200/90 font-mono tabular-nums font-semibold text-[11px] sm:text-xs shrink-0 whitespace-nowrap text-center min-w-[44px] flex items-center justify-center gap-1">
+            {isLive || isFinished || isSuspended ? (
+              <>
+                <span className={isLive && !isSuspended ? 'text-emerald-700 font-bold' : 'text-slate-900'}>
+                  {fixture.currentScore ? `${fixture.currentScore.home} - ${fixture.currentScore.away}` : '0 - 0'}
+                </span>
+                {hasPenalties && (
+                  <span className="text-[10px] text-amber-700 font-semibold" title="Tanda de Penales">
+                    ({penaltyScore?.home ?? 0}-{penaltyScore?.away ?? 0})
                   </span>
-                  {hasPenalties && (
-                    <span className="text-[10.5px] text-amber-400 font-bold" title="Tanda de Penales">
-                      ({penaltyScore?.home ?? 0} - {penaltyScore?.away ?? 0})
-                    </span>
-                  )}
-                </>
-              ) : (
-                <span className="text-slate-500 text-[10px]">VS</span>
-              )}
-            </div>
+                )}
+              </>
+            ) : (
+              <span className="text-slate-500 text-[10px] font-medium">VS</span>
+            )}
+          </div>
 
-            {/* Visitante */}
-            <div className="flex items-center justify-start gap-1.5 min-w-0 flex-1 text-left">
+          {/* Columna 3: Visitante (Alineado a la izquierda desde el centro) */}
+          <div className="flex items-center justify-start gap-1.5 min-w-0 text-left">
+            {awayTeam.logo?.trim() ? (
               <img
                 src={awayTeam.logo}
                 alt=""
@@ -309,75 +286,93 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
                   e.currentTarget.style.display = 'none';
                 }}
               />
-              <span className="font-sans font-semibold text-xs sm:text-sm text-slate-100 truncate" title={awayTeam.name}>
-                {awayTeam.name}
-              </span>
-            </div>
+            ) : null}
+            <span
+              className="font-sans font-medium text-xs sm:text-[13px] tracking-tight text-slate-900 truncate"
+              title={awayTeam.name}
+            >
+              {formatCompactTeamName(awayTeam.name)}
+            </span>
           </div>
         </div>
 
-        {/* LÍNEA 2: LIGA Y ACCESO DIRECTO A CUOTAS Y MERCADOS */}
-        <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-800/40 text-xs">
-          {/* Izquierda: Liga y botón visual para entrar a cuotas y datos */}
-          <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
-            <span className="text-[11px] font-medium text-slate-400 truncate max-w-[130px] sm:max-w-[200px]" title={fixture.league?.name || 'Liga'}>
+        {/* LÍNEA 2: HORA COMPACTA + LIGA + VER CUOTAS + CHECKBOX SUTIL DE 20PX */}
+        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 text-[11px]">
+          {/* Izquierda: Hora / Minuto + Liga + Estadísticas en vivo si aplica */}
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            {!isHaltOrInterrupted && isFreshEvent && (
+              <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white font-mono font-bold text-[9.5px] uppercase tracking-tight animate-bounce shrink-0 shadow-xs">
+                ⚽ ¡GOL! {fixture.currentScore ? `${fixture.currentScore.home}-${fixture.currentScore.away}` : ''}
+              </span>
+            )}
+            {renderClock()}
+            <span className="text-slate-300 shrink-0">·</span>
+            <span
+              className="text-[11px] font-normal text-slate-500 truncate"
+              title={fixture.league?.name || 'Liga'}
+            >
               {fixture.league?.name || 'Liga'}
             </span>
             {fixture.liveStats && (isLive || isFinished) && (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-900/90 border border-slate-700/70 text-[10px] font-mono text-slate-300 shrink-0">
+              <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200/80 text-[9.5px] font-mono tabular-nums text-slate-600 shrink-0">
                 <span title="Tiros de esquina reales">🚩 {fixture.liveStats.home.corners + fixture.liveStats.away.corners}</span>
-                <span className="text-slate-600">·</span>
+                <span className="text-slate-300">·</span>
                 <span title="Tarjetas amarillas reales">🟨 {fixture.liveStats.home.yellowCards + fixture.liveStats.away.yellowCards}</span>
               </span>
             )}
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-semibold transition-colors shrink-0">
-              <BarChart2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Ver Cuotas y Datos</span>
-            </span>
           </div>
 
-          {/* Derecha: Checkbox de selección rápida y chevron */}
-          <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-            {onToggleSelect && (
+          {/* Derecha: Botón Ver Cuotas y Datos + Estrella Favorito + Checkbox fino de 20px */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50/90 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/90 text-[10.5px] font-medium transition-colors shrink-0">
+              <BarChart2 className="w-3 h-3 text-emerald-600" />
+              <span>Ver Cuotas y Datos</span>
+            </span>
+
+            {onToggleFavorite && (
               <button
                 type="button"
-                onClick={() => onToggleSelect(fixture.id)}
-                className={`p-1.5 rounded-lg transition-colors cursor-pointer border flex items-center justify-center min-w-[32px] min-h-[32px] ${
-                  isSelected
-                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
-                    : 'bg-slate-900/90 text-slate-400 hover:text-white border-slate-700/80 hover:bg-slate-800'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleFavorite(fixture.id);
+                }}
+                className={`w-6 h-6 rounded-md transition-colors cursor-pointer border flex items-center justify-center shrink-0 ${
+                  isFavorite
+                    ? 'bg-amber-50 text-amber-500 border-amber-300 shadow-2xs'
+                    : 'bg-white text-slate-400 hover:text-amber-500 hover:border-amber-300 border-slate-200/90'
                 }`}
-                title={isSelected ? 'Quitar de selección' : 'Añadir a mi selección'}
+                title={isFavorite ? 'Quitar de Favoritos (Alertas de Gol activas)' : 'Añadir a Favoritos para recibir alertas de gol en vivo'}
+                aria-label={isFavorite ? 'Quitar de Favoritos' : 'Añadir a Favoritos'}
               >
-                {isSelected ? <CheckSquare className="w-3.5 h-3.5 text-slate-950" /> : <Square className="w-3.5 h-3.5" />}
+                <Star className={`w-3.5 h-3.5 ${isFavorite ? 'fill-amber-400 text-amber-500' : ''}`} />
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                if (onOpenDetail) onOpenDetail(fixture, analysis);
-                else onToggleExpand();
-              }}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center min-w-[32px] min-h-[32px]"
-              aria-label={onOpenDetail ? 'Ver análisis detallado' : isExpanded ? 'Contraer' : 'Expandir'}
-              title="Ver análisis completo"
-            >
-              {onOpenDetail ? (
-                <ChevronDown className="w-4 h-4 text-emerald-400" />
-              ) : isExpanded ? (
-                <ChevronUp className="w-4 h-4 text-emerald-400" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-slate-400" />
-              )}
-            </button>
+            {onToggleSelect && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect(fixture.id);
+                }}
+                className={`w-5 h-5 rounded-md transition-colors cursor-pointer border flex items-center justify-center shrink-0 ${
+                  isSelected
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-transparent hover:border-slate-400 border-slate-300'
+                }`}
+                title={isSelected ? 'Quitar de selección' : 'Seleccionar partido'}
+                aria-label={isSelected ? 'Quitar de selección' : 'Seleccionar partido'}
+              >
+                <Check className={`w-3 h-3 ${isSelected ? 'text-white stroke-[2.5]' : 'opacity-0'}`} />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* Expanded Details: Renders only if onOpenDetail is not supplied */}
       {!onOpenDetail && isExpanded && (
-        <div className="border-t border-slate-800/40 p-2 sm:p-3 bg-slate-950/40">
+        <div className="border-t border-slate-200/80 p-2 sm:p-3 bg-slate-50/70">
           <FriendlyPredictionCard
             fixture={fixture}
             analysis={analysis}
@@ -393,3 +388,4 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
     </div>
   );
 });
+

@@ -1579,62 +1579,80 @@ export const NBA_TEAMS: Record<string, NBATeamInfo> = {
 /**
  * Resolves or creates an NBATeamInfo object from an official ESPN competitor feed
  */
-export function resolveNBATeam(comp: any): NBATeamInfo {
+export function resolveNBATeam(comp: any, leagueName = 'NBA'): NBATeamInfo {
   const team = comp?.team || {};
-  const dispName = (team.displayName || '').toLowerCase();
-  const name = (team.name || '').toLowerCase();
-  const abbr = (team.abbreviation || '').toLowerCase();
-  const location = (team.location || '').toLowerCase();
+  const dispName = (team.displayName || '').toLowerCase().trim();
+  const name = (team.name || '').toLowerCase().trim();
+  const abbr = (team.abbreviation || '').toLowerCase().trim();
+  const isStrictNBA = !leagueName || leagueName.toUpperCase() === 'NBA';
 
-  // Try matching against predefined detailed NBA franchises
-  for (const key of Object.keys(NBA_TEAMS)) {
-    const t = NBA_TEAMS[key];
-    const tName = t.name.toLowerCase();
-    const tShort = t.shortName.toLowerCase();
-    const tCity = t.city.toLowerCase();
-    if (
-      tName.includes(name) ||
-      tName.includes(dispName) ||
-      dispName.includes(tName) ||
-      tCity === location ||
-      location.includes(tCity) ||
-      tShort.toLowerCase().includes(abbr) ||
-      abbr === key ||
-      key === name ||
-      (key === 'sixers' && (name.includes('76ers') || dispName.includes('76ers') || abbr === 'phi')) ||
-      (key === 'cavaliers' && (name.includes('cavs') || dispName.includes('cavaliers') || abbr === 'cle')) ||
-      (key === 'clippers' && (abbr === 'lac' || dispName.includes('clippers'))) ||
-      (key === 'warriors' && (abbr === 'gsw' || dispName.includes('warriors'))) ||
-      (key === 'lakers' && (abbr === 'lal' || dispName.includes('lakers'))) ||
-      (key === 'spurs' && (abbr === 'sas' || dispName.includes('spurs'))) ||
-      (key === 'pelicans' && (abbr === 'nop' || dispName.includes('pelicans'))) ||
-      (key === 'thunder' && (abbr === 'okc' || dispName.includes('thunder'))) ||
-      (key === 'blazers' && (abbr === 'por' || dispName.includes('trail blazers') || dispName.includes('blazers')))
-    ) {
-      // Return enhanced clone with official ESPN HD logo & records
-      const recordSummary = comp?.records?.find((r: any) => r.type === 'total')?.summary || `${t.wins}-${t.losses}`;
-      const [w, l] = recordSummary.split('-').map((v: string) => parseInt(v, 10));
-      return {
-        ...t,
-        logo: team.logo || t.logo,
-        wins: !isNaN(w) ? w : t.wins,
-        losses: !isNaN(l) ? l : t.losses
-      };
+  // Only match against the 30 NBA franchises when the event actually belongs to the NBA
+  if (isStrictNBA) {
+    for (const key of Object.keys(NBA_TEAMS)) {
+      const t = NBA_TEAMS[key];
+      const tName = t.name.toLowerCase();
+      if (
+        (dispName && tName === dispName) ||
+        (name && name.length >= 4 && tName.endsWith(name)) ||
+        abbr === key ||
+        key === name ||
+        (key === 'sixers' && (name.includes('76ers') || dispName.includes('76ers') || abbr === 'phi')) ||
+        (key === 'cavaliers' && (name.includes('cavs') || dispName.includes('cavaliers') || abbr === 'cle')) ||
+        (key === 'clippers' && (abbr === 'lac' || dispName.includes('clippers'))) ||
+        (key === 'warriors' && (abbr === 'gsw' || dispName === 'golden state warriors')) ||
+        (key === 'lakers' && (abbr === 'lal' || dispName.includes('lakers'))) ||
+        (key === 'spurs' && (abbr === 'sas' || dispName.includes('spurs'))) ||
+        (key === 'pelicans' && (abbr === 'nop' || dispName.includes('pelicans'))) ||
+        (key === 'thunder' && (abbr === 'okc' || dispName.includes('thunder'))) ||
+        (key === 'hawks' && (abbr === 'atl' || dispName === 'atlanta hawks')) ||
+        (key === 'knicks' && (abbr === 'nyk' || dispName.includes('knicks'))) ||
+        (key === 'nets' && (abbr === 'bkn' || dispName.includes('brooklyn nets'))) ||
+        (key === 'celtics' && (abbr === 'bos' || dispName.includes('celtics'))) ||
+        (key === 'heat' && (abbr === 'mia' || dispName === 'miami heat')) ||
+        (key === 'bucks' && (abbr === 'mil' || dispName.includes('bucks'))) ||
+        (key === 'bulls' && (abbr === 'chi' || dispName === 'chicago bulls')) ||
+        (key === 'mavericks' && (abbr === 'dal' || dispName.includes('mavericks'))) ||
+        (key === 'nuggets' && (abbr === 'den' || dispName.includes('nuggets'))) ||
+        (key === 'rockets' && (abbr === 'hou' || dispName.includes('rockets'))) ||
+        (key === 'pacers' && (abbr === 'ind' || dispName.includes('pacers'))) ||
+        (key === 'grizzlies' && (abbr === 'mem' || dispName.includes('grizzlies'))) ||
+        (key === 'timberwolves' && (abbr === 'min' || dispName.includes('timberwolves'))) ||
+        (key === 'magic' && (abbr === 'orl' || dispName.includes('orlando magic'))) ||
+        (key === 'suns' && (abbr === 'phx' || dispName.includes('phoenix suns'))) ||
+        (key === 'kings' && (abbr === 'sac' || dispName.includes('sacramento kings'))) ||
+        (key === 'raptors' && (abbr === 'tor' || dispName.includes('raptors'))) ||
+        (key === 'jazz' && (abbr === 'uta' || dispName.includes('utah jazz'))) ||
+        (key === 'wizards' && (abbr === 'was' || dispName.includes('wizards'))) ||
+        (key === 'hornets' && (abbr === 'cha' || dispName.includes('hornets'))) ||
+        (key === 'pistons' && (abbr === 'det' || dispName.includes('pistons'))) ||
+        (key === 'blazers' && (abbr === 'por' || dispName.includes('trail blazers') || dispName.includes('blazers')))
+      ) {
+        const recordSummary = comp?.records?.find((r: any) => r.type === 'total')?.summary || `${t.wins}-${t.losses}`;
+        const [w, l] = recordSummary.split('-').map((v: string) => parseInt(v, 10));
+        return {
+          ...t,
+          logo: team.logo || t.logo,
+          wins: !isNaN(w) ? w : t.wins,
+          losses: !isNaN(l) ? l : t.losses
+        };
+      }
     }
   }
 
-  // Fallback for any other team
+  // Authentic team profile for NCAA, WNBA, FIBA, EuroLeague, or unmatched basketball clubs
   const recordSummary = comp?.records?.find((r: any) => r.type === 'total')?.summary || '0-0';
   const [wins, losses] = recordSummary.split('-').map((v: string) => parseInt(v, 10) || 0);
+  const fullTeamName = team.displayName || team.name || 'Equipo Baloncesto';
+  const shortTeamName = team.shortDisplayName || team.name || team.abbreviation || fullTeamName;
 
   return {
     id: parseInt(team.id, 10) || Math.floor(Math.random() * 1000) + 100,
-    name: team.displayName || team.name || 'NBA Team',
-    shortName: team.shortDisplayName || team.abbreviation || 'NBA',
+    name: fullTeamName,
+    shortName: shortTeamName,
     city: team.location || 'USA',
     logo: team.logo || 'https://media.api-sports.io/basketball/teams/133.png',
     conference: 'Oeste',
-    division: 'NBA',
+    division: leagueName || 'Baloncesto',
     wins: wins || 0,
     losses: losses || 0,
     streak: wins > losses ? 'W1' : 'L1',
@@ -1648,20 +1666,20 @@ export function resolveNBATeam(comp: any): NBATeamInfo {
     keyPlayers: [
       {
         id: `player-${team.id || '1'}`,
-        name: generateHumanPlayerName(team.displayName || team.name || 'NBA', 0, false),
-        team: team.displayName || 'NBA',
+        name: generateHumanPlayerName(fullTeamName, 0, false),
+        team: fullTeamName,
         position: 'PG',
-        seasonPpg: 22.5,
-        season3pm: 2.5,
-        seasonApg: 5.2,
-        seasonRpg: 4.8,
-        projectedMinutes: 34,
-        usageRate: 28.0,
-        projectedPoints: 23.0,
-        pointsLine: 22.5,
+        seasonPpg: 20.5,
+        season3pm: 2.4,
+        seasonApg: 5.0,
+        seasonRpg: 4.6,
+        projectedMinutes: 33,
+        usageRate: 27.5,
+        projectedPoints: 21.0,
+        pointsLine: 20.5,
         overPointsProb: 52.5,
         underPointsProb: 47.5,
-        projected3pm: 2.6,
+        projected3pm: 2.5,
         threePointersLine: 2.5,
         over3pmProb: 51.0,
         under3pmProb: 49.0
@@ -1678,12 +1696,26 @@ export function convertESPNEventToNBAMatch(ev: any, dateStr: string): NBAMatchFi
     const comp = ev.competitions?.[0];
     if (!comp) return null;
 
+    // Validate that the event date actually belongs to the requested date window (+/- 36h)
+    if (ev.date && dateStr) {
+      const evMs = new Date(ev.date).getTime();
+      const targetMs = new Date(`${dateStr}T12:00:00-05:00`).getTime();
+      if (!isNaN(evMs) && !isNaN(targetMs) && Math.abs(evMs - targetMs) > 36 * 60 * 60 * 1000) {
+        return null;
+      }
+    }
+
     const homeComp = comp.competitors?.find((c: any) => c.homeAway === 'home');
     const awayComp = comp.competitors?.find((c: any) => c.homeAway === 'away');
     if (!homeComp || !awayComp) return null;
 
-    const homeTeam = resolveNBATeam(homeComp);
-    const awayTeam = resolveNBATeam(awayComp);
+    const leagueMeta = ev._sportstatsLeague || {
+      name: 'NBA',
+      country: 'Estados Unidos'
+    };
+
+    const homeTeam = resolveNBATeam(homeComp, leagueMeta.name);
+    const awayTeam = resolveNBATeam(awayComp, leagueMeta.name);
 
     // Compute local time in user's country timezone
     const matchDate = new Date(ev.date);
@@ -1769,11 +1801,6 @@ export function convertESPNEventToNBAMatch(ev: any, dateStr: string): NBAMatchFi
       } : undefined
     };
 
-    const leagueMeta = ev._sportstatsLeague || {
-      name: 'NBA',
-      country: 'Estados Unidos'
-    };
-
     // Extract live play-by-play situation from ESPN feed when match is IN_PLAY
     let liveSituation: NBAMatchFixture['liveSituation'] = undefined;
     if (status === 'IN_PLAY') {
@@ -1804,40 +1831,41 @@ export function convertESPNEventToNBAMatch(ev: any, dateStr: string): NBAMatchFi
         defaultStar?.position ||
         'PF';
 
-      let actionKind: NonNullable<NBAMatchFixture['liveSituation']>['actionKind'] = 'SCORE_2PT';
-      let typeLabel = '2 pt anotado';
-      let statSummary = 'Tiros De 2 Puntos';
-      let pointsAdded = 2;
+      const isScoringPlay = Boolean(lastPlay?.scoringPlay);
+      let actionKind: NonNullable<NBAMatchFixture['liveSituation']>['actionKind'] = 'POSSESSION';
+      let typeLabel = 'Circulación en Perímetro';
+      let statSummary = 'Control de posesión en vivo';
+      let pointsAdded = 0;
 
-      if (textLower.includes('three point') || textLower.includes('3-pt') || lastPlay?.scoreValue === 3) {
+      if (isScoringPlay && (textLower.includes('three point') || textLower.includes('3-pt') || lastPlay?.scoreValue === 3)) {
         actionKind = 'SCORE_3PT';
         typeLabel = '3 pt anotado';
-        statSummary = 'Triples Anotados (3P)';
+        statSummary = 'Triple Anotado (3P)';
         pointsAdded = 3;
-      } else if (textLower.includes('free throw') || lastPlay?.scoreValue === 1) {
+      } else if (isScoringPlay && (textLower.includes('free throw') || lastPlay?.scoreValue === 1)) {
         actionKind = 'SCORE_FT';
         typeLabel = '1 pt tiro libre';
-        statSummary = 'Tiros Libres (FT)';
+        statSummary = 'Tiro Libre Anotado (+1 PT)';
         pointsAdded = 1;
+      } else if (isScoringPlay && (textLower.includes('makes') || lastPlay?.scoreValue === 2)) {
+        actionKind = 'SCORE_2PT';
+        typeLabel = '2 pt anotado';
+        statSummary = 'Canasta de Campo (+2 PTS)';
+        pointsAdded = 2;
       } else if (textLower.includes('turnover') || textLower.includes('steal') || textLower.includes('bad pass')) {
         actionKind = 'TURNOVER';
-        typeLabel = 'Pérdida de balón';
-        statSummary = 'PÉRDIDAS DE BALÓN';
+        typeLabel = 'Recuperación y Transición';
+        statSummary = 'Defensa activa en duela';
         pointsAdded = 0;
       } else if (textLower.includes('rebound')) {
         actionKind = 'REBOUND';
-        typeLabel = 'Rebote capturado';
-        statSummary = 'REBOTES EN JUEGO';
+        typeLabel = 'Rebote y Salida';
+        statSummary = 'Control de tablero';
         pointsAdded = 0;
-      } else if (textLower.includes('makes') || lastPlay?.scoreValue === 2 || (homeScoreNum + awayScoreNum) > 0) {
-        actionKind = 'SCORE_2PT';
-        typeLabel = '2 pt anotado';
-        statSummary = 'Tiros De 2 Puntos';
-        pointsAdded = 2;
       } else {
         actionKind = 'POSSESSION';
-        typeLabel = 'Posesión';
-        statSummary = 'Control de Balón';
+        typeLabel = 'Circulación Táctica';
+        statSummary = 'Posesión activa en duela';
         pointsAdded = 0;
       }
 
@@ -1915,8 +1943,8 @@ export function generateNBAFixtures(dateStr: string): NBAMatchFixture[] {
       homeTeam: pacers,
       awayTeam: timberwolves,
       arena: {
-        name: 'Hilton Coliseum',
-        city: 'Ames'
+        name: 'Gainbridge Fieldhouse',
+        city: 'Indianapolis'
       },
       h2h: {
         totalMatches: 5,
@@ -1999,14 +2027,14 @@ export function generateNBAFixtures(dateStr: string): NBAMatchFixture[] {
   ];
 }
 
-const NBA_CACHE_PREFIX = 'basketstats_nba_v5_';
+const NBA_CACHE_PREFIX = 'basketstats_nba_v6_';
 const NBA_CACHE_TTL_LIVE = 25 * 1000; // 25 seconds for live matches
 const NBA_CACHE_TTL_SCHEDULED = 5 * 60 * 1000; // 5 minutes for scheduled/completed
 
 export async function fetchNBAFixtures(
   dateStr?: string,
   options: { forceRefresh?: boolean } = {}
-): Promise<{ fixtures: NBAMatchFixture[]; count: number; isLiveMatchActive: boolean }> {
+): Promise<{ fixtures: NBAMatchFixture[]; allFixtures?: NBAMatchFixture[]; count: number; isLiveMatchActive: boolean }> {
   const targetDate = dateStr || getColombiaDateString(0);
 
   // 1. Check local cache if not forcing refresh
@@ -2020,9 +2048,10 @@ export async function fetchNBAFixtures(
           : [];
         const hasLive = activeCached.some((f: NBAMatchFixture) => f.status === 'IN_PLAY');
         const ttl = hasLive ? NBA_CACHE_TTL_LIVE : NBA_CACHE_TTL_SCHEDULED;
-        if (Date.now() - parsed.timestamp < ttl && activeCached.length > 0) {
+        if (Date.now() - parsed.timestamp < ttl) {
           return {
             fixtures: activeCached,
+            allFixtures: Array.isArray(parsed.allFixtures) ? parsed.allFixtures : activeCached,
             count: activeCached.length,
             isLiveMatchActive: hasLive
           };
@@ -2038,45 +2067,49 @@ export async function fetchNBAFixtures(
     const res = await fetch(`/api/nba/scoreboard?date=${encodeURIComponent(targetDate)}`);
     if (res.ok) {
       const json = await res.json();
-      if (json.success && Array.isArray(json.events) && json.events.length > 0) {
+      if (json.success && Array.isArray(json.events)) {
         const parsedList: NBAMatchFixture[] = [];
+        const allParsedList: NBAMatchFixture[] = [];
         for (const ev of json.events) {
           const match = convertESPNEventToNBAMatch(ev, targetDate);
-          if (match && (match.status === 'IN_PLAY' || match.status === 'SCHEDULED')) {
-            parsedList.push(match);
+          if (match) {
+            allParsedList.push(match);
+            if (match.status === 'IN_PLAY' || match.status === 'SCHEDULED') {
+              parsedList.push(match);
+            }
           }
         }
 
-        if (parsedList.length > 0) {
-          // Sort: Live first, then scheduled by time
-          parsedList.sort((a, b) => {
-            const liveScoreA = a.status === 'IN_PLAY' ? 0 : a.status === 'SCHEDULED' ? 1 : 2;
-            const liveScoreB = b.status === 'IN_PLAY' ? 0 : b.status === 'SCHEDULED' ? 1 : 2;
-            if (liveScoreA !== liveScoreB) return liveScoreA - liveScoreB;
-            return a.time.localeCompare(b.time);
-          });
+        // Sort: Live first, then scheduled by time
+        parsedList.sort((a, b) => {
+          const liveScoreA = a.status === 'IN_PLAY' ? 0 : a.status === 'SCHEDULED' ? 1 : 2;
+          const liveScoreB = b.status === 'IN_PLAY' ? 0 : b.status === 'SCHEDULED' ? 1 : 2;
+          if (liveScoreA !== liveScoreB) return liveScoreA - liveScoreB;
+          return a.time.localeCompare(b.time);
+        });
 
-          const isLiveMatchActive = parsedList.some(f => f.status === 'IN_PLAY');
+        const isLiveMatchActive = parsedList.some(f => f.status === 'IN_PLAY');
 
-          try {
-            localStorage.setItem(
-              `${NBA_CACHE_PREFIX}${targetDate}`,
-              JSON.stringify({
-                fixtures: parsedList,
-                timestamp: Date.now(),
-                targetDate
-              })
-            );
-          } catch {
-            // ignore
-          }
-
-          return {
-            fixtures: parsedList,
-            count: parsedList.length,
-            isLiveMatchActive
-          };
+        try {
+          localStorage.setItem(
+            `${NBA_CACHE_PREFIX}${targetDate}`,
+            JSON.stringify({
+              fixtures: parsedList,
+              allFixtures: allParsedList,
+              timestamp: Date.now(),
+              targetDate
+            })
+          );
+        } catch {
+          // ignore
         }
+
+        return {
+          fixtures: parsedList,
+          allFixtures: allParsedList,
+          count: parsedList.length,
+          isLiveMatchActive
+        };
       }
     }
   } catch (err) {

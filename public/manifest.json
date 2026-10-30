@@ -1,7 +1,7 @@
 {
-  "name": "SportStats Pro - iGaming Analytics",
-  "short_name": "SportStats Pro",
-  "description": "Plataforma de análisis probabilístico avanzado multideporte (Fútbol & NBA) con modelo Dixon-Coles bivariado y valor esperado +EV.",
+  "name": "G METRICS | La ciencia detrás de cada victoria",
+  "short_name": "G METRICS",
+  "description": "Modelos probabilísticos avanzados y analítica deportiva de precisión. Deja el azar a un lado y toma decisiones con ventaja estadística.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#090d16",
@@ -9,16 +9,22 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/pwa-192x192.png",
+      "src": "/icon.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/pwa-512x512.png",
+      "src": "/icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
   "shortcuts": [

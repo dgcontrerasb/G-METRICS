@@ -11,71 +11,67 @@ export interface AppFooterProps {
 
 export const AppFooter: React.FC<AppFooterProps> = ({ activeSport, onOpenGuideModal }) => {
   return (
-    <footer className="border-t border-slate-800/80 bg-[#070B12]/90 backdrop-blur-md py-8 px-4 sm:px-6 mt-12 text-xs text-slate-400 relative z-10">
-      <div className="max-w-4xl mx-auto space-y-5">
-        {/* Level 1: Brand Identity, Sport Context & Quick Help/Legal Links */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b border-slate-800/70">
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
-            <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/40 text-amber-300 font-black text-[11px] tracking-wider">
+    <footer className="border-t border-slate-200/80 bg-white/95 backdrop-blur-md py-3.5 px-3 sm:px-5 mt-6 text-xs text-slate-600 relative z-10 shadow-2xs">
+      <div className="max-w-4xl mx-auto space-y-2.5">
+        {/* Fila 1: Identidad + Chips de Acceso Rápido */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pb-2 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="px-1.5 py-0.5 rounded bg-amber-50 border border-amber-300 text-amber-800 font-extrabold text-[10px]">
               +18
             </span>
             <SportStatsLogo size="xs" withGlow={false} activeSport={activeSport} />
-            {activeSport === 'NBA' ? (
-              <>
-                <span className="font-bold text-slate-200">SportStats Pro · Baloncesto</span>
-                <span className="text-slate-600">·</span>
-                <span>Análisis por Cuartos, Props Poisson y Marcadores en Vivo</span>
-              </>
-            ) : (
-              <>
-                <span className="font-bold text-slate-200">SportStats Pro</span>
-                <span className="text-slate-600">·</span>
-                <span>Modelos Probabilísticos y Analítica Deportiva</span>
-              </>
-            )}
+            <div className="flex flex-col items-center sm:items-start justify-center">
+              <span className="gmetrics-brand-title text-[12px] leading-none whitespace-nowrap">
+                G METRICS
+              </span>
+              <span className="text-[6.5px] sm:text-[7px] font-extrabold uppercase tracking-tight text-slate-500 whitespace-nowrap leading-none mt-1">
+                LA CIENCIA DETRÁS DE LA VICTORIA ({activeSport === 'NBA' ? 'Baloncesto' : 'Fútbol'})
+              </span>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-1.5 w-full sm:w-auto">
             <PWAInstallButton variant="footer" />
             <button
               type="button"
               onClick={() => onOpenGuideModal('GLOSSARY')}
-              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-bold transition cursor-pointer"
+              className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-800 border border-slate-200/90 text-[10.5px] font-semibold transition cursor-pointer flex items-center justify-center gap-1"
             >
-              📖 Glosario de Términos (A-Z)
+              <span>📖 Glosario A-Z</span>
             </button>
             <button
               type="button"
               onClick={() => onOpenGuideModal('GUIDE')}
-              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold transition cursor-pointer"
+              className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10.5px] font-semibold transition cursor-pointer flex items-center justify-center gap-1"
             >
-              🧭 Guía Rápida
+              <span>🧭 Guía Rápida</span>
             </button>
             <button
               type="button"
               onClick={() => onOpenGuideModal('LEGAL')}
-              className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] font-bold transition cursor-pointer"
+              className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[10.5px] font-semibold transition cursor-pointer flex items-center justify-center gap-1"
             >
-              ⚖️ Aviso Legal (+18)
+              <span>⚖️ Aviso Legal (+18)</span>
             </button>
           </div>
         </div>
 
-        {/* Level 2: Explicit Legal Disclaimer & Autonomous Responsibility Shield */}
-        <div className="space-y-2 text-[11px] text-slate-400/90 leading-relaxed text-center sm:text-left">
-          <p>
-            <strong className="text-slate-200">AVISO LEGAL Y EXENCIÓN DE RESPONSABILIDAD (+18):</strong>{' '}
-            <strong>SportStats Pro</strong> es una herramienta tecnológica de análisis estadístico, matemático e informativo (basada en modelos de Poisson, Dixon-Coles y regresiones de ritmo/eficiencia).{' '}
-            <strong className="text-slate-200">No somos una casa de apuestas</strong>, no captamos dinero del público ni intermediamos apuestas deportivas. Las probabilidades, proyecciones e indicadores de valor (<strong>+EV</strong>) representan estimaciones matemáticas orientativas y en ningún caso constituyen asesoría financiera ni garantizan aciertos o ganancias futuras.
+        {/* Fila 2: Aviso Legal Sintetizado (2 líneas en móvil) */}
+        <div className="text-[10px] text-slate-500 leading-snug text-center sm:text-left flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+          <p className="max-w-2xl">
+            <strong className="text-slate-700">AVISO LEGAL (+18):</strong> Herramienta de análisis estadístico e informativo;{' '}
+            <strong className="text-slate-700">no somos casa de apuestas</strong> ni garantizamos ganancias. Uso autónomo bajo responsabilidad del usuario.{' '}
+            <button
+              type="button"
+              onClick={() => onOpenGuideModal('LEGAL')}
+              className="text-emerald-700 hover:underline font-semibold cursor-pointer"
+            >
+              Ver cláusulas →
+            </button>
           </p>
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1 text-[10px] text-slate-500">
-            <span>
-              Toda jugada, inversión o decisión tomada a partir de esta guía corre única y exclusivamente bajo el criterio, autonomía y responsabilidad patrimonial del usuario. Prohibido el uso para menores de 18 años.
-            </span>
-            <span className="shrink-0 font-mono text-slate-400">
-              Horarios COT (UTC-5) · Exportación Excel y PDF
-            </span>
-          </div>
+          <span className="shrink-0 font-mono text-[9.5px] text-slate-400">
+            COT (UTC-5) · Excel / PDF
+          </span>
         </div>
       </div>
     </footer>
