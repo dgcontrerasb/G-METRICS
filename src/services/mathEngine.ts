@@ -143,14 +143,8 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
     if (p.position === 'DEF' || p.position === 'POR') lambdaHome *= 1.05;
   });
 
-  // If match is currently IN_PLAY, blend live score momentum into lambdas
-  if (fixture.status === 'IN_PLAY' && fixture.currentScore) {
-    const elapsedMin = Math.min(89, Math.max(1, fixture.currentScore.minute || 45));
-    const remainingFraction = Math.max(0.08, (90 - elapsedMin) / 90);
-    lambdaHome = fixture.currentScore.home + lambdaHome * remainingFraction;
-    lambdaAway = fixture.currentScore.away + lambdaAway * remainingFraction;
-  }
-
+  // Pre-match probabilities remain 100% immutable during and after the match
+  // to guarantee audit and accuracy report integrity (no mid-game 100% overrides).
   lambdaHome = Math.max(0.35, Math.round(lambdaHome * 100) / 100);
   lambdaAway = Math.max(0.28, Math.round(lambdaAway * 100) / 100);
   const totalXG = Math.round((lambdaHome + lambdaAway) * 100) / 100;
@@ -163,15 +157,6 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
   for (let x = 0; x <= maxGoals; x++) {
     rawMatrix[x] = [];
     for (let y = 0; y <= maxGoals; y++) {
-      // If match is IN_PLAY, impossible to finish with fewer goals than already scored
-      if (
-        fixture.status === 'IN_PLAY' &&
-        fixture.currentScore &&
-        (x < fixture.currentScore.home || y < fixture.currentScore.away)
-      ) {
-        rawMatrix[x][y] = 0;
-        continue;
-      }
       const pX = poissonPmf(x, lambdaHome);
       const pY = poissonPmf(y, lambdaAway);
       const tau = dixonColesTau(x, y, lambdaHome, lambdaAway, -0.11);
@@ -347,41 +332,18 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
     secondHalfGoalProb
   };
 
-  // 7. Shots and Key Strikers (Module D)
+  // 7. Shots and Key Strikers (Module D - Immutable Pre-Match Baseline)
   const isLiveOrDone = fixture.status === 'IN_PLAY' || fixture.status === 'FINISHED';
-  const elapsedMatchMin = isLiveOrDone
-    ? fixture.status === 'FINISHED'
-      ? 90
-      : Math.min(89, Math.max(1, fixture.currentScore?.minute || 45))
-    : 0;
-  const remainingMatchFraction = isLiveOrDone
-    ? fixture.status === 'FINISHED'
-      ? 0
-      : Math.max(0.06, (90 - elapsedMatchMin) / 90)
-    : 1;
 
   const baseHomeShots = homeTeam.avgShotsPerMatch * (awayTeam.defenseStrength * 0.95);
   const baseHomeSOT = homeTeam.avgShotsOnTarget * (awayTeam.defenseStrength * 0.92);
   const baseAwayShots = awayTeam.avgShotsPerMatch * (homeTeam.defenseStrength * 0.9) * (1 - awayTotalPenalty);
   const baseAwaySOT = awayTeam.avgShotsOnTarget * (homeTeam.defenseStrength * 0.9) * (1 - awayTotalPenalty);
 
-  const homeTotalShots =
-    isLiveOrDone && fixture.liveStats && fixture.liveStats.home.shots > 0
-      ? Math.round((fixture.liveStats.home.shots + baseHomeShots * remainingMatchFraction) * 10) / 10
-      : Math.round(baseHomeShots * 10) / 10;
-  const homeShotsOnTarget =
-    isLiveOrDone && fixture.liveStats && fixture.liveStats.home.shotsOnTarget > 0
-      ? Math.round((fixture.liveStats.home.shotsOnTarget + baseHomeSOT * remainingMatchFraction) * 10) / 10
-      : Math.round(baseHomeSOT * 10) / 10;
-
-  const awayTotalShots =
-    isLiveOrDone && fixture.liveStats && fixture.liveStats.away.shots > 0
-      ? Math.round((fixture.liveStats.away.shots + baseAwayShots * remainingMatchFraction) * 10) / 10
-      : Math.round(baseAwayShots * 10) / 10;
-  const awayShotsOnTarget =
-    isLiveOrDone && fixture.liveStats && fixture.liveStats.away.shotsOnTarget > 0
-      ? Math.round((fixture.liveStats.away.shotsOnTarget + baseAwaySOT * remainingMatchFraction) * 10) / 10
-      : Math.round(baseAwaySOT * 10) / 10;
+  const homeTotalShots = Math.round(baseHomeShots * 10) / 10;
+  const homeShotsOnTarget = Math.round(baseHomeSOT * 10) / 10;
+  const awayTotalShots = Math.round(baseAwayShots * 10) / 10;
+  const awayShotsOnTarget = Math.round(baseAwaySOT * 10) / 10;
 
   const homeStarObj = homeTeam.starPlayer || {
     name: `${homeShort} #9`,
@@ -436,7 +398,7 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
     }
   };
 
-  // 8. Corners Bivariate Poisson Model (Synchronized with Real Live Telemetry)
+  // 8. Corners Bivariate Poisson Model (Immutable Pre-Match Probabilities)
   const urgencyCornerBoost = urgencyScore >= 7 ? 1.07 : 1.0;
   const rawHomeCorners = (baseHomeShots * 0.39 + homeTeam.attackStrength * 0.95) * urgencyCornerBoost;
   const rawAwayCorners = (baseAwayShots * 0.37 + awayTeam.attackStrength * 0.78) * urgencyCornerBoost;
@@ -444,28 +406,11 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
   const preMatchHomeCorners = Math.min(7.8, Math.max(3.1, Math.round(rawHomeCorners * 10) / 10));
   const preMatchAwayCorners = Math.min(6.8, Math.max(2.5, Math.round(rawAwayCorners * 10) / 10));
 
-  const lambdaHomeCorners =
-    isLiveOrDone && fixture.liveStats
-      ? Math.round((fixture.liveStats.home.corners + preMatchHomeCorners * remainingMatchFraction) * 10) / 10
-      : preMatchHomeCorners;
-  const lambdaAwayCorners =
-    isLiveOrDone && fixture.liveStats
-      ? Math.round((fixture.liveStats.away.corners + preMatchAwayCorners * remainingMatchFraction) * 10) / 10
-      : preMatchAwayCorners;
+  const lambdaHomeCorners = preMatchHomeCorners;
+  const lambdaAwayCorners = preMatchAwayCorners;
   const expectedTotalCorners = Math.round((lambdaHomeCorners + lambdaAwayCorners) * 10) / 10;
 
-  const currentActualCorners =
-    isLiveOrDone && fixture.liveStats
-      ? fixture.liveStats.home.corners + fixture.liveStats.away.corners
-      : 0;
-  const remCornersLambda = Math.max(0.2, expectedTotalCorners - currentActualCorners);
-
   const calcCornerOverProb = (lineFloor: number) => {
-    if (isLiveOrDone && fixture.liveStats) {
-      if (currentActualCorners > lineFloor) return 99.0;
-      const needed = lineFloor - currentActualCorners;
-      return Math.min(98.5, Math.max(1.5, Math.round((1 - poissonCdf(needed, remCornersLambda)) * 1000) / 10));
-    }
     return Math.round((1 - poissonCdf(lineFloor, expectedTotalCorners)) * 1000) / 10;
   };
 
@@ -479,10 +424,7 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
   // Pick the most reliable corners line (sweet spot 65% - 88% probability)
   let recommendedCornerLine = `Más de 8.5 Tiros de Esquina`;
   let recommendedCornerProb = cornersOver85;
-  if (currentActualCorners >= 9 && cornersOver105 >= 65) {
-    recommendedCornerLine = `Más de 10.5 Tiros de Esquina`;
-    recommendedCornerProb = cornersOver105;
-  } else if (expectedTotalCorners >= 10.4 && cornersOver85 >= 68) {
+  if (expectedTotalCorners >= 10.4 && cornersOver85 >= 68) {
     recommendedCornerLine = `Más de 8.5 Tiros de Esquina`;
     recommendedCornerProb = cornersOver85;
   } else if (expectedTotalCorners >= 9.3 && cornersOver75 >= 68) {
@@ -515,7 +457,7 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
     recommendedOdd: recommendedCornerOdd
   };
 
-  // 9. Referee and Cards Breakdown by Team (Synchronized with Real Live Telemetry)
+  // 9. Referee and Cards Breakdown by Team (Immutable Pre-Match Probabilities)
   let tensionFactor = 1.0;
   if (derbyOrRivalry) tensionFactor = 1.16;
   else if (isTopClash) tensionFactor = 1.10;
@@ -530,31 +472,11 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
   const preMatchHomeYellows = Math.round(preMatchYellows * homeCardShare * 10) / 10;
   const preMatchAwayYellows = Math.round((preMatchYellows - preMatchHomeYellows) * 10) / 10;
 
-  const expectedHomeYellows =
-    isLiveOrDone && fixture.liveStats
-      ? Math.round((fixture.liveStats.home.yellowCards + preMatchHomeYellows * remainingMatchFraction) * 10) / 10
-      : preMatchHomeYellows;
-  const expectedAwayYellows =
-    isLiveOrDone && fixture.liveStats
-      ? Math.round((fixture.liveStats.away.yellowCards + preMatchAwayYellows * remainingMatchFraction) * 10) / 10
-      : preMatchAwayYellows;
+  const expectedHomeYellows = preMatchHomeYellows;
+  const expectedAwayYellows = preMatchAwayYellows;
   const expectedYellowCards = Math.round((expectedHomeYellows + expectedAwayYellows) * 10) / 10;
 
-  const currentActualCards =
-    isLiveOrDone && fixture.liveStats
-      ? fixture.liveStats.home.yellowCards +
-        fixture.liveStats.away.yellowCards +
-        fixture.liveStats.home.redCards +
-        fixture.liveStats.away.redCards
-      : 0;
-  const remCardsLambda = Math.max(0.2, expectedYellowCards - currentActualCards);
-
   const calcCardsOverProb = (lineFloor: number) => {
-    if (isLiveOrDone && fixture.liveStats) {
-      if (currentActualCards > lineFloor) return 99.0;
-      const needed = lineFloor - currentActualCards;
-      return Math.min(98.5, Math.max(1.5, Math.round((1 - poissonCdf(needed, remCardsLambda)) * 1000) / 10));
-    }
     return Math.round((1 - poissonCdf(lineFloor, expectedYellowCards)) * 1000) / 10;
   };
 
@@ -584,18 +506,8 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
   const recommendedCardOdd = Math.max(1.22, Math.round((100 / Math.max(1, recommendedCardProb)) * 100) / 100);
 
   const baseRed = referee.avgRedCards || 0.16;
-  const actualReds =
-    isLiveOrDone && fixture.liveStats
-      ? fixture.liveStats.home.redCards + fixture.liveStats.away.redCards
-      : 0;
-  const expectedRedCards =
-    actualReds > 0
-      ? Math.round((actualReds + baseRed * remainingMatchFraction) * 100) / 100
-      : Math.round(Math.min(0.35, Math.max(0.08, baseRed * tensionFactor)) * 100) / 100;
-  const redCardRiskPercent =
-    actualReds > 0
-      ? 99.0
-      : Math.round((1 - Math.exp(-expectedRedCards)) * 1000) / 10;
+  const expectedRedCards = Math.round(Math.min(0.35, Math.max(0.08, baseRed * tensionFactor)) * 100) / 100;
+  const redCardRiskPercent = Math.round((1 - Math.exp(-expectedRedCards)) * 1000) / 10;
 
   const refereeCards: RefereeCardResult = {
     refereeName: referee.name,

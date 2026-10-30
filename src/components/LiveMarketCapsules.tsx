@@ -46,6 +46,10 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
   const realYellowsTotal = fixture.liveStats
     ? fixture.liveStats.home.yellowCards + fixture.liveStats.away.yellowCards
     : null;
+  const realGoalsTotal =
+    (fixture.status === 'IN_PLAY' || fixture.status === 'FINISHED') && fixture.currentScore
+      ? fixture.currentScore.home + fixture.currentScore.away
+      : null;
 
   // 1. OPORTUNIDAD: CÓRNERS (Línea recomendada de mayor viabilidad)
   const cornersCapsule: MarketCapsuleItem = {
@@ -62,7 +66,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
     fairOdd: Number(cornersMarket.recommendedOdd.toFixed(2)),
     rationale:
       realCornersTotal !== null && fixture.liveStats
-        ? `Estadística oficial en curso: ${realCornersTotal} tiros de esquina (${fixture.liveStats.home.corners} ${fixture.homeTeam.shortName} - ${fixture.liveStats.away.corners} ${fixture.awayTeam.shortName}). Proyección total ajustada a ~${cornersMarket.expectedTotalCorners} córners.`
+        ? `Progreso en tiempo real: ${realCornersTotal} tiros de esquina registrados (${fixture.liveStats.home.corners} ${fixture.homeTeam.shortName} - ${fixture.liveStats.away.corners} ${fixture.awayTeam.shortName}). Pronóstico pre-partido fijo: ~${cornersMarket.expectedTotalCorners} córners.`
         : `Proyección algorítmica de ~${cornersMarket.expectedTotalCorners} córners en el partido (~${cornersMarket.lambdaHomeCorners} local · ~${cornersMarket.lambdaAwayCorners} visita) generados por transiciones y centros al área.`,
     metrics:
       realCornersTotal !== null && fixture.liveStats
@@ -93,7 +97,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
     fairOdd: Number(refereeCards.recommendedCardOdd.toFixed(2)),
     rationale:
       realYellowsTotal !== null && fixture.liveStats
-        ? `Tarjetas oficiales registradas: ${realYellowsTotal} amarillas (${fixture.liveStats.home.yellowCards} ${fixture.homeTeam.shortName} - ${fixture.liveStats.away.yellowCards} ${fixture.awayTeam.shortName}). Se proyectan ~${refereeCards.expectedYellowCards.toFixed(1)} amonestaciones al cierre.`
+        ? `Progreso en tiempo real: ${realYellowsTotal} amarillas registradas (${fixture.liveStats.home.yellowCards} ${fixture.homeTeam.shortName} - ${fixture.liveStats.away.yellowCards} ${fixture.awayTeam.shortName}). Pronóstico pre-partido fijo: ~${refereeCards.expectedYellowCards.toFixed(1)} amonestaciones.`
         : `Dirige ${fixture.referee.name} (Rigor: ${fixture.referee.rigor}, promedia ${fixture.referee.avgYellowCards} 🟨 y 1 tarjeta cada ${fixture.referee.foulsPerCard} faltas). Se proyectan ~${refereeCards.expectedYellowCards.toFixed(1)} amonestaciones.`,
     metrics:
       realYellowsTotal !== null && fixture.liveStats
@@ -117,7 +121,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
         prob: goalsMarket.over15,
         odd: Number((100 / Math.max(goalsMarket.over15, 1)).toFixed(2)),
         key: 'OVER_15',
-        rationale: `Expectativa de ${dixonColes.totalXG.toFixed(2)} goles esperados (xG: ${dixonColes.lambdaHome.toFixed(2)} local vs ${dixonColes.lambdaAway.toFixed(2)} visita). El motor estadístico G METRICS otorga un ${goalsMarket.over15}% de probabilidad a un mínimo de 2 anotaciones.`
+        rationale: `Expectativa pre-partido de ${dixonColes.totalXG.toFixed(2)} goles esperados (xG: ${dixonColes.lambdaHome.toFixed(2)} local vs ${dixonColes.lambdaAway.toFixed(2)} visita). El motor estadístico G METRICS otorga un ${goalsMarket.over15}% de probabilidad a un mínimo de 2 anotaciones.`
       };
     } else if (goalsMarket.under35 >= 75) {
       return {
@@ -125,7 +129,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
         prob: goalsMarket.under35,
         odd: Number((100 / Math.max(goalsMarket.under35, 1)).toFixed(2)),
         key: 'UNDER_35',
-        rationale: `Encuentro con alto control táctico y bloque defensivo cerrado. El xG combinado está contenido en ${dixonColes.totalXG.toFixed(2)} goles.`
+        rationale: `Encuentro con alto control táctico y bloque defensivo cerrado. El xG combinado pre-partido está contenido en ${dixonColes.totalXG.toFixed(2)} goles.`
       };
     } else {
       const bttsIsBest = goalsMarket.bttsYes >= 55;
@@ -147,7 +151,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
     category: 'Cantidad de Goles',
     icon: '⚽',
     badge: {
-      label: 'Eficiencia xG',
+      label: realGoalsTotal !== null ? `En Vivo: ${realGoalsTotal} Goles` : 'Eficiencia xG',
       className: 'bg-emerald-50 text-emerald-800 border-emerald-200'
     },
     selectionTitle: bestGoalPick.title,
@@ -400,6 +404,284 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
   // La lista final: la posición 0 siempre es idéntica a la cartelera; las demás van en acordeón
   const sortedCapsules: MarketCapsuleItem[] = [leadCapsule, ...secondaryCapsules];
 
+  // Evaluador en tiempo real de cumplimiento en cancha para TODAS las cápsulas (En Vivo / Finalizado)
+  // Sin alterar las probabilidades pre-partido fijas
+  const isLiveOrFinished =
+    (fixture.status === 'IN_PLAY' ||
+      fixture.status === 'HALFTIME' ||
+      fixture.status === 'PAUSED' ||
+      fixture.status === 'EXTRA_TIME' ||
+      fixture.status === 'PENALTY_SHOOTOUT' ||
+      fixture.status === 'FINISHED') &&
+    Boolean(fixture.currentScore);
+  const isFinished = fixture.status === 'FINISHED';
+
+  const evaluateCapsuleLiveStatus = (
+    item: MarketCapsuleItem
+  ): { fulfilled: boolean; label: string } | null => {
+    if (!isLiveOrFinished || !fixture.currentScore) return null;
+
+    const homeGoals = fixture.currentScore.home;
+    const awayGoals = fixture.currentScore.away;
+    const totalGoals = homeGoals + awayGoals;
+    const currentMin = fixture.currentScore.minute ?? (isFinished ? 90 : 45);
+    const isSecondHalfOrDone =
+      isFinished ||
+      currentMin > 45 ||
+      fixture.status === 'HALFTIME' ||
+      fixture.status === 'PAUSED' ||
+      fixture.currentScore.isHalfTime ||
+      fixture.currentScore.statusShort === 'HT' ||
+      fixture.currentScore.statusShort === '2H';
+
+    const corners = realCornersTotal ?? 0;
+    const cards =
+      fixture.liveStats
+        ? fixture.liveStats.home.yellowCards +
+          fixture.liveStats.away.yellowCards +
+          fixture.liveStats.home.redCards +
+          fixture.liveStats.away.redCards
+        : 0;
+    const homeSOT = fixture.liveStats?.home.shotsOnTarget ?? 0;
+    const awaySOT = fixture.liveStats?.away.shotsOnTarget ?? 0;
+    const totalSOT = homeSOT + awaySOT;
+
+    const title = item.selectionTitle;
+    const numMatch = title.match(/(\d+(?:\.\d+)?)/);
+    const lineValue = numMatch ? parseFloat(numMatch[1]) : 1.5;
+
+    // 1. Ambos Equipos Anotan (BTTS)
+    if (item.marketKey.includes('BTTS') || title.includes('Ambos Equipos Anotan')) {
+      const bothScored = homeGoals >= 1 && awayGoals >= 1;
+      if (title.includes('No')) {
+        if (bothScored) {
+          return { fulfilled: false, label: `❌ No Cumplida (${homeGoals}-${awayGoals})` };
+        }
+        return {
+          fulfilled: true,
+          label: isFinished ? `✅ Cumplida (${homeGoals}-${awayGoals})` : `✅ Cumpliéndose (${homeGoals}-${awayGoals})`
+        };
+      }
+      if (bothScored) {
+        return { fulfilled: true, label: `✅ Cumplida (${homeGoals}-${awayGoals})` };
+      }
+      return {
+        fulfilled: false,
+        label: isFinished ? `❌ No Cumplida (${homeGoals}-${awayGoals})` : `❌ No Cumple (${homeGoals}-${awayGoals})`
+      };
+    }
+
+    // 2. Tiros de Esquina / Córners
+    if (item.marketKey === 'CORNERS_REC' || title.includes('Tiros de Esquina') || title.includes('Córners')) {
+      if (title.includes('Menos de')) {
+        const maxAllowed = Math.floor(lineValue);
+        if (corners > maxAllowed) {
+          return { fulfilled: false, label: `❌ No Cumplida (${corners}/${maxAllowed} córn.)` };
+        }
+        return {
+          fulfilled: true,
+          label: isFinished
+            ? `✅ Cumplida (${corners}/${maxAllowed} córn.)`
+            : `✅ Cumpliéndose (${corners}/${maxAllowed} córn.)`
+        };
+      }
+      const needed = Math.floor(lineValue) + 1;
+      if (corners >= needed) {
+        return { fulfilled: true, label: `✅ Cumplida (${corners}/${needed} córn.)` };
+      }
+      return {
+        fulfilled: false,
+        label: isFinished
+          ? `❌ No Cumplida (${corners}/${needed} córn.)`
+          : `❌ No Cumple (${corners}/${needed} córn.)`
+      };
+    }
+
+    // 3. Tarjetas
+    if (item.marketKey === 'CARDS_REC' || title.includes('Tarjetas')) {
+      if (title.includes('Menos de')) {
+        const maxAllowed = Math.floor(lineValue);
+        if (cards > maxAllowed) {
+          return { fulfilled: false, label: `❌ No Cumplida (${cards}/${maxAllowed} 🟨)` };
+        }
+        return {
+          fulfilled: true,
+          label: isFinished
+            ? `✅ Cumplida (${cards}/${maxAllowed} 🟨)`
+            : `✅ Cumpliéndose (${cards}/${maxAllowed} 🟨)`
+        };
+      }
+      const needed = Math.floor(lineValue) + 1;
+      if (cards >= needed) {
+        return { fulfilled: true, label: `✅ Cumplida (${cards}/${needed} 🟨)` };
+      }
+      return {
+        fulfilled: false,
+        label: isFinished
+          ? `❌ No Cumplida (${cards}/${needed} 🟨)`
+          : `❌ No Cumple (${cards}/${needed} 🟨)`
+      };
+    }
+
+    // 4. Goles por Mitades (1T / 2T)
+    if (
+      item.marketKey === 'FH_OVER_05' ||
+      item.marketKey === 'SECOND_HALF_MOST' ||
+      title.includes('1er Tiempo') ||
+      title.includes('2do Tiempo') ||
+      title.includes('2.ª Mitad')
+    ) {
+      const goalEvents = Array.isArray(fixture.liveEvents)
+        ? fixture.liveEvents.filter((e) => e.type === 'GOAL')
+        : [];
+      const goals1H =
+        goalEvents.length > 0
+          ? goalEvents.filter((e) => Number(e.minute || 0) <= 45).length
+          : !isSecondHalfOrDone
+          ? totalGoals
+          : Math.min(totalGoals, Math.floor(totalGoals * 0.45));
+      const goals2H = Math.max(0, totalGoals - goals1H);
+
+      if (title.includes('1er Tiempo')) {
+        if (goals1H >= 1) {
+          return { fulfilled: true, label: `✅ Cumplida (${goals1H} gol 1T)` };
+        }
+        return {
+          fulfilled: false,
+          label: isSecondHalfOrDone ? '❌ No Cumplida (0 en 1T)' : '❌ No Cumple (0/1 en 1T)'
+        };
+      }
+
+      if (title.includes('Mitad con Más Goles')) {
+        if (goals2H > goals1H) {
+          return {
+            fulfilled: true,
+            label: isFinished ? `✅ Cumplida (2T: ${goals2H} vs 1T: ${goals1H})` : `✅ Cumpliéndose (2T: ${goals2H} > 1T: ${goals1H})`
+          };
+        }
+        return {
+          fulfilled: false,
+          label: isFinished
+            ? `❌ No Cumplida (2T: ${goals2H} vs 1T: ${goals1H})`
+            : `❌ No Cumple (2T: ${goals2H} vs 1T: ${goals1H})`
+        };
+      }
+
+      // Gol en la 2.ª Mitad (+0.5 Goles 2T)
+      if (goals2H >= 1) {
+        return { fulfilled: true, label: `✅ Cumplida (${goals2H} gol 2T)` };
+      }
+      return {
+        fulfilled: false,
+        label: isFinished ? '❌ No Cumplida (0 en 2T)' : '❌ No Cumple (0/1 en 2T)'
+      };
+    }
+
+    // 5. Disparos al Arco / Rematadores
+    if (item.marketKey.includes('SHOTS') || title.includes('Remates') || title.includes('Disparos')) {
+      if (title.includes('+0.5 Remates a Puerta')) {
+        const isHomeStar = item.rationale.includes(fixture.homeTeam.name);
+        const teamSOT = isHomeStar ? homeSOT : awaySOT;
+        const starPlayerLastName = item.metrics[0]?.value || '';
+        const playerScored =
+          Array.isArray(fixture.liveEvents) &&
+          fixture.liveEvents.some(
+            (ev) => ev.type === 'GOAL' && starPlayerLastName && ev.playerName?.includes(starPlayerLastName)
+          );
+        const fulfilled = playerScored || teamSOT >= 2;
+        return {
+          fulfilled,
+          label: fulfilled
+            ? `✅ Cumplida (${teamSOT} tiros puerta)`
+            : isFinished
+            ? `❌ No Cumplida (${teamSOT} tiros puerta)`
+            : `❌ No Cumple (${teamSOT} tiros puerta)`
+        };
+      }
+
+      if (title.includes('+3.5 Remates a Puerta')) {
+        const fulfilled = homeSOT >= 4;
+        return {
+          fulfilled,
+          label: fulfilled
+            ? `✅ Cumplida (${homeSOT}/4 tiros)`
+            : isFinished
+            ? `❌ No Cumplida (${homeSOT}/4 tiros)`
+            : `❌ No Cumple (${homeSOT}/4 tiros)`
+        };
+      }
+
+      const neededSOT = Math.floor(lineValue) + 1;
+      const fulfilled = totalSOT >= neededSOT;
+      return {
+        fulfilled,
+        label: fulfilled
+          ? `✅ Cumplida (${totalSOT}/${neededSOT} tiros)`
+          : isFinished
+          ? `❌ No Cumplida (${totalSOT}/${neededSOT} tiros)`
+          : `❌ No Cumple (${totalSOT}/${neededSOT} tiros)`
+      };
+    }
+
+    // 6. Doble Oportunidad (1X / X2) o Ganador 1X2
+    if (
+      item.marketKey === 'DOUBLE_CHANCE' ||
+      title.includes('1X') ||
+      title.includes('X2') ||
+      title.includes('Victoria de')
+    ) {
+      let ok = false;
+      if (title.includes('1X')) {
+        ok = homeGoals >= awayGoals;
+      } else if (title.includes('X2')) {
+        ok = awayGoals >= homeGoals;
+      } else {
+        const isHomeFav =
+          title.includes(fixture.homeTeam.shortName) || title.includes(fixture.homeTeam.name);
+        ok = isHomeFav ? homeGoals > awayGoals : awayGoals > homeGoals;
+      }
+      return {
+        fulfilled: ok,
+        label: ok
+          ? isFinished
+            ? `✅ Cumplida (${homeGoals}-${awayGoals})`
+            : `✅ Cumpliéndose (${homeGoals}-${awayGoals})`
+          : isFinished
+          ? `❌ No Cumplida (${homeGoals}-${awayGoals})`
+          : `❌ No Cumple (${homeGoals}-${awayGoals})`
+      };
+    }
+
+    // 7. Cantidad de Goles Totales (Más de 1.5 / Menos de 3.5)
+    if (title.includes('Menos de')) {
+      const maxAllowed = Math.floor(lineValue);
+      if (totalGoals > maxAllowed) {
+        return { fulfilled: false, label: `❌ No Cumplida (${totalGoals}/${maxAllowed} goles)` };
+      }
+      return {
+        fulfilled: true,
+        label: isFinished
+          ? `✅ Cumplida (${totalGoals}/${maxAllowed} goles)`
+          : `✅ Cumpliéndose (${totalGoals}/${maxAllowed} goles)`
+      };
+    }
+
+    const neededGoals = Math.floor(lineValue) + 1;
+    if (totalGoals >= neededGoals) {
+      return { fulfilled: true, label: `✅ Cumplida (${totalGoals}/${neededGoals} goles)` };
+    }
+    return {
+      fulfilled: false,
+      label: isFinished
+        ? `❌ No Cumplida (${totalGoals}/${neededGoals} goles)`
+        : `❌ No Cumple (${totalGoals}/${neededGoals} goles)`
+    };
+  };
+
+  const capsuleStatuses = sortedCapsules.map((item) => evaluateCapsuleLiveStatus(item));
+  const fulfilledCount = capsuleStatuses.filter((st) => st?.fulfilled === true).length;
+  const unfulfilledCount = capsuleStatuses.filter((st) => st?.fulfilled === false).length;
+
   const handleToggle = (item: MarketCapsuleItem) => {
     const pickPayload: ParlayPick = {
       id: `${fixture.id}_${item.marketKey}`,
@@ -427,20 +709,32 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
 
   return (
     <div className="space-y-3 pb-6">
-      {/* Banner Informativo sobre Cuotas de Referencia (Claro y legible) */}
+      {/* Banner Informativo + Resumen de Cumplimiento en Cancha */}
       <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200/90 flex items-start gap-2.5 shadow-2xs">
         <div className="w-8 h-8 rounded-xl bg-white border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0 mt-0.5">
           <Sparkles className="w-4 h-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-sans font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
-            <span>Oportunidades de Alta Probabilidad (+EV)</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
-              6 Mercados
-            </span>
+          <div className="text-xs font-sans font-bold text-slate-900 flex items-center justify-between gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span>Pronósticos Fijos Pre-Partido (+EV)</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                6 Mercados
+              </span>
+            </div>
+            {isLiveOrFinished && (
+              <div className="flex items-center gap-1.5">
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  ✅ {fulfilledCount} Cumplidas
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                  ❌ {unfulfilledCount} No Cumplidas
+                </span>
+              </div>
+            )}
           </div>
           <p className="text-[11px] text-slate-600 leading-relaxed mt-1">
-            <span className="text-amber-800 font-semibold">Nota de cuotas:</span> Promedio referencial internacional. Puedes ajustar la cuota exacta de tu casa en el boleto de combinadas.
+            <span className="text-amber-800 font-semibold">Integridad Estadística:</span> Las probabilidades y cuotas corresponden al cálculo fijo pre-partido. En vivo puedes ver cuáles líneas ya se cumplen y cuáles no.
           </p>
         </div>
       </div>
@@ -451,19 +745,24 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
           const inParlay = isPickInParlay(fixture.id, item.marketKey);
           const isFirst = idx === 0;
           const isExpanded = isFirst || expandedIndex === idx;
+          const liveStatus = capsuleStatuses[idx];
 
           return (
             <div
               key={item.id}
               className={`rounded-2xl border transition-all p-3 sm:p-3.5 space-y-2.5 ${
-                isFirst
+                liveStatus
+                  ? liveStatus.fulfilled
+                    ? 'bg-gradient-to-b from-emerald-50/70 to-white border-emerald-300 shadow-xs'
+                    : 'bg-gradient-to-b from-rose-50/50 to-white border-rose-200/90 shadow-2xs'
+                  : isFirst
                   ? 'bg-gradient-to-b from-emerald-50/60 to-white border-emerald-300 shadow-xs'
                   : inParlay
                   ? 'bg-amber-50/50 border-amber-300 ring-1 ring-amber-300/60 shadow-xs'
                   : 'bg-white border-slate-200/90 hover:border-slate-300 shadow-2xs'
               }`}
             >
-              {/* Header de la Cápsula: Categoría + Badge único */}
+              {/* Header de la Cápsula: Categoría + Estado en Cancha + Badge */}
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="text-base shrink-0 leading-none">{item.icon}</span>
@@ -472,7 +771,18 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                  {liveStatus && (
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold border ${
+                        liveStatus.fulfilled
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          : 'bg-rose-100 text-rose-800 border-rose-300'
+                      }`}
+                    >
+                      {liveStatus.label}
+                    </span>
+                  )}
                   {isFirst && item.badge.label !== '⭐ Más Probable' && (
                     <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
                       ⭐ Más Probable
@@ -494,7 +804,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                   <div>
                     <span className="text-[9px] font-mono text-slate-500 block uppercase leading-none mb-0.5">
-                      Probabilidad
+                      Prob. Pre-Partido
                     </span>
                     <span className="text-xs sm:text-sm font-mono font-bold text-emerald-700 whitespace-nowrap">
                       {item.probability}%

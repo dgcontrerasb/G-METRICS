@@ -12,11 +12,6 @@ import {
   exportNBAToPDF,
   NBAExportItem
 } from './services/exportService';
-import { FriendlyPredictionCard } from './components/FriendlyPredictionCard';
-import { CompactMatchRow } from './components/CompactMatchRow';
-import { CompetitionBlock } from './components/CompetitionBlock';
-import { NBAPredictionCard } from './components/NBAPredictionCard';
-import { CompactNBAMatchRow } from './components/CompactNBAMatchRow';
 import { DetailMatchPayload } from './components/MatchDetailModal';
 import { GuideModalTab } from './components/DidacticGuideModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
@@ -29,6 +24,10 @@ import { NBAFilterType } from './components/NBAFilterBar';
 import { FintechSidebar } from './components/FintechSidebar';
 import { AppFooter } from './components/AppFooter';
 import { AppModalsContainer } from './components/AppModalsContainer';
+import { UserFeedbackWidget } from './components/UserFeedbackWidget';
+import { SoccerWorkspaceView } from './components/workspace/SoccerWorkspaceView';
+import { NBAWorkspaceView } from './components/workspace/NBAWorkspaceView';
+import { LiveAlertsOverlay } from './components/workspace/LiveAlertsOverlay';
 import { useTheme } from './context/ThemeContext';
 import { getSoccerDidacticAdvice, getNBADidacticAdvice } from './services/didacticService';
 import { groupFixturesByCompetition, matchesLeagueSelection, isColombianBookmakerPrimeLeague } from './services/leagueCategorizer';
@@ -39,26 +38,6 @@ import {
   clearActiveLicense,
   LicenseValidationResult
 } from './services/licenseService';
-import {
-  Search,
-  ChevronDown,
-  ChevronUp,
-  RefreshCw,
-  CheckSquare,
-  Square,
-  Clock,
-  Calendar,
-  Filter,
-  Layers,
-  X,
-  Zap,
-  Sparkles,
-  Flame,
-  LayoutGrid,
-  List,
-  Star,
-  Bell
-} from 'lucide-react';
 import {
   getStoredFavoriteIds,
   saveStoredFavoriteIds,
@@ -95,6 +74,7 @@ export default function App() {
 
   const { paletteConfig, theme } = useTheme();
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [mobileActiveTab, setMobileActiveTab] = useState<MobileTab>('MATCHES');
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState<boolean>(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
@@ -1055,9 +1035,9 @@ export default function App() {
     } else if (activeSport === 'NBA' && nbaFixtures.length > 0) {
       const res = await fetchNBAFixtures(currentDate, { forceRefresh: false });
       const changedNbaIds: string[] = [];
-      const fullNbaPool = res.allFixtures || res.fixtures;
+      const fullNbaPool: NBAMatchFixture[] = (res.allFixtures || res.fixtures) || [];
 
-      fullNbaPool.forEach((newFix) => {
+      fullNbaPool.forEach((newFix: NBAMatchFixture) => {
         const oldFix = nbaFixtures.find((f) => f.id === newFix.id);
         if (!oldFix) return;
 
@@ -1905,827 +1885,100 @@ export default function App() {
             />
 
             {activeSport === 'SOCCER' ? (
-              <main className="flex-1 max-w-5xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4">
-                {/* Contextual Toolbar: Metrics & View Density Controls */}
-                <div className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-xl bg-white/95 border border-slate-200/90 shadow-2xs text-xs text-slate-600 backdrop-blur-md">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono tabular-nums tracking-tight font-bold text-slate-900">
-                      {isLoading ? 'Buscando partidos...' : `${filteredFixtures.length} partidos`}
-                    </span>
-                    {!isLoading && availableCompetitionGroups.length > 0 && (
-                      <>
-                        <span className="text-slate-300" aria-hidden="true">·</span>
-                        <span className="font-mono tabular-nums text-slate-600">
-                          {selectedLeague === 'ALL' && !searchQuery.trim()
-                            ? `${availableCompetitionGroups.length} ${availableCompetitionGroups.length === 1 ? 'competición' : 'competiciones'}`
-                            : `${groupedFilteredFixtures.length} ${groupedFilteredFixtures.length === 1 ? 'competición' : 'competiciones'}`}
-                        </span>
-                      </>
-                    )}
-                    {hasSelection && (
-                      <>
-                        <span className="text-slate-300" aria-hidden="true">·</span>
-                        <span className="font-mono tabular-nums font-bold text-emerald-700">
-                          {selectedFixtureIds.size} seleccionados
-                        </span>
-                      </>
-                    )}
-                    {filteredFixtures.some((f) => f.status === 'IN_PLAY') && (
-                      <>
-                        <span className="text-slate-300" aria-hidden="true">·</span>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectMainTab('LIVE')}
-                          className="inline-flex items-center gap-1.5 text-rose-600 font-mono tabular-nums font-bold text-xs cursor-pointer hover:underline"
-                        >
-                          <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
-                          <span>{soccerLiveFixtures.length} En Vivo</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    {/* Favorites Quick Filter Button */}
-                    <button
-                      type="button"
-                      onClick={() => setShowFavoritesOnly((prev) => !prev)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors border cursor-pointer text-xs font-bold ${
-                        showFavoritesOnly
-                          ? 'bg-amber-400 text-slate-950 border-amber-500 shadow-2xs'
-                          : 'bg-amber-50/90 hover:bg-amber-100 text-amber-800 border-amber-200/90'
-                      }`}
-                      title="Ver solo mis partidos favoritos con alertas de gol en vivo"
-                    >
-                      <Star className={`w-3.5 h-3.5 ${showFavoritesOnly ? 'fill-slate-950 text-slate-950' : 'fill-amber-400 text-amber-500'}`} />
-                      <span>Favoritos</span>
-                      <span className="font-mono text-[10px] px-1 py-0.2 rounded bg-white/80 text-slate-900">
-                        {fixtures.filter((f) => favoriteFixtureIds.has(f.id)).length}
-                      </span>
-                    </button>
-
-                    {/* Toggle all league blocks */}
-                    {groupedFilteredFixtures.length > 1 && mainTab === 'ALL_LEAGUES' && (
-                      <button
-                        onClick={handleToggleAllGroupsCollapse}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-700 hover:text-slate-900 transition-colors border border-slate-200/80 cursor-pointer text-xs font-medium"
-                        title={groupedFilteredFixtures.every((g) => collapsedGroupKeys.has(g.key)) ? 'Desplegar todas las ligas' : 'Colapsar todas las ligas'}
-                      >
-                        <Layers className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="hidden sm:inline">
-                          {groupedFilteredFixtures.every((g) => collapsedGroupKeys.has(g.key)) ? 'Desplegar ligas' : 'Colapsar ligas'}
-                        </span>
-                      </button>
-                    )}
-
-                    {/* Select all button */}
-                    {filteredFixtures.length > 0 && (
-                      <button
-                        onClick={handleSelectAll}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-700 hover:text-slate-900 transition-colors border border-slate-200/80 cursor-pointer text-xs font-medium"
-                      >
-                        {selectedFixtureIds.size === filteredFixtures.length ? (
-                          <>
-                            <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Deseleccionar</span>
-                          </>
-                        ) : (
-                          <>
-                            <Square className="w-3.5 h-3.5 text-slate-400" />
-                            <span>Seleccionar</span>
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Banner de Filtro Activo por Liga */}
-                {selectedLeague !== 'ALL' && mainTab === 'ALL_LEAGUES' && (
-                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-white/95 border border-emerald-300 text-slate-800 text-xs shadow-2xs">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Filter className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span className="truncate">
-                        Competición activa: <strong className="text-slate-900 font-bold">{activeLeagueLabel}</strong> ({filteredFixtures.length} {filteredFixtures.length === 1 ? 'partido' : 'partidos'})
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setSelectedLeague('ALL')}
-                      className="shrink-0 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold border border-slate-200 text-xs transition-colors flex items-center gap-1 cursor-pointer"
-                      title="Ver todas las ligas del día"
-                    >
-                      <X className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Ver todas</span>
-                    </button>
-                  </div>
-                )}
-
-                {/* Loading State */}
-                {isLoading && (
-                  <div className="py-16 text-center space-y-3 bg-white/90 rounded-2xl border border-slate-200/80 shadow-2xs">
-                    <div className="w-10 h-10 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                    <p className="text-sm text-slate-700 font-semibold">
-                      Consultando programación oficial y calculando probabilidades...
-                    </p>
-                  </div>
-                )}
-
-                {/* Empty State (Only when no matches on current date AND no cross-day search matches found) */}
-                {!isLoading && filteredFixtures.length === 0 && crossDaySearchMatches.length === 0 && (
-                  <div className="py-12 px-6 text-center bg-white/95 border border-slate-200/90 rounded-2xl space-y-4 max-w-lg mx-auto shadow-xs">
-                    <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center mx-auto">
-                      <Search className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900">
-                        {isSearchingOtherDays
-                          ? `Buscando "${searchQuery.trim()}" en los próximos 5 días...`
-                          : fixtures.length > 0
-                            ? 'Sin partidos en esta fecha para tu búsqueda'
-                            : 'No hay partidos programados en esta fecha'}
-                      </h3>
-                      <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-                        {isSearchingOtherDays
-                          ? 'Explorando automáticamente todo el calendario de 5 días sin recargar.'
-                          : fixtures.length > 0
-                            ? `No encontramos "${searchQuery.trim() || 'partidos'}" hoy (${currentDate}), pero hay ${fixtures.length} partidos activos en esta fecha.`
-                            : `Para la fecha (${currentDate}) no quedan partidos pendientes en esta selección. Puedes elegir otra fecha en el calendario de 5 días.`}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-                      {fixtures.length > 0 && (
-                        <button
-                          onClick={() => {
-                            setSearchQuery('');
-                            setSelectedFilter('ALL');
-                            setSelectedLeague('ALL');
-                          }}
-                          className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-colors cursor-pointer shadow-2xs"
-                        >
-                          Ver todos los partidos ({fixtures.length})
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleSmartDateChange(getColombiaDateString(1))}
-                        className="px-4 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition-colors cursor-pointer border border-slate-200"
-                      >
-                        Ver Mañana
-                      </button>
-                      <button
-                        onClick={() => handleSmartDateChange(getColombiaDateString(2))}
-                        className="px-4 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition-colors cursor-pointer border border-slate-200"
-                      >
-                        Ver +2 Días
-                      </button>
-                      <button
-                        onClick={() => handleSmartDateChange(getColombiaDateString(3))}
-                        className="px-4 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition-colors cursor-pointer border border-slate-200"
-                      >
-                        Ver +3 Días
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB 1: 🔥 TOP PICKS / JOYAS DEL DÍA */}
-                {mainTab === 'TOP_PICKS' && !isLoading && (
-                  <div className="space-y-3">
-                    {/* Cuadro Ejecutivo Centrado y Destacado */}
-                    <div className="px-4 py-3.5 rounded-2xl bg-gradient-to-b from-emerald-50/95 via-white/95 to-white/95 border border-emerald-300/90 shadow-xs text-center space-y-1 backdrop-blur-md">
-                      <div className="inline-flex items-center justify-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100/90 border border-emerald-200 text-emerald-800 text-[10px] font-mono uppercase tracking-wider font-bold">
-                        <Flame className="w-3.5 h-3.5 text-emerald-600 fill-emerald-500/20" />
-                        <span>Top Picks del Día · {soccerTopPicks.length} Oportunidades</span>
-                      </div>
-                      <h2 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">
-                        Pronósticos Destacados de Mayor Certeza (&ge;68%) y Valor (+EV)
-                      </h2>
-                      <p className="text-[11px] text-slate-500 max-w-lg mx-auto">
-                        Partidos filtrados automáticamente y ordenados de mayor a menor probabilidad estadística.
-                      </p>
-                    </div>
-
-                    {soccerTopPicks.length === 0 ? (
-                      <div className="py-12 px-4 text-center bg-white/95 rounded-2xl border border-slate-200/90 space-y-2 shadow-2xs">
-                        <Sparkles className="w-8 h-8 text-slate-400 mx-auto mb-1" />
-                        <p className="text-sm font-bold text-slate-900">No hay apuestas con filtro verde (&ge;68%) en este momento</p>
-                        <p className="text-xs text-slate-600 max-w-md mx-auto">
-                          Explora la Cartelera Completa en el menú lateral o selecciona otra fecha próxima.
-                        </p>
-                        <div className="pt-2">
-                          <button
-                            onClick={() => handleSelectMainTab('ALL_LEAGUES')}
-                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
-                          >
-                            Ver Cartelera Completa
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {soccerTopPicks.slice(0, visibleMatchLimit).map(({ fixture, analysis }) => (
-                          <CompactMatchRow
-                            key={fixture.id}
-                            fixture={fixture}
-                            analysis={analysis!}
-                            isSelected={selectedFixtureIds.has(fixture.id)}
-                            onToggleSelect={handleToggleSelect}
-                            isExpanded={expandedCardIds.has(fixture.id)}
-                            onToggleExpand={() => handleToggleCardExpand(fixture.id)}
-                            onOpenDetail={handleOpenSoccerDetail}
-                            onOpenSimulator={handleOpenSimulator}
-                            viewMode={viewMode}
-                            isRecentlyUpdated={recentlyUpdatedFixtureIds.has(fixture.id)}
-                            isFavorite={favoriteFixtureIds.has(fixture.id)}
-                            onToggleFavorite={handleToggleFavorite}
-                          />
-                        ))}
-
-                        {/* Botón Inteligente de Paginación Progresiva */}
-                        {soccerTopPicks.length > visibleMatchLimit && (
-                          <div className="pt-2 flex flex-row items-center justify-center gap-2">
-                            {soccerTopPicks.length - visibleMatchLimit > 10 && (
-                              <button
-                                type="button"
-                                onClick={() => setVisibleMatchLimit((prev) => prev + 10)}
-                                className="flex-1 sm:flex-initial min-h-[38px] px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                              >
-                                <span>Ver 10 más</span>
-                                <span className="font-mono text-[10px] opacity-85">
-                                  ({Math.min(visibleMatchLimit, soccerTopPicks.length)}/{soccerTopPicks.length})
-                                </span>
-                                <ChevronDown className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setVisibleMatchLimit(soccerTopPicks.length)}
-                              className={`min-h-[38px] px-4 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                                soccerTopPicks.length - visibleMatchLimit <= 10
-                                  ? 'w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xs'
-                                  : 'flex-1 sm:flex-initial bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90'
-                              }`}
-                            >
-                              <span>Mostrar todos ({soccerTopPicks.length})</span>
-                              {soccerTopPicks.length - visibleMatchLimit <= 10 && (
-                                <ChevronDown className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* TAB 2: 🔴 EN VIVO */}
-                {mainTab === 'LIVE' && !isLoading && (
-                  <div className="space-y-3">
-                    <div className="p-3.5 rounded-xl bg-white/95 border border-rose-200/90 shadow-2xs flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600"></span>
-                        </span>
-                        <span className="text-xs font-bold text-slate-900">
-                          Partidos en Juego en Directo ({soccerLiveFixtures.length})
-                        </span>
-                      </div>
-                      <span className="text-[11px] font-mono tabular-nums text-rose-700 font-semibold">
-                        Pulso en tiempo real
-                      </span>
-                    </div>
-
-                    {soccerLiveFixtures.length === 0 ? (
-                      <div className="py-12 px-4 text-center bg-white/95 rounded-2xl border border-slate-200/90 space-y-2 shadow-2xs">
-                        <Clock className="w-8 h-8 text-slate-400 mx-auto mb-1" />
-                        <p className="text-sm font-bold text-slate-900">No hay partidos en juego en este instante</p>
-                        <p className="text-xs text-slate-600 max-w-md mx-auto">
-                          El pulso en vivo actualizará los marcadores automáticamente tan pronto ruede el balón.
-                        </p>
-                        <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
-                          <button
-                            onClick={() => handleSelectMainTab('TOP_PICKS')}
-                            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
-                          >
-                            Ver Top Picks de Hoy
-                          </button>
-                          <button
-                            onClick={() => handleSelectMainTab('ALL_LEAGUES')}
-                            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold cursor-pointer border border-slate-200"
-                          >
-                            Ver Cartelera Completa
-                          </button>
-                        </div>
-                      </div>
-                    ) : densityView === 'COMPACT' ? (
-                      <div className="space-y-2">
-                        {soccerLiveFixtures.map((fixture) => {
-                          const matchAnalysis = analysesMap[fixture.id] || calculateMatchAnalysis(fixture);
-                          return (
-                            <CompactMatchRow
-                              key={fixture.id}
-                              fixture={fixture}
-                              analysis={matchAnalysis}
-                              isSelected={selectedFixtureIds.has(fixture.id)}
-                              onToggleSelect={handleToggleSelect}
-                              isExpanded={expandedCardIds.has(fixture.id)}
-                              onToggleExpand={() => handleToggleCardExpand(fixture.id)}
-                              onOpenDetail={handleOpenSoccerDetail}
-                              onOpenSimulator={handleOpenSimulator}
-                              viewMode={viewMode}
-                              isRecentlyUpdated={recentlyUpdatedFixtureIds.has(fixture.id)}
-                              isFavorite={favoriteFixtureIds.has(fixture.id)}
-                              onToggleFavorite={handleToggleFavorite}
-                            />
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {soccerLiveFixtures.map((fixture) => {
-                          const matchAnalysis = analysesMap[fixture.id] || calculateMatchAnalysis(fixture);
-                          return (
-                            <FriendlyPredictionCard
-                              key={fixture.id}
-                              fixture={fixture}
-                              analysis={matchAnalysis}
-                              isSelected={selectedFixtureIds.has(fixture.id)}
-                              onToggleSelect={handleToggleSelect}
-                              isExpanded={expandedCardIds.has(fixture.id)}
-                              onToggleExpand={() => handleToggleCardExpand(fixture.id)}
-                              onOpenDetail={handleOpenSoccerDetail}
-                              onOpenSimulator={handleOpenSimulator}
-                              viewMode={viewMode}
-                              mobileLightweight={isLightweightMode}
-                              isRecentlyUpdated={recentlyUpdatedFixtureIds.has(fixture.id)}
-                            />
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* TAB 3: 🌐 CARTELERA COMPLETA (ORGANIZADA POR COMPETICIONES) */}
-                {mainTab === 'ALL_LEAGUES' && !isLoading && filteredFixtures.length > 0 && (
-                  <div className="space-y-4">
-                    {groupedFilteredFixtures.map((group) => (
-                      <CompetitionBlock
-                        key={group.key}
-                        group={group}
-                        analysesMap={analysesMap}
-                        selectedFixtureIds={selectedFixtureIds}
-                        expandedCardIds={expandedCardIds}
-                        isGroupCollapsed={
-                          Boolean(searchQuery.trim()) || selectedLeague !== 'ALL' || groupedFilteredFixtures.length === 1
-                            ? false
-                            : collapsedGroupKeys.has(group.key)
-                        }
-                        viewMode={viewMode}
-                        isLightweightMode={isLightweightMode}
-                        densityView={densityView}
-                        recentlyUpdatedIds={recentlyUpdatedFixtureIds}
-                        onToggleGroupCollapse={handleToggleGroupCollapse}
-                        onToggleSelectFixture={handleToggleSelect}
-                        onToggleSelectGroupFixtures={handleToggleSelectGroupFixtures}
-                        onOpenSimulator={handleOpenSimulator}
-                        onToggleCardExpand={handleToggleCardExpand}
-                        onOpenDetailModal={handleOpenSoccerDetail}
-                        favoriteFixtureIds={favoriteFixtureIds}
-                        onToggleFavoriteFixture={handleToggleFavorite}
-                      />
-                    ))}
-
-                    {/* Progressive Batch Loading Controls */}
-                    {filteredFixtures.length > displayFixtures.length && (
-                      <div className="pt-2 flex flex-row items-center justify-center gap-2">
-                        {filteredFixtures.length - displayFixtures.length > 10 && (
-                          <button
-                            type="button"
-                            onClick={() => setVisibleMatchLimit((prev) => prev + 10)}
-                            className="flex-1 sm:flex-initial min-h-[38px] px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-all shadow-2xs cursor-pointer flex items-center justify-center gap-1.5"
-                          >
-                            <span>Ver 10 más</span>
-                            <span className="font-mono text-[10px] opacity-85">
-                              ({displayFixtures.length}/{filteredFixtures.length})
-                            </span>
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setVisibleMatchLimit(filteredFixtures.length)}
-                          className={`min-h-[38px] px-4 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                            filteredFixtures.length - displayFixtures.length <= 10
-                              ? 'w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xs'
-                              : 'flex-1 sm:flex-initial bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90'
-                          }`}
-                        >
-                          <span>Mostrar todos ({filteredFixtures.length})</span>
-                          {filteredFixtures.length - displayFixtures.length <= 10 && (
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 🌐 BUSCADOR GLOBAL MULTIFECHA (PRÓXIMOS 5 DÍAS) — Tipo Flashscore/Sofascore */}
-                {searchQuery.trim().length >= 2 && crossDaySearchMatches.length > 0 && (
-                  <div className="space-y-2.5 pt-1">
-                    <div className="px-3.5 py-2.5 rounded-xl bg-emerald-50/95 border border-emerald-300/90 shadow-2xs flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-emerald-700 shrink-0" />
-                        <span className="text-xs font-bold text-slate-900">
-                          {filteredFixtures.length === 0
-                            ? `No juega en la fecha actual (${currentDate}), pero encontramos ${crossDaySearchMatches.length} ${crossDaySearchMatches.length === 1 ? 'partido' : 'partidos'} en otras fechas:`
-                            : `Más partidos de "${searchQuery.trim()}" en los próximos 5 días (${crossDaySearchMatches.length}):`}
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-mono uppercase tracking-wider font-semibold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-md border border-emerald-200">
-                        Calendario 5 Días
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      {crossDaySearchMatches.map(({ dateStr, dateLabel, fixture, analysis }) => (
-                        <div key={`${dateStr}-${fixture.id}`} className="space-y-1">
-                          <div className="flex items-center justify-between px-2">
-                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-900 bg-white/95 px-2.5 py-0.5 rounded-lg border border-emerald-200 shadow-2xs">
-                              <Calendar className="w-3 h-3 text-emerald-600" />
-                              <span>{dateLabel}</span>
-                              <span className="text-slate-400">·</span>
-                              <span className="font-mono text-slate-600">{dateStr}</span>
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleSmartDateChange(dateStr)}
-                              className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 bg-white/95 hover:bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
-                            >
-                              Ir a {dateLabel} &rarr;
-                            </button>
-                          </div>
-                          <CompactMatchRow
-                            fixture={fixture}
-                            analysis={analysis}
-                            isSelected={selectedFixtureIds.has(fixture.id)}
-                            onToggleSelect={handleToggleSelect}
-                            isExpanded={expandedCardIds.has(fixture.id)}
-                            onToggleExpand={() => handleToggleCardExpand(fixture.id)}
-                            onOpenDetail={handleOpenSoccerDetail}
-                            onOpenSimulator={handleOpenSimulator}
-                            viewMode={viewMode}
-                            isRecentlyUpdated={false}
-                            isFavorite={favoriteFixtureIds.has(fixture.id)}
-                            onToggleFavorite={handleToggleFavorite}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </main>
+              <SoccerWorkspaceView
+                isLoading={isLoading}
+                fixtures={fixtures}
+                filteredFixtures={filteredFixtures}
+                displayFixtures={displayFixtures}
+                availableCompetitionGroups={availableCompetitionGroups}
+                groupedFilteredFixtures={groupedFilteredFixtures}
+                selectedLeague={selectedLeague}
+                onSelectLeague={setSelectedLeague}
+                activeLeagueLabel={activeLeagueLabel}
+                searchQuery={searchQuery}
+                onClearFilters={() => {
+                  setSearchQuery('');
+                  setSelectedFilter('ALL');
+                  setSelectedLeague('ALL');
+                }}
+                currentDate={currentDate}
+                onSmartDateChange={handleSmartDateChange}
+                isSearchingOtherDays={isSearchingOtherDays}
+                crossDaySearchMatches={crossDaySearchMatches}
+                mainTab={mainTab}
+                onSelectMainTab={handleSelectMainTab}
+                soccerTopPicks={soccerTopPicks}
+                soccerLiveFixtures={soccerLiveFixtures}
+                analysesMap={analysesMap}
+                selectedFixtureIds={selectedFixtureIds}
+                onToggleSelect={handleToggleSelect}
+                onToggleSelectGroupFixtures={handleToggleSelectGroupFixtures}
+                onSelectAll={handleSelectAll}
+                expandedCardIds={expandedCardIds}
+                onToggleCardExpand={handleToggleCardExpand}
+                collapsedGroupKeys={collapsedGroupKeys}
+                onToggleGroupCollapse={handleToggleGroupCollapse}
+                onToggleAllGroupsCollapse={handleToggleAllGroupsCollapse}
+                favoriteFixtureIds={favoriteFixtureIds}
+                onToggleFavorite={handleToggleFavorite}
+                showFavoritesOnly={showFavoritesOnly}
+                onToggleShowFavoritesOnly={() => setShowFavoritesOnly((prev) => !prev)}
+                visibleMatchLimit={visibleMatchLimit}
+                setVisibleMatchLimit={setVisibleMatchLimit}
+                viewMode={viewMode}
+                densityView={densityView}
+                isLightweightMode={isLightweightMode}
+                recentlyUpdatedFixtureIds={recentlyUpdatedFixtureIds}
+                onOpenSoccerDetail={handleOpenSoccerDetail}
+                onOpenSimulator={handleOpenSimulator}
+              />
             ) : (
-              /* NBA Production Workspace */
-              <main className="flex-1 max-w-5xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4">
-                {/* Results Bar NBA */}
-                <div className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-xl bg-white/95 border border-slate-200/90 shadow-2xs text-xs text-slate-600 backdrop-blur-md">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono tabular-nums tracking-tight font-bold text-slate-900">
-                      {isNBALoading ? 'Calculando proyecciones...' : `${filteredNBAFixtures.length} partidos de Baloncesto`}
-                    </span>
-                    {hasSelection && (
-                      <>
-                        <span className="text-slate-300" aria-hidden="true">·</span>
-                        <span className="font-mono tabular-nums font-bold text-amber-700">
-                          {selectedFixtureIds.size} seleccionados
-                        </span>
-                      </>
-                    )}
-                    {filteredNBAFixtures.some((f) => f.status === 'IN_PLAY') && (
-                      <>
-                        <span className="text-slate-300" aria-hidden="true">·</span>
-                        <span className="inline-flex items-center gap-1.5 text-rose-600 font-mono tabular-nums font-bold text-xs">
-                          <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
-                          <span>En Vivo</span>
-                        </span>
-                      </>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowFavoritesOnly((prev) => !prev)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors border cursor-pointer text-xs font-bold ${
-                        showFavoritesOnly
-                          ? 'bg-amber-400 text-slate-950 border-amber-500 shadow-2xs'
-                          : 'bg-amber-50/90 hover:bg-amber-100 text-amber-800 border-amber-200/90'
-                      }`}
-                      title="Ver solo mis partidos favoritos de Baloncesto"
-                    >
-                      <Star className={`w-3.5 h-3.5 ${showFavoritesOnly ? 'fill-slate-950 text-slate-950' : 'fill-amber-400 text-amber-500'}`} />
-                      <span>Favoritos</span>
-                      <span className="font-mono text-[10px] px-1 py-0.2 rounded bg-white/80 text-slate-900">
-                        {nbaFixtures.filter((f) => favoriteFixtureIds.has(f.id)).length}
-                      </span>
-                    </button>
-
-                    {filteredNBAFixtures.length > 0 && (
-                      <button
-                        onClick={handleSelectAll}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-700 hover:text-slate-900 transition-colors border border-slate-200/80 cursor-pointer text-xs font-medium"
-                      >
-                        {selectedFixtureIds.size === filteredNBAFixtures.length ? (
-                          <>
-                            <CheckSquare className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Deseleccionar</span>
-                          </>
-                        ) : (
-                          <>
-                            <Square className="w-3.5 h-3.5 text-slate-400" />
-                            <span>Seleccionar</span>
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Loading State */}
-                {isNBALoading && (
-                  <div className="py-16 text-center space-y-3 bg-white/90 rounded-2xl border border-slate-200/80 shadow-2xs">
-                    <div className="w-10 h-10 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                    <p className="text-sm text-slate-700 font-semibold">
-                      Calculando ritmo de posesiones, cuartos y probabilidades de jugadores...
-                    </p>
-                  </div>
-                )}
-
-                {/* Empty State */}
-                {!isNBALoading && filteredNBAFixtures.length === 0 && (
-                  <div className="py-14 px-6 text-center bg-white/95 rounded-2xl border border-slate-200/90 space-y-3 shadow-xs">
-                    <div className="w-12 h-12 bg-amber-50 border border-amber-200 rounded-full flex items-center justify-center mx-auto text-amber-600 text-xl">
-                      🏀
-                    </div>
-                    <h3 className="text-base font-bold text-slate-900">
-                      {nbaFixtures.length > 0
-                        ? 'No se encontraron partidos de Baloncesto con este filtro'
-                        : 'No hay partidos de Baloncesto programados para esta fecha'}
-                    </h3>
-                    <p className="text-xs text-slate-600 max-w-sm mx-auto">
-                      {nbaFixtures.length > 0
-                        ? `Hay ${nbaFixtures.length} partidos oficiales de Baloncesto en esta fecha. Prueba cambiando la conferencia en el menú lateral.`
-                        : 'El calendario oficial de Baloncesto no reporta partidos para esta fecha. Explora los próximos días en el selector de 5 días.'}
-                    </p>
-                    <div className="pt-2 flex items-center justify-center gap-2">
-                      <button
-                        onClick={() => {
-                          setNbaSearchQuery('');
-                          setSelectedNBAConference('ALL');
-                          setSelectedNBAFilter('ALL');
-                        }}
-                        className="px-4 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl transition-colors cursor-pointer"
-                      >
-                        {nbaFixtures.length > 0 ? `Ver todos (${nbaFixtures.length})` : 'Limpiar filtros'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB 1: 🔥 BALONCESTO TOP PICKS */}
-                {mainTab === 'TOP_PICKS' && !isNBALoading && (
-                  <div className="space-y-3">
-                    <div className="px-4 py-3.5 rounded-2xl bg-gradient-to-b from-amber-50/95 via-white/95 to-white/95 border border-amber-300/90 shadow-xs text-center space-y-1 backdrop-blur-md">
-                      <div className="inline-flex items-center justify-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-100/90 border border-amber-200 text-amber-800 text-[10px] font-mono uppercase tracking-wider font-bold">
-                        <Flame className="w-3.5 h-3.5 text-amber-600 fill-amber-500/20" />
-                        <span>Top Picks Baloncesto · {nbaTopPicks.length} Oportunidades</span>
-                      </div>
-                      <h2 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">
-                        Pronósticos Destacados de Baloncesto (&ge;68% y +EV)
-                      </h2>
-                      <p className="text-[11px] text-slate-500 max-w-lg mx-auto">
-                        Encuentros seleccionados y ordenados por mayor ventaja probabilística en Moneyline, Hándicap o Puntos.
-                      </p>
-                    </div>
-
-                    {nbaTopPicks.length === 0 ? (
-                      <div className="py-12 px-4 text-center bg-white/95 rounded-2xl border border-slate-200/90 space-y-2 shadow-2xs">
-                        <Sparkles className="w-8 h-8 text-slate-400 mx-auto mb-1" />
-                        <p className="text-sm font-bold text-slate-900">No hay apuestas NBA con filtro verde en este momento</p>
-                        <p className="text-xs text-slate-600 max-w-md mx-auto">
-                          Explora la Cartelera Completa para ver todos los encuentros y props de jugadores.
-                        </p>
-                        <div className="pt-2">
-                          <button
-                            onClick={() => handleSelectMainTab('ALL_LEAGUES')}
-                            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer"
-                          >
-                            Ver Cartelera NBA Completa
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {nbaTopPicks.slice(0, visibleMatchLimit).map(({ fixture, analysis }) => (
-                          <CompactNBAMatchRow
-                            key={fixture.id}
-                            fixture={fixture}
-                            analysis={analysis!}
-                            isSelected={selectedFixtureIds.has(fixture.id)}
-                            onToggleSelect={handleToggleSelect}
-                            isExpanded={expandedCardIds.has(fixture.id)}
-                            onToggleExpand={() => handleToggleCardExpand(fixture.id)}
-                            onOpenDetail={handleOpenNBADetail}
-                            viewMode={viewMode}
-                            isRecentlyUpdated={recentlyUpdatedFixtureIds.has(fixture.id)}
-                            isFavorite={favoriteFixtureIds.has(fixture.id)}
-                            onToggleFavorite={handleToggleFavorite}
-                          />
-                        ))}
-
-                        {nbaTopPicks.length > visibleMatchLimit && (
-                          <div className="pt-2 flex flex-row items-center justify-center gap-2">
-                            {nbaTopPicks.length - visibleMatchLimit > 10 && (
-                              <button
-                                type="button"
-                                onClick={() => setVisibleMatchLimit((prev) => prev + 10)}
-                                className="flex-1 sm:flex-initial min-h-[38px] px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                              >
-                                <span>Ver 10 más</span>
-                                <span className="font-mono text-[10px] opacity-85">
-                                  ({Math.min(visibleMatchLimit, nbaTopPicks.length)}/{nbaTopPicks.length})
-                                </span>
-                                <ChevronDown className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setVisibleMatchLimit(nbaTopPicks.length)}
-                              className={`min-h-[38px] px-4 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                                nbaTopPicks.length - visibleMatchLimit <= 10
-                                  ? 'w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-2xs'
-                                  : 'flex-1 sm:flex-initial bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90'
-                              }`}
-                            >
-                              <span>Mostrar todos ({nbaTopPicks.length})</span>
-                              {nbaTopPicks.length - visibleMatchLimit <= 10 && (
-                                <ChevronDown className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* TAB 2: 🔴 NBA EN VIVO */}
-                {mainTab === 'LIVE' && !isNBALoading && (
-                  <div className="space-y-3">
-                    <div className="p-3.5 rounded-xl bg-white/95 border border-rose-200/90 shadow-2xs flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600"></span>
-                        </span>
-                        <span className="text-xs font-bold text-slate-900">
-                          Duelos en Directo de Baloncesto ({nbaLiveFixtures.length})
-                        </span>
-                      </div>
-                    </div>
-
-                    {nbaLiveFixtures.length === 0 ? (
-                      <div className="py-12 px-4 text-center bg-white/95 rounded-2xl border border-slate-200/90 space-y-2 shadow-2xs">
-                        <Clock className="w-8 h-8 text-slate-400 mx-auto mb-1" />
-                        <p className="text-sm font-bold text-slate-900">No hay partidos de Baloncesto en juego en este momento</p>
-                        <p className="text-xs text-slate-600 max-w-md mx-auto">
-                          La jornada de Baloncesto se actualizará cuarto a cuarto en vivo aquí.
-                        </p>
-                        <div className="pt-2 flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => handleSelectMainTab('TOP_PICKS')}
-                            className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer"
-                          >
-                            Ver Top Picks Baloncesto
-                          </button>
-                          <button
-                            onClick={() => handleSelectMainTab('ALL_LEAGUES')}
-                            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold cursor-pointer border border-slate-200"
-                          >
-                            Ver Cartelera Completa
-                          </button>
-                        </div>
-                      </div>
-                    ) : densityView === 'COMPACT' ? (
-                      <div className="space-y-2">
-                        {nbaLiveFixtures.map((fixture) => {
-                          const nbaAnalysis = nbaAnalysesMap[fixture.id] || calculateNBAAnalysis(fixture);
-                          return (
-                            <CompactNBAMatchRow
-                              key={fixture.id}
-                              fixture={fixture}
-                              analysis={nbaAnalysis}
-                              isSelected={selectedFixtureIds.has(fixture.id)}
-                              onToggleSelect={handleToggleSelect}
-                              isExpanded={expandedCardIds.has(fixture.id)}
-                              onToggleExpand={() => handleToggleCardExpand(fixture.id)}
-                              onOpenDetail={handleOpenNBADetail}
-                              viewMode={viewMode}
-                              isRecentlyUpdated={recentlyUpdatedFixtureIds.has(fixture.id)}
-                              isFavorite={favoriteFixtureIds.has(fixture.id)}
-                              onToggleFavorite={handleToggleFavorite}
-                            />
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {nbaLiveFixtures.map((fixture) => {
-                          const nbaAnalysis = nbaAnalysesMap[fixture.id] || calculateNBAAnalysis(fixture);
-                          return (
-                            <NBAPredictionCard
-                              key={fixture.id}
-                              fixture={fixture}
-                              analysis={nbaAnalysis}
-                              isSelected={selectedFixtureIds.has(fixture.id)}
-                              onToggleSelect={handleToggleSelect}
-                              isExpanded={expandedCardIds.has(fixture.id)}
-                              onToggleExpand={() => handleToggleCardExpand(fixture.id)}
-                              viewMode={viewMode}
-                              isRecentlyUpdated={recentlyUpdatedFixtureIds.has(fixture.id)}
-                            />
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* TAB 3: 🌐 CARTELERA NBA COMPLETA */}
-                {mainTab === 'ALL_LEAGUES' && !isNBALoading && filteredNBAFixtures.length > 0 && (
-                  <div className="space-y-2">
-                    {filteredNBAFixtures.slice(0, visibleMatchLimit).map((fixture) => {
-                      const analysis = nbaAnalysesMap[fixture.id];
-                      if (!analysis) return null;
-                      return (
-                        <CompactNBAMatchRow
-                          key={fixture.id}
-                          fixture={fixture}
-                          analysis={analysis}
-                          isSelected={selectedFixtureIds.has(fixture.id)}
-                          onToggleSelect={handleToggleSelect}
-                          isExpanded={expandedCardIds.has(fixture.id)}
-                          onToggleExpand={() => handleToggleCardExpand(fixture.id)}
-                          onOpenDetail={handleOpenNBADetail}
-                          viewMode={viewMode}
-                          isRecentlyUpdated={recentlyUpdatedFixtureIds.has(fixture.id)}
-                          isFavorite={favoriteFixtureIds.has(fixture.id)}
-                          onToggleFavorite={handleToggleFavorite}
-                        />
-                      );
-                    })}
-
-                    {filteredNBAFixtures.length > visibleMatchLimit && (
-                      <div className="pt-2 flex flex-row items-center justify-center gap-2">
-                        {filteredNBAFixtures.length - visibleMatchLimit > 10 && (
-                          <button
-                            type="button"
-                            onClick={() => setVisibleMatchLimit((prev) => prev + 10)}
-                            className="flex-1 sm:flex-initial min-h-[38px] px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                          >
-                            <span>Ver 10 más</span>
-                            <span className="font-mono text-[10px] opacity-85">
-                              ({Math.min(visibleMatchLimit, filteredNBAFixtures.length)}/{filteredNBAFixtures.length})
-                            </span>
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setVisibleMatchLimit(filteredNBAFixtures.length)}
-                          className={`min-h-[38px] px-4 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                            filteredNBAFixtures.length - visibleMatchLimit <= 10
-                              ? 'w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-2xs'
-                              : 'flex-1 sm:flex-initial bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90'
-                          }`}
-                        >
-                          <span>Mostrar todos ({filteredNBAFixtures.length})</span>
-                          {filteredNBAFixtures.length - visibleMatchLimit <= 10 && (
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </main>
+              <NBAWorkspaceView
+                isNBALoading={isNBALoading}
+                nbaFixtures={nbaFixtures}
+                filteredNBAFixtures={filteredNBAFixtures}
+                nbaAnalysesMap={nbaAnalysesMap}
+                nbaTopPicks={nbaTopPicks}
+                nbaLiveFixtures={nbaLiveFixtures}
+                mainTab={mainTab}
+                onSelectMainTab={handleSelectMainTab}
+                selectedFixtureIds={selectedFixtureIds}
+                onToggleSelect={handleToggleSelect}
+                onSelectAll={handleSelectAll}
+                expandedCardIds={expandedCardIds}
+                onToggleCardExpand={handleToggleCardExpand}
+                favoriteFixtureIds={favoriteFixtureIds}
+                onToggleFavorite={handleToggleFavorite}
+                showFavoritesOnly={showFavoritesOnly}
+                onToggleShowFavoritesOnly={() => setShowFavoritesOnly((prev) => !prev)}
+                visibleMatchLimit={visibleMatchLimit}
+                setVisibleMatchLimit={setVisibleMatchLimit}
+                viewMode={viewMode}
+                densityView={densityView}
+                recentlyUpdatedFixtureIds={recentlyUpdatedFixtureIds}
+                onOpenNBADetail={handleOpenNBADetail}
+                onClearNBAFilters={() => {
+                  setNbaSearchQuery('');
+                  setSelectedNBAConference('ALL');
+                  setSelectedNBAFilter('ALL');
+                }}
+              />
             )}
 
             {/* Two-Tier Institutional & Legal Shield Footer */}
-            <AppFooter activeSport={activeSport} onOpenGuideModal={handleOpenGuideModal} />
+            <AppFooter
+              activeSport={activeSport}
+              onOpenGuideModal={handleOpenGuideModal}
+              onOpenFeedbackModal={() => setIsFeedbackModalOpen(true)}
+            />
           </div>
+
+          {/* Non-intrusive User Feedback & Rating Widget (Admin-Only Inbox) */}
+          <UserFeedbackWidget
+            isOpen={isFeedbackModalOpen}
+            onOpen={() => setIsFeedbackModalOpen(true)}
+            onClose={() => setIsFeedbackModalOpen(false)}
+          />
 
           {/* Fixed Mobile Bottom Navigation Bar (Thumb Zone) */}
           <MobileBottomNav
@@ -2757,89 +2010,24 @@ export default function App() {
           {/* Offline Connectivity Toast Indicator */}
           <OfflineIndicator />
 
-          {/* Compact Floating In-App Live Alerts (Strictly Favorites-Only, Same Design, Smaller Size) */}
-          {liveGoalAlerts.length > 0 && (
-            <div className="fixed top-2.5 left-1/2 -translate-x-1/2 z-[120] w-[88%] max-w-[300px] space-y-1.5 pointer-events-none">
-              {liveGoalAlerts.map((alert) => {
-                const isSoccer = alert.sport === 'SOCCER';
-                const scorerName =
-                  alert.scoringTeam === 'HOME'
-                    ? alert.homeTeam
-                    : alert.scoringTeam === 'AWAY'
-                    ? alert.awayTeam
-                    : `${alert.homeTeam} vs ${alert.awayTeam}`;
-                const badgeLabel =
-                  alert.badgeText ||
-                  (isSoccer ? '¡GOL EN VIVO!' : `¡CANASTA ${alert.detailText || ''}!`);
-                const subLabel =
-                  alert.subtitleText || `Anotó: ${scorerName} · Toca para cancha 2D`;
-                const emoji = alert.iconEmoji || (isSoccer ? '⚽' : '🏀');
-
-                return (
-                  <div
-                    key={alert.id}
-                    className={`pointer-events-auto rounded-xl px-2.5 py-2 shadow-xl border backdrop-blur-md flex items-center justify-between gap-2 transition-all ${
-                      isSoccer
-                        ? 'bg-gradient-to-r from-emerald-950/95 via-emerald-900/95 to-slate-950/95 border-amber-400 text-white'
-                        : 'bg-gradient-to-r from-amber-950/95 via-slate-900/95 to-slate-950/95 border-amber-400 text-white'
-                    }`}
-                  >
-                    <div
-                      onClick={() => {
-                        if (alert.sport === 'SOCCER') {
-                          const fix = fixtures.find((f) => f.id === alert.fixtureId);
-                          if (fix) {
-                            handleOpenSoccerDetail(fix, analysesMap[fix.id] || calculateMatchAnalysis(fix));
-                          }
-                        } else {
-                          const fix = nbaFixtures.find((f) => f.id === alert.fixtureId);
-                          if (fix) {
-                            handleOpenNBADetail(fix, nbaAnalysesMap[fix.id] || calculateNBAAnalysis(fix));
-                          }
-                        }
-                      }}
-                      className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer"
-                    >
-                      <div className="w-7 h-7 rounded-lg bg-amber-400/20 border border-amber-400/60 flex items-center justify-center text-sm shrink-0">
-                        {emoji}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1">
-                          <span className="text-[8.5px] font-mono font-extrabold uppercase tracking-tight px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 truncate">
-                            {badgeLabel}
-                          </span>
-                          <span className="inline-flex items-center gap-0.5 text-[8.5px] font-bold text-amber-300 shrink-0">
-                            <Bell className="w-2.5 h-2.5 fill-amber-300" /> Fav
-                          </span>
-                          <span className="text-[9px] font-mono text-emerald-300 font-bold ml-auto shrink-0">
-                            {alert.minuteOrQuarter}
-                          </span>
-                        </div>
-                        <p className="text-[10.5px] font-extrabold text-white truncate mt-0.5 leading-tight">
-                          {alert.homeTeam}{' '}
-                          <span className="font-mono text-amber-300 px-0.5">
-                            {alert.homeScore} - {alert.awayScore}
-                          </span>{' '}
-                          {alert.awayTeam}
-                        </p>
-                        <p className="text-[8.5px] text-slate-300 truncate leading-tight">
-                          {subLabel}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setLiveGoalAlerts((prev) => prev.filter((a) => a.id !== alert.id))}
-                      className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
-                      aria-label="Cerrar alerta"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          {/* Compact Floating In-App Live Alerts (Strictly Favorites-Only) */}
+          <LiveAlertsOverlay
+            liveGoalAlerts={liveGoalAlerts}
+            onAlertClick={(alert) => {
+              if (alert.sport === 'SOCCER') {
+                const fix = fixtures.find((f) => f.id === alert.fixtureId);
+                if (fix) {
+                  handleOpenSoccerDetail(fix, analysesMap[fix.id] || calculateMatchAnalysis(fix));
+                }
+              } else {
+                const fix = nbaFixtures.find((f) => f.id === alert.fixtureId);
+                if (fix) {
+                  handleOpenNBADetail(fix, nbaAnalysesMap[fix.id] || calculateNBAAnalysis(fix));
+                }
+              }
+            }}
+            onDismissAlert={(alertId) => setLiveGoalAlerts((prev) => prev.filter((a) => a.id !== alertId))}
+          />
         </div>
       )}
 
@@ -2860,6 +2048,7 @@ export default function App() {
             setActiveLicenseInfo(null);
           }
         }}
+        fixtures={fixtures}
         isSimulatorOpen={isSimulatorOpen}
         onCloseSimulator={() => setIsSimulatorOpen(false)}
         selectedMatchForSimulator={selectedMatchForSimulator}

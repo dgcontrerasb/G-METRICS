@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MatchFixture, MatchAnalysis, NBAMatchFixture, NBAAnalysis } from '../types';
-import { getSoccerDidacticAdvice, getNBADidacticAdvice } from '../services/didacticService';
+import { getNBADidacticAdvice } from '../services/didacticService';
 import {
   X,
   Sparkles,
@@ -747,12 +747,7 @@ const SoccerTabContent: React.FC<{
   analysis: MatchAnalysis;
   onOpenSimulator?: (fixture: MatchFixture) => void;
 }> = ({ tab, fixture, analysis }) => {
-  const didacticAdvice = getSoccerDidacticAdvice(fixture, analysis);
-  const bestPick = analysis.verdict?.topSafePick;
   const { dixonColes, goalsMarket, cornersMarket, refereeCards } = analysis;
-
-  const { isPickInParlay, togglePick } = useParlay();
-  const inParlay = isPickInParlay(fixture.id);
 
   if (tab === 'LINEUPS') {
     return <LineupRosterTab payload={{ type: 'SOCCER', fixture, analysis }} />;
@@ -767,76 +762,14 @@ const SoccerTabContent: React.FC<{
     );
   }
 
-  if (tab === 'LIVE_MARKETS') {
-    return (
-      <LiveMarketCapsules
-        fixture={fixture}
-        analysis={analysis}
-      />
-    );
-  }
-
-  if (tab === 'PICKS') {
+  if (tab === 'LIVE_MARKETS' || tab === 'PICKS') {
     return (
       <div className="space-y-3">
-        {/* Selección Principal de Mayor Valor (+EV) */}
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-white to-emerald-50/70 border border-emerald-200/90 text-center shadow-2xs">
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <span className="text-[10px] font-mono font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-emerald-600" />
-              {didacticAdvice.badgeLabel}
-            </span>
-            <span className="text-[10px] font-mono font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-              Cuota Justa: @{bestPick?.fairOdd?.toFixed(2) || '1.30'}
-            </span>
-          </div>
-
-          <div className="text-base sm:text-lg font-sans font-semibold text-slate-900 mb-1">
-            {bestPick?.label || didacticAdvice.headline}
-          </div>
-
-          <div className="flex items-center justify-center gap-4 text-xs font-mono text-slate-600">
-            <div>
-              Probabilidad: <strong className="text-emerald-700">{bestPick?.probability || 75}%</strong>
-            </div>
-            <div>
-              Riesgo: <strong className="text-slate-800">{bestPick?.riskLevel || 'Bajo'}</strong>
-            </div>
-          </div>
-
-          {/* Quick Add/Remove Parlay Button */}
-          <div className="mt-2.5 flex items-center justify-center">
-            <button
-              type="button"
-              onClick={() => {
-                togglePick({
-                  id: `${fixture.id}_${bestPick?.label || 'OVER_15'}`,
-                  fixtureId: fixture.id,
-                  sport: 'SOCCER',
-                  matchTitle: `${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`,
-                  homeTeamName: fixture.homeTeam.name,
-                  awayTeamName: fixture.awayTeam.name,
-                  matchDate: fixture.date,
-                  matchTime: fixture.time,
-                  marketKey: bestPick?.label || 'OVER_15',
-                  selectionLabel: bestPick?.label || 'Más de 1.5 Goles',
-                  referenceOdd: Number((bestPick?.fairOdd || 1.35).toFixed(2)),
-                  userOdd: Number((bestPick?.fairOdd || 1.35).toFixed(2)),
-                  probability: bestPick?.probability || 75,
-                  isEV: Boolean(analysis.marketOdds?.valueBetDetected)
-                });
-              }}
-              className={`px-3.5 py-1.5 rounded-xl font-sans text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                inParlay
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs'
-              }`}
-            >
-              <Ticket className="w-3.5 h-3.5" />
-              <span>{inParlay ? 'En el Boleto ✓' : '+ Añadir al Boleto Combinada'}</span>
-            </button>
-          </div>
-        </div>
+        {/* Listado Completo de 6 Cápsulas de Mercado Accionables (+ Boleto) */}
+        <LiveMarketCapsules
+          fixture={fixture}
+          analysis={analysis}
+        />
 
         {/* Matriz 1X2 Dixon-Coles */}
         <div className="p-3 rounded-2xl bg-white border border-slate-200/90 text-center shadow-2xs">
