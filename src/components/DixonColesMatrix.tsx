@@ -24,16 +24,16 @@ export const DixonColesMatrix: React.FC<DixonColesMatrixProps> = ({ dixonColes, 
       {/* Parameter Summary Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono bg-slate-900/80 p-3 rounded-lg border border-slate-800">
         <div>
-          <span className="text-slate-400 block text-[10px] uppercase">Lambda Local (λ₁)</span>
+          <span className="text-slate-400 block text-[10px] uppercase">Proyección Local</span>
           <span className="text-emerald-400 font-bold text-sm">{lambdaHome.toFixed(2)} xG</span>
         </div>
         <div>
-          <span className="text-slate-400 block text-[10px] uppercase">Lambda Visita (λ₂)</span>
+          <span className="text-slate-400 block text-[10px] uppercase">Proyección Visita</span>
           <span className="text-blue-400 font-bold text-sm">{lambdaAway.toFixed(2)} xG</span>
         </div>
         <div>
-          <span className="text-slate-400 block text-[10px] uppercase">Ajuste Rho (ρ)</span>
-          <span className="text-slate-200 font-bold text-sm">-0.11 (Dixon-Coles)</span>
+          <span className="text-slate-400 block text-[10px] uppercase">Calibración Táctica</span>
+          <span className="text-slate-200 font-bold text-sm">Activa (G METRICS)</span>
         </div>
         <div>
           <span className="text-slate-400 block text-[10px] uppercase">Bono Localía</span>
@@ -177,7 +177,7 @@ export const DixonColesMatrix: React.FC<DixonColesMatrixProps> = ({ dixonColes, 
       <div className="text-[11px] text-slate-400 flex items-start gap-1.5 pt-1 border-t border-slate-800/60">
         <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
         <span>
-          Ajuste Dixon-Coles aplicado: los resultados de baja anotación (0-0, 1-0, 0-1, 1-1) corrigen la correlación estadística entre ambos clubes usando el parámetro empírico ρ=-0.11.
+          Calibración G METRICS aplicada: los resultados de baja anotación (0-0, 1-0, 0-1, 1-1) ajustan automáticamente la correlación táctica entre ambos clubes.
         </span>
       </div>
     </div>

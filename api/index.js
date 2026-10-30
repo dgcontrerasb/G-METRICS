@@ -470,7 +470,7 @@ async function setSupabaseKvCache(cacheId, payload, timestamp = Date.now()) {
     });
     if (cacheId.startsWith("apifootball_schedule_")) {
       const threeDaysAgoIso = new Date(Date.now() - 3 * 24 * 60 * 60 * 1e3).toISOString();
-      client.from("sportstats_config").delete().eq("color_theme", "kv-cache").neq("id", "__server_telemetry_v1__").lt("updated_at", threeDaysAgoIso).then(
+      client.from("sportstats_config").delete().eq("color_theme", "kv-cache").neq("id", "__server_telemetry_v1__").neq("id", "__deleted_users_v1__").lt("updated_at", threeDaysAgoIso).then(
         () => {
         },
         () => {
@@ -632,7 +632,8 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
         }
         const isAdmin = data.role === "admin";
         if (!isAdmin) {
-          if (data.status === "deleted") {
+          const deletedSet = getDeletedUsernamesSet();
+          if (deletedSet.has(username) || data.status === "deleted" || data.plan_type === "DELETED" || data.notes === "[DELETED]") {
             return {
               success: false,
               code: "USER_NOT_FOUND",
@@ -928,6 +929,7 @@ async function registerAppUserRequest(rawUsername, rawPin, displayName, whatsapp
 }
 var DELETED_USERS_FILE = IS_VERCEL ? path.resolve("/tmp", "sportstats_deleted_users.json") : path.resolve(process.cwd(), "sportstats_deleted_users.json");
 var memoryDeletedUsernames = null;
+var supabaseDeletedHydrated = false;
 function getDeletedUsernamesSet() {
   if (memoryDeletedUsernames) return memoryDeletedUsernames;
   try {
@@ -935,7 +937,7 @@ function getDeletedUsernamesSet() {
       const raw = fs.readFileSync(DELETED_USERS_FILE, "utf8");
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        memoryDeletedUsernames = new Set(parsed.map((item) => String(item).toLowerCase().trim()));
+        memoryDeletedUsernames = new Set(parsed.map((item) => String(item).toLowerCase().trim()).filter(Boolean));
         return memoryDeletedUsernames;
       }
     }
@@ -944,12 +946,40 @@ function getDeletedUsernamesSet() {
   memoryDeletedUsernames = /* @__PURE__ */ new Set();
   return memoryDeletedUsernames;
 }
-function saveDeletedUsernamesSet(set) {
+function saveDeletedUsernamesSet(set, syncRemote = true) {
   memoryDeletedUsernames = set;
+  const list = Array.from(set).filter(Boolean);
   try {
-    fs.writeFileSync(DELETED_USERS_FILE, JSON.stringify(Array.from(set), null, 2), "utf8");
+    fs.writeFileSync(DELETED_USERS_FILE, JSON.stringify(list, null, 2), "utf8");
   } catch {
   }
+  if (syncRemote && isSupabaseConfigured()) {
+    setSupabaseKvCache("__deleted_users_v1__", list).catch(() => {
+    });
+  }
+}
+async function hydrateDeletedUsersFromSupabaseIfNeeded() {
+  const currentSet = getDeletedUsernamesSet();
+  if (supabaseDeletedHydrated || !isSupabaseConfigured()) return currentSet;
+  supabaseDeletedHydrated = true;
+  try {
+    const remote = await getSupabaseKvCache("__deleted_users_v1__");
+    if (remote && Array.isArray(remote.data)) {
+      let added = false;
+      for (const item of remote.data) {
+        const clean = String(item || "").toLowerCase().trim();
+        if (clean && !currentSet.has(clean)) {
+          currentSet.add(clean);
+          added = true;
+        }
+      }
+      if (added) {
+        saveDeletedUsernamesSet(currentSet, false);
+      }
+    }
+  } catch {
+  }
+  return currentSet;
 }
 function isValidUuid(str) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
@@ -957,12 +987,12 @@ function isValidUuid(str) {
 async function adminListAppUsers() {
   const client = getSupabaseClient();
   const nowMs = Date.now();
+  const deletedSet = await hydrateDeletedUsersFromSupabaseIfNeeded();
   const localUsers = getLocalUsersDb();
-  const deletedSet = getDeletedUsernamesSet();
   const mergedMap = /* @__PURE__ */ new Map();
   for (const u of localUsers) {
     const uname = String(u.username || "").toLowerCase().trim();
-    if (!uname || deletedSet.has(uname) || u.status === "deleted") continue;
+    if (!uname || deletedSet.has(uname) || u.status === "deleted" || u.planType === "DELETED" || u.notes === "[DELETED]") continue;
     const isPending = u.status === "pending";
     const daysRemaining = isPending ? 0 : u.expiresAt ? Math.max(0, Math.ceil((u.expiresAt - nowMs) / (24 * 60 * 60 * 1e3))) : null;
     const isExpired = isPending ? false : u.expiresAt ? u.expiresAt < nowMs : false;
@@ -983,7 +1013,9 @@ async function adminListAppUsers() {
       if (!error && Array.isArray(data)) {
         for (const row of data) {
           const uname = String(row.username || "").toLowerCase().trim();
-          if (!uname || deletedSet.has(uname) || row.status === "deleted") continue;
+          if (!uname || deletedSet.has(uname) || row.status === "deleted" || row.plan_type === "DELETED" || row.notes === "[DELETED]") {
+            continue;
+          }
           const isPending = row.status === "pending";
           const daysRemaining = isPending ? 0 : row.expires_at ? Math.max(0, Math.ceil((row.expires_at - nowMs) / (24 * 60 * 60 * 1e3))) : null;
           const isExpired = isPending ? false : row.expires_at ? row.expires_at < nowMs : false;
@@ -1230,25 +1262,55 @@ async function adminDeleteAppUser(userId, username) {
   if (!matchedUsername && cleanId && !isValidUuid(cleanId) && !cleanId.startsWith("USR-")) {
     matchedUsername = normalizeUsername(cleanId);
   }
-  if (matchedUsername) {
-    const deletedSet = getDeletedUsernamesSet();
-    deletedSet.add(matchedUsername);
-    saveDeletedUsernamesSet(deletedSet);
-  }
   const client = getSupabaseClient();
+  if (client && !matchedUsername && isValidUuid(cleanId)) {
+    try {
+      const { data: existingRow } = await client.from("sportstats_users").select("username").eq("id", cleanId).maybeSingle();
+      if (existingRow?.username) {
+        matchedUsername = normalizeUsername(existingRow.username);
+      }
+    } catch {
+    }
+  }
+  if (matchedUsername) {
+    const deletedSet = await hydrateDeletedUsersFromSupabaseIfNeeded();
+    deletedSet.add(matchedUsername);
+    saveDeletedUsernamesSet(deletedSet, true);
+  }
   if (client) {
     try {
-      if (isValidUuid(cleanId)) {
-        await client.from("sportstats_users").update({ status: "deleted", bound_device_id: null }).eq("id", cleanId);
-      }
-      if (matchedUsername) {
-        await client.from("sportstats_users").update({ status: "deleted", bound_device_id: null }).eq("username", matchedUsername);
-      }
       if (isValidUuid(cleanId)) {
         await client.from("sportstats_users").delete().eq("id", cleanId);
       }
       if (matchedUsername) {
         await client.from("sportstats_users").delete().eq("username", matchedUsername);
+        await client.from("sportstats_users").delete().ilike("username", matchedUsername);
+      }
+      const primarySoftDelete = {
+        status: "deleted",
+        plan_type: "DELETED",
+        plan_label: "ELIMINADO",
+        notes: "[DELETED]",
+        bound_device_id: null
+      };
+      const fallbackSoftDelete = {
+        status: "suspended",
+        plan_type: "DELETED",
+        plan_label: "ELIMINADO",
+        notes: "[DELETED]",
+        bound_device_id: null
+      };
+      if (isValidUuid(cleanId)) {
+        const { error } = await client.from("sportstats_users").update(primarySoftDelete).eq("id", cleanId);
+        if (error) {
+          await client.from("sportstats_users").update(fallbackSoftDelete).eq("id", cleanId);
+        }
+      }
+      if (matchedUsername) {
+        const { error } = await client.from("sportstats_users").update(primarySoftDelete).ilike("username", matchedUsername);
+        if (error) {
+          await client.from("sportstats_users").update(fallbackSoftDelete).ilike("username", matchedUsername);
+        }
       }
     } catch (err) {
       console.warn("[adminDeleteAppUser Supabase warning]:", err);
@@ -2564,17 +2626,37 @@ async function fetchEspnSoccerFixtures(targetDate, clientTz = "America/Bogota") 
       const rawCountry = String(comp?.venue?.address?.country || "Internacional");
       const catalogEntry = ESPN_LEAGUE_CATALOG[espnLeagueId];
       const countryTranslated = COUNTRY_TRANSLATION_MAP[rawCountry];
-      const leagueId = catalogEntry?.id || parseInt(espnLeagueId, 10) || 1;
-      const countryName = catalogEntry?.country || countryTranslated?.country || rawCountry;
-      const flag = catalogEntry?.flag || countryTranslated?.flag || "\u26BD";
-      const slug = String(ev?.season?.slug || "Jornada Regular").replace(/-/g, " ");
-      const leagueName = catalogEntry?.name || `Liga ${countryName}`;
       const clockParsed = parseEspnMatchStatusAndClock(ev);
       const isLive = clockParsed.isLive;
       const elapsedMin = clockParsed.elapsedMin;
       const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || "Local");
       const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || "Visitante");
       const espnEventId = String(ev.id || "");
+      const slug = String(ev?.season?.slug || "Jornada Regular").replace(/-/g, " ");
+      const isNatTeamMatch = !catalogEntry && isServerNationalTeamSub17PlusMatch(slug, rawCountry, homeName, awayName);
+      const leagueId = catalogEntry?.id || parseInt(espnLeagueId, 10) || 1;
+      const countryName = isNatTeamMatch ? "Internacional" : catalogEntry?.country || countryTranslated?.country || rawCountry;
+      const flag = isNatTeamMatch ? "\u{1F30D}" : catalogEntry?.flag || countryTranslated?.flag || "\u26BD";
+      let leagueName = catalogEntry?.name || `Liga ${countryName}`;
+      if (isNatTeamMatch) {
+        const natCtx = `${slug} ${homeName} ${awayName}`.toLowerCase();
+        const isW = /\b(women'?s?|femenin[ao]s?|femenil|frauen|femminile|w)\b/i.test(natCtx);
+        if (/\b(u-?17|sub-?17)\b/i.test(natCtx)) {
+          leagueName = isW ? "Selecciones Sub-17 Femenino" : "Selecciones Sub-17 (FIFA)";
+        } else if (/\b(u-?20|sub-?20)\b/i.test(natCtx)) {
+          leagueName = isW ? "Selecciones Sub-20 Femenino" : "Selecciones Sub-20 (FIFA)";
+        } else if (/\b(u-?19|sub-?19)\b/i.test(natCtx)) {
+          leagueName = isW ? "Selecciones Sub-19 Femenino" : "Selecciones Sub-19";
+        } else if (/\b(u-?21|sub-?21)\b/i.test(natCtx)) {
+          leagueName = "Selecciones Sub-21";
+        } else if (/\b(u-?23|sub-?23|ol[ií]mpic|olympic)\b/i.test(natCtx)) {
+          leagueName = "Selecciones Sub-23 / Ol\xEDmpico";
+        } else if (isW) {
+          leagueName = "Selecciones Nacionales Femenino";
+        } else {
+          leagueName = "Selecciones Nacionales (FIFA)";
+        }
+      }
       const sbTelemetry = isLive ? extractEspnScoreboardTelemetry(ev, comp, homeComp, awayComp, homeName, awayName, elapsedMin || 45, false) : void 0;
       mapped.push({
         espnEventId,
@@ -2778,10 +2860,229 @@ var SERVER_ALLOWED_PRIME_COUNTRIES = {
     excludedLeaguesPattern: /\b(j2 league|j3 league|we league|university)\b/i
   }
 };
+var SERVER_NATIONAL_TEAM_COUNTRIES = /* @__PURE__ */ new Set([
+  "colombia",
+  "argentina",
+  "brazil",
+  "brasil",
+  "uruguay",
+  "chile",
+  "ecuador",
+  "peru",
+  "paraguay",
+  "bolivia",
+  "venezuela",
+  "spain",
+  "espana",
+  "england",
+  "inglaterra",
+  "france",
+  "francia",
+  "germany",
+  "alemania",
+  "italy",
+  "italia",
+  "portugal",
+  "netherlands",
+  "paises bajos",
+  "holanda",
+  "belgium",
+  "belgica",
+  "croatia",
+  "croacia",
+  "switzerland",
+  "suiza",
+  "austria",
+  "denmark",
+  "dinamarca",
+  "sweden",
+  "suecia",
+  "norway",
+  "noruega",
+  "poland",
+  "polonia",
+  "serbia",
+  "ukraine",
+  "ucrania",
+  "turkey",
+  "turquia",
+  "turkiye",
+  "scotland",
+  "escocia",
+  "wales",
+  "gales",
+  "ireland",
+  "republic of ireland",
+  "irlanda",
+  "northern ireland",
+  "irlanda del norte",
+  "czech republic",
+  "czechia",
+  "republica checa",
+  "hungary",
+  "hungria",
+  "romania",
+  "rumania",
+  "greece",
+  "grecia",
+  "slovakia",
+  "eslovaquia",
+  "slovenia",
+  "eslovenia",
+  "finland",
+  "finlandia",
+  "iceland",
+  "islandia",
+  "georgia",
+  "albania",
+  "north macedonia",
+  "macedonia del norte",
+  "montenegro",
+  "bosnia and herzegovina",
+  "bosnia",
+  "israel",
+  "bulgaria",
+  "kosovo",
+  "LUXEMBOURG".toLowerCase(),
+  "belarus",
+  "armenia",
+  "azerbaijan",
+  "kazakhstan",
+  "cyprus",
+  "estonia",
+  "latvia",
+  "lithuania",
+  "malta",
+  "moldova",
+  "usa",
+  "u.s.",
+  "us",
+  "united states",
+  "estados unidos",
+  "ee. uu.",
+  "ee.uu.",
+  "mexico",
+  "canada",
+  "costa rica",
+  "panama",
+  "honduras",
+  "jamaica",
+  "el salvador",
+  "guatemala",
+  "nicaragua",
+  "dominican republic",
+  "republica dominicana",
+  "haiti",
+  "cuba",
+  "trinidad and tobago",
+  "puerto rico",
+  "curacao",
+  "suriname",
+  "japan",
+  "japon",
+  "south korea",
+  "korea republic",
+  "corea del sur",
+  "rep. of korea",
+  "north korea",
+  "korea dpr",
+  "corea del norte",
+  "australia",
+  "new zealand",
+  "nueva zelanda",
+  "saudi arabia",
+  "arabia saudita",
+  "qatar",
+  "catar",
+  "iran",
+  "iraq",
+  "irak",
+  "uzbekistan",
+  "jordan",
+  "jordania",
+  "united arab emirates",
+  "uae",
+  "emiratos arabes unidos",
+  "bahrain",
+  "oman",
+  "syria",
+  "siria",
+  "palestine",
+  "palestina",
+  "china",
+  "china pr",
+  "thailand",
+  "tailandia",
+  "vietnam",
+  "indonesia",
+  "malaysia",
+  "philippines",
+  "filipinas",
+  "india",
+  "tajikistan",
+  "morocco",
+  "marruecos",
+  "senegal",
+  "nigeria",
+  "ghana",
+  "cameroon",
+  "camerun",
+  "egypt",
+  "egipto",
+  "algeria",
+  "argelia",
+  "tunisia",
+  "tunez",
+  "ivory coast",
+  "cote d ivoire",
+  "costa de marfil",
+  "south africa",
+  "sudafrica",
+  "mali",
+  "zambia",
+  "kenya",
+  "kenia",
+  "guinea",
+  "burkina faso",
+  "cape verde",
+  "dr congo",
+  "congo dr",
+  "angola",
+  "tanzania",
+  "uganda",
+  "zimbabwe"
+]);
+function isServerNationalTeamName(teamName) {
+  const norm = (teamName || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/['’`]/g, " ").trim();
+  if (!norm) return false;
+  if (/\b(fc|cf|sc|ac|cd|ud|sd|rcd|ca|club|sporting|atletico|real|deportivo|dynamo|dinamo|borussia|bayern|inter|milan|juventus|arsenal|chelsea|liverpool|barcelona|madrid|psg|benfica|porto|ajax|boca|river|flamengo|palmeiras|corinthians|santos|gremio|nacional|millonarios|junior|medellin|cali|tolima|once caldas|santa fe|pachuca|chivas|tigres|monterrey|cruz azul|pumas|al ahly|al hilal|al nassr)\b/i.test(
+    norm
+  )) {
+    return false;
+  }
+  const base = norm.replace(
+    /\b(u-?17|u-?18|u-?19|u-?20|u-?21|u-?22|u-?23|sub-?17|sub-?18|sub-?19|sub-?20|sub-?21|sub-?22|sub-?23|women s?|femenin[ao]s?|femenil|frauen|femminile|feminino|olimpic[oa]|olympic|national team|seleccion|selecao|w)\b/gi,
+    " "
+  ).replace(/[()[\]\-_/.,]/g, " ").replace(/\s+/g, " ").trim();
+  return SERVER_NATIONAL_TEAM_COUNTRIES.has(base);
+}
+function isServerNationalTeamSub17PlusMatch(leagueName, countryName, homeName, awayName) {
+  const combined = `${leagueName || ""} ${countryName || ""} ${homeName || ""} ${awayName || ""}`.toLowerCase();
+  if (/\b(u-?1[1-6]|sub-?1[1-6])\b/i.test(combined)) {
+    return false;
+  }
+  return isServerNationalTeamName(homeName) && isServerNationalTeamName(awayName);
+}
 function isServerYouthOrLowTierMatch(leagueName, countryName, homeName, awayName) {
   const lName = (leagueName || "").toLowerCase().trim();
   const cName = (countryName || "").toLowerCase().trim();
   const combined = `${lName} ${cName} ${homeName || ""} ${awayName || ""}`.toLowerCase();
+  if (/\b(u-?1[1-6]|sub-?1[1-6])\b/i.test(combined)) {
+    return true;
+  }
+  if (isServerNationalTeamSub17PlusMatch(lName, cName, homeName, awayName)) {
+    return false;
+  }
   if (/\b(u15|u16|u17|u18|u19|u20|u21|u22|u23|sub-15|sub-17|sub-19|sub-20|sub-21|sub-23|youth|juvenil|reservas|reserve|amateur|regional|tercera|fourth division|national league north|national league south|non-league|oberliga|regionalliga|primavera|premier league 2|femenin[ao]|women|frauen|femminile|femenil)\b/i.test(
     combined
   )) {
@@ -2866,7 +3167,7 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
   const force = req.query.force === "true" && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
   const todayLocal = getColombiaDateStr(0, clientTz);
   const targetDate = requestedDate || todayLocal;
-  const cacheKey = `upcoming_v8_${targetDate}`;
+  const cacheKey = `upcoming_v9_${targetDate}`;
   const cached = getCacheItem(cacheKey);
   const nowMs = Date.now();
   const hasLiveOrStartedInCache = cached && Array.isArray(cached.data) && cached.data.some((f) => {
@@ -2899,7 +3200,7 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
       let upcomingOnly = [];
       const espnFixtures = await fetchEspnSoccerFixtures(targetDate, clientTz);
       await hydrateTelemetryFromSupabaseIfNeeded();
-      const afScheduleCacheKey = `apifootball_schedule_v2_${targetDate}`;
+      const afScheduleCacheKey = `apifootball_schedule_v3_${targetDate}`;
       let cachedAfEnvelope = getCacheItem(afScheduleCacheKey);
       const afScheduleTTL = targetDate === todayLocal ? 8 * 60 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
       if ((!cachedAfEnvelope || Date.now() - cachedAfEnvelope.timestamp >= afScheduleTTL) && isSupabaseConfigured()) {
@@ -3003,6 +3304,22 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
               f.fixture.status.elapsed = matchedEspn.fixture.status.elapsed;
               f.goals = matchedEspn.goals;
             }
+          }
+        }
+        const validEspnExtras = filterActiveUpcomingFixtures(espnFixtures, targetDate, clientTz);
+        for (const ef of validEspnExtras) {
+          const ehKey = normalizeTeamKey(ef?.teams?.home?.name || "");
+          const eaKey = normalizeTeamKey(ef?.teams?.away?.name || "");
+          const alreadyExists = upcomingOnly.some(
+            (f) => teamsFuzzyMatch(
+              ehKey,
+              eaKey,
+              normalizeTeamKey(f?.teams?.home?.name || ""),
+              normalizeTeamKey(f?.teams?.away?.name || "")
+            )
+          );
+          if (!alreadyExists) {
+            upcomingOnly.push(ef);
           }
         }
         upcomingOnly = filterActiveUpcomingFixtures(upcomingOnly, targetDate, clientTz);
@@ -3652,7 +3969,7 @@ app.get("/api/nba/scoreboard", dataRateLimitMiddleware, async (req, res) => {
   const todayColombia = getColombiaDateStr(0);
   const targetDate = dateQuery || todayColombia;
   const espnDateStr = targetDate.replace(/-/g, "");
-  const cacheKey = `nba_sb_${espnDateStr}`;
+  const cacheKey = `nba_sb_v3_${espnDateStr}`;
   const cached = getCacheItem(cacheKey);
   const hasLiveNbaInCache = cached && Array.isArray(cached.data) && cached.data.some((ev) => String(ev?.status?.type?.state || "").toLowerCase() === "in");
   const cacheTTL = targetDate === todayColombia ? hasLiveNbaInCache ? 25 * 1e3 : 3 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
@@ -3674,29 +3991,26 @@ app.get("/api/nba/scoreboard", dataRateLimitMiddleware, async (req, res) => {
         },
         {
           url: `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?dates=${espnDateStr}&limit=50`,
-          fallbackUrl: "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?limit=50",
           league: "NCAA Baloncesto",
           country: "Estados Unidos"
         },
         {
           url: `https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard?dates=${espnDateStr}`,
-          fallbackUrl: "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard",
           league: "WNBA",
           country: "Estados Unidos"
         },
         {
           url: `https://site.api.espn.com/apis/site/v2/sports/basketball/fiba/scoreboard?dates=${espnDateStr}`,
-          fallbackUrl: "https://site.api.espn.com/apis/site/v2/sports/basketball/fiba/scoreboard",
           league: "FIBA Internacional",
           country: "Mundial"
         },
         {
           url: `https://site.api.espn.com/apis/site/v2/sports/basketball/womens-college-basketball/scoreboard?dates=${espnDateStr}&limit=50`,
-          fallbackUrl: "https://site.api.espn.com/apis/site/v2/sports/basketball/womens-college-basketball/scoreboard?limit=50",
           league: "NCAA Femenil",
           country: "Estados Unidos"
         }
       ];
+      const targetRefMs = (/* @__PURE__ */ new Date(`${targetDate}T12:00:00-05:00`)).getTime();
       const responses = await Promise.allSettled(
         endpoints.map(async (ep) => {
           let evs = [];
@@ -3708,23 +4022,15 @@ app.get("/api/nba/scoreboard", dataRateLimitMiddleware, async (req, res) => {
             });
             if (apiRes.ok) {
               const data = await apiRes.json();
-              evs = Array.isArray(data.events) ? data.events : [];
+              const rawList = Array.isArray(data.events) ? data.events : [];
+              evs = rawList.filter((ev) => {
+                if (!ev?.date) return false;
+                const evMs = new Date(ev.date).getTime();
+                if (isNaN(evMs)) return false;
+                return Math.abs(evMs - targetRefMs) <= 36 * 60 * 60 * 1e3;
+              });
             }
           } catch {
-          }
-          if (evs.length === 0 && ep.fallbackUrl) {
-            try {
-              const fbRes = await fetch(ep.fallbackUrl, {
-                headers: {
-                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0"
-                }
-              });
-              if (fbRes.ok) {
-                const fbData = await fbRes.json();
-                evs = Array.isArray(fbData.events) ? fbData.events : [];
-              }
-            } catch {
-            }
           }
           evs.forEach((ev) => {
             ev._sportstatsLeague = {
@@ -3910,7 +4216,7 @@ function getAdminConfig() {
   const defaultConfig = {
     adminPin: process.env.ADMIN_PIN || "120328",
     adminWhatsApp: process.env.ADMIN_WHATSAPP || "573213902708",
-    supportName: "Administrador SportStats Pro",
+    supportName: "Administrador G METRICS",
     customLogoUrl: "/custom-logo.png",
     colorTheme: "cyan-emerald"
   };
@@ -4191,9 +4497,9 @@ app.post("/api/license/generate", async (req, res) => {
     upsertSupabaseLicense(record).catch((err) => console.warn("[Supabase Sync License Error]:", err));
   }
   const formattedDate = expiresAt ? new Date(expiresAt).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" }) : "Permanente (Sin Vencimiento)";
-  const whatsappReply = `\u{1F525} *SportStats Pro - Acceso Autorizado*
+  const whatsappReply = `\u{1F525} *G METRICS - Acceso Autorizado*
 
-Hola! Tu acceso a la plataforma *SportStats Pro* ha sido activado con \xE9xito.
+Hola! Tu acceso al software *G METRICS* ha sido activado con \xE9xito.
 \u{1F4CC} *Plan:* ${planLabel}
 \u23F3 *Vigencia:* ${formattedDate}
 \u{1F511} *Tu Clave de Acceso:*
@@ -4202,7 +4508,7 @@ ${key}
 *Instrucciones:*
 1. Abre la aplicaci\xF3n.
 2. Pega tu clave de acceso en la casilla.
-3. Presiona "Ingresar a SportStats Pro". \xA1Listo!`;
+3. Presiona "Ingresar a G METRICS". \xA1Listo!`;
   return res.json({
     success: true,
     record,
@@ -4734,14 +5040,235 @@ app.post("/api/admin/users/delete", async (req, res) => {
   if (!userId && !username) {
     return res.status(400).json({ success: false, error: "ID o nombre de usuario requerido" });
   }
-  const ok = await adminDeleteAppUser(
-    sanitizeText(String(userId || ""), 64),
-    username ? sanitizeText(String(username), 40) : void 0
-  );
+  const cleanId = sanitizeText(String(userId || ""), 64);
+  const cleanUser = username ? sanitizeText(String(username), 40).toLowerCase().trim() : void 0;
+  const ok = await adminDeleteAppUser(cleanId, cleanUser);
+  activeOnlineSessions.forEach((entry, key) => {
+    if (cleanUser && entry.username.toLowerCase() === cleanUser || cleanId && (entry.username.toLowerCase() === cleanId.toLowerCase() || entry.deviceId.toUpperCase() === cleanId.toUpperCase())) {
+      activeOnlineSessions.delete(key);
+    }
+  });
   return res.json({
     success: ok,
     message: ok ? "Usuario eliminado permanentemente" : "No se pudo eliminar el usuario"
   });
+});
+var ADMIN_MONTHLY_PARLAYS_CACHE_KEY = "__admin_monthly_parlays_v2__";
+function getColombiaCurrentMonthKey() {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Bogota",
+      year: "numeric",
+      month: "2-digit"
+    }).formatToParts(/* @__PURE__ */ new Date());
+    const y = parts.find((p) => p.type === "year")?.value || "2026";
+    const m = parts.find((p) => p.type === "month")?.value || "01";
+    return `${y}-${m}`;
+  } catch {
+    return (/* @__PURE__ */ new Date()).toISOString().slice(0, 7);
+  }
+}
+async function loadAndPruneMonthlyParlayLedger() {
+  const currentMonth = getColombiaCurrentMonthKey();
+  const now = Date.now();
+  let ledger = {
+    monthKey: currentMonth,
+    updatedAt: now,
+    records: []
+  };
+  const cached = getCacheItem(ADMIN_MONTHLY_PARLAYS_CACHE_KEY);
+  if (cached && cached.data && typeof cached.data === "object") {
+    ledger = cached.data;
+  } else if (isSupabaseConfigured()) {
+    const remote = await getSupabaseKvCache(ADMIN_MONTHLY_PARLAYS_CACHE_KEY);
+    if (remote && remote.data && typeof remote.data === "object") {
+      ledger = remote.data;
+    }
+  }
+  if (ledger.monthKey !== currentMonth || !Array.isArray(ledger.records)) {
+    ledger = {
+      monthKey: currentMonth,
+      updatedAt: now,
+      records: []
+    };
+    setCacheItem(ADMIN_MONTHLY_PARLAYS_CACHE_KEY, ledger);
+    if (isSupabaseConfigured()) {
+      setSupabaseKvCache(ADMIN_MONTHLY_PARLAYS_CACHE_KEY, ledger).catch(() => {});
+    }
+  } else {
+    const cleanRecords = ledger.records.filter(
+      (r) => r && typeof r === "object" && r.id && String(r.d || "").startsWith(currentMonth)
+    ).slice(0, 120);
+    if (cleanRecords.length !== ledger.records.length) {
+      ledger.records = cleanRecords;
+      ledger.updatedAt = now;
+      setCacheItem(ADMIN_MONTHLY_PARLAYS_CACHE_KEY, ledger);
+    } else if (!cached) {
+      setCacheItem(ADMIN_MONTHLY_PARLAYS_CACHE_KEY, ledger);
+    }
+  }
+  return ledger;
+}
+app.get("/api/admin/parlays-beta", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado" });
+  }
+  clearAuthFailures(req);
+  try {
+    const ledger = await loadAndPruneMonthlyParlayLedger();
+    return res.json({ success: true, ledger });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al consultar efectividad mensual de parlays" });
+  }
+});
+app.post("/api/admin/parlays-beta", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const { pin, records, resetMonth } = req.body || {};
+  const cfg = getAdminConfig();
+  const cred = extractAdminCredential(req, pin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado" });
+  }
+  clearAuthFailures(req);
+  try {
+    const currentMonth = getColombiaCurrentMonthKey();
+    const now = Date.now();
+    let ledger = await loadAndPruneMonthlyParlayLedger();
+    if (resetMonth === true) {
+      ledger = {
+        monthKey: currentMonth,
+        updatedAt: now,
+        records: []
+      };
+    } else if (Array.isArray(records) && records.length > 0) {
+      const map = /* @__PURE__ */ new Map();
+      for (const existing of ledger.records) {
+        if (existing && existing.id) map.set(existing.id, existing);
+      }
+      for (const incoming of records) {
+        if (!incoming || typeof incoming !== "object" || !incoming.id) continue;
+        const cleanDate = sanitizeText(String(incoming.d || ""), 10);
+        if (!cleanDate.startsWith(currentMonth)) continue;
+        const compactRec = {
+          id: sanitizeText(String(incoming.id), 90),
+          d: cleanDate,
+          t: sanitizeText(String(incoming.t || "Parlay G METRICS"), 55),
+          l: Number(incoming.l) === 3 ? 3 : 2,
+          o: Number(Number(incoming.o || 1.6).toFixed(2)),
+          f: Number(Number(incoming.f || 1.5).toFixed(2)),
+          s: incoming.s === "HIT" ? "HIT" : "MISS",
+          legs: Array.isArray(incoming.legs) ? incoming.legs.slice(0, 3).map((leg) => ({
+            m: sanitizeText(String(leg?.m || ""), 45),
+            p: sanitizeText(String(leg?.p || ""), 45),
+            h: Boolean(leg?.h)
+          })) : []
+        };
+        map.set(compactRec.id, compactRec);
+      }
+      ledger = {
+        monthKey: currentMonth,
+        updatedAt: now,
+        records: Array.from(map.values()).sort((a, b) => b.d.localeCompare(a.d)).slice(0, 120)
+      };
+    }
+    setCacheItem(ADMIN_MONTHLY_PARLAYS_CACHE_KEY, ledger);
+    if (isSupabaseConfigured()) {
+      await setSupabaseKvCache(ADMIN_MONTHLY_PARLAYS_CACHE_KEY, ledger);
+    }
+    return res.json({ success: true, ledger });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al actualizar efectividad mensual de parlays" });
+  }
+});
+var ADMIN_USER_FEEDBACK_CACHE_KEY = "__admin_user_feedback_v1__";
+async function loadUserFeedbackList() {
+  const cached = getCacheItem(ADMIN_USER_FEEDBACK_CACHE_KEY);
+  if (cached && Array.isArray(cached.data)) {
+    return cached.data;
+  }
+  if (isSupabaseConfigured()) {
+    const remote = await getSupabaseKvCache(ADMIN_USER_FEEDBACK_CACHE_KEY);
+    if (remote && Array.isArray(remote.data)) {
+      setCacheItem(ADMIN_USER_FEEDBACK_CACHE_KEY, remote.data);
+      return remote.data;
+    }
+  }
+  return [];
+}
+app.post("/api/feedback", dataRateLimitMiddleware, async (req, res) => {
+  try {
+    const { username, displayName, rating, category, comment } = req.body || {};
+    const numRating = Math.min(5, Math.max(1, Math.round(Number(rating) || 5)));
+    const cleanUser = sanitizeText(String(username || "usuario").toLowerCase(), 32) || "usuario";
+    const cleanName = sanitizeText(String(displayName || cleanUser), 45) || cleanUser;
+    const cleanCat = sanitizeText(String(category || "General"), 40) || "General";
+    const cleanMsg = sanitizeText(String(comment || ""), 250);
+    const newItem = {
+      id: `fb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      u: cleanUser,
+      n: cleanName,
+      r: numRating,
+      c: cleanCat,
+      m: cleanMsg,
+      t: Date.now()
+    };
+    const currentList = await loadUserFeedbackList();
+    const updatedList = [newItem, ...currentList.filter((item) => item && item.id)].slice(0, 100);
+    setCacheItem(ADMIN_USER_FEEDBACK_CACHE_KEY, updatedList);
+    if (isSupabaseConfigured()) {
+      await setSupabaseKvCache(ADMIN_USER_FEEDBACK_CACHE_KEY, updatedList);
+    }
+    return res.json({ success: true, item: newItem });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al registrar calificaci\xF3n" });
+  }
+});
+app.get("/api/admin/feedback", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado" });
+  }
+  clearAuthFailures(req);
+  try {
+    const list = await loadUserFeedbackList();
+    return res.json({ success: true, items: list });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al consultar calificaciones" });
+  }
+});
+app.delete("/api/admin/feedback", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const { pin, id, clearAll } = req.body || {};
+  const cfg = getAdminConfig();
+  const cred = extractAdminCredential(req, pin);
+  if (!isValidAdminPin(cred, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado" });
+  }
+  clearAuthFailures(req);
+  try {
+    let updatedList = [];
+    if (clearAll !== true) {
+      const currentList = await loadUserFeedbackList();
+      const targetId = sanitizeText(String(id || ""), 64);
+      updatedList = currentList.filter((item) => item && item.id !== targetId);
+    }
+    setCacheItem(ADMIN_USER_FEEDBACK_CACHE_KEY, updatedList);
+    if (isSupabaseConfigured()) {
+      await setSupabaseKvCache(ADMIN_USER_FEEDBACK_CACHE_KEY, updatedList);
+    }
+    return res.json({ success: true, items: updatedList });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al eliminar calificaci\xF3n" });
+  }
 });
 app.use(express.static(path2.resolve(__dirname, "public"), {
   etag: false,

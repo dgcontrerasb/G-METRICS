@@ -13,6 +13,7 @@ export interface AppModalsContainerProps {
   onCloseAdminModal: () => void;
   onLogoutSession: () => void;
   onLicenseChanged: () => void;
+  fixtures?: MatchFixture[];
   isSimulatorOpen: boolean;
   onCloseSimulator: () => void;
   selectedMatchForSimulator: MatchFixture | null;
@@ -42,6 +43,7 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
   onCloseAdminModal,
   onLogoutSession,
   onLicenseChanged,
+  fixtures = [],
   isSimulatorOpen,
   onCloseSimulator,
   selectedMatchForSimulator,
@@ -73,6 +75,7 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
         onClose={onCloseAdminModal}
         onLogout={onLogoutSession}
         onLicenseChanged={onLicenseChanged}
+        fixtures={fixtures}
       />
 
       {/* Interactive Simulator Modal */}

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParlay } from '../context/ParlayContext';
 import { SavedSlipsService } from '../services/savedSlipsService';
+import { evaluateParlayStressAndFairOdds } from '../services/mathEngine';
 import {
   Ticket,
   X,
@@ -13,7 +14,8 @@ import {
   Sparkles,
   ChevronUp,
   BookmarkPlus,
-  History
+  History,
+  ShieldCheck
 } from 'lucide-react';
 
 interface ParlayBuilderDrawerProps {
@@ -32,6 +34,7 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
     removePick,
     updatePickOdd,
     clearParlay,
+    loadSuggestedParlay,
     totalOdds,
     jointProbability,
     potentialPayout,
@@ -45,6 +48,36 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [showDisclaimer, setShowDisclaimer] = useState<boolean>(true);
   const [isCalculatorExpanded, setIsCalculatorExpanded] = useState<boolean>(false);
+
+  const isAdminBeta = useMemo(() => {
+    try {
+      return localStorage.getItem('sportstats_admin_remember') === 'true';
+    } catch {
+      return false;
+    }
+  }, [isOpen]);
+
+  const adminStressEval = useMemo(() => {
+    if (!isAdminBeta || picks.length === 0) return null;
+    return evaluateParlayStressAndFairOdds(
+      picks.map((p) => ({
+        id: p.id,
+        probability: p.probability,
+        odd: p.userOdd || p.referenceOdd,
+        label: p.selectionLabel
+      }))
+    );
+  }, [isAdminBeta, picks]);
+
+  const handleTrimHardestTwoPicks = () => {
+    if (!adminStressEval || picks.length < 3) return;
+    const hardestSet = new Set(adminStressEval.stressTest.hardestPickIds);
+    const optimizedPicks = picks.filter((p) => !hardestSet.has(p.id));
+    loadSuggestedParlay(
+      optimizedPicks,
+      '✨ G METRICS optimizó tu ticket quitando las 2 selecciones más difíciles.'
+    );
+  };
 
   // Background body scroll lock when open on mobile/desktop
   useEffect(() => {
@@ -102,7 +135,7 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
     const formattedPayout = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(potentialPayout);
     const formattedProfit = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(potentialProfit);
 
-    let text = `🎫 *BOLETO COMBINADO SPORTSTATS PRO*\n`;
+    let text = `🎫 *BOLETO COMBINADO G METRICS*\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
 
     picks.forEach((p, idx) => {
@@ -120,7 +153,7 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
     text += `🏆 *Retorno Potencial:* ${formattedPayout}\n`;
     text += `📈 *Ganancia Neta:* +${formattedProfit}\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `💡 _Simulación estadística generada en SportStats Pro (Dixon-Coles & Poisson)._\n`;
+    text += `💡 _Análisis estadístico generado en G METRICS._\n`;
     text += `⚖️ _Aviso (+18): Guía analítica orientativa. No somos casa de apuestas ni garantizamos aciertos; la decisión final es responsabilidad exclusiva del usuario._`;
 
     return text;
@@ -166,8 +199,8 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
     <>
       {/* Toast Notification (non-intrusive) */}
       {toastMessage && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-xl bg-slate-900/95 border border-emerald-500/40 text-emerald-300 font-sans text-xs font-semibold shadow-2xl backdrop-blur-md flex items-center gap-2 animate-in fade-in slide-in-from-top-3 duration-200">
-          <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-xl bg-white border border-emerald-300 text-emerald-800 font-sans text-xs font-bold shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-3 duration-200">
+          <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
@@ -178,12 +211,12 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
           onClick={toggleOpen}
           type="button"
           aria-label="Abrir boleto de apuestas combinadas"
-          className="fixed bottom-18 right-3.5 sm:bottom-6 sm:right-6 z-40 group flex items-center gap-2.5 px-3.5 py-2.5 rounded-full bg-slate-950/90 hover:bg-slate-900 border border-emerald-500/50 hover:border-emerald-400 shadow-[0_8px_30px_rgba(16,185,129,0.35)] backdrop-blur-xl text-white transition-all duration-200 active:scale-95 cursor-pointer"
+          className="fixed bottom-18 right-3.5 sm:bottom-6 sm:right-6 z-40 group flex items-center gap-2.5 px-3.5 py-2.5 rounded-full bg-white hover:bg-slate-50 border border-emerald-400 shadow-[0_8px_30px_rgba(16,185,129,0.28)] text-slate-900 transition-all duration-200 active:scale-95 cursor-pointer"
         >
           {/* Badge count */}
-          <div className="relative flex items-center justify-center w-7 h-7 rounded-full bg-emerald-500 text-slate-950 font-mono font-black text-xs shadow-md">
-            <Ticket className="w-4 h-4 text-slate-950" />
-            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[10px] font-black text-slate-950 ring-2 ring-slate-950">
+          <div className="relative flex items-center justify-center w-7 h-7 rounded-full bg-emerald-600 text-white font-mono font-black text-xs shadow-xs">
+            <Ticket className="w-4 h-4 text-white" />
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[10px] font-black text-slate-950 ring-2 ring-white">
               {picks.length}
             </span>
           </div>
@@ -191,15 +224,15 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
           {/* Quick Odds & Profit preview */}
           <div className="flex flex-col text-left">
             <div className="flex items-center gap-1.5 leading-none">
-              <span className="text-[11px] font-bold text-slate-200 uppercase tracking-wider font-sans">Boleto</span>
-              <span className="text-xs font-black font-mono text-emerald-400">{totalOdds.toFixed(2)}x</span>
+              <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider font-sans">Boleto</span>
+              <span className="text-xs font-black font-mono text-emerald-700">{totalOdds.toFixed(2)}x</span>
             </div>
-            <span className="text-[10px] font-mono text-slate-400 mt-0.5">
+            <span className="text-[10px] font-mono text-slate-500 mt-0.5">
               +{formattedProfit}
             </span>
           </div>
 
-          <ChevronUp className="w-4 h-4 text-emerald-400 group-hover:-translate-y-0.5 transition-transform shrink-0" />
+          <ChevronUp className="w-4 h-4 text-emerald-600 group-hover:-translate-y-0.5 transition-transform shrink-0" />
         </button>
       )}
 
@@ -209,32 +242,32 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
           {/* Backdrop Blur */}
           <div
             onClick={() => setIsOpen(false)}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+            className="fixed inset-0 bg-slate-900/45 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
           />
 
           {/* Modal / Sheet Container */}
           <div
-            className="relative w-full sm:max-w-lg bg-[#0c1017] border-t sm:border border-slate-700/60 sm:rounded-2xl shadow-[0_-12px_48px_rgba(0,0,0,0.85)] flex flex-col h-[90vh] sm:h-auto sm:max-h-[85vh] z-10 animate-in slide-in-from-bottom duration-250 overflow-hidden"
+            className="relative w-full sm:max-w-lg bg-white border-t sm:border border-slate-200 sm:rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.22)] flex flex-col h-[88vh] sm:h-auto sm:max-h-[85vh] z-10 animate-in slide-in-from-bottom duration-250 overflow-hidden text-slate-800"
           >
             {/* Mobile Pull Handle */}
-            <div className="sm:hidden flex justify-center pt-2 pb-1 bg-slate-950 shrink-0">
-              <div className="w-10 h-1 rounded-full bg-slate-700" />
+            <div className="sm:hidden flex justify-center pt-2 pb-1 bg-white shrink-0">
+              <div className="w-10 h-1 rounded-full bg-slate-300" />
             </div>
 
             {/* Header */}
-            <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-950 shrink-0">
+            <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 border-b border-slate-200 flex items-center justify-between gap-3 bg-white shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                  <Ticket className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0">
+                  <Ticket className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-sans font-bold text-xs sm:text-sm text-slate-100 truncate">Boleto Combinado</h3>
-                    <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold shrink-0">
+                    <h3 className="font-sans font-bold text-xs sm:text-sm text-slate-900 truncate">Boleto Combinado</h3>
+                    <span className="px-1.5 py-0.2 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 font-mono text-[10px] font-bold shrink-0">
                       {picks.length} {picks.length === 1 ? 'partido' : 'partidos'}
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-400 font-sans truncate hidden sm:block">
+                  <p className="text-[10px] text-slate-500 font-sans truncate hidden sm:block">
                     Multiplica cuotas y calcula probabilidad matemática
                   </p>
                 </div>
@@ -245,10 +278,10 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                   <button
                     onClick={onOpenHistory}
                     type="button"
-                    className="px-2 py-1 rounded-md text-[11px] font-sans font-semibold text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center gap-1 cursor-pointer border border-emerald-500/30"
+                    className="px-2 py-1 rounded-md text-[11px] font-sans font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors flex items-center gap-1 cursor-pointer border border-emerald-200"
                     title="Ver historial de boletos guardados"
                   >
-                    <History className="w-3.5 h-3.5 text-emerald-400" />
+                    <History className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Historial</span>
                   </button>
                 )}
@@ -256,7 +289,7 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                   <button
                     onClick={clearParlay}
                     type="button"
-                    className="px-2 py-1 rounded-md text-[11px] font-sans text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors flex items-center gap-1 cursor-pointer"
+                    className="px-2 py-1 rounded-md text-[11px] font-sans text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition-colors flex items-center gap-1 cursor-pointer"
                     title="Vaciar boleto"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -266,7 +299,7 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                 <button
                   onClick={() => setIsOpen(false)}
                   type="button"
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
                   aria-label="Cerrar boleto"
                 >
                   <X className="w-4 h-4" />
@@ -276,17 +309,17 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
 
             {/* Compact Dismissible Odds Transparency Warning */}
             {showDisclaimer && (
-              <div className="px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between gap-2 shrink-0">
+              <div className="px-3 py-1.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <p className="text-[10px] sm:text-[11px] text-amber-200/90 leading-tight truncate">
-                    <strong className="text-amber-300">Cuotas estimadas:</strong> Pulsa <strong className="text-white font-mono">✎</strong> en cada línea para calibrar con tu casa de apuestas.
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <p className="text-[10px] sm:text-[11px] text-amber-900 leading-tight truncate">
+                    <strong>Cuotas estimadas:</strong> Pulsa <strong className="font-mono">✎</strong> en cada línea para calibrar con tu casa.
                   </p>
                 </div>
                 <button
                   onClick={() => setShowDisclaimer(false)}
                   type="button"
-                  className="p-1 rounded text-amber-400 hover:text-amber-200 hover:bg-amber-500/20 transition-colors shrink-0"
+                  className="p-1 rounded text-amber-700 hover:text-amber-950 hover:bg-amber-100 transition-colors shrink-0"
                   aria-label="Cerrar aviso"
                   title="Ocultar aviso"
                 >
@@ -296,31 +329,31 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
             )}
 
             {/* Slip Body (High-Priority Scrollable Picks List) */}
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2.5 sm:p-4 space-y-2 custom-scrollbar bg-[#090d13]/50">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2.5 sm:p-3.5 space-y-2 custom-scrollbar bg-slate-50/70">
               {picks.length === 0 ? (
                 <div className="py-12 px-4 text-center">
-                  <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600 mb-3">
+                  <div className="w-14 h-14 mx-auto rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 mb-3 shadow-2xs">
                     <Ticket className="w-7 h-7" />
                   </div>
-                  <h4 className="font-sans font-semibold text-slate-300 text-sm mb-1">
+                  <h4 className="font-sans font-semibold text-slate-800 text-sm mb-1">
                     Tu boleto está vacío
                   </h4>
                   <p className="text-slate-500 text-xs max-w-xs mx-auto mb-4">
-                    Toca el botón <span className="text-emerald-400 font-semibold font-mono">🎫 +</span> en cualquier partido de Fútbol o NBA para armar tu apuesta combinada.
+                    Toca el botón <span className="text-emerald-700 font-semibold font-mono">🎫 +</span> en cualquier partido de Fútbol o NBA para armar tu apuesta combinada.
                   </p>
                   <button
                     onClick={() => setIsOpen(false)}
                     type="button"
-                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors cursor-pointer shadow-2xs"
                   >
                     Explorar Partidos
                   </button>
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center justify-between px-1 pb-0.5 text-[10px] font-sans text-slate-400">
-                    <span>Líneas seleccionadas ({picks.length})</span>
-                    <span className="text-slate-500">Toca ✎ para editar cuota</span>
+                  <div className="flex items-center justify-between px-1 pb-0.5 text-[10px] font-sans text-slate-500">
+                    <span className="font-semibold">Líneas seleccionadas ({picks.length})</span>
+                    <span>Toca ✎ para editar cuota</span>
                   </div>
 
                   {picks.map((pick, idx) => {
@@ -330,18 +363,18 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                     return (
                       <div
                         key={pick.id}
-                        className="p-2 sm:p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/90 hover:border-slate-700 transition-all shadow-sm"
+                        className="p-2 sm:p-2.5 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition-all shadow-2xs"
                       >
                         {/* Row 1: Index + Sport + Match Title + Remove */}
                         <div className="flex items-center justify-between gap-1.5 mb-1">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="w-4 h-4 rounded-full bg-slate-800 text-[9px] font-mono font-bold text-slate-400 flex items-center justify-center shrink-0">
+                            <span className="w-4 h-4 rounded-full bg-slate-100 border border-slate-200 text-[9px] font-mono font-bold text-slate-700 flex items-center justify-center shrink-0">
                               {idx + 1}
                             </span>
                             <span className="text-xs shrink-0">
                               {pick.sport === 'NBA' ? '🏀' : '⚽'}
                             </span>
-                            <span className="font-sans font-semibold text-xs text-slate-200 truncate">
+                            <span className="font-sans font-semibold text-xs text-slate-900 truncate">
                               {pick.matchTitle}
                             </span>
                           </div>
@@ -349,7 +382,7 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                           <button
                             onClick={() => removePick(pick.id)}
                             type="button"
-                            className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
+                            className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
                             title="Eliminar selección"
                           >
                             <X className="w-3.5 h-3.5" />
@@ -359,15 +392,15 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                         {/* Row 2: Selection Label + Probability + Odd button */}
                         <div className="flex items-center justify-between gap-2 pl-5.5">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-sans font-bold text-xs text-emerald-400 truncate">
+                            <span className="font-sans font-bold text-xs text-emerald-700 truncate">
                               {pick.selectionLabel}
                             </span>
                             {pick.isEV && (
-                              <span className="px-1 py-0.2 rounded bg-amber-500/15 text-amber-300 font-mono text-[9px] font-bold border border-amber-500/30 shrink-0">
+                              <span className="px-1 py-0.2 rounded bg-amber-50 text-amber-800 font-mono text-[9px] font-bold border border-amber-200 shrink-0">
                                 +EV
                               </span>
                             )}
-                            <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                            <span className="text-[10px] text-slate-500 font-mono shrink-0">
                               ({pick.probability}%)
                             </span>
                           </div>
@@ -386,12 +419,12 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                                     if (e.key === 'Escape') setEditingPickId(null);
                                   }}
                                   autoFocus
-                                  className="w-14 px-1 py-0.5 rounded bg-slate-950 border border-emerald-500 text-right font-mono font-bold text-xs text-emerald-300 focus:outline-none"
+                                  className="w-14 px-1 py-0.5 rounded bg-white border border-emerald-500 text-right font-mono font-bold text-xs text-emerald-700 focus:outline-none"
                                 />
                                 <button
                                   onClick={() => handleSaveEditOdd(pick.id)}
                                   type="button"
-                                  className="p-1 rounded bg-emerald-500 text-slate-950 hover:bg-emerald-400 cursor-pointer"
+                                  className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
                                   title="Guardar cuota"
                                 >
                                   <Check className="w-3 h-3 font-bold" />
@@ -404,8 +437,8 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                                   type="button"
                                   className={`px-2 py-0.5 rounded font-mono font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer border ${
                                     isOddModified
-                                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                                      : 'bg-slate-950 border-slate-800 text-slate-200 hover:border-slate-700'
+                                      ? 'bg-amber-50 border-amber-300 text-amber-900'
+                                      : 'bg-slate-50 border-slate-200 text-slate-800 hover:border-slate-300'
                                   }`}
                                   title="Toca para calibrar cuota con tu casa de apuestas"
                                 >
@@ -417,7 +450,7 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                                   <button
                                     onClick={() => updatePickOdd(pick.id, pick.referenceOdd)}
                                     type="button"
-                                    className="text-[9px] text-slate-500 hover:text-slate-300 underline cursor-pointer"
+                                    className="text-[9px] text-slate-500 hover:text-slate-800 underline cursor-pointer"
                                     title={`Restablecer a cuota de referencia @${pick.referenceOdd.toFixed(2)}`}
                                   >
                                     Ref
@@ -427,41 +460,115 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                             )}
                           </div>
                         </div>
+
+                        {/* Row 3 (Solo Beta Admin): Cuota Mínima Recomendada (Fair Odds) compacta */}
+                        {isAdminBeta && (
+                          <div className="mt-1 pt-1 border-t border-slate-100 pl-5.5 flex items-center justify-between text-[10px]">
+                            <span className="text-slate-500 font-sans">
+                              Fair Odd Mín:{' '}
+                              <strong className="font-mono text-amber-800">
+                                @{Math.max(1.15, 100 / Math.max(1, pick.probability)).toFixed(2)}x+
+                              </strong>
+                            </span>
+                            {pick.userOdd >= 100 / Math.max(1, pick.probability) ? (
+                              <span className="text-emerald-700 font-mono font-bold">
+                                ✓ Valor (+EV)
+                              </span>
+                            ) : (
+                              <span className="text-rose-600 font-mono font-semibold">
+                                Cuota baja vs riesgo
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
+
+                  {/* Panel Exclusivo Beta Admin Ultra-Compacto: Fair Odds & Prueba de Estrés */}
+                  {isAdminBeta && adminStressEval && (
+                    <div
+                      className={`mt-2 p-2.5 rounded-xl border space-y-1.5 ${
+                        adminStressEval.stressTest.trafficLight === 'GREEN'
+                          ? 'bg-emerald-50/70 border-emerald-200'
+                          : adminStressEval.stressTest.trafficLight === 'YELLOW'
+                          ? 'bg-amber-50/70 border-amber-200'
+                          : 'bg-rose-50/70 border-rose-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider text-slate-800">
+                            Beta Admin · Fair Odds &amp; Estrés
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 font-mono text-[10px]">
+                          <span className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-amber-900 font-bold">
+                            Fair Mín: @{adminStressEval.combinedFairMinOdd.toFixed(2)}x+
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-800 font-bold">
+                            {adminStressEval.stressTest.trafficLight === 'GREEN'
+                              ? '🟢'
+                              : adminStressEval.stressTest.trafficLight === 'YELLOW'
+                              ? '🟡'
+                              : '🔴'}{' '}
+                            ~{Math.max(1, Math.round(adminStressEval.stressTest.simulatedWinsPer100 / 10))}/10 aciertos
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Consejo G METRICS Compacto */}
+                      <div className="p-2 rounded-lg bg-white border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <p className="text-[10.5px] font-semibold text-slate-800 leading-snug">
+                          {picks.length >= 3
+                            ? '💡 "Consejo G METRICS: Tu ticket tiene un riesgo elevado. Si quitas las 2 selecciones más difíciles, tu probabilidad de ganar aumenta un 40%."'
+                            : adminStressEval.stressTest.gMetricsAdvice}
+                        </p>
+                        {picks.length >= 3 && (
+                          <button
+                            type="button"
+                            onClick={handleTrimHardestTwoPicks}
+                            className="shrink-0 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-sans font-extrabold text-[10px] transition-colors cursor-pointer"
+                          >
+                            Quitar 2 más difíciles (+40%)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
 
-            {/* Streamlined Docked Footer / Results (Takes minimal vertical space so lines remain clearly visible) */}
+            {/* Streamlined Docked Footer / Results */}
             {picks.length > 0 && (
-              <div className="bg-slate-950 border-t border-slate-800/90 shadow-[0_-8px_24px_rgba(0,0,0,0.5)] shrink-0 z-20">
+              <div className="bg-white border-t border-slate-200 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] shrink-0 z-20">
                 {/* 1. Sleek Key Metrics Bar */}
-                <div className="px-3 py-1.5 sm:py-2 border-b border-slate-800/70 flex items-center justify-between gap-1.5 bg-slate-900/50">
+                <div className="px-3 py-1.5 sm:py-2 border-b border-slate-200 flex items-center justify-between gap-1.5 bg-slate-50">
                   <div className="flex items-center gap-2 overflow-x-auto py-0.5 scrollbar-none">
                     {/* Total Odds */}
                     <div className="flex items-baseline gap-1 shrink-0">
-                      <span className="text-[9px] font-sans text-slate-400 uppercase font-semibold">Cuota:</span>
-                      <span className="font-mono font-black text-sm sm:text-base text-emerald-400">
+                      <span className="text-[9px] font-sans text-slate-500 uppercase font-semibold">Cuota:</span>
+                      <span className="font-mono font-black text-sm sm:text-base text-emerald-700">
                         {totalOdds.toFixed(2)}x
                       </span>
                     </div>
 
-                    <div className="w-px h-3 bg-slate-800 shrink-0" />
+                    <div className="w-px h-3 bg-slate-300 shrink-0" />
 
                     {/* Joint Probability */}
                     <div className="flex items-baseline gap-1 shrink-0">
-                      <span className="text-[9px] font-sans text-slate-400 uppercase font-semibold">Prob:</span>
-                      <span className="font-mono font-bold text-xs text-cyan-400">
+                      <span className="text-[9px] font-sans text-slate-500 uppercase font-semibold">Prob:</span>
+                      <span className="font-mono font-bold text-xs text-indigo-700">
                         {jointProbability}%
                       </span>
                     </div>
 
-                    <div className="w-px h-3 bg-slate-800 shrink-0" />
+                    <div className="w-px h-3 bg-slate-300 shrink-0" />
 
                     {/* Risk Traffic Light Badge */}
-                    <div className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold flex items-center gap-1 shrink-0 ${riskLevel.badgeClass}`}>
+                    <div className="px-1.5 py-0.2 rounded-md text-[10px] font-bold flex items-center gap-1 shrink-0 bg-white border border-slate-200 text-slate-800">
                       <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: riskLevel.dotColor }} />
                       <span>{riskLevel.label}</span>
                     </div>
@@ -471,19 +578,19 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                   <button
                     onClick={() => setIsCalculatorExpanded(!isCalculatorExpanded)}
                     type="button"
-                    className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-sans font-semibold border border-slate-700 transition-colors shrink-0 cursor-pointer"
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white hover:bg-slate-100 text-slate-800 text-[10px] font-sans font-semibold border border-slate-200 transition-colors shrink-0 cursor-pointer"
                     title={isCalculatorExpanded ? "Plegar opciones de stake" : "Desplegar opciones de stake"}
                   >
                     <span>Stake: {formattedStake}</span>
-                    <ChevronUp className={`w-3.5 h-3.5 text-emerald-400 transition-transform duration-200 ${isCalculatorExpanded ? 'rotate-180' : ''}`} />
+                    <ChevronUp className={`w-3.5 h-3.5 text-emerald-600 transition-transform duration-200 ${isCalculatorExpanded ? 'rotate-180' : ''}`} />
                   </button>
                 </div>
 
                 {/* 2. Expandable Stake Adjuster & Return Breakdown */}
                 {isCalculatorExpanded && (
-                  <div className="p-2.5 sm:p-3 bg-slate-900/70 border-b border-slate-800/80 space-y-2 animate-in slide-in-from-bottom-2 duration-150">
+                  <div className="p-2.5 sm:p-3 bg-slate-50 border-b border-slate-200 space-y-2 animate-in slide-in-from-bottom-2 duration-150">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-sans text-slate-300 font-medium">
+                      <span className="text-xs font-sans text-slate-700 font-medium">
                         Monto a Apostar (Stake):
                       </span>
                       <div className="relative">
@@ -494,7 +601,7 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                           min="1000"
                           value={stake}
                           onChange={(e) => setStake(Number(e.target.value))}
-                          className="w-28 pl-6 pr-2 py-1 rounded-lg bg-slate-950 border border-slate-700 font-mono font-bold text-xs text-white text-right focus:outline-none focus:border-emerald-500"
+                          className="w-28 pl-6 pr-2 py-1 rounded-lg bg-white border border-slate-300 font-mono font-bold text-xs text-slate-900 text-right focus:outline-none focus:border-emerald-500"
                         />
                       </div>
                     </div>
@@ -504,60 +611,60 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                       <button
                         onClick={() => handleQuickStakeSet(10000)}
                         type="button"
-                        className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-[10px] font-semibold transition-colors cursor-pointer"
+                        className="px-2 py-0.5 rounded-md bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-mono text-[10px] font-semibold transition-colors cursor-pointer"
                       >
                         $10K
                       </button>
                       <button
                         onClick={() => handleQuickStakeSet(20000)}
                         type="button"
-                        className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-[10px] font-semibold transition-colors cursor-pointer"
+                        className="px-2 py-0.5 rounded-md bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-mono text-[10px] font-semibold transition-colors cursor-pointer"
                       >
                         $20K
                       </button>
                       <button
                         onClick={() => handleQuickStakeSet(50000)}
                         type="button"
-                        className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-[10px] font-semibold transition-colors cursor-pointer"
+                        className="px-2 py-0.5 rounded-md bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-mono text-[10px] font-semibold transition-colors cursor-pointer"
                       >
                         $50K
                       </button>
                       <button
                         onClick={() => handleQuickStakeSet(100000)}
                         type="button"
-                        className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-[10px] font-semibold transition-colors cursor-pointer"
+                        className="px-2 py-0.5 rounded-md bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-mono text-[10px] font-semibold transition-colors cursor-pointer"
                       >
                         $100K
                       </button>
                       <button
                         onClick={() => handleQuickStakeAdd(10000)}
                         type="button"
-                        className="px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-mono text-[10px] font-semibold transition-colors cursor-pointer"
+                        className="px-2 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-mono text-[10px] font-semibold transition-colors cursor-pointer"
                       >
                         +$10K
                       </button>
                     </div>
 
                     {/* Profit breakdown */}
-                    <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                    <div className="pt-1.5 border-t border-slate-200 flex items-center justify-between text-xs">
                       <div>
-                        <span className="text-[10px] text-slate-400 block">Retorno Bruto:</span>
-                        <span className="font-mono font-bold text-slate-200">{formattedPayout}</span>
+                        <span className="text-[10px] text-slate-500 block">Retorno Bruto:</span>
+                        <span className="font-mono font-bold text-slate-800">{formattedPayout}</span>
                       </div>
                       <div className="text-right">
-                        <span className="text-[10px] text-slate-400 block">Ganancia Neta:</span>
-                        <span className="font-mono font-black text-sm text-emerald-400">+{formattedProfit}</span>
+                        <span className="text-[10px] text-slate-500 block">Ganancia Neta:</span>
+                        <span className="font-mono font-black text-sm text-emerald-700">+{formattedProfit}</span>
                       </div>
                     </div>
                   </div>
                 )}
 
                 {/* 3. Action Bar (Ultra-compact, side-by-side) */}
-                <div className="p-2 sm:p-2.5 flex items-center justify-between gap-2">
+                <div className="p-2 sm:p-2.5 flex items-center justify-between gap-2 bg-white">
                   {/* Net profit preview */}
                   <div className="min-w-0 pr-1 leading-tight">
-                    <span className="text-[9px] text-slate-400 uppercase tracking-wider block">Ganas:</span>
-                    <span className="font-mono font-black text-sm sm:text-base text-emerald-400 truncate block">
+                    <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Ganas:</span>
+                    <span className="font-mono font-black text-sm sm:text-base text-emerald-700 truncate block">
                       +{formattedProfit}
                     </span>
                   </div>
@@ -567,7 +674,7 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                     <button
                       onClick={handleSaveSlip}
                       type="button"
-                      className="py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-98 text-slate-950 font-sans font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+                      className="py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-98 text-slate-950 font-sans font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
                       title="Guardar este boleto en tu historial"
                     >
                       {isSaved ? (
@@ -586,7 +693,7 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                     <button
                       onClick={handleShareWhatsApp}
                       type="button"
-                      className="py-1.5 sm:py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-sans font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                      className="py-1.5 sm:py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-sans font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
                     >
                       <Share2 className="w-3.5 h-3.5" />
                       <span>WhatsApp</span>
@@ -595,16 +702,16 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
                     <button
                       onClick={handleCopySummary}
                       type="button"
-                      className="py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-98 text-slate-100 font-sans font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-slate-700"
+                      className="py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-800 font-sans font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200"
                     >
                       {isCopied ? (
                         <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="text-emerald-400">¡Copiado!</span>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-700">¡Copiado!</span>
                         </>
                       ) : (
                         <>
-                          <Copy className="w-3.5 h-3.5 text-slate-300" />
+                          <Copy className="w-3.5 h-3.5 text-slate-600" />
                           <span className="hidden xs:inline">Copiar</span>
                         </>
                       )}

@@ -126,7 +126,7 @@ export const SavedSlipsService = {
     const statusEmoji =
       slip.status === 'WON' ? '🟢 GANADO' : slip.status === 'LOST' ? '🔴 PERDIDO' : '⏳ PENDIENTE';
 
-    let text = `🎫 *BOLETO GUARDADO SPORTSTATS PRO*\n`;
+    let text = `🎫 *BOLETO GUARDADO G METRICS*\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
     text += `📌 *Estado:* ${statusEmoji}\n`;
     text += `🗓️ *Fecha:* ${new Date(slip.createdAt).toLocaleString('es-CO')}\n\n`;
@@ -145,7 +145,7 @@ export const SavedSlipsService = {
     text += `🏆 *Retorno Potencial:* ${formattedPayout}\n`;
     text += `📈 *Ganancia Neta:* +${formattedProfit}\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `💡 _Calculado con SportStats Pro (Dixon-Coles & Poisson)._`;
+    text += `💡 _Análisis estadístico generado en G METRICS._`;
 
     return text;
   }

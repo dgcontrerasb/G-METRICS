@@ -32,13 +32,18 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
   mobileLightweight = false,
   isRecentlyUpdated = false
 }) => {
-  const { dixonColes, goalsMarket, cornersMarket, refereeCards, verdict } = analysis;
-
   const [localExpanded, setLocalExpanded] = useState<boolean>(false);
   const expanded = isExpanded !== undefined ? isExpanded : localExpanded;
 
+  const dixonColes = analysis?.dixonColes;
+  const goalsMarket = analysis?.goalsMarket;
+  const cornersMarket = analysis?.cornersMarket;
+  const refereeCards = analysis?.refereeCards;
+  const verdict = analysis?.verdict;
+
   const handleToggleExpand = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (!analysis) return;
     if (onOpenDetail) {
       onOpenDetail(fixture, analysis);
       return;
@@ -52,10 +57,11 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
 
   // Selección predeterminada basada en la opción de mayor probabilidad del modelo
   const defaultSelection = useMemo<'1' | 'X' | '2'>(() => {
+    if (!dixonColes) return '1';
     if (dixonColes.pHomeWin >= dixonColes.pDraw && dixonColes.pHomeWin >= dixonColes.pAwayWin) return '1';
     if (dixonColes.pAwayWin >= dixonColes.pHomeWin && dixonColes.pAwayWin >= dixonColes.pDraw) return '2';
     return 'X';
-  }, [dixonColes.pHomeWin, dixonColes.pDraw, dixonColes.pAwayWin]);
+  }, [dixonColes]);
 
   // Estado local para la calculadora de Valor Esperado (+EV) y Kelly
   const [selectedBetSide, setSelectedBetSide] = useState<'1' | 'X' | '2'>(defaultSelection);
@@ -64,7 +70,7 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
   // Cálculo matemático en tiempo real de EV y Kelly Fraccional (25%)
   const evMetrics = useMemo(() => {
     const oddsNum = parseFloat(inputOdds);
-    if (isNaN(oddsNum) || oddsNum <= 1) {
+    if (!dixonColes || isNaN(oddsNum) || oddsNum <= 1) {
       return { evPercent: null, kellyStake: null, isPositive: false };
     }
 
@@ -90,6 +96,19 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
       isPositive
     };
   }, [inputOdds, selectedBetSide, dixonColes]);
+
+  // Consejo y semáforo didáctico para principiantes
+  const didacticAdvice = useMemo(() => {
+    if (!analysis) return null;
+    return getSoccerDidacticAdvice(fixture, analysis);
+  }, [fixture, analysis]);
+
+  const { isPickInParlay, togglePick } = useParlay();
+  const inParlay = isPickInParlay(fixture.id);
+
+  if (!analysis || !dixonColes || !goalsMarket || !cornersMarket || !refereeCards || !verdict || !didacticAdvice) {
+    return null;
+  }
 
   // Favorite team label
   let favoriteTeam = 'Empate o muy parejo';
@@ -125,39 +144,31 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
   // Value bet opportunity check
   const isValueBet = Boolean(analysis.marketOdds?.valueBetDetected);
 
-  // Consejo y semáforo didáctico para principiantes
-  const didacticAdvice = useMemo(() => {
-    return getSoccerDidacticAdvice(fixture, analysis);
-  }, [fixture, analysis]);
-
   const topSafePick = verdict.topSafePick;
   const homeShort = fixture.homeTeam.shortName || fixture.homeTeam.name;
   const awayShort = fixture.awayTeam.shortName || fixture.awayTeam.name;
 
-  const { isPickInParlay, togglePick } = useParlay();
-  const inParlay = isPickInParlay(fixture.id);
-
   return (
     <div
-      className={`relative rounded-2xl bg-slate-950/40 backdrop-blur-md border transition-all duration-300 overflow-hidden shadow-2xl ${
+      className={`relative rounded-2xl bg-white/95 backdrop-blur-md border transition-all duration-200 overflow-hidden shadow-xs ${
         isRecentlyUpdated
-          ? 'ring-2 ring-emerald-400 border-emerald-400 bg-emerald-950/30 shadow-[0_0_20px_rgba(16,185,129,0.5)] animate-pulse'
+          ? 'ring-2 ring-emerald-500 border-emerald-500 bg-emerald-50/90'
           : isSelected
-          ? 'ring-2 ring-emerald-400/80 border-emerald-400/60 shadow-emerald-500/10'
+          ? 'ring-2 ring-emerald-500/80 border-emerald-500/70'
           : isValueBet
-          ? 'border-amber-400/50 shadow-amber-500/10 ring-1 ring-amber-400/30'
-          : 'border-slate-700/30 hover:border-slate-600/50 hover:bg-slate-950/50'
+          ? 'border-amber-300/90 ring-1 ring-amber-300/40'
+          : 'border-slate-200/80 hover:border-slate-300'
       }`}
     >
       <div className="flex flex-col">
         {/* 1. Header: Competición y Hora Colombia */}
-        <div className="px-4 py-2.5 bg-slate-900/40 border-b border-slate-800/40 backdrop-blur-sm flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="px-4 py-2.5 bg-slate-50/95 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2 min-w-0">
             {fixture.league.flag && fixture.league.flag.startsWith('http') ? (
               <img
                 src={fixture.league.flag}
                 alt={fixture.league.country || fixture.league.name}
-                className="w-4 h-3 object-cover rounded shadow-xs inline-block shrink-0 border border-slate-700/50"
+                className="w-4 h-3 object-cover rounded shadow-2xs inline-block shrink-0 border border-slate-200"
                 loading="lazy"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
@@ -166,16 +177,16 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
             ) : (
               <CountryFlag country={fixture.league.country || fixture.league.name} fallbackEmoji={fixture.league.flag} size="xs" />
             )}
-            <span className="font-semibold text-slate-100 tracking-wide uppercase text-[11px]">
+            <span className="font-bold text-slate-900 tracking-tight text-xs">
               {fixture.league.name}
             </span>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-400 text-[11px] truncate">{fixture.league.round}</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-slate-500 text-[11px] truncate">{fixture.league.round}</span>
           </div>
 
           <div className="flex items-center gap-2.5">
             {isRecentlyUpdated && (
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-400 text-black font-mono font-black text-[10px] uppercase tracking-tight animate-bounce shadow-md flex items-center gap-1">
+              <span className="px-2.5 py-0.5 rounded-md bg-emerald-600 text-white font-mono font-bold text-[10px] uppercase tracking-tight animate-bounce shadow-2xs flex items-center gap-1">
                 <span>⚡</span>
                 <span>¡Marcador Actualizado!</span>
               </span>
@@ -183,35 +194,34 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
             <div className="flex items-center gap-2 text-xs flex-wrap font-mono tabular-nums">
               {fixture.status === 'IN_PLAY' ? (
                 fixture.currentScore?.isHalfTime ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold text-[10px]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                     <span>DESCANSO · 45'</span>
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30 font-bold animate-pulse text-[10px]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-bold animate-pulse text-[10px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
                     <span>EN VIVO {fixture.currentScore?.minute ? `· ${fixture.currentScore.minute}'` : ''}</span>
                   </span>
                 )
               ) : (
-                <span className="flex items-center gap-1.5 font-semibold text-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="font-bold text-emerald-700">
                   {fixture.time}
                 </span>
               )}
-              <span className="text-slate-600">·</span>
-              <span className="text-slate-400">{fixture.date}</span>
+              <span className="text-slate-300">·</span>
+              <span className="text-slate-500">{fixture.date}</span>
               {fixture.derbyOrRivalry && (
                 <>
-                  <span className="text-slate-600">·</span>
-                  <span className="px-1.5 py-0.5 rounded text-amber-300 bg-amber-500/15 border border-amber-500/30 font-bold uppercase text-[9px] tracking-wider">Clásico</span>
+                  <span className="text-slate-300">·</span>
+                  <span className="px-1.5 py-0.5 rounded text-amber-800 bg-amber-50 border border-amber-200 font-bold uppercase text-[9px] tracking-wider">Clásico</span>
                 </>
               )}
               {isValueBet && (
                 <>
-                  <span className="text-slate-600">·</span>
-                  <span className="inline-flex items-center gap-1 text-amber-300 font-bold text-[10px] tracking-wider uppercase bg-amber-500/15 px-2 py-0.5 rounded-full border border-amber-400/40 animate-pulse">
-                    <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+                  <span className="text-slate-300">·</span>
+                  <span className="inline-flex items-center gap-1 text-amber-800 font-bold text-[10px] tracking-wider uppercase bg-amber-50 px-2 py-0.5 rounded-md border border-amber-300">
+                    <Sparkles className="w-2.5 h-2.5 text-amber-600" />
                     +EV +{analysis.marketOdds?.valueEdgePercent}%
                   </span>
                 </>
@@ -226,7 +236,7 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
                   onOpenDetail(fixture, analysis);
                 }}
                 type="button"
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 transition-all cursor-pointer"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-all cursor-pointer"
                 title="Ver Minuto a Minuto histórico en vivo"
               >
                 <span>⏱️</span>
@@ -255,10 +265,10 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
                   isEV: isValueBet
                 });
               }}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 inParlay
-                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
-                  : 'bg-slate-900/60 hover:bg-slate-800 text-amber-400 hover:text-amber-300 border border-slate-700/50'
+                  ? 'bg-amber-400 text-slate-950 font-bold shadow-2xs'
+                  : 'bg-white hover:bg-slate-100 text-amber-700 border border-slate-200/90'
               }`}
               title={inParlay ? 'Quitar del boleto de combinadas' : 'Añadir al boleto de combinadas'}
               aria-label={inParlay ? 'Quitar del boleto' : 'Añadir al boleto'}
@@ -270,10 +280,10 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
             {onToggleSelect && (
               <button
                 onClick={() => onToggleSelect(fixture.id)}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                   isSelected
-                    ? 'bg-emerald-500 text-slate-950 font-bold shadow-sm'
-                    : 'bg-slate-900/60 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/50'
+                    ? 'bg-emerald-600 text-white font-bold shadow-2xs'
+                    : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90'
                 }`}
                 title={isSelected ? 'Quitar de mi selección' : 'Seleccionar este partido'}
               >
@@ -287,62 +297,64 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
         {/* 2. Face-off: Equipos y Escudos (Clickeable para desplegar) */}
         <div
           onClick={handleToggleExpand}
-          className="relative p-3.5 sm:p-5 overflow-hidden cursor-pointer hover:bg-white/[0.02] transition-colors"
+          className="relative p-3.5 sm:p-5 overflow-hidden cursor-pointer hover:bg-slate-50/70 transition-colors"
           title={expanded ? 'Clic para contraer' : 'Clic para ver análisis completo'}
         >
           <div className="relative z-10 grid grid-cols-12 items-center gap-2 sm:gap-4">
             {/* Local */}
             <div className="col-span-5 flex items-center justify-end gap-2 sm:gap-3 text-right min-w-0">
               <div className="min-w-0 flex-1">
-                <div className="text-[10px] font-mono text-emerald-400/90 font-semibold tracking-wider uppercase mb-0.5">
+                <div className="text-[10px] font-mono tabular-nums text-emerald-700 font-bold tracking-wider uppercase mb-0.5">
                   Local · #{fixture.homeTeam.rank}
                 </div>
-                <h3 className="font-sans text-xs sm:text-sm md:text-base font-semibold text-slate-100 tracking-tight leading-snug line-clamp-2" title={fixture.homeTeam.name}>
+                <h3 className="font-sans text-xs sm:text-sm md:text-base font-bold text-slate-900 tracking-tight leading-snug line-clamp-2" title={fixture.homeTeam.name}>
                   {fixture.homeTeam.name}
                 </h3>
-                <div className="mt-0.5 hidden sm:flex items-center justify-end gap-1.5 text-[10px] text-slate-400 font-mono tracking-tight">
-                  <span className="text-slate-300">
+                <div className="mt-0.5 hidden sm:flex items-center justify-end gap-1.5 text-[10px] text-slate-500 font-mono tabular-nums tracking-tight">
+                  <span>
                     {fixture.homeTeam.avgShotsOnTarget} tiros arco · ~{cornersMarket.lambdaHomeCorners} córners
                   </span>
                 </div>
               </div>
 
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-900/60 border border-slate-800/80 p-2 flex items-center justify-center shrink-0 shadow-inner backdrop-blur-xs">
-                <img
-                  src={fixture.homeTeam.logo}
-                  alt={fixture.homeTeam.name}
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                  className="w-7 h-7 sm:w-8 sm:h-8 object-contain"
-                />
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-50 border border-slate-200/90 p-2 flex items-center justify-center shrink-0 shadow-2xs">
+                {fixture.homeTeam.logo?.trim() ? (
+                  <img
+                    src={fixture.homeTeam.logo}
+                    alt={fixture.homeTeam.name}
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                    className="w-7 h-7 sm:w-8 sm:h-8 object-contain"
+                  />
+                ) : null}
               </div>
             </div>
 
             {/* VS o Marcador En Vivo */}
             <div className="col-span-2 text-center flex flex-col items-center justify-center">
               {fixture.status === 'IN_PLAY' && fixture.currentScore ? (
-                <div className="flex flex-col items-center px-2.5 py-1 rounded-xl bg-slate-900/80 border border-emerald-500/40 shadow-sm backdrop-blur-xs">
-                  <span className="text-base sm:text-lg font-bold font-mono tracking-tight tabular-nums text-emerald-400">
+                <div className="flex flex-col items-center px-2.5 py-1 rounded-xl bg-emerald-50 border border-emerald-300 shadow-2xs">
+                  <span className="text-base sm:text-lg font-bold font-mono tracking-tight tabular-nums text-emerald-800">
                     {fixture.currentScore.home} - {fixture.currentScore.away}
                   </span>
                   {fixture.currentScore.isHalfTime ? (
-                    <span className="text-[9px] font-mono tabular-nums text-amber-400 font-bold uppercase tracking-wider">
+                    <span className="text-[9px] font-mono tabular-nums text-amber-700 font-bold uppercase tracking-wider">
                       DESCANSO
                     </span>
                   ) : (
-                    <span className="text-[9px] font-mono tabular-nums text-rose-400 font-bold animate-pulse">
+                    <span className="text-[9px] font-mono tabular-nums text-rose-600 font-bold animate-pulse">
                       {fixture.currentScore.minute}'
                     </span>
                   )}
                 </div>
               ) : (
                 <>
-                  <div className="w-7 h-7 rounded-lg bg-slate-900/50 border border-slate-800/60 flex items-center justify-center text-[10px] font-mono font-bold tracking-widest text-slate-400 shadow-inner backdrop-blur-xs">
+                  <div className="w-7 h-7 rounded-lg bg-slate-100 border border-slate-200/90 flex items-center justify-center text-[10px] font-mono font-bold tracking-widest text-slate-600">
                     VS
                   </div>
-                  <span className="text-[10px] font-mono tracking-tight tabular-nums font-semibold text-slate-300 mt-1 whitespace-nowrap">
+                  <span className="text-[10px] font-mono tracking-tight tabular-nums font-bold text-slate-700 mt-1 whitespace-nowrap">
                     {fixture.time}
                   </span>
                 </>
@@ -351,27 +363,29 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
 
             {/* Visitante */}
             <div className="col-span-5 flex items-center justify-start gap-2.5 sm:gap-3 text-left min-w-0">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-900/60 border border-slate-800/80 p-2 flex items-center justify-center shrink-0 shadow-inner backdrop-blur-xs">
-                <img
-                  src={fixture.awayTeam.logo}
-                  alt={fixture.awayTeam.name}
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                  className="w-7 h-7 sm:w-8 sm:h-8 object-contain"
-                />
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-50 border border-slate-200/90 p-2 flex items-center justify-center shrink-0 shadow-2xs">
+                {fixture.awayTeam.logo?.trim() ? (
+                  <img
+                    src={fixture.awayTeam.logo}
+                    alt={fixture.awayTeam.name}
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                    className="w-7 h-7 sm:w-8 sm:h-8 object-contain"
+                  />
+                ) : null}
               </div>
 
               <div className="min-w-0 flex-1">
-                <div className="text-[10px] font-mono text-cyan-400/90 font-semibold tracking-wider uppercase mb-0.5">
+                <div className="text-[10px] font-mono tabular-nums text-sky-700 font-bold tracking-wider uppercase mb-0.5">
                   Visitante · #{fixture.awayTeam.rank}
                 </div>
-                <h3 className="font-sans text-xs sm:text-sm md:text-base font-semibold text-slate-100 tracking-tight leading-snug line-clamp-2" title={fixture.awayTeam.name}>
+                <h3 className="font-sans text-xs sm:text-sm md:text-base font-bold text-slate-900 tracking-tight leading-snug line-clamp-2" title={fixture.awayTeam.name}>
                   {fixture.awayTeam.name}
                 </h3>
-                <div className="mt-0.5 hidden sm:flex items-center justify-start gap-1.5 text-[10px] text-slate-400 font-mono tracking-tight">
-                  <span className="text-slate-300">
+                <div className="mt-0.5 hidden sm:flex items-center justify-start gap-1.5 text-[10px] text-slate-500 font-mono tabular-nums tracking-tight">
+                  <span>
                     {fixture.awayTeam.avgShotsOnTarget} tiros arco · ~{cornersMarket.lambdaAwayCorners} córners
                   </span>
                 </div>
@@ -381,87 +395,87 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
         </div>
 
         {/* Resumen Compacto Multi-Mercado y Guía para Principiantes */}
-        <div className="px-3.5 sm:px-4 py-3 border-t border-slate-800/40 bg-slate-950/30 backdrop-blur-sm space-y-3">
-          {/* Bloque Principal: La Jugada Más Segura del Partido (Gradiente Direccional Integrado) */}
-          <div className="rounded-xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border-l-2 border-emerald-500 p-3 sm:p-3.5 backdrop-blur-sm shadow-xs transition-all">
+        <div className="px-3.5 sm:px-4 py-3 border-t border-slate-200/80 bg-slate-50/70 space-y-3">
+          {/* Bloque Principal: La Jugada Más Segura del Partido */}
+          <div className="rounded-xl bg-emerald-50/80 border border-emerald-200/90 p-3 sm:p-3.5 shadow-2xs transition-all">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-emerald-400">
+                <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-emerald-800">
                   {didacticAdvice.badgeLabel}
                 </span>
                 {topSafePick && (
-                  <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                  <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md border ${
                     topSafePick.riskLevel === 'Riesgo Bajo'
-                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                      : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                      ? 'bg-white text-emerald-800 border-emerald-300'
+                      : 'bg-amber-50 text-amber-800 border-amber-300'
                   }`}>
                     {topSafePick.riskLevel}
                   </span>
                 )}
               </div>
-              <span className="text-[11px] text-emerald-300 font-mono tracking-tight tabular-nums font-semibold bg-slate-900/60 px-2.5 py-0.5 rounded-full border border-slate-700/40 shadow-inner">
+              <span className="text-[11px] text-emerald-900 font-mono tracking-tight tabular-nums font-bold bg-white px-2.5 py-0.5 rounded-md border border-emerald-200">
                 {didacticAdvice.payoutExample}
               </span>
             </div>
 
             <div className="pt-0.5">
-              <p className="text-xs sm:text-sm font-semibold text-slate-100 leading-snug">
+              <p className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
                 {didacticAdvice.headline}
               </p>
-              <p className="text-xs text-slate-300/80 leading-relaxed mt-0.5 font-normal">
+              <p className="text-xs text-slate-600 leading-relaxed mt-0.5 font-normal">
                 {didacticAdvice.plainExplanation}
               </p>
             </div>
           </div>
 
-          {/* Tablero de los 4 Mercados Más Seguros del Partido (Micro-Tarjetas de Cristal Grid) */}
+          {/* Tablero de los 4 Mercados Más Seguros del Partido */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-center">
-            {/* Caja 1: Jugada #1 Más Factible del Partido (Anillo Perimetral Interno Elegante) */}
-            <div className="bg-slate-900/30 backdrop-blur-sm rounded-xl p-3 border border-emerald-500/30 ring-1 ring-emerald-500/20 bg-emerald-500/5 flex flex-col justify-between transition-all duration-200 hover:border-emerald-500/50">
-              <span className="text-[10px] text-emerald-400 font-mono font-bold uppercase tracking-wider">
+            {/* Caja 1: Jugada #1 Más Factible del Partido */}
+            <div className="bg-white rounded-xl p-3 border border-emerald-300 ring-1 ring-emerald-500/15 flex flex-col justify-between transition-all duration-200 hover:border-emerald-500">
+              <span className="text-[10px] text-emerald-700 font-mono font-bold uppercase tracking-wider">
                 ⭐ #1 Más Probable
               </span>
-              <span className="font-sans text-xs sm:text-sm font-medium text-slate-100 truncate mt-1" title={topSafePick?.label}>
+              <span className="font-sans text-xs sm:text-sm font-bold text-slate-900 truncate mt-1" title={topSafePick?.label}>
                 {topSafePick?.label || favoriteTeam}
               </span>
-              <span className="text-xs font-mono tracking-tight tabular-nums font-semibold text-emerald-300 mt-0.5">
+              <span className="text-xs font-mono tracking-tight tabular-nums font-bold text-emerald-700 mt-0.5">
                 {topSafePick?.probability || Math.max(dixonColes.pHomeWin, dixonColes.pAwayWin)}% prob. · @{topSafePick?.fairOdd.toFixed(2)}
               </span>
-              <span className="text-[10px] text-slate-400 font-sans mt-0.5 truncate">
+              <span className="text-[10px] text-slate-500 font-sans mt-0.5 truncate">
                 ({topSafePick?.categoryLabel || 'Mayor probabilidad'})
               </span>
             </div>
 
             {/* Caja 2: Mercado de Tiros de Esquina (Córners) */}
-            <div className="bg-slate-900/30 backdrop-blur-sm rounded-xl p-3 border border-slate-800/40 flex flex-col justify-between transition-all duration-200 hover:border-slate-700/60">
-              <span className="text-[10px] text-slate-400 font-mono font-semibold uppercase tracking-wider">
+            <div className="bg-white rounded-xl p-3 border border-slate-200/90 flex flex-col justify-between transition-all duration-200 hover:border-slate-300">
+              <span className="text-[10px] text-slate-500 font-mono font-semibold uppercase tracking-wider">
                 🚩 Tiros de Esquina
               </span>
-              <span className="font-sans text-xs sm:text-sm font-medium text-amber-300 mt-1 truncate">
+              <span className="font-sans text-xs sm:text-sm font-bold text-amber-700 mt-1 truncate">
                 {cornersMarket.recommendedLine.replace('Tiros de Esquina', 'Córners')}
               </span>
-              <span className="text-xs font-mono tracking-tight tabular-nums text-slate-200 font-semibold mt-0.5">
+              <span className="text-xs font-mono tracking-tight tabular-nums text-slate-900 font-bold mt-0.5">
                 {cornersMarket.recommendedProb}% prob.
               </span>
-              <span className="text-[10px] text-slate-400 font-mono tracking-tight mt-0.5">
+              <span className="text-[10px] text-slate-500 font-mono tabular-nums tracking-tight mt-0.5">
                 {fixture.liveStats
-                  ? `En vivo: ${fixture.liveStats.home.corners + fixture.liveStats.away.corners} (${fixture.liveStats.home.corners}-${fixture.liveStats.away.corners}) · Proy ~${cornersMarket.expectedTotalCorners}`
+                  ? `En vivo: ${fixture.liveStats.home.corners + fixture.liveStats.away.corners} (${fixture.liveStats.home.corners}-${fixture.liveStats.home.corners}) · Proy ~${cornersMarket.expectedTotalCorners}`
                   : `(${cornersMarket.expectedTotalCorners} esp: ${cornersMarket.lambdaHomeCorners}+${cornersMarket.lambdaAwayCorners})`}
               </span>
             </div>
 
             {/* Caja 3: Mercado de Tarjetas Amarillas */}
-            <div className="bg-slate-900/30 backdrop-blur-sm rounded-xl p-3 border border-slate-800/40 flex flex-col justify-between transition-all duration-200 hover:border-slate-700/60">
-              <span className="text-[10px] text-slate-400 font-mono font-semibold uppercase tracking-wider">
+            <div className="bg-white rounded-xl p-3 border border-slate-200/90 flex flex-col justify-between transition-all duration-200 hover:border-slate-300">
+              <span className="text-[10px] text-slate-500 font-mono font-semibold uppercase tracking-wider">
                 🟨 Tarjetas Partido
               </span>
-              <span className="font-sans text-xs sm:text-sm font-medium text-yellow-300 mt-1 truncate">
+              <span className="font-sans text-xs sm:text-sm font-bold text-amber-700 mt-1 truncate">
                 {refereeCards.recommendedCardPick.replace(' en el partido', '')}
               </span>
-              <span className="text-xs font-mono tracking-tight tabular-nums text-slate-200 font-semibold mt-0.5">
+              <span className="text-xs font-mono tracking-tight tabular-nums text-slate-900 font-bold mt-0.5">
                 {refereeCards.recommendedCardProb}% prob.
               </span>
-              <span className="text-[10px] text-slate-400 font-mono tracking-tight mt-0.5">
+              <span className="text-[10px] text-slate-500 font-mono tabular-nums tracking-tight mt-0.5">
                 {fixture.liveStats
                   ? `En vivo: ${fixture.liveStats.home.yellowCards + fixture.liveStats.away.yellowCards} 🟨 (${fixture.liveStats.home.yellowCards}-${fixture.liveStats.away.yellowCards}) · Proy ~${refereeCards.expectedYellowCards}`
                   : `(~${refereeCards.expectedYellowCards} esp: ${refereeCards.expectedHomeYellows}+${refereeCards.expectedAwayYellows})`}
@@ -469,21 +483,21 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
             </div>
 
             {/* Caja 4: Goles Seguros y Doble Oportunidad */}
-            <div className="bg-slate-900/30 backdrop-blur-sm rounded-xl p-3 border border-slate-800/40 flex flex-col justify-between transition-all duration-200 hover:border-slate-700/60">
-              <span className="text-[10px] text-slate-400 font-mono font-semibold uppercase tracking-wider">
+            <div className="bg-white rounded-xl p-3 border border-slate-200/90 flex flex-col justify-between transition-all duration-200 hover:border-slate-300">
+              <span className="text-[10px] text-slate-500 font-mono font-semibold uppercase tracking-wider">
                 🛡️ Goles / Doble Op.
               </span>
-              <span className="font-sans text-xs sm:text-sm font-medium text-cyan-300 mt-1 truncate">
+              <span className="font-sans text-xs sm:text-sm font-bold text-sky-700 mt-1 truncate">
                 {goalsMarket.over15 >= Math.max(goalsMarket.doubleChance1X, goalsMarket.doubleChanceX2)
                   ? '+1.5 Goles Totales'
                   : goalsMarket.doubleChance1X >= goalsMarket.doubleChanceX2
                   ? `1X (${homeShort} o Emp)`
                   : `X2 (${awayShort} o Emp)`}
               </span>
-              <span className="text-xs font-mono tracking-tight tabular-nums text-slate-200 font-semibold mt-0.5">
+              <span className="text-xs font-mono tracking-tight tabular-nums text-slate-900 font-bold mt-0.5">
                 {Math.max(goalsMarket.over15, goalsMarket.doubleChance1X, goalsMarket.doubleChanceX2)}% prob.
               </span>
-              <span className="text-[10px] text-slate-400 font-mono tracking-tight mt-0.5">
+              <span className="text-[10px] text-slate-500 font-mono tabular-nums tracking-tight mt-0.5">
                 (Marcador: {mostLikelyScore} · {goalsMarket.bttsYes}% BTTS)
               </span>
             </div>
@@ -494,25 +508,25 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
             <button
               type="button"
               onClick={handleToggleExpand}
-              className={`flex-1 py-2 px-4 rounded-xl border text-xs font-mono font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm backdrop-blur-xs ${
+              className={`flex-1 py-2 px-4 rounded-xl border text-xs font-mono font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs ${
                 expanded
-                  ? 'bg-slate-900/60 border-emerald-500/40 text-emerald-300 hover:bg-slate-800/80'
-                  : 'bg-slate-900/40 hover:bg-slate-800/60 border-slate-700/40 text-emerald-400'
+                  ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800'
+                  : 'bg-white hover:bg-slate-100 border-slate-200/90 text-emerald-700'
               }`}
             >
               <span>
                 {onOpenDetail
-                  ? '🔬 Ver pronósticos completos en tarjeta (+EV, Dixon-Coles, Córners, Árbitro)'
+                  ? '🔬 Ver pronósticos completos en tarjeta (+EV, Marcadores, Córners, Árbitro)'
                   : expanded
                   ? 'Ocultar desglose de Córners, Tarjetas, Goles y +EV'
                   : '🔬 Ver análisis completo (Córners, Tarjetas por equipo, Goles, 1X2 y +EV)'}
               </span>
               {onOpenDetail ? (
-                <ChevronDown className="w-4 h-4 text-emerald-400" />
+                <ChevronDown className="w-4 h-4 text-emerald-600" />
               ) : expanded ? (
                 <ChevronUp className="w-4 h-4 text-emerald-400" />
               ) : (
-                <ChevronDown className="w-4 h-4 text-emerald-400" />
+                <ChevronDown className="w-4 h-4 text-emerald-600" />
               )}
             </button>
 
@@ -523,10 +537,10 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
                   e.stopPropagation();
                   onOpenSimulator(fixture);
                 }}
-                className="py-2 px-3 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-700/40 hover:border-emerald-500/40 text-xs font-mono font-semibold text-slate-300 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer shrink-0 backdrop-blur-xs"
+                className="py-2 px-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-200/90 text-xs font-mono font-semibold text-slate-700 hover:text-slate-900 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
                 title="Simulador Monte Carlo"
               >
-                <Calculator className="w-3.5 h-3.5 text-emerald-400" />
+                <Calculator className="w-3.5 h-3.5 text-emerald-600" />
                 <span className="hidden sm:inline">Simular</span>
               </button>
             )}
@@ -917,14 +931,14 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
             </div>
           </div>
 
-          {/* 7. Módulo Interactivo: Calculadora +EV y Criterio de Kelly */}
+          {/* 7. Módulo Interactivo: Calculadora +EV y Gestión de Banca */}
           <div className="p-3 rounded-xl bg-slate-950/40 backdrop-blur-md border border-white/10 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5">
                 <Calculator className="w-3.5 h-3.5 text-emerald-400" />
-                Calculadora +EV / Gestión Kelly
+                Calculadora +EV / Gestión de Banca
               </span>
-              <span className="text-[10px] font-mono text-slate-400">Quarter Kelly (25%)</span>
+              <span className="text-[10px] font-mono text-slate-400">Gestión Prudente (25%)</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
@@ -996,7 +1010,7 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
                   </span>
                 </div>
 
-                {/* Stake Sugerido (Kelly) */}
+                {/* Stake Sugerido */}
                 <div className={`px-2 py-1 rounded-lg border text-xs font-mono font-bold flex flex-col justify-center ${
                   evMetrics.kellyStake === null
                     ? 'bg-slate-900/40 border-white/5 text-slate-500'
@@ -1004,7 +1018,7 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
                     ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
                     : 'bg-slate-900/40 border-white/5 text-slate-400'
                 }`}>
-                  <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-sans">Stake Kelly</span>
+                  <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-sans">Stake Sugerido</span>
                   <span>
                     {evMetrics.kellyStake !== null ? `${evMetrics.kellyStake}% Banca` : '—'}
                   </span>

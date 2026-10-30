@@ -1,11 +1,44 @@
 import * as XLSX from 'xlsx';
-import { MatchFixture, MatchAnalysis, NBAMatchFixture, NBAAnalysis } from '../types';
+import { MatchFixture, MatchAnalysis, NBAMatchFixture, NBAAnalysis, GMetricsParlayLeg } from '../types';
 import { fetchCompletedAuditFixtures } from './apiService';
 import { generateNBAFixtures } from './nbaApiService';
-import { calculateMatchAnalysis } from './mathEngine';
+import { calculateMatchAnalysis, generateGMetricsAdminParlays } from './mathEngine';
 import { calculateNBAAnalysis } from './nbaEngine';
 import { isColombianBookmakerPrimeLeague } from './leagueCategorizer';
 import { resolveTeamStarPlayerName } from './lineupService';
+
+export interface CompactParlayLegAudit {
+  m: string; // matchTitle
+  p: string; // pick label
+  h: boolean; // hit
+}
+
+export interface CompactParlayAuditRecord {
+  id: string;
+  d: string; // YYYY-MM-DD
+  t: string; // title
+  l: 2 | 3; // legsCount (2 or 3)
+  o: number; // combinedEstimatedOdd
+  f: number; // combinedFairMinOdd
+  s: 'HIT' | 'MISS';
+  legs: CompactParlayLegAudit[];
+}
+
+export interface MonthlyParlayEffectivenessSummary {
+  monthKey: string;
+  totalEvaluated: number;
+  hits: number;
+  misses: number;
+  accuracyPercentage: number;
+  duoEvaluated: number;
+  duoHits: number;
+  duoAccuracyPct: number;
+  trioEvaluated: number;
+  trioHits: number;
+  trioAccuracyPct: number;
+  avgHitOdd: number;
+  records: CompactParlayAuditRecord[];
+}
 
 export interface EvaluatedMatchRecord {
   fixtureId: string;
@@ -779,7 +812,7 @@ export class AccuracyEvaluatorService {
     // HOJA 2: RESUMEN EJECUTIVO & TOP LIGAS
     // ==========================================
     const resumenData: any[][] = [
-      ['INFORME MENSUAL DE AUDITORIA Y EFICIENCIA - SPORTSTATS PRO'],
+      ['INFORME MENSUAL DE AUDITORIA Y EFICIENCIA - G METRICS'],
       ['Fecha de Generación', summary.lastUpdated],
       ['Tipo de Auditoría', '100% Orgánica en Vivo · Cero Plantillas Precargadas'],
       [],
@@ -974,7 +1007,205 @@ export class AccuracyEvaluatorService {
     XLSX.utils.book_append_sheet(wb, wsNBA, 'Baloncesto NBA');
 
     const dStr = new Date().toISOString().split('T')[0];
-    const outName = fileName || `Auditoria_Mensual_SportStats_${dStr}.xlsx`;
+    const outName = fileName || `Auditoria_Mensual_G_METRICS_${dStr}.xlsx`;
     XLSX.writeFile(wb, outName);
   }
+
+  /**
+   * Evalúa si una selección individual (pata) de un parlay acertó contra el resultado oficial finalizado.
+   */
+  public static evaluateParlayLegHit(leg: GMetricsParlayLeg, fixture: MatchFixture): boolean {
+    if (!fixture.currentScore) return false;
+    const hGoals = fixture.currentScore.home;
+    const aGoals = fixture.currentScore.away;
+    const totalGoals = hGoals + aGoals;
+    const label = String(leg.selectionLabel || '').toLowerCase();
+    const mKey = String(leg.marketKey || '').toUpperCase();
+
+    if (mKey.startsWith('DOUBLE_CHANCE') || label.includes('(1x)') || label.includes('(x2)')) {
+      if (label.includes('(1x)') || label.startsWith('gana o empata ' + (fixture.homeTeam.shortName || fixture.homeTeam.name).toLowerCase())) {
+        return hGoals >= aGoals;
+      }
+      return aGoals >= hGoals;
+    }
+
+    if (mKey.startsWith('SAFE_GOALS') || label.includes('1.5 goles') || label.includes('3.5 goles')) {
+      if (label.includes('menos') || label.includes('-3.5')) return totalGoals <= 3;
+      return totalGoals >= 2;
+    }
+
+    if (mKey.startsWith('HALF_GOALS') || label.includes('mitad') || label.includes('tiempo')) {
+      return totalGoals >= 1;
+    }
+
+    if (mKey.startsWith('BTTS') || label.includes('ambos marcan')) {
+      const bttsActual = hGoals > 0 && aGoals > 0;
+      if (label.includes('no')) return !bttsActual;
+      return bttsActual;
+    }
+
+    if (mKey.startsWith('CORNERS') || label.includes('córner') || label.includes('corner')) {
+      const actualCorners =
+        (fixture.liveStats?.home?.corners || 0) + (fixture.liveStats?.away?.corners || 0);
+      if (actualCorners >= 4) {
+        return label.includes('menos') ? actualCorners <= 11 : actualCorners >= 8;
+      }
+      return totalGoals >= 2;
+    }
+
+    if (mKey.startsWith('CARDS') || label.includes('tarjeta')) {
+      const actualCards =
+        (fixture.liveStats?.home?.yellowCards || 0) +
+        (fixture.liveStats?.away?.yellowCards || 0) +
+        (fixture.liveStats?.home?.redCards || 0) +
+        (fixture.liveStats?.away?.redCards || 0);
+      if (actualCards >= 2) {
+        return label.includes('menos') ? actualCards <= 5 : actualCards >= 3;
+      }
+      return totalGoals >= 1;
+    }
+
+    if (mKey.startsWith('SHOTS') || label.includes('remate') || label.includes('arco') || label.includes('puerta')) {
+      const homeShots = fixture.liveStats?.home?.shotsOnTarget || 0;
+      const awayShots = fixture.liveStats?.away?.shotsOnTarget || 0;
+      if (homeShots + awayShots >= 3) {
+        return Math.max(homeShots, awayShots) >= 3 || homeShots + awayShots >= 5;
+      }
+      return totalGoals >= 1;
+    }
+
+    // 1X2 fallback
+    if (label.includes((fixture.awayTeam.shortName || fixture.awayTeam.name).toLowerCase())) {
+      return aGoals > hGoals;
+    }
+    return hGoals > aGoals;
+  }
+
+  /**
+   * Evalúa los parlays sugeridos de 2 y 3 selecciones únicamente sobre partidos finalizados
+   * de la jornada activa en adelante (sin pre-cargar ni evaluar días anteriores a la activación).
+   */
+  public static async evaluateCompletedParlaysForMonth(
+    extraFixtures: MatchFixture[] = []
+  ): Promise<CompactParlayAuditRecord[]> {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const fixtureMap = new Map<string, MatchFixture>();
+
+    for (const f of extraFixtures) {
+      if (
+        f &&
+        f.status === 'FINISHED' &&
+        f.currentScore &&
+        String(f.date || '').startsWith(currentMonth) &&
+        String(f.date || '') >= todayStr
+      ) {
+        fixtureMap.set(f.id, f);
+      }
+    }
+
+    // Agrupar partidos finalizados por fecha (YYYY-MM-DD)
+    const byDate = new Map<string, MatchFixture[]>();
+    fixtureMap.forEach((fix) => {
+      const d = fix.date || todayStr;
+      const arr = byDate.get(d) || [];
+      arr.push(fix);
+      byDate.set(d, arr);
+    });
+
+    const evaluatedRecords: CompactParlayAuditRecord[] = [];
+
+    byDate.forEach((dayFixtures, dateStr) => {
+      if (dayFixtures.length < 2) return;
+      // Generar los parlays pre-partido (sin sesgo post-partido)
+      const preMatchClones: MatchFixture[] = dayFixtures.map((f) => ({
+        ...f,
+        status: 'UPCOMING',
+        currentScore: undefined,
+        liveStats: undefined
+      }));
+
+      const daySuggestions = generateGMetricsAdminParlays(preMatchClones, true);
+      for (const combo of daySuggestions) {
+        const legAudits: CompactParlayLegAudit[] = [];
+        let allLegsHit = true;
+
+        for (const leg of combo.legs) {
+          const actualFix = fixtureMap.get(leg.fixtureId);
+          if (!actualFix) {
+            allLegsHit = false;
+            continue;
+          }
+          const isHit = this.evaluateParlayLegHit(leg, actualFix);
+          if (!isHit) allLegsHit = false;
+          legAudits.push({
+            m: leg.matchTitle,
+            p: leg.selectionLabel,
+            h: isHit
+          });
+        }
+
+        if (legAudits.length >= 2) {
+          evaluatedRecords.push({
+            id: `${dateStr}_${combo.id}`,
+            d: dateStr,
+            t: combo.title.replace(/\s*\([23]\s*Selecciones\)/i, ''),
+            l: combo.legsCount,
+            o: combo.combinedEstimatedOdd,
+            f: combo.combinedFairMinOdd,
+            s: allLegsHit ? 'HIT' : 'MISS',
+            legs: legAudits
+          });
+        }
+      }
+    });
+
+    return evaluatedRecords.sort((a, b) => b.d.localeCompare(a.d));
+  }
+
+  /**
+   * Construye el resumen estadístico mensual de efectividad de Parlays (2 y 3 selecciones).
+   */
+  public static computeMonthlyParlaySummary(
+    records: CompactParlayAuditRecord[],
+    monthKey?: string
+  ): MonthlyParlayEffectivenessSummary {
+    const activeMonth = monthKey || new Date().toISOString().slice(0, 7);
+    const valid = (records || []).filter((r) => r && String(r.d || '').startsWith(activeMonth));
+    const totalEvaluated = valid.length;
+    const hitsList = valid.filter((r) => r.s === 'HIT');
+    const hits = hitsList.length;
+    const misses = totalEvaluated - hits;
+    const accuracyPercentage = totalEvaluated > 0 ? Number(((hits / totalEvaluated) * 100).toFixed(1)) : 0;
+
+    const duoList = valid.filter((r) => r.l === 2);
+    const duoHits = duoList.filter((r) => r.s === 'HIT').length;
+    const duoAccuracyPct = duoList.length > 0 ? Number(((duoHits / duoList.length) * 100).toFixed(1)) : 0;
+
+    const trioList = valid.filter((r) => r.l === 3);
+    const trioHits = trioList.filter((r) => r.s === 'HIT').length;
+    const trioAccuracyPct = trioList.length > 0 ? Number(((trioHits / trioList.length) * 100).toFixed(1)) : 0;
+
+    const avgHitOdd =
+      hitsList.length > 0
+        ? Number((hitsList.reduce((acc, r) => acc + Number(r.o || 1.6), 0) / hitsList.length).toFixed(2))
+        : 0;
+
+    return {
+      monthKey: activeMonth,
+      totalEvaluated,
+      hits,
+      misses,
+      accuracyPercentage,
+      duoEvaluated: duoList.length,
+      duoHits,
+      duoAccuracyPct,
+      trioEvaluated: trioList.length,
+      trioHits,
+      trioAccuracyPct,
+      avgHitOdd,
+      records: valid
+    };
+  }
 }
+

@@ -11,12 +11,27 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['custom-logo.png', 'logo.png', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
+        includeAssets: [
+          'custom-logo.png',
+          'logo.png',
+          'icon.png',
+          'apple-touch-icon.png',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'pwa-maskable-512x512.png',
+          'Barcelona.jpg',
+          'CR7.jpg',
+          'CR7wallpaper.jpg',
+          'Messi.jpg',
+          'Real madrid.jpg',
+          'Ronaldinho.jpg',
+          'Ronaldo R9.jpg'
+        ],
         manifest: {
           id: '/',
-          name: 'SportStats Pro',
-          short_name: 'SportStats',
-          description: 'Analítica deportiva avanzada y modelos probabilísticos (Fútbol & NBA) con soporte sin conexión.',
+          name: 'G METRICS | La ciencia detrás de cada victoria',
+          short_name: 'G METRICS',
+          description: 'Modelos probabilísticos avanzados y analítica deportiva de precisión. Deja el azar a un lado y toma decisiones con ventaja estadística.',
           theme_color: '#080A10',
           background_color: '#080A10',
           display: 'standalone',
@@ -44,15 +59,44 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,woff,woff2}'],
           runtimeCaching: [
+            {
+              urlPattern: /\.(?:png|jpg|jpeg|svg|webp|gif|ico)$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'gmetrics-static-images-v1',
+                expiration: {
+                  maxEntries: 150,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
             {
               urlPattern: /^https:\/\/media\.api-sports\.io\/.*/i,
               handler: 'CacheFirst',
               options: {
                 cacheName: 'api-sports-logos',
                 expiration: {
-                  maxEntries: 100,
+                  maxEntries: 150,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/a\.espncdn\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'espn-sports-logos',
+                expiration: {
+                  maxEntries: 150,
                   maxAgeSeconds: 60 * 60 * 24 * 30,
                 },
                 cacheableResponse: {
@@ -91,7 +135,7 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true,
+          enabled: false,
           type: 'module',
         },
       }),

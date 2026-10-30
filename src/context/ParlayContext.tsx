@@ -21,6 +21,7 @@ interface ParlayContextType {
   removePick: (pickId: string) => void;
   updatePickOdd: (pickId: string, newOdd: number) => void;
   clearParlay: () => void;
+  loadSuggestedParlay: (newPicks: ParlayPick[], customToast?: string) => void;
   isPickInParlay: (fixtureId: string, marketKey?: string) => boolean;
   getPickForFixture: (fixtureId: string) => ParlayPick | undefined;
   // Computed values
@@ -174,6 +175,11 @@ export const ParlayProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     showToast('Boleto de combinadas vaciado.');
   }, [showToast]);
 
+  const loadSuggestedParlay = useCallback((newPicks: ParlayPick[], customToast?: string) => {
+    setPicks(newPicks);
+    showToast(customToast || `Parlay G METRICS cargado (${newPicks.length} selecciones).`);
+  }, [showToast]);
+
   const isPickInParlay = useCallback(
     (fixtureId: string, marketKey?: string) => {
       if (marketKey) {
@@ -233,7 +239,7 @@ export const ParlayProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         label: 'Probabilidad Alta (Bajo Riesgo)',
         badgeClass: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
         dotColor: '#10b981',
-        description: 'Excelente solidez estadística basada en los modelos Poisson.'
+        description: 'Excelente solidez estadística basada en el motor G METRICS.'
       };
     }
     if (jointProbability >= 30) {
@@ -275,6 +281,7 @@ export const ParlayProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         removePick,
         updatePickOdd,
         clearParlay,
+        loadSuggestedParlay,
         isPickInParlay,
         getPickForFixture,
         totalOdds,

@@ -117,7 +117,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
         prob: goalsMarket.over15,
         odd: Number((100 / Math.max(goalsMarket.over15, 1)).toFixed(2)),
         key: 'OVER_15',
-        rationale: `Expectativa de ${dixonColes.totalXG.toFixed(2)} goles esperados (xG: ${dixonColes.lambdaHome.toFixed(2)} local vs ${dixonColes.lambdaAway.toFixed(2)} visita). La distribución Dixon-Coles otorga un ${goalsMarket.over15}% de probabilidad a un mínimo de 2 anotaciones.`
+        rationale: `Expectativa de ${dixonColes.totalXG.toFixed(2)} goles esperados (xG: ${dixonColes.lambdaHome.toFixed(2)} local vs ${dixonColes.lambdaAway.toFixed(2)} visita). El motor estadístico G METRICS otorga un ${goalsMarket.over15}% de probabilidad a un mínimo de 2 anotaciones.`
       };
     } else if (goalsMarket.under35 >= 75) {
       return {

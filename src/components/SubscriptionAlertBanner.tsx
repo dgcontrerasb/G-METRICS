@@ -83,7 +83,7 @@ export const SubscriptionAlertBanner: React.FC = () => {
   };
 
   const cleanPhone = alertInfo.adminWhatsApp.replace(/[^0-9]/g, '');
-  const renewalMsg = `👋 Hola! Mi suscripción de SportStats Pro (@${alertInfo.username}) vence en ${
+  const renewalMsg = `👋 Hola! Mi suscripción de G METRICS (@${alertInfo.username}) vence en ${
     alertInfo.daysLeft === 1 ? '1 día' : `${alertInfo.daysLeft} días`
   }. Me gustaría renovar mi acceso para seguir utilizándolo sin interrupción. ¿Cuáles son los métodos de pago?`;
   const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(renewalMsg)}`;

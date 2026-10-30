@@ -30,7 +30,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
   const [regPin, setRegPin] = useState('');
   const [showRegPin, setShowRegPin] = useState(false);
   const [regDisplayName, setRegDisplayName] = useState('');
-  const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(true);
+  const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(false);
   const [regLoading, setRegLoading] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
   const [regSuccess, setRegSuccess] = useState<string | null>(null);
@@ -320,7 +320,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
     }
 
     if (!acceptedLegalTerms) {
-      setRegError('Debes confirmar que eres mayor de 18 años y aceptar el aviso legal de uso autónomo.');
+      setRegError('Debes marcar la casilla obligatoria aceptando los Términos de Servicio, la Política de Tratamiento de Datos (Ley 1581 / Habeas Data) y mayoría de edad (+18).');
       return;
     }
 
@@ -343,10 +343,9 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
       // ignore
     }
 
-    // 1. Preparar URL de WhatsApp inmediatamente (sin exponer el PIN en texto plano en caché pública)
+    // 1. Preparar URL de WhatsApp inmediatamente con el mensaje corporativo oficial
     const cleanPhone = (adminWhatsApp || '573213902708').replace(/[^0-9]/g, '');
-    const greetingName = cleanName ? ` Mi nombre es ${cleanName}.` : '';
-    const msg = `🔥 *Solicitud de Activación de Cuenta · SportStats Pro*${greetingName}\n\n👤 *Usuario solicitado:* @${cleanUser}\n📱 *Equipo:* ${friendlyDeviceName || currentDevId}\n\nHola! Acabo de registrar mi solicitud en SportStats Pro con mi PIN privado. ¿Cuáles son los planes y métodos de pago disponibles? Muchas gracias!`;
+    const msg = `Hola, acabo de registrar mi cuenta en G METRICS (@${cleanUser}). Deseo conocer los planes de suscripción disponibles para activar mi acceso al software de estadísticas deportivas.`;
     const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
 
     // 2. Guardar respaldo local inmediato de la solicitud (sin PIN en texto plano)
@@ -440,7 +439,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
   const handleRequestDeviceChange = () => {
     const cleanPhone = adminWhatsApp.replace(/[^0-9]/g, '');
     const userTag = usernameInput ? `@${usernameInput}` : 'mi usuario';
-    const msg = `📱 *Solicitud de Desvinculación de Dispositivo · SportStats Pro*\n\nHola Administrador, cambié de dispositivo o borré caché en mi navegador.\n\n👤 *Usuario:* ${userTag}\n📱 *Nuevo equipo:* ${friendlyDeviceName}\n\n¿Podrías por favor desvincular mi equipo anterior para poder ingresar en este nuevo? ¡Muchas gracias!`;
+    const msg = `📱 *Solicitud de Desvinculación de Dispositivo · G METRICS*\n\nHola Administrador, cambié de dispositivo o borré caché en mi navegador.\n\n👤 *Usuario:* ${userTag}\n📱 *Nuevo equipo:* ${friendlyDeviceName}\n\n¿Podrías por favor desvincular mi equipo anterior para poder ingresar en este nuevo? ¡Muchas gracias!`;
     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   };
@@ -766,30 +765,53 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
                 </div>
               </div>
 
-              {/* Active +18 & Legal Consent Checkbox */}
-              <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200/90 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={acceptedLegalTerms}
-                  onChange={(e) => setAcceptedLegalTerms(e.target.checked)}
-                  className="mt-0.5 accent-emerald-600 rounded cursor-pointer"
-                />
-                <span className="text-[10px] text-slate-600 leading-relaxed">
-                  Confirmo que soy <strong className="text-slate-900">mayor de 18 años (+18)</strong> y comprendo que SportStats Pro es una guía estadística orientativa (no casa de apuestas) y cada decisión es mi exclusiva responsabilidad.{' '}
-                  {onOpenGuide && (
+              {/* Mandatory +18, Terms of Service & Habeas Data (Ley 1581) Checkbox */}
+              <div
+                className={`p-3 rounded-xl border transition space-y-2 ${
+                  acceptedLegalTerms
+                    ? 'bg-emerald-50/50 border-emerald-300'
+                    : 'bg-slate-50/90 border-slate-200/90 hover:border-amber-300'
+                }`}
+              >
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={acceptedLegalTerms}
+                    onChange={(e) => {
+                      setAcceptedLegalTerms(e.target.checked);
+                      if (e.target.checked) setRegError(null);
+                    }}
+                    className="mt-0.5 accent-emerald-600 rounded cursor-pointer w-4 h-4 shrink-0"
+                  />
+                  <div className="text-[10.5px] text-slate-600 leading-snug text-left space-y-0.5">
+                    <p className="font-bold text-slate-900">
+                      Acepto Términos de Servicio y Habeas Data (+18)
+                    </p>
+                    <p className="text-[10px] text-slate-600 leading-relaxed">
+                      Confirmo que soy <strong className="text-slate-800">mayor de 18 años</strong> y que G METRICS comercializa licencias de software estadístico sin garantizar utilidades financieras.
+                    </p>
+                  </div>
+                </label>
+
+                {onOpenGuide && (
+                  <div className="pt-1.5 border-t border-slate-200/70 flex flex-wrap items-center justify-center gap-2 text-[10px]">
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        onOpenGuide('LEGAL');
-                      }}
-                      className="text-amber-700 hover:underline font-semibold cursor-pointer"
+                      onClick={() => onOpenGuide('LEGAL')}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold transition cursor-pointer"
                     >
-                      Leer términos
+                      📄 Términos de Servicio
                     </button>
-                  )}
-                </span>
-              </label>
+                    <button
+                      type="button"
+                      onClick={() => onOpenGuide('LEGAL')}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-50 text-amber-800 border border-amber-200 font-semibold transition cursor-pointer"
+                    >
+                      🔒 Ley 1581 / Habeas Data
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {regError && (
                 <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2 font-medium">
@@ -820,8 +842,8 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
 
               <button
                 type="submit"
-                disabled={regLoading}
-                className="w-full py-2.5 px-4 rounded-xl font-semibold text-sm bg-emerald-600 hover:bg-emerald-500 text-white transition active:scale-[0.98] disabled:opacity-50 cursor-pointer shadow-sm flex items-center justify-center gap-2"
+                disabled={regLoading || !acceptedLegalTerms}
+                className="w-full py-2.5 px-4 rounded-xl font-semibold text-sm bg-emerald-600 hover:bg-emerald-500 text-white transition active:scale-[0.98] disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer shadow-sm flex items-center justify-center gap-2"
               >
                 <MessageCircle className="w-4 h-4" />
                 <span>{regLoading ? 'Procesando solicitud...' : 'Solicitar Activación por WhatsApp'}</span>
@@ -904,7 +926,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
           )}
         </div>
         <p className="text-[10px] text-slate-500 leading-relaxed">
-          <strong className="text-slate-700">AVISO LEGAL:</strong> G METRICS es una herramienta de análisis estadístico e informativo; no somos casa de apuestas, no captamos dinero del público ni garantizamos ganancias seguras. Toda decisión o jugada realizada por el usuario corre bajo su exclusiva autonomía y responsabilidad patrimonial.
+          G METRICS es una herramienta analítica y de software estadístico basada en modelos matemáticos y telemetría de eventos deportivos. No somos una casa de apuestas, no operamos juegos de azar ni recibimos fondos destinados a apuestas. La información y métricas presentadas son de carácter exclusivamente informativo y educativo. El usuario es el único responsable de sus decisiones personales. Servicio exclusivo para mayores de edad (+18). Todos los nombres comerciales, escudos y marcas deportivas mostradas pertenecen a sus respectivos titulares y se utilizan con fines meramente identificativos y descriptivos (Uso Legítimo / Nominative Fair Use).
         </p>
       </footer>
     </div>

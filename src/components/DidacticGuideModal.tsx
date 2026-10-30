@@ -56,14 +56,14 @@ const GLOSSARY_ITEMS: GlossaryEntry[] = [
       'Un evento con 50% de probabilidad real tiene una Cuota Justa de @2.00 (100 / 50 = 2.00).'
   },
   {
-    term: 'Criterio de Kelly (Fraccional)',
-    shortCode: 'Kelly %',
+    term: 'Gestión de Banca Sugerida (Stake %)',
+    shortCode: 'Stake %',
     category: 'MATH',
     categoryLabel: '🧮 Matemática & Valor',
     definition:
-      'Fórmula matemática de gestión de riesgo que sugiere qué porcentaje prudente de tu banca (Bankroll) asignar a una selección según el tamaño de la ventaja (+EV).',
+      'Métrica de control de riesgo que sugiere qué porcentaje prudente de tu banca (Bankroll) asignar a una selección según el tamaño de la ventaja (+EV).',
     example:
-      'Si Kelly sugiere 2.5% y tu presupuesto total recreativo es de $100.000, el monto sugerido de exposición es $2.500.'
+      'Si el sistema sugiere 2.5% y tu presupuesto total recreativo es de $100.000, el monto sugerido de exposición es $2.500.'
   },
   {
     term: 'Stake (Monto o Nivel de Confianza)',
@@ -146,12 +146,12 @@ const GLOSSARY_ITEMS: GlossaryEntry[] = [
       'Con "1X", aciertas tanto si el equipo local gana 2-0 como si el partido termina empatado 1-1.'
   },
   {
-    term: 'Modelo Bivariado Dixon-Coles & Poisson',
-    shortCode: 'Dixon-Coles',
+    term: 'Matriz de Marcadores Exactos G METRICS',
+    shortCode: 'Matriz Goles',
     category: 'SOCCER',
     categoryLabel: '⚽ Fútbol',
     definition:
-      'Algoritmo probabilístico especializado en fútbol que construye una matriz exacta de marcadores (0-0 hasta 5-5) corrigiendo la dependencia en resultados bajos (0-0, 1-0, 0-1, 1-1) mediante el factor Rho (ρ).',
+      'Algoritmo probabilístico especializado en fútbol que construye una matriz exacta de marcadores (0-0 hasta 5-5) calibrando la correlación estadística en encuentros cerrados.',
     example:
       'Permite identificar qué marcadores exactos y líneas de goles concentran la mayor densidad probabilística.'
   },
@@ -201,7 +201,7 @@ const GLOSSARY_ITEMS: GlossaryEntry[] = [
     category: 'NBA',
     categoryLabel: '🏀 NBA',
     definition:
-      'Estimaciones estadísticas individuales (mediante distribución de Poisson) sobre el rendimiento de una estrella en Puntos (PTS), Rebotes (REB), Asistencias (AST) o Triples (3PM).',
+      'Estimaciones estadísticas individuales sobre el rendimiento de una estrella en Puntos (PTS), Rebotes (REB), Asistencias (AST) o Triples (3PM).',
     example:
       'Proyección de 27.4 PTS y 3.8 triples (3PM) basada en minutos esperados y ritmo del partido.'
   },
@@ -503,7 +503,7 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
                     type="text"
                     value={glossarySearch}
                     onChange={(e) => setGlossarySearch(e.target.value)}
-                    placeholder="Buscar sigla o término (ej: xG, +EV, BTTS, Pace, Spread, Kelly...)"
+                    placeholder="Buscar sigla o término (ej: xG, +EV, BTTS, Pace, Spread, Stake...)"
                     className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-cyan-500 transition"
                   />
                   {glossarySearch && (
@@ -615,75 +615,81 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
           )}
 
           {/* =========================================================
-              TAB 3: AVISO LEGAL, EXENCIÓN DE RESPONSABILIDAD Y +18
+              TAB 3: TÉRMINOS DE SERVICIO, HABEAS DATA (LEY 1581) Y AVISO LEGAL (+18)
              ========================================================= */}
           {activeTab === 'LEGAL' && (
             <div className="space-y-3">
-              {/* Banner Principal +18 */}
+              {/* Banner Principal +18 y Naturaleza del Software */}
               <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 flex items-start gap-3">
                 <div className="w-9 h-9 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-800 font-black text-xs shrink-0">
                   +18
                 </div>
                 <div className="space-y-0.5">
                   <h3 className="text-xs sm:text-sm font-bold text-slate-900">
-                    Declaración de Exención de Responsabilidad y Uso Autónomo
+                    Marco Legal, Términos de Servicio y Protección de Datos (Ley 1581)
                   </h3>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    <strong>G METRICS</strong> es exclusivamente una{' '}
-                    <strong>herramienta de análisis estadístico e informativo</strong>. Cada usuario actúa bajo su propio criterio y responsabilidad patrimonial.
+                    G METRICS es una herramienta analítica y de software estadístico basada en modelos matemáticos y telemetría de eventos deportivos. No somos una casa de apuestas, no operamos juegos de azar ni recibimos fondos destinados a apuestas. La información y métricas presentadas son de carácter exclusivamente informativo y educativo. El usuario es el único responsable de sus decisiones personales. Servicio exclusivo para mayores de edad (+18). Todos los nombres comerciales, escudos y marcas deportivas mostradas pertenecen a sus respectivos titulares y se utilizan con fines meramente identificativos y descriptivos (Uso Legítimo / Nominative Fair Use).
                   </p>
                 </div>
               </div>
 
-              {/* 5 Cláusulas de Blindaje Legal Compactas */}
+              {/* Bloques Jurídicos Principales */}
               <div className="space-y-2.5">
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1">
+                {/* 1. Términos de Servicio */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1.5">
                   <h4 className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>1. No somos Casa de Apuestas</span>
+                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>1. Términos de Servicio (Licencia de Acceso a Software SaaS)</span>
                   </h4>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    No captamos dinero del público, no intermediamos pagos ni procesamos apuestas. Las simulaciones de cuotas y boletos tienen fines estrictamente analíticos.
+                    <strong>G METRICS</strong> comercializa exclusivamente <strong>licencias temporales de acceso a un software de análisis matemático y estadístico</strong>. Los pagos realizados por el usuario corresponden única y exclusivamente a la suscripción tecnológica de uso de la plataforma. G METRICS no capta dinero para apuestas, no intermedia jugadas, <strong>no garantiza utilidades financieras ni aciertos seguros</strong>, y se deslinda de cualquier responsabilidad patrimonial, directa o indirecta, derivada de las decisiones deportivas o recreativas tomadas de manera autónoma por el usuario.
                   </p>
                 </div>
 
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1">
-                  <h4 className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>2. Ausencia de Garantía de Acierto</span>
-                  </h4>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Los modelos matemáticos (Poisson, Dixon-Coles y +EV) se basan en tendencias históricas. Ningún porcentaje o proyección garantiza resultados ni ganancias seguras.
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1">
+                {/* 2. Política de Tratamiento de Datos (Ley 1581 / Habeas Data) */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1.5">
                   <h4 className="text-xs font-bold text-cyan-800 flex items-center gap-1.5">
-                    <Scale className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
-                    <span>3. Autonomía del Usuario (No es Asesoría Financiera)</span>
+                    <Lock className="w-4 h-4 text-cyan-600 shrink-0" />
+                    <span>2. Política de Tratamiento de Datos Personales (Ley 1581 de 2012 / Habeas Data)</span>
                   </h4>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    La decisión final de operar en plataformas externas recae 100% en el usuario, exonerando a G METRICS de pérdidas directas o indirectas.
+                    En cumplimiento del régimen de protección de datos personales (Ley Estatutaria 1581 de 2012 y normas concordantes), informamos que los datos solicitados en el registro (<strong>nombre de usuario o alias, número de contacto de WhatsApp e identificador técnico de dispositivo / Device ID</strong>) se recopilan y tratan con el <strong>único propósito de validar la activación de la licencia de software, prevenir el uso simultáneo o multicuentas en un mismo acceso (Política 1/1) y brindar soporte técnico directo</strong>. No compartimos, vendemos ni cedemos datos a terceros.
                   </p>
+                  <div className="p-2.5 rounded-lg bg-white border border-slate-200 text-[11px] text-slate-700 space-y-1">
+                    <span className="font-bold text-slate-900 block">
+                      Canales Oficiales para Derechos ARCO (Consulta, Actualización, Rectificación y Supresión de Datos):
+                    </span>
+                    <p className="text-[10.5px] text-slate-600">
+                      El titular puede ejercer en cualquier momento sus derechos de conocer, actualizar, rectificar o solicitar la eliminación de sus datos enviando su solicitud a:
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3 pt-0.5 font-mono text-[11px]">
+                      <a
+                        href="mailto:dgcontrerasb@gmail.com"
+                        className="text-indigo-700 hover:underline font-bold"
+                      >
+                        ✉️ dgcontrerasb@gmail.com
+                      </a>
+                      <a
+                        href="https://wa.me/573213902708"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-emerald-700 hover:underline font-bold"
+                      >
+                        📱 WhatsApp Oficial: +57 321 390 2708
+                      </a>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1">
-                  <h4 className="text-xs font-bold text-rose-800 flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                    <span>4. Exclusivo para Mayores de 18 Años (+18)</span>
+                {/* 3. Propiedad Intelectual y Nominative Fair Use */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1">
+                  <h4 className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
+                    <Scale className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>3. Uso Legítimo de Signos Distintivos (Nominative Fair Use) y Mayoría de Edad (+18)</span>
                   </h4>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Contenido restringido a mayores de edad. Nunca comprometas recursos destinados a necesidades básicas, ahorro o familia.
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1">
-                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <BookOpen className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                    <span>5. Cumplimiento Legal Local y Licencia Personal</span>
-                  </h4>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Cada usuario debe cumplir la normativa vigente en su jurisdicción (ej. Coljuegos en Colombia). El acceso es personal y vinculado a 1 dispositivo autorizado.
+                    Todos los nombres de ligas, clubes, escudos y marcas deportivas que aparecen en las tablas estadísticas pertenecen a sus respectivos propietarios legítimos y se emplean con carácter estrictamente descriptivo, informativo y referencial (<em>Nominative Fair Use</em>), sin reclamar afiliación ni patrocinio oficial. El acceso al software está estrictamente restringido a personas <strong>mayores de 18 años (+18)</strong>.
                   </p>
                 </div>
               </div>
@@ -693,8 +699,8 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
 
         {/* Footer */}
         <div className="px-4 sm:px-5 py-3 border-t border-slate-200/80 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-[11px] text-slate-500">
-            Guía estadística orientativa (+18) · Uso autónomo y responsable.
+          <span className="text-[10.5px] text-slate-500">
+            Software estadístico informativo (+18) · Soporte Habeas Data: dgcontrerasb@gmail.com
           </span>
           <button
             onClick={onClose}

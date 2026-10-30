@@ -60,7 +60,7 @@ export function exportToExcel(items: ExportItem[], fileNamePrefix = 'Pronosticos
     ].join(';');
   });
 
-  const legalFooterRow = `"AVISO LEGAL (+18): Reporte estadistico e informativo generado por SportStats Pro. No somos casa de apuestas ni garantizamos resultados; cada decision o jugada es responsabilidad exclusiva del usuario."`;
+  const legalFooterRow = `"AVISO LEGAL (+18): Reporte estadistico e informativo generado por G METRICS. No somos casa de apuestas ni garantizamos resultados; cada decision o jugada es responsabilidad exclusiva del usuario."`;
 
   // UTF-8 BOM (\uFEFF) ensures Excel opens with proper accents and character encoding
   const csvContent = '\uFEFF' + [headers.join(';'), ...rows, '', legalFooterRow].join('\r\n');
@@ -101,7 +101,7 @@ export function exportToPDF(items: ExportItem[], title = 'Reporte de Pronóstico
   doc.setTextColor(6, 182, 212); // Cyan accent
   doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
-  doc.text('SportStats Pro · Pronósticos', 30, 32);
+  doc.text('G METRICS · Pronósticos', 30, 32);
 
   doc.setTextColor(241, 245, 249);
   doc.setFontSize(12);
@@ -174,7 +174,7 @@ export function exportToPDF(items: ExportItem[], title = 'Reporte de Pronóstico
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(100, 116, 139);
       doc.text(
-        'AVISO LEGAL (+18): Herramienta de análisis estadístico orientativo. SportStats Pro no es casa de apuestas ni garantiza resultados futuros; cada decisión es responsabilidad exclusiva del usuario.',
+        'AVISO LEGAL (+18): Herramienta de análisis estadístico orientativo. G METRICS no es casa de apuestas ni garantiza resultados futuros; cada decisión es responsabilidad exclusiva del usuario.',
         data.settings.margin.left,
         pageHeight - 20
       );
@@ -182,7 +182,7 @@ export function exportToPDF(items: ExportItem[], title = 'Reporte de Pronóstico
   });
 
   const dateStr = new Date().toISOString().split('T')[0];
-  doc.save(`Pronosticos_SportStatsPro_${dateStr}.pdf`);
+  doc.save(`Pronosticos_G_METRICS_${dateStr}.pdf`);
 }
 
 // 3. Export NBA to Excel (.csv)
@@ -251,7 +251,7 @@ export function exportNBAToExcel(items: NBAExportItem[], fileNamePrefix = 'Prono
     ].join(';');
   });
 
-  const legalFooterRow = `"AVISO LEGAL (+18): Reporte estadistico e informativo generado por SportStats Pro. No somos casa de apuestas ni garantizamos resultados; cada decision o jugada es responsabilidad exclusiva del usuario."`;
+  const legalFooterRow = `"AVISO LEGAL (+18): Reporte estadistico e informativo generado por G METRICS. No somos casa de apuestas ni garantizamos resultados; cada decision o jugada es responsabilidad exclusiva del usuario."`;
 
   const csvContent = '\uFEFF' + [headers.join(';'), ...rows, '', legalFooterRow].join('\r\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -291,7 +291,7 @@ export function exportNBAToPDF(items: NBAExportItem[], title = 'Reporte de Pron�
   doc.setTextColor(245, 158, 11); // Amber
   doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
-  doc.text('SportStats Pro · NBA', 30, 32);
+  doc.text('G METRICS · NBA', 30, 32);
 
   doc.setTextColor(241, 245, 249);
   doc.setFontSize(12);
@@ -365,7 +365,7 @@ export function exportNBAToPDF(items: NBAExportItem[], title = 'Reporte de Pron�
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(100, 116, 139);
       doc.text(
-        'AVISO LEGAL (+18): Herramienta de análisis estadístico orientativo. SportStats Pro no es casa de apuestas ni garantiza resultados futuros; cada decisión es responsabilidad exclusiva del usuario.',
+        'AVISO LEGAL (+18): Herramienta de análisis estadístico orientativo. G METRICS no es casa de apuestas ni garantiza resultados futuros; cada decisión es responsabilidad exclusiva del usuario.',
         data.settings.margin.left,
         pageHeight - 20
       );
@@ -373,5 +373,5 @@ export function exportNBAToPDF(items: NBAExportItem[], title = 'Reporte de Pron�
   });
 
   const dateStr = new Date().toISOString().split('T')[0];
-  doc.save(`Pronosticos_NBA_${dateStr}.pdf`);
+  doc.save(`Pronosticos_NBA_G_METRICS_${dateStr}.pdf`);
 }
