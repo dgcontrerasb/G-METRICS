@@ -55,7 +55,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
     icon: '🚩',
     badge: {
       label: realCornersTotal !== null ? `En Vivo: ${realCornersTotal} Córners` : 'Volumen Bandas',
-      className: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+      className: 'bg-sky-50 text-sky-800 border-sky-200'
     },
     selectionTitle: cornersMarket.recommendedLine,
     probability: cornersMarket.recommendedProb,
@@ -86,7 +86,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
     icon: '🟨',
     badge: {
       label: realYellowsTotal !== null ? `En Vivo: ${realYellowsTotal} 🟨` : 'Criterio Arbitral',
-      className: 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+      className: 'bg-amber-50 text-amber-800 border-amber-200'
     },
     selectionTitle: refereeCards.recommendedCardPick,
     probability: refereeCards.recommendedCardProb,
@@ -148,7 +148,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
     icon: '⚽',
     badge: {
       label: 'Eficiencia xG',
-      className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+      className: 'bg-emerald-50 text-emerald-800 border-emerald-200'
     },
     selectionTitle: bestGoalPick.title,
     probability: bestGoalPick.prob,
@@ -189,7 +189,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
     icon: '⏱️',
     badge: {
       label: 'Distribución 1T/2T',
-      className: 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+      className: 'bg-purple-50 text-purple-800 border-purple-200'
     },
     selectionTitle: halfGoalPick.title,
     probability: halfGoalPick.prob,
@@ -235,7 +235,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
         icon: '🎯',
         badge: {
           label: 'Rematador Estrella',
-          className: 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+          className: 'bg-sky-50 text-sky-800 border-sky-200'
         },
         selectionTitle: `${safeStarName} (+0.5 Remates a Puerta)`,
         probability: estimatedProb,
@@ -257,7 +257,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
         icon: '🎯',
         badge: {
           label: 'Volumen Total',
-          className: 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+          className: 'bg-sky-50 text-sky-800 border-sky-200'
         },
         selectionTitle: `${targetLine} (Totales)`,
         probability: lineProb,
@@ -288,7 +288,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
       icon: '🛡️',
       badge: {
         label: 'Margen Cobertura',
-        className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+        className: 'bg-emerald-50 text-emerald-800 border-emerald-200'
       },
       selectionTitle: title,
       probability: bestProb,
@@ -343,7 +343,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
             : '⚽',
         badge: {
           label: '⭐ Más Probable',
-          className: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+          className: 'bg-emerald-50 text-emerald-800 border-emerald-200'
         },
         selectionTitle: topPick.label,
         probability: topPick.probability,
@@ -426,21 +426,21 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
   };
 
   return (
-    <div className="space-y-3 pb-8">
-      {/* Banner Informativo sobre Cuotas de Referencia */}
-      <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-slate-900/60 to-slate-900/90 border border-emerald-500/30 flex items-start gap-2.5">
-        <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 shrink-0 mt-0.5">
+    <div className="space-y-3 pb-6">
+      {/* Banner Informativo sobre Cuotas de Referencia (Claro y legible) */}
+      <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200/90 flex items-start gap-2.5 shadow-2xs">
+        <div className="w-8 h-8 rounded-xl bg-white border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0 mt-0.5">
           <Sparkles className="w-4 h-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-sans font-bold text-white flex items-center gap-1.5 flex-wrap">
+          <div className="text-xs font-sans font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
             <span>Oportunidades de Alta Probabilidad (+EV)</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
+            <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
               6 Mercados
             </span>
           </div>
-          <p className="text-[11px] text-slate-300 leading-relaxed mt-1">
-            <span className="text-amber-300 font-semibold">Nota de cuotas:</span> Las cuotas mostradas corresponden a un promedio referencial de mercado internacional y no a la cuota fija de una casa específica. Puedes calibrar la cuota exacta de tu casa de apuestas en el boleto de combinadas.
+          <p className="text-[11px] text-slate-600 leading-relaxed mt-1">
+            <span className="text-amber-800 font-semibold">Nota de cuotas:</span> Promedio referencial internacional. Puedes ajustar la cuota exacta de tu casa en el boleto de combinadas.
           </p>
         </div>
       </div>
@@ -449,32 +449,32 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
       <div className="space-y-2.5">
         {sortedCapsules.map((item, idx) => {
           const inParlay = isPickInParlay(fixture.id, item.marketKey);
-          const isFirst = idx === 0; // La primera es la estadística más probable (Análisis Pro FIJO)
-          const isExpanded = isFirst || expandedIndex === idx; // Desplegada si es la 1ra o si el usuario la abrió
+          const isFirst = idx === 0;
+          const isExpanded = isFirst || expandedIndex === idx;
 
           return (
             <div
               key={item.id}
-              className={`rounded-2xl border transition-all p-3 sm:p-3.5 space-y-2.5 backdrop-blur-sm ${
+              className={`rounded-2xl border transition-all p-3 sm:p-3.5 space-y-2.5 ${
                 isFirst
-                  ? 'bg-gradient-to-b from-emerald-500/10 to-slate-900/80 border-emerald-500/40 shadow-md shadow-emerald-500/5'
+                  ? 'bg-gradient-to-b from-emerald-50/60 to-white border-emerald-300 shadow-xs'
                   : inParlay
-                  ? 'bg-amber-500/10 border-amber-400/60 ring-1 ring-amber-400/40 shadow-lg shadow-amber-500/10'
-                  : 'bg-slate-900/70 border-slate-800/90 hover:border-slate-700/80'
+                  ? 'bg-amber-50/50 border-amber-300 ring-1 ring-amber-300/60 shadow-xs'
+                  : 'bg-white border-slate-200/90 hover:border-slate-300 shadow-2xs'
               }`}
             >
-              {/* Header de la Cápsula: Categoría + Badges */}
+              {/* Header de la Cápsula: Categoría + Badge único */}
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="text-base shrink-0 leading-none">{item.icon}</span>
-                  <span className="text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-wider text-slate-300 truncate">
+                  <span className="text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-wider text-slate-600 truncate">
                     {item.category}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {isFirst && (
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  {isFirst && item.badge.label !== '⭐ Más Probable' && (
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
                       ⭐ Más Probable
                     </span>
                   )}
@@ -484,49 +484,47 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
                 </div>
               </div>
 
-              {/* Título de la Selección (Ancho completo, nunca tapado) */}
-              <div className="text-xs sm:text-sm font-sans font-bold text-white leading-snug">
+              {/* Título de la Selección */}
+              <div className="text-xs sm:text-sm font-sans font-bold text-slate-900 leading-snug">
                 {item.selectionTitle}
               </div>
 
               {/* Fila Protegida: Probabilidad y Cuota a la izquierda, Botón Boleto a la derecha */}
-              <div className="flex items-center justify-between gap-2 p-2 sm:p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/80">
-                {/* Cuota y Probabilidad bien espaciadas y legibles */}
-                <div className="flex items-center gap-2.5 sm:gap-4 min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                   <div>
-                    <span className="text-[9px] font-mono text-slate-400 block uppercase leading-none mb-0.5">
+                    <span className="text-[9px] font-mono text-slate-500 block uppercase leading-none mb-0.5">
                       Probabilidad
                     </span>
-                    <span className="text-xs sm:text-sm font-mono font-bold text-emerald-400 whitespace-nowrap">
+                    <span className="text-xs sm:text-sm font-mono font-bold text-emerald-700 whitespace-nowrap">
                       {item.probability}%
                     </span>
                   </div>
 
-                  <div className="h-6 w-px bg-slate-800 shrink-0" />
+                  <div className="h-6 w-px bg-slate-200 shrink-0" />
 
                   <div>
-                    <span className="text-[9px] font-mono text-slate-400 block uppercase leading-none mb-0.5">
+                    <span className="text-[9px] font-mono text-slate-500 block uppercase leading-none mb-0.5">
                       Cuota Prom.
                     </span>
-                    <span className="text-xs sm:text-sm font-mono font-bold text-amber-300 whitespace-nowrap">
+                    <span className="text-xs sm:text-sm font-mono font-bold text-amber-700 whitespace-nowrap">
                       @{item.fairOdd.toFixed(2)}
                     </span>
                   </div>
                 </div>
 
-                {/* Botón Boleto: Posicionado a la derecha con ancho propio, no tapa nada */}
                 <button
                   type="button"
                   onClick={() => handleToggle(item)}
-                  className={`py-2 px-3 rounded-xl font-sans font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shrink-0 min-h-[38px] ${
+                  className={`py-2 px-3 rounded-xl font-sans font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shrink-0 min-h-[36px] ${
                     inParlay
-                      ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-md ring-2 ring-amber-400/50'
-                      : 'bg-slate-800 hover:bg-emerald-500/20 text-slate-200 hover:text-emerald-300 border border-slate-700 active:scale-95'
+                      ? 'bg-slate-900 text-white shadow-2xs'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs active:scale-95'
                   }`}
                   title={inParlay ? 'Quitar del boleto de combinadas' : 'Añadir esta selección al boleto'}
                   aria-label={inParlay ? 'Quitar del boleto' : 'Añadir al boleto'}
                 >
-                  <Ticket className={`w-3.5 h-3.5 ${inParlay ? 'fill-slate-950' : 'text-amber-400'}`} />
+                  <Ticket className="w-3.5 h-3.5 text-white" />
                   <span className="whitespace-nowrap font-mono text-[11px]">
                     {inParlay ? 'En Boleto ✓' : '+ Boleto'}
                   </span>
@@ -538,7 +536,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
                 <button
                   type="button"
                   onClick={() => handleAccordionToggle(idx)}
-                  className="w-full flex items-center justify-between py-1 px-1.5 rounded-lg text-[11px] font-mono text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors cursor-pointer"
+                  className="w-full flex items-center justify-between py-1 px-1.5 rounded-lg text-[11px] font-mono text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors cursor-pointer"
                 >
                   <span className="flex items-center gap-1">
                     <Info className="w-3.5 h-3.5 text-slate-400" />
@@ -546,32 +544,30 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
                   </span>
                   <ChevronDown
                     className={`w-4 h-4 transition-transform duration-200 ${
-                      isExpanded ? 'rotate-180 text-emerald-400' : 'text-slate-500'
+                      isExpanded ? 'rotate-180 text-emerald-600' : 'text-slate-400'
                     }`}
                   />
                 </button>
               )}
 
-              {/* Contenido Desplegable (FIJO para la 1ra, Acordeón exclusivo para las demás) */}
+              {/* Contenido Desplegable */}
               {isExpanded && (
-                <div className="space-y-2 pt-1 border-t border-slate-800/60 animate-fade-in">
-                  {/* Justificación y Análisis Estadístico */}
-                  <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/70 text-[11px] text-slate-300 leading-relaxed">
-                    <span className="text-emerald-400 font-semibold font-mono mr-1">Análisis Pro:</span>
+                <div className="space-y-2 pt-1.5 border-t border-slate-100 animate-fade-in">
+                  <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/80 text-[11px] text-slate-700 leading-relaxed">
+                    <span className="text-emerald-700 font-bold font-mono mr-1">Análisis Pro:</span>
                     {item.rationale}
                   </div>
 
-                  {/* Métricas Clave de Respaldo */}
                   <div className="grid grid-cols-3 gap-1.5 pt-0.5">
                     {item.metrics.map((metric, mIdx) => (
                       <div
                         key={mIdx}
-                        className="p-1.5 rounded-lg bg-slate-950/40 border border-slate-800/60 text-center"
+                        className="p-1.5 rounded-lg bg-slate-50 border border-slate-200/80 text-center"
                       >
-                        <div className="text-[9px] font-mono text-slate-400 uppercase truncate">
+                        <div className="text-[9px] font-mono text-slate-500 uppercase truncate">
                           {metric.label}
                         </div>
-                        <div className="text-[11px] font-mono font-bold text-slate-200 mt-0.5 truncate">
+                        <div className="text-[11px] font-mono font-bold text-slate-900 mt-0.5 truncate">
                           {metric.value}
                         </div>
                       </div>
