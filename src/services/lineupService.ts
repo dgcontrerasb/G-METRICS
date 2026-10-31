@@ -1114,7 +1114,7 @@ export function getNBALineupData(fixture: NBAMatchFixture): NBALineupData {
 
   // 2. Jugadores titulares y banca (clonados para aplicar lesiones específicas del partido)
   const homeStarters: NBAPlayerRosterInfo[] = homeRoster
-    ? homeRoster.starters.map((p) => ({ ...p }))
+    ? homeRoster.starters.map((p: NBAPlayerRosterInfo) => ({ ...p }))
     : (fixture.homeTeam.keyPlayers?.length ? fixture.homeTeam.keyPlayers.map((kp, idx) => ({
         id: kp.id || `hp_${idx}`,
         name: kp.name,
@@ -1133,7 +1133,7 @@ export function getNBALineupData(fixture: NBAMatchFixture): NBALineupData {
       ]);
 
   const awayStarters: NBAPlayerRosterInfo[] = awayRoster
-    ? awayRoster.starters.map((p) => ({ ...p }))
+    ? awayRoster.starters.map((p: NBAPlayerRosterInfo) => ({ ...p }))
     : (fixture.awayTeam.keyPlayers?.length ? fixture.awayTeam.keyPlayers.map((kp, idx) => ({
         id: kp.id || `ap_${idx}`,
         name: kp.name,
@@ -1152,7 +1152,7 @@ export function getNBALineupData(fixture: NBAMatchFixture): NBALineupData {
       ]);
 
   const homeBench: NBAPlayerRosterInfo[] = homeRoster
-    ? homeRoster.bench.map((p) => ({ ...p }))
+    ? homeRoster.bench.map((p: NBAPlayerRosterInfo) => ({ ...p }))
     : [
         { id: 'hb1', name: 'Buddy Hield', number: 7, position: 'SG', ppg: 15.8, apg: 1.8, rpg: 3.8, threePm: 3.4 },
         { id: 'hb2', name: 'Moses Moody', number: 4, position: 'SG', ppg: 9.2, apg: 1.2, rpg: 2.4, threePm: 1.5 },
@@ -1160,7 +1160,7 @@ export function getNBALineupData(fixture: NBAMatchFixture): NBALineupData {
       ];
 
   const awayBench: NBAPlayerRosterInfo[] = awayRoster
-    ? awayRoster.bench.map((p) => ({ ...p }))
+    ? awayRoster.bench.map((p: NBAPlayerRosterInfo) => ({ ...p }))
     : [
         { id: 'ab1', name: 'Daniel Gafford', number: 21, position: 'C', ppg: 11.5, apg: 1.4, rpg: 6.8, threePm: 0.0 },
         { id: 'ab2', name: 'Spencer Dinwiddie', number: 26, position: 'PG', ppg: 7.8, apg: 3.2, rpg: 2.2, threePm: 1.2 },

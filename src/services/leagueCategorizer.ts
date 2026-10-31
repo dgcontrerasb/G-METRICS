@@ -507,6 +507,47 @@ export function isColombianBookmakerPrimeLeague(fixture: MatchFixture): boolean 
 }
 
 /**
+ * Classifies a soccer fixture strictly into PRIME (Top-8 countries 1st division + UEFA/CONMEBOL/FIFA elite)
+ * vs SECONDARY (Portugal, Netherlands, Mexico, MLS, Turkey, Belgium, Saudi Arabia, Chile, Ecuador,
+ * Uruguay, Peru, Paraguay, 2nd divisions like Championship/LaLiga2/SerieB/PrimeraB, and other secondary leagues)
+ * in exact alignment with STATIC_SOCCER_CATALOG.
+ */
+export function getSoccerAuditTier(fixture: MatchFixture): 'PRIME' | 'SECONDARY' {
+  const lName = (fixture.league?.name || '').toLowerCase().trim();
+  const cName = (fixture.league?.country || '').toLowerCase().trim();
+  const hName = fixture.homeTeam?.name || '';
+  const aName = fixture.awayTeam?.name || '';
+
+  // Any explicit 2nd division or lower tier tournament is always SECONDARY
+  if (
+    /\b(segunda|hypermotion|championship|league one|league two|serie b|s[eé]rie b|2\. bundesliga|ligue 2|primera b|torneo betplay|primera nacional|expansi[oó]n mx|eerste divisie|1\. lig|usl)\b/i.test(
+      lName
+    )
+  ) {
+    return 'SECONDARY';
+  }
+
+  const cat = identifyCompetitionCategory(lName, cName, hName, aName);
+  const primeCategoryKeys = new Set([
+    'INTL',
+    'COLOMBIA',
+    'ENGLAND',
+    'SPAIN',
+    'ITALY',
+    'GERMANY',
+    'FRANCE',
+    'ARGENTINA',
+    'BRAZIL'
+  ]);
+
+  if (primeCategoryKeys.has(cat.key) && isColombianBookmakerPrimeLeague(fixture)) {
+    return 'PRIME';
+  }
+
+  return 'SECONDARY';
+}
+
+/**
  * Determines whether a league is an international tournament
  */
 export function isInternationalCompetition(

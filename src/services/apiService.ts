@@ -948,21 +948,32 @@ export async function fetchUpcomingFixtures(
   return { fixtures: [], count: 0, fromLocalStorage: false, cachedAt: Date.now() };
 }
 
-export async function fetchCompletedAuditFixtures(): Promise<MatchFixture[]> {
+export async function fetchCompletedAuditBundle(): Promise<{
+  soccerFixtures: MatchFixture[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  nbaEvents: any[];
+}> {
   try {
     const res = await fetch('/api/audit-finished');
-    if (!res.ok) return [];
+    if (!res.ok) return { soccerFixtures: [], nbaEvents: [] };
     const json = await res.json();
-    if (json.success && Array.isArray(json.fixtures) && json.fixtures.length > 0) {
-      const todayStr = getColombiaDateString(0);
-      return json.fixtures
-        .map((f: unknown) => mapApiSportsFixture(f, todayStr))
-        .filter((fix: MatchFixture) => fix.status === 'FINISHED' && fix.currentScore);
-    }
+    const todayStr = getColombiaDateString(0);
+    const soccerFixtures: MatchFixture[] =
+      json.success && Array.isArray(json.fixtures)
+        ? json.fixtures
+            .map((f: unknown) => mapApiSportsFixture(f, todayStr))
+            .filter((fix: MatchFixture) => fix.status === 'FINISHED' && fix.currentScore)
+        : [];
+    const nbaEvents = json.success && Array.isArray(json.nbaEvents) ? json.nbaEvents : [];
+    return { soccerFixtures, nbaEvents };
   } catch {
-    // ignore
+    return { soccerFixtures: [], nbaEvents: [] };
   }
-  return [];
+}
+
+export async function fetchCompletedAuditFixtures(): Promise<MatchFixture[]> {
+  const bundle = await fetchCompletedAuditBundle();
+  return bundle.soccerFixtures;
 }
 
 export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures: MatchFixture[]; meta: CacheMetadata }> {

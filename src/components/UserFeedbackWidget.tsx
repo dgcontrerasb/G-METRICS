@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Star, MessageSquarePlus, X, CheckCircle2, Sparkles, Send } from 'lucide-react';
+import { Star, X, CheckCircle2, Sparkles, Send } from 'lucide-react';
 import { getOrCreateDeviceId } from '../services/licenseService';
 
 export interface UserFeedbackWidgetProps {

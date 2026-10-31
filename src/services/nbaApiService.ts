@@ -1,6 +1,17 @@
-import { NBAMatchFixture, NBATeamInfo } from '../types';
+import { NBAMatchFixture, NBATeamInfo, NBAPlayerProp } from '../types';
 import { getColombiaDateString, getUserTimeZone } from './apiService';
-import { generateHumanPlayerName } from './lineupService';
+import { findNBARosterForTeam } from './nbaRostersData';
+
+export function americanToDecimal(americanStr?: string | number): number | undefined {
+  if (americanStr === undefined || americanStr === null || americanStr === '') return undefined;
+  const num = typeof americanStr === 'number' ? americanStr : parseFloat(String(americanStr).replace('+', ''));
+  if (isNaN(num) || num === 0) return undefined;
+  if (num > 0) {
+    return Math.round((1 + num / 100) * 100) / 100;
+  } else {
+    return Math.round((1 + 100 / Math.abs(num)) * 100) / 100;
+  }
+}
 
 // Database of elite NBA franchises with accurate tactical metrics, pace and rosters
 export const NBA_TEAMS: Record<string, NBATeamInfo> = {
@@ -1629,11 +1640,14 @@ export function resolveNBATeam(comp: any, leagueName = 'NBA'): NBATeamInfo {
       ) {
         const recordSummary = comp?.records?.find((r: any) => r.type === 'total')?.summary || `${t.wins}-${t.losses}`;
         const [w, l] = recordSummary.split('-').map((v: string) => parseInt(v, 10));
+        const foundRoster = findNBARosterForTeam(dispName) || findNBARosterForTeam(name) || findNBARosterForTeam(key);
+        const enrichedKeyPlayers = foundRoster ? buildKeyPlayersFromRoster(foundRoster, t.name) : t.keyPlayers;
         return {
           ...t,
           logo: team.logo || t.logo,
           wins: !isNaN(w) ? w : t.wins,
-          losses: !isNaN(l) ? l : t.losses
+          losses: !isNaN(l) ? l : t.losses,
+          keyPlayers: enrichedKeyPlayers && enrichedKeyPlayers.length > 0 ? enrichedKeyPlayers : t.keyPlayers
         };
       }
     }
@@ -1644,6 +1658,33 @@ export function resolveNBATeam(comp: any, leagueName = 'NBA'): NBATeamInfo {
   const [wins, losses] = recordSummary.split('-').map((v: string) => parseInt(v, 10) || 0);
   const fullTeamName = team.displayName || team.name || 'Equipo Baloncesto';
   const shortTeamName = team.shortDisplayName || team.name || team.abbreviation || fullTeamName;
+
+  // Busca roster real de NBA
+  const foundRoster = findNBARosterForTeam(fullTeamName) || findNBARosterForTeam(shortTeamName) || findNBARosterForTeam(abbr);
+  const keyPlayers: NBAPlayerProp[] = foundRoster
+    ? buildKeyPlayersFromRoster(foundRoster, fullTeamName)
+    : [
+        {
+          id: `player-${team.id || '1'}`,
+          name: shortTeamName,
+          team: fullTeamName,
+          position: 'PG' as const,
+          seasonPpg: 20.5,
+          season3pm: 2.4,
+          seasonApg: 5.0,
+          seasonRpg: 4.6,
+          projectedMinutes: 33,
+          usageRate: 27.5,
+          projectedPoints: 21.0,
+          pointsLine: 20.5,
+          overPointsProb: 52.5,
+          underPointsProb: 47.5,
+          projected3pm: 2.5,
+          threePointersLine: 2.5,
+          over3pmProb: 51.0,
+          under3pmProb: 49.0
+        }
+      ];
 
   return {
     id: parseInt(team.id, 10) || Math.floor(Math.random() * 1000) + 100,
@@ -1663,29 +1704,53 @@ export function resolveNBATeam(comp: any, leagueName = 'NBA'): NBATeamInfo {
     threePointAttemptRate: 0.41,
     threePointPct: 36.5,
     restDays: 1,
-    keyPlayers: [
-      {
-        id: `player-${team.id || '1'}`,
-        name: generateHumanPlayerName(fullTeamName, 0, false),
-        team: fullTeamName,
-        position: 'PG',
-        seasonPpg: 20.5,
-        season3pm: 2.4,
-        seasonApg: 5.0,
-        seasonRpg: 4.6,
-        projectedMinutes: 33,
-        usageRate: 27.5,
-        projectedPoints: 21.0,
-        pointsLine: 20.5,
-        overPointsProb: 52.5,
-        underPointsProb: 47.5,
-        projected3pm: 2.5,
-        threePointersLine: 2.5,
-        over3pmProb: 51.0,
-        under3pmProb: 49.0
-      }
-    ]
+    keyPlayers
   };
+}
+
+function buildKeyPlayersFromRoster(roster: any, fullTeamName: string): NBAPlayerProp[] {
+  if (!roster) return [];
+  const startersProps: NBAPlayerProp[] = (roster.starters || []).map((p: any) => ({
+    id: p.id,
+    name: p.name,
+    team: fullTeamName,
+    position: (p.position || 'PG') as 'C' | 'PF' | 'PG' | 'SF' | 'SG',
+    seasonPpg: p.ppg,
+    season3pm: p.threePm,
+    seasonApg: p.apg,
+    seasonRpg: p.rpg,
+    projectedMinutes: 34,
+    usageRate: 26.0,
+    projectedPoints: p.ppg,
+    pointsLine: Math.floor(p.ppg) + 0.5,
+    overPointsProb: 53.5,
+    underPointsProb: 46.5,
+    projected3pm: p.threePm,
+    threePointersLine: Math.floor(p.threePm) + 0.5,
+    over3pmProb: 51.5,
+    under3pmProb: 48.5
+  }));
+  const benchProps: NBAPlayerProp[] = (roster.bench || []).slice(0, 3).map((p: any) => ({
+    id: p.id,
+    name: p.name,
+    team: fullTeamName,
+    position: (p.position || 'SG') as 'C' | 'PF' | 'PG' | 'SF' | 'SG',
+    seasonPpg: p.ppg,
+    season3pm: p.threePm,
+    seasonApg: p.apg,
+    seasonRpg: p.rpg,
+    projectedMinutes: 22,
+    usageRate: 18.0,
+    projectedPoints: p.ppg,
+    pointsLine: Math.floor(p.ppg) + 0.5,
+    overPointsProb: 51.0,
+    underPointsProb: 49.0,
+    projected3pm: p.threePm,
+    threePointersLine: Math.floor(p.threePm) + 0.5,
+    over3pmProb: 50.0,
+    under3pmProb: 50.0
+  }));
+  return [...startersProps, ...benchProps];
 }
 
 /**
@@ -1882,8 +1947,32 @@ export function convertESPNEventToNBAMatch(ev: any, dateStr: string): NBAMatchFi
       };
     }
 
+    // Extract official sportsbook lines from ESPN pickcenter/odds
+    const rawOdds = comp.odds?.[0];
+    let consensusOdds: NBAMatchFixture['consensusOdds'] = undefined;
+    if (rawOdds) {
+      const mlHome = americanToDecimal(rawOdds.moneyline?.home?.close?.odds || rawOdds.moneyline?.home?.open?.odds);
+      const mlAway = americanToDecimal(rawOdds.moneyline?.away?.close?.odds || rawOdds.moneyline?.away?.open?.odds);
+      const spLine = rawOdds.pointSpread?.home?.close?.line || rawOdds.details || rawOdds.spread;
+      const totLine = rawOdds.total?.over?.close?.line || rawOdds.overUnder;
+      const oOdds = americanToDecimal(rawOdds.total?.over?.close?.odds);
+      const uOdds = americanToDecimal(rawOdds.total?.under?.close?.odds);
+      consensusOdds = {
+        provider: rawOdds.provider?.name || 'DraftKings',
+        homeMoneyline: mlHome,
+        awayMoneyline: mlAway,
+        spread: spLine,
+        total: totLine,
+        overOdds: oOdds,
+        underOdds: uOdds
+      };
+    }
+
     return {
       id: `nba-espn-${ev.id}`,
+      espnEventId: String(ev.id),
+      homeEspnId: String(homeComp.team?.id || ''),
+      awayEspnId: String(awayComp.team?.id || ''),
       date: dateStr,
       time: timeStr,
       status,
@@ -1910,7 +1999,8 @@ export function convertESPNEventToNBAMatch(ev: any, dateStr: string): NBAMatchFi
         totalMatches: (homeTeam.wins + homeTeam.losses) > 0 ? 5 : 0,
         homeWins: homeTeam.wins >= awayTeam.wins ? 3 : 2,
         awayWins: homeTeam.wins >= awayTeam.wins ? 2 : 3
-      }
+      },
+      consensusOdds
     };
   } catch (err) {
     console.error('Error parsing ESPN event:', err);
@@ -2027,7 +2117,7 @@ export function generateNBAFixtures(dateStr: string): NBAMatchFixture[] {
   ];
 }
 
-const NBA_CACHE_PREFIX = 'basketstats_nba_v6_';
+const NBA_CACHE_PREFIX = 'basketstats_nba_v7_';
 const NBA_CACHE_TTL_LIVE = 25 * 1000; // 25 seconds for live matches
 const NBA_CACHE_TTL_SCHEDULED = 5 * 60 * 1000; // 5 minutes for scheduled/completed
 
@@ -2043,12 +2133,10 @@ export async function fetchNBAFixtures(
       const raw = localStorage.getItem(`${NBA_CACHE_PREFIX}${targetDate}`);
       if (raw) {
         const parsed = JSON.parse(raw);
-        const activeCached = Array.isArray(parsed.fixtures)
-          ? parsed.fixtures.filter((f: NBAMatchFixture) => f.status === 'IN_PLAY' || f.status === 'SCHEDULED')
-          : [];
+        const activeCached = Array.isArray(parsed.fixtures) ? parsed.fixtures : [];
         const hasLive = activeCached.some((f: NBAMatchFixture) => f.status === 'IN_PLAY');
         const ttl = hasLive ? NBA_CACHE_TTL_LIVE : NBA_CACHE_TTL_SCHEDULED;
-        if (Date.now() - parsed.timestamp < ttl) {
+        if (Date.now() - parsed.timestamp < ttl && activeCached.length > 0) {
           return {
             fixtures: activeCached,
             allFixtures: Array.isArray(parsed.allFixtures) ? parsed.allFixtures : activeCached,
@@ -2062,25 +2150,87 @@ export async function fetchNBAFixtures(
     }
   }
 
-  // 2. Fetch official NBA live & scheduled scoreboard from server shared cache
+  // 2. Fetch official NBA live & scheduled scoreboard and real market odds from server
   try {
-    const res = await fetch(`/api/nba/scoreboard?date=${encodeURIComponent(targetDate)}`);
-    if (res.ok) {
-      const json = await res.json();
+    const [sbRes, oddsRes] = await Promise.allSettled([
+      fetch(`/api/nba/scoreboard?date=${encodeURIComponent(targetDate)}`),
+      fetch('/api/market-odds?sport=basketball_nba')
+    ]);
+
+    let externalOddsList: any[] = [];
+    if (oddsRes.status === 'fulfilled' && oddsRes.value.ok) {
+      try {
+        const oddsJson = await oddsRes.value.json();
+        if (oddsJson.success && Array.isArray(oddsJson.odds)) {
+          externalOddsList = oddsJson.odds;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (sbRes.status === 'fulfilled' && sbRes.value.ok) {
+      const json = await sbRes.value.json();
       if (json.success && Array.isArray(json.events)) {
         const parsedList: NBAMatchFixture[] = [];
         const allParsedList: NBAMatchFixture[] = [];
+
         for (const ev of json.events) {
           const match = convertESPNEventToNBAMatch(ev, targetDate);
           if (match) {
-            allParsedList.push(match);
-            if (match.status === 'IN_PLAY' || match.status === 'SCHEDULED') {
-              parsedList.push(match);
+            // Match with The Odds API data (DraftKings, FanDuel, Pinnacle, 1xBet, etc.)
+            if (externalOddsList.length > 0) {
+              const hName = match.homeTeam.name.toLowerCase();
+              const aName = match.awayTeam.name.toLowerCase();
+              const hCity = (match.homeTeam.city || '').toLowerCase();
+              const aCity = (match.awayTeam.city || '').toLowerCase();
+
+              const foundOdds = externalOddsList.find((g: any) => {
+                const gh = (g.home_team || '').toLowerCase();
+                const ga = (g.away_team || '').toLowerCase();
+                const matchHome = hName.includes(gh) || gh.includes(hName) || (hCity && gh.includes(hCity));
+                const matchAway = aName.includes(ga) || ga.includes(aName) || (aCity && ga.includes(aCity));
+                return matchHome && matchAway;
+              });
+
+              if (foundOdds && Array.isArray(foundOdds.bookmakers) && foundOdds.bookmakers.length > 0) {
+                const bm =
+                  foundOdds.bookmakers.find((b: any) => b.key === 'draftkings' || b.key === 'pinnacle' || b.key === 'fanduel') ||
+                  foundOdds.bookmakers[0];
+
+                const h2h = bm.markets?.find((m: any) => m.key === 'h2h');
+                const spreads = bm.markets?.find((m: any) => m.key === 'spreads');
+                const totals = bm.markets?.find((m: any) => m.key === 'totals');
+
+                const hOutcome = h2h?.outcomes?.find((o: any) => o.name === foundOdds.home_team);
+                const aOutcome = h2h?.outcomes?.find((o: any) => o.name === foundOdds.away_team);
+
+                const hSpread = spreads?.outcomes?.find((o: any) => o.name === foundOdds.home_team);
+                const aSpread = spreads?.outcomes?.find((o: any) => o.name === foundOdds.away_team);
+
+                const overOut = totals?.outcomes?.find((o: any) => o.name === 'Over');
+                const underOut = totals?.outcomes?.find((o: any) => o.name === 'Under');
+
+                match.externalOdds = {
+                  bookmaker: bm.title || 'DraftKings',
+                  homeMoneyline: hOutcome?.price,
+                  awayMoneyline: aOutcome?.price,
+                  spreadPoint: hSpread?.point,
+                  homeSpreadOdds: hSpread?.price,
+                  awaySpreadOdds: aSpread?.price,
+                  totalPoint: overOut?.point,
+                  overOdds: overOut?.price,
+                  underOdds: underOut?.price
+                };
+              }
             }
+
+            allParsedList.push(match);
+            parsedList.push(match);
           }
         }
 
-        // Sort: Live first, then scheduled by time
+        // Sort: Live first, then scheduled by time, then finished
         parsedList.sort((a, b) => {
           const liveScoreA = a.status === 'IN_PLAY' ? 0 : a.status === 'SCHEDULED' ? 1 : 2;
           const liveScoreB = b.status === 'IN_PLAY' ? 0 : b.status === 'SCHEDULED' ? 1 : 2;
@@ -2117,9 +2267,7 @@ export async function fetchNBAFixtures(
   }
 
   // 3. Fallback: only if offline or network error
-  const fallback = generateNBAFixtures(targetDate).filter(
-    f => f.status === 'IN_PLAY' || f.status === 'SCHEDULED'
-  );
+  const fallback = generateNBAFixtures(targetDate);
   return {
     fixtures: fallback,
     count: fallback.length,

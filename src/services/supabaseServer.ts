@@ -218,6 +218,7 @@ export async function setSupabaseKvCache<T = unknown>(cacheId: string, payload: 
         .delete()
         .eq('color_theme', 'kv-cache')
         .neq('id', '__server_telemetry_v1__')
+        .neq('id', '__deleted_users_v1__')
         .lt('updated_at', threeDaysAgoIso)
         .then(
           () => {},
@@ -483,7 +484,13 @@ export async function loginAppUser(
         const isAdmin = data.role === 'admin';
 
         if (!isAdmin) {
-          if (data.status === 'deleted') {
+          const deletedSet = getDeletedUsernamesSet();
+          if (
+            deletedSet.has(username) ||
+            data.status === 'deleted' ||
+            data.plan_type === 'DELETED' ||
+            data.notes === '[DELETED]'
+          ) {
             return {
               success: false,
               code: 'USER_NOT_FOUND',
@@ -843,6 +850,7 @@ const DELETED_USERS_FILE = IS_VERCEL
   : path.resolve(process.cwd(), 'sportstats_deleted_users.json');
 
 let memoryDeletedUsernames: Set<string> | null = null;
+let supabaseDeletedHydrated = false;
 
 function getDeletedUsernamesSet(): Set<string> {
   if (memoryDeletedUsernames) return memoryDeletedUsernames;
@@ -851,7 +859,7 @@ function getDeletedUsernamesSet(): Set<string> {
       const raw = fs.readFileSync(DELETED_USERS_FILE, 'utf8');
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        memoryDeletedUsernames = new Set(parsed.map((item) => String(item).toLowerCase().trim()));
+        memoryDeletedUsernames = new Set(parsed.map((item) => String(item).toLowerCase().trim()).filter(Boolean));
         return memoryDeletedUsernames;
       }
     }
@@ -862,13 +870,42 @@ function getDeletedUsernamesSet(): Set<string> {
   return memoryDeletedUsernames;
 }
 
-function saveDeletedUsernamesSet(set: Set<string>): void {
+function saveDeletedUsernamesSet(set: Set<string>, syncRemote = true): void {
   memoryDeletedUsernames = set;
+  const list = Array.from(set).filter(Boolean);
   try {
-    fs.writeFileSync(DELETED_USERS_FILE, JSON.stringify(Array.from(set), null, 2), 'utf8');
+    fs.writeFileSync(DELETED_USERS_FILE, JSON.stringify(list, null, 2), 'utf8');
   } catch {
     // ignore
   }
+  if (syncRemote && isSupabaseConfigured()) {
+    setSupabaseKvCache('__deleted_users_v1__', list).catch(() => {});
+  }
+}
+
+async function hydrateDeletedUsersFromSupabaseIfNeeded(): Promise<Set<string>> {
+  const currentSet = getDeletedUsernamesSet();
+  if (supabaseDeletedHydrated || !isSupabaseConfigured()) return currentSet;
+  supabaseDeletedHydrated = true;
+  try {
+    const remote = await getSupabaseKvCache<string[]>('__deleted_users_v1__');
+    if (remote && Array.isArray(remote.data)) {
+      let added = false;
+      for (const item of remote.data) {
+        const clean = String(item || '').toLowerCase().trim();
+        if (clean && !currentSet.has(clean)) {
+          currentSet.add(clean);
+          added = true;
+        }
+      }
+      if (added) {
+        saveDeletedUsernamesSet(currentSet, false);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return currentSet;
 }
 
 function isValidUuid(str: string): boolean {
@@ -878,14 +915,14 @@ function isValidUuid(str: string): boolean {
 export async function adminListAppUsers(): Promise<AppUser[]> {
   const client = getSupabaseClient();
   const nowMs = Date.now();
+  const deletedSet = await hydrateDeletedUsersFromSupabaseIfNeeded();
   const localUsers = getLocalUsersDb();
-  const deletedSet = getDeletedUsernamesSet();
   const mergedMap = new Map<string, AppUser>();
 
   // Primero poblar desde base local (ocultando el hash del PIN en la respuesta HTTP)
   for (const u of localUsers) {
     const uname = String(u.username || '').toLowerCase().trim();
-    if (!uname || deletedSet.has(uname) || u.status === 'deleted') continue;
+    if (!uname || deletedSet.has(uname) || u.status === 'deleted' || u.planType === 'DELETED' || u.notes === '[DELETED]') continue;
     const isPending = u.status === 'pending';
     const daysRemaining = isPending ? 0 : u.expiresAt ? Math.max(0, Math.ceil((u.expiresAt - nowMs) / (24 * 60 * 60 * 1000))) : null;
     const isExpired = isPending ? false : u.expiresAt ? u.expiresAt < nowMs : false;
@@ -912,7 +949,15 @@ export async function adminListAppUsers(): Promise<AppUser[]> {
       if (!error && Array.isArray(data)) {
         for (const row of data) {
           const uname = String(row.username || '').toLowerCase().trim();
-          if (!uname || deletedSet.has(uname) || row.status === 'deleted') continue;
+          if (
+            !uname ||
+            deletedSet.has(uname) ||
+            row.status === 'deleted' ||
+            row.plan_type === 'DELETED' ||
+            row.notes === '[DELETED]'
+          ) {
+            continue;
+          }
 
           const isPending = row.status === 'pending';
           const daysRemaining = isPending ? 0 : row.expires_at ? Math.max(0, Math.ceil((row.expires_at - nowMs) / (24 * 60 * 60 * 1000))) : null;
@@ -1224,28 +1269,66 @@ export async function adminDeleteAppUser(userId: string, username?: string): Pro
     matchedUsername = normalizeUsername(cleanId);
   }
 
-  if (matchedUsername) {
-    const deletedSet = getDeletedUsernamesSet();
-    deletedSet.add(matchedUsername);
-    saveDeletedUsernamesSet(deletedSet);
+  const client = getSupabaseClient();
+  if (client && !matchedUsername && isValidUuid(cleanId)) {
+    try {
+      const { data: existingRow } = await client
+        .from('sportstats_users')
+        .select('username')
+        .eq('id', cleanId)
+        .maybeSingle();
+      if (existingRow?.username) {
+        matchedUsername = normalizeUsername(existingRow.username);
+      }
+    } catch {
+      // ignore
+    }
   }
 
-  const client = getSupabaseClient();
+  if (matchedUsername) {
+    const deletedSet = await hydrateDeletedUsersFromSupabaseIfNeeded();
+    deletedSet.add(matchedUsername);
+    saveDeletedUsernamesSet(deletedSet, true);
+  }
+
   if (client) {
     try {
-      // 1. Soft delete garantizado en Supabase: marca status = 'deleted'
-      if (isValidUuid(cleanId)) {
-        await client.from('sportstats_users').update({ status: 'deleted', bound_device_id: null }).eq('id', cleanId);
-      }
-      if (matchedUsername) {
-        await client.from('sportstats_users').update({ status: 'deleted', bound_device_id: null }).eq('username', matchedUsername);
-      }
-      // 2. Intentar también DELETE físico (si las políticas RLS lo permiten)
+      // 1. Intentar DELETE físico directo (por ID y por username case-insensitive)
       if (isValidUuid(cleanId)) {
         await client.from('sportstats_users').delete().eq('id', cleanId);
       }
       if (matchedUsername) {
         await client.from('sportstats_users').delete().eq('username', matchedUsername);
+        await client.from('sportstats_users').delete().ilike('username', matchedUsername);
+      }
+
+      // 2. Respaldo de Soft Delete a prueba de restricciones CHECK o políticas RLS sin permiso DELETE
+      const primarySoftDelete = {
+        status: 'deleted',
+        plan_type: 'DELETED',
+        plan_label: 'ELIMINADO',
+        notes: '[DELETED]',
+        bound_device_id: null
+      };
+      const fallbackSoftDelete = {
+        status: 'suspended',
+        plan_type: 'DELETED',
+        plan_label: 'ELIMINADO',
+        notes: '[DELETED]',
+        bound_device_id: null
+      };
+
+      if (isValidUuid(cleanId)) {
+        const { error } = await client.from('sportstats_users').update(primarySoftDelete).eq('id', cleanId);
+        if (error) {
+          await client.from('sportstats_users').update(fallbackSoftDelete).eq('id', cleanId);
+        }
+      }
+      if (matchedUsername) {
+        const { error } = await client.from('sportstats_users').update(primarySoftDelete).ilike('username', matchedUsername);
+        if (error) {
+          await client.from('sportstats_users').update(fallbackSoftDelete).ilike('username', matchedUsername);
+        }
       }
     } catch (err) {
       console.warn('[adminDeleteAppUser Supabase warning]:', err);

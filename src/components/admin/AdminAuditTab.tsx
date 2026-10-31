@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Download, Trash2, Trophy, CheckCircle2 } from 'lucide-react';
-import { AccuracyEvaluatorService, OverallAccuracySummary } from '../../services/accuracyEvaluatorService';
+import { RefreshCw, Download, Trash2, Trophy, CheckCircle2, Target } from 'lucide-react';
+import {
+  AccuracyEvaluatorService,
+  OverallAccuracySummary,
+  RankingStatItem
+} from '../../services/accuracyEvaluatorService';
 
 export const AdminAuditTab: React.FC = () => {
   const [summary, setSummary] = useState<OverallAccuracySummary | null>(null);
@@ -39,7 +43,11 @@ export const AdminAuditTab: React.FC = () => {
         : sportFilter === 'NBA'
         ? 'NBA_Baloncesto'
         : 'Consolidado_Global';
-    AccuracyEvaluatorService.exportToExcelFile(summary, `Auditoria_Mensual_${sportName}_${dateStr}.xlsx`);
+    AccuracyEvaluatorService.exportToExcelFile(
+      summary,
+      `Auditoria_Mensual_${sportName}_${dateStr}.xlsx`,
+      sportFilter
+    );
   };
 
   const handleResetMonthlyCycle = () => {
@@ -83,19 +91,59 @@ export const AdminAuditTab: React.FC = () => {
     return true;
   });
 
-  const filteredTopLeagues = summary.topLeagues.filter((l) => {
-    if (sportFilter === 'ALL') return true;
-    if (sportFilter === 'NBA') return l.sport === 'NBA';
-    if (sportFilter === 'PRIME_SOCCER') return l.sport === 'SOCCER' && l.leagueTier === 'PRIME';
-    if (sportFilter === 'SECONDARY_SOCCER') return l.sport === 'SOCCER' && l.leagueTier === 'SECONDARY';
-    return true;
-  });
+  // Cálculo aislado de tarjetas de mercado según la pestaña activa
+  const filteredCategories = AccuracyEvaluatorService.getFilteredCategories(summary, sportFilter);
 
-  const filteredCategories = summary.metricsByCategory.filter((cat) => {
-    if (sportFilter === 'ALL') return true;
-    if (sportFilter === 'NBA') return cat.sport === 'NBA';
-    return cat.sport === 'SOCCER';
+  const highConvictionMatches = filteredMatches.filter((rec) => {
+    if (rec.status === 'UNVERIFIED') return false;
+    const mLow = (rec.marketType || '').toLowerCase();
+    const pLow = (rec.predictionLabel || '').toLowerCase();
+    if (mLow.includes('doble oportunidad')) return true;
+    if (mLow.includes('over 1.5') || pLow.includes('1.5')) return true;
+    if (mLow.includes('under 3.5') || pLow.includes('3.5')) return true;
+    if (mLow.includes('hándicap') || mLow.includes('spread')) return true;
+    if (mLow.includes('córners') && (pLow.includes('7.5') || pLow.includes('8.5'))) return true;
+    return false;
   });
+  const highConvictionHits = highConvictionMatches.filter((r) => r.isHit).length;
+  const highConvictionTotal = highConvictionMatches.length;
+  const highConvictionAccuracy =
+    highConvictionTotal > 0
+      ? Number(((highConvictionHits / highConvictionTotal) * 100).toFixed(1))
+      : activeStats.accuracyPercentage;
+
+  // Selección dinámica de los 2 paneles Top 5 según deporte y segmento
+  const primaryTop5List: RankingStatItem[] =
+    sportFilter === 'NBA'
+      ? summary.topNBATeams
+      : sportFilter === 'SECONDARY_SOCCER'
+      ? summary.topSecondarySoccerLeagues
+      : sportFilter === 'PRIME_SOCCER'
+      ? summary.topPrimeSoccerLeagues
+      : [...summary.topPrimeSoccerLeagues, ...summary.topSecondarySoccerLeagues]
+          .sort((a, b) => b.accuracyPercentage - a.accuracyPercentage || b.hits - a.hits)
+          .slice(0, 5);
+
+  const secondaryTop5List: RankingStatItem[] =
+    sportFilter === 'NBA'
+      ? summary.topNBAMarkets
+      : sportFilter === 'SECONDARY_SOCCER'
+      ? summary.topSecondarySoccerPredictions
+      : sportFilter === 'PRIME_SOCCER'
+      ? summary.topPrimeSoccerPredictions
+      : summary.topAllSoccerPredictions;
+
+  const primaryTop5Title =
+    sportFilter === 'NBA'
+      ? 'Top 5 Equipos NBA con Más Aciertos'
+      : sportFilter === 'SECONDARY_SOCCER'
+      ? 'Top 5 Ligas Secundarias con Más Acierto'
+      : 'Top 5 Ligas con Mayor Efectividad';
+
+  const secondaryTop5Title =
+    sportFilter === 'NBA'
+      ? 'Top 5 Mercados & Líneas NBA con Más Acierto'
+      : 'Top 5 Pronósticos con Más Acierto en Fútbol';
 
   const getSegmentHeaderLabel = () => {
     if (sportFilter === 'PRIME_SOCCER') return '⚽ Fútbol · Ligas Principales';
@@ -165,20 +213,49 @@ export const AdminAuditTab: React.FC = () => {
               {getSegmentHeaderLabel()}
             </span>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white text-slate-600 border border-slate-200">
-              📅 Acta Oficial Cerrada
+              📅 Acta Oficial · Excel Listo para Tabla Dinámica
             </span>
           </div>
 
-          <div className="flex items-baseline gap-2 flex-wrap pt-0.5">
-            <h3 className="text-lg sm:text-xl font-bold text-slate-900 font-mono">
-              Efectividad:{' '}
-              <span className="text-emerald-700">
-                {activeStats.accuracyPercentage}%
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            <div className="p-2 rounded-xl bg-white border border-slate-200">
+              <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                Efectividad Global (Toda Cartelera)
               </span>
-            </h3>
-            <span className="text-xs font-medium text-slate-500">
-              ({activeStats.hits} aciertos de {activeStats.evaluatedMatches} verificados)
-            </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base sm:text-lg font-black font-mono text-slate-800">
+                  {activeStats.accuracyPercentage}%
+                </span>
+                <span className="text-[11px] font-medium text-slate-500 font-mono">
+                  ({activeStats.hits}/{activeStats.evaluatedMatches} verificados)
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                Incluye mercados abiertos y alta varianza (+2.5, BTTS).
+              </span>
+            </div>
+
+            <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-200/90">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-emerald-800 uppercase">
+                  Filtro Alta Convicción G METRICS
+                </span>
+                <span className="px-1.5 py-0.2 rounded-full bg-emerald-600 text-white font-mono text-[9px] font-bold">
+                  ÉLITE &gt; 75%
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base sm:text-lg font-black font-mono text-emerald-700">
+                  {highConvictionAccuracy}%
+                </span>
+                <span className="text-[11px] font-medium text-emerald-800 font-mono">
+                  ({highConvictionHits}/{highConvictionTotal} aciertos)
+                </span>
+              </div>
+              <span className="text-[10px] text-emerald-700 block mt-0.5">
+                Picks de alta seguridad (1X/X2, Over 1.5, Under 3.5, Córners 7.5+).
+              </span>
+            </div>
           </div>
         </div>
 
@@ -251,55 +328,110 @@ export const AdminAuditTab: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Top 5 Ligas */}
-      <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-            <Trophy className="w-3.5 h-3.5 text-amber-500" />
-            <span>Top 5 Ligas con Mayor Efectividad</span>
-          </span>
-        </div>
+      {/* 2. Doble Panel Top 5 (Ligas/Equipos + Pronósticos/Mercados) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {/* Panel Top 5 Izquierdo: Ligas (Fútbol) o Equipos (NBA) */}
+        <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+              <Trophy className="w-3.5 h-3.5 text-amber-500" />
+              <span>{primaryTop5Title}</span>
+            </span>
+          </div>
 
-        <div className="space-y-1.5">
-          {filteredTopLeagues.length === 0 ? (
-            <p className="text-xs text-slate-500 p-2 text-center">Sin registros verificados en este segmento.</p>
-          ) : (
-            filteredTopLeagues.map((league, idx) => {
-              const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
-              return (
-                <div
-                  key={league.leagueName}
-                  className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between gap-3 text-xs"
-                >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-800 font-mono text-xs font-bold flex items-center justify-center shrink-0">
-                      {medal}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <span className="font-semibold text-slate-900 truncate block">{league.leagueName}</span>
-                      <div className="w-full bg-slate-100 h-1.5 rounded-full mt-1 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            league.sport === 'NBA' ? 'bg-amber-500' : 'bg-emerald-500'
-                          }`}
-                          style={{ width: `${Math.min(100, Math.max(10, league.accuracyPercentage))}%` }}
-                        />
+          <div className="space-y-1.5">
+            {primaryTop5List.length === 0 ? (
+              <p className="text-xs text-slate-500 p-2 text-center">Sin registros verificados en este segmento.</p>
+            ) : (
+              primaryTop5List.map((item, idx) => {
+                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+                return (
+                  <div
+                    key={`${item.name}-${idx}`}
+                    className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-800 font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                        {medal}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-semibold text-slate-900 truncate block">{item.name}</span>
+                        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-1 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              item.sport === 'NBA' ? 'bg-amber-500' : 'bg-emerald-500'
+                            }`}
+                            style={{ width: `${Math.min(100, Math.max(10, item.accuracyPercentage))}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="text-right shrink-0 font-mono">
-                    <span className="font-bold text-slate-900 text-xs">{league.accuracyPercentage}%</span>
-                    <span className="text-[10px] text-slate-500 block">{league.hits}/{league.evaluatedMatches}</span>
+                    <div className="text-right shrink-0 font-mono">
+                      <span className="font-bold text-slate-900 text-xs">{item.accuracyPercentage}%</span>
+                      <span className="text-[10px] text-slate-500 block">
+                        {item.hits}/{item.evaluatedMatches}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              );
-            })
-          )}
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Panel Top 5 Derecho: Pronósticos Más Efectivos (Fútbol) o Mercados NBA (Baloncesto) */}
+        <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+              <Target className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{secondaryTop5Title}</span>
+            </span>
+          </div>
+
+          <div className="space-y-1.5">
+            {secondaryTop5List.length === 0 ? (
+              <p className="text-xs text-slate-500 p-2 text-center">Sin pronósticos verificados en este segmento.</p>
+            ) : (
+              secondaryTop5List.map((item, idx) => {
+                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+                return (
+                  <div
+                    key={`${item.name}-${idx}`}
+                    className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-800 font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                        {medal}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-semibold text-slate-900 truncate block">{item.name}</span>
+                        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-1 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              item.sport === 'NBA' ? 'bg-amber-500' : 'bg-indigo-500'
+                            }`}
+                            style={{ width: `${Math.min(100, Math.max(10, item.accuracyPercentage))}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0 font-mono">
+                      <span className="font-bold text-slate-900 text-xs">{item.accuracyPercentage}%</span>
+                      <span className="text-[10px] text-slate-500 block">
+                        {item.hits}/{item.evaluatedMatches}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
 
-      {/* 3. Efectividad por Mercado */}
+      {/* 3. Efectividad por Mercado (Aislada por Segmento) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         {filteredCategories.map((m) => (
           <div

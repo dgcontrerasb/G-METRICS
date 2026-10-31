@@ -513,52 +513,58 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
             </button>
           </div>
 
-          {/* Switcher Compacto para Fútbol / Baloncesto */}
-          <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-slate-200/75 border border-slate-300/60">
+          {/* Switcher Destacado de Alto Contraste: FÚTBOL vs BALONCESTO */}
+          <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-900/95 border border-slate-800 shadow-inner">
             <button
               type="button"
               onClick={() => onSelectSport('SOCCER')}
-              className={`min-h-[32px] px-2.5 py-1 rounded-md text-[11.5px] font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              className={`h-[30px] px-2.5 rounded-lg text-[11px] font-bold tracking-wide uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 activeSport === 'SOCCER'
-                  ? 'bg-white text-slate-900 shadow-2xs border border-slate-200/80 font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm ring-1 ring-emerald-300/60'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
               }`}
             >
-              <span>⚽</span>
+              <span className="text-xs leading-none">⚽</span>
               <span>Fútbol</span>
+              {activeSport === 'SOCCER' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-white shadow-2xs shrink-0" />
+              )}
             </button>
             <button
               type="button"
               onClick={() => onSelectSport('NBA')}
-              className={`min-h-[32px] px-2.5 py-1 rounded-md text-[11.5px] font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              className={`h-[30px] px-2.5 rounded-lg text-[11px] font-bold tracking-wide uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 activeSport === 'NBA'
-                  ? 'bg-white text-slate-900 shadow-2xs border border-slate-200/80 font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-sm ring-1 ring-amber-300/70'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
               }`}
             >
-              <span>🏀</span>
+              <span className="text-xs leading-none">🏀</span>
               <span>Baloncesto</span>
+              {activeSport === 'NBA' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-950 shadow-2xs shrink-0" />
+              )}
             </button>
           </div>
         </div>
 
         {/* 2. Cuerpo Scrollable: Botones Principales + Calendario (5 días) + Catálogo Completo de Ligas */}
-        <div className="flex-1 overflow-y-auto px-2.5 py-2.5 space-y-3">
-          {/* Botón Prioritario Superior: 🔴 Partidos en Vivo + Top Picks / Cartelera */}
-          <div className="space-y-1">
+        <div className="flex-1 overflow-y-auto px-2.5 py-2 space-y-2.5">
+          {/* Botones Prioritarios Compactos: 🔴 Partidos en Vivo + Top Picks / Cartelera */}
+          <div className="space-y-1.5">
             <button
               type="button"
               onClick={() => {
                 onSelectMainTab('LIVE');
                 onCloseMobileDrawer();
               }}
-              className={`w-full min-h-[36px] px-3 py-1.5 rounded-lg flex items-center justify-between text-[11.5px] font-semibold transition-all cursor-pointer border ${
+              className={`w-full h-[29px] px-2.5 rounded-lg flex items-center justify-between text-[11px] font-bold tracking-tight transition-all cursor-pointer border ${
                 mainTab === 'LIVE'
-                  ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
-                  : 'bg-rose-50/90 hover:bg-rose-100/80 text-rose-700 border-rose-200/90'
+                  ? 'bg-gradient-to-r from-rose-600 via-red-600 to-rose-500 text-white border-rose-600 shadow-xs ring-1 ring-rose-400/40'
+                  : 'bg-gradient-to-r from-rose-50 via-white to-rose-50/70 hover:from-rose-100/80 hover:to-rose-50 text-rose-800 border-rose-200/90 shadow-2xs'
               }`}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
                 <span className="relative flex h-2 w-2 shrink-0">
                   <span
                     className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
@@ -571,37 +577,50 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                     }`}
                   ></span>
                 </span>
-                <span>Partidos en Vivo</span>
+                <span className="truncate">Partidos en Vivo</span>
               </div>
               <span
-                className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[10px] font-bold ${
+                className={`px-1.5 py-0.5 rounded-md font-mono tabular-nums text-[9.5px] font-extrabold leading-none flex items-center gap-1 shrink-0 ${
                   mainTab === 'LIVE'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-rose-600 text-white'
+                    ? 'bg-white text-rose-700 shadow-2xs'
+                    : 'bg-rose-600 text-white shadow-2xs'
                 }`}
               >
-                {liveMatchesCount}
+                <span>{liveMatchesCount}</span>
+                <span className="text-[8px] uppercase tracking-wider opacity-90">VIVO</span>
               </span>
             </button>
 
-            <div className="grid grid-cols-2 gap-1">
+            <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
                 onClick={() => {
                   onSelectMainTab('TOP_PICKS');
                   onCloseMobileDrawer();
                 }}
-                className={`min-h-[34px] px-2 py-1 rounded-lg flex items-center justify-between text-[11.5px] font-medium transition-all cursor-pointer border ${
+                className={`h-[29px] px-2 rounded-lg flex items-center justify-between text-[11px] font-bold tracking-tight transition-all cursor-pointer border ${
                   mainTab === 'TOP_PICKS'
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs font-semibold'
-                    : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200/90'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-600 shadow-xs ring-1 ring-emerald-400/40'
+                    : 'bg-gradient-to-b from-white to-emerald-50/50 hover:to-emerald-100/60 text-slate-800 border-emerald-200/80 shadow-2xs'
                 }`}
               >
                 <span className="flex items-center gap-1 truncate">
-                  <Flame className={`w-3.5 h-3.5 shrink-0 ${mainTab === 'TOP_PICKS' ? 'text-white' : 'text-emerald-600'}`} />
+                  <Flame
+                    className={`w-3.5 h-3.5 shrink-0 ${
+                      mainTab === 'TOP_PICKS' ? 'text-amber-300 fill-amber-300/30' : 'text-emerald-600 fill-emerald-500/20'
+                    }`}
+                  />
                   <span className="truncate">Top Picks</span>
                 </span>
-                <span className="font-mono tabular-nums text-[10px] opacity-90">{topPicksCount}</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[9.5px] font-extrabold leading-none shrink-0 ${
+                    mainTab === 'TOP_PICKS'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200/80'
+                  }`}
+                >
+                  {topPicksCount}
+                </span>
               </button>
 
               <button
@@ -610,17 +629,29 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                   onSelectMainTab('ALL_LEAGUES');
                   onCloseMobileDrawer();
                 }}
-                className={`min-h-[34px] px-2 py-1 rounded-lg flex items-center justify-between text-[11.5px] font-medium transition-all cursor-pointer border ${
+                className={`h-[29px] px-2 rounded-lg flex items-center justify-between text-[11px] font-bold tracking-tight transition-all cursor-pointer border ${
                   mainTab === 'ALL_LEAGUES'
-                    ? 'bg-slate-900 text-white border-slate-900 shadow-2xs font-semibold'
-                    : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200/90'
+                    ? 'bg-gradient-to-r from-indigo-600 to-slate-900 text-white border-indigo-700 shadow-xs ring-1 ring-indigo-400/40'
+                    : 'bg-gradient-to-b from-white to-indigo-50/40 hover:to-indigo-100/50 text-slate-800 border-indigo-200/70 shadow-2xs'
                 }`}
               >
                 <span className="flex items-center gap-1 truncate">
-                  <Globe className={`w-3.5 h-3.5 shrink-0 ${mainTab === 'ALL_LEAGUES' ? 'text-emerald-400' : 'text-slate-500'}`} />
+                  <Globe
+                    className={`w-3.5 h-3.5 shrink-0 ${
+                      mainTab === 'ALL_LEAGUES' ? 'text-sky-300' : 'text-indigo-600'
+                    }`}
+                  />
                   <span className="truncate">Cartelera</span>
                 </span>
-                <span className="font-mono tabular-nums text-[10px] opacity-90">{allLeaguesCount}</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[9.5px] font-extrabold leading-none shrink-0 ${
+                    mainTab === 'ALL_LEAGUES'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-indigo-100/80 text-indigo-900 border border-indigo-200/80'
+                  }`}
+                >
+                  {allLeaguesCount}
+                </span>
               </button>
             </div>
           </div>

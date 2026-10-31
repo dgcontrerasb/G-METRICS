@@ -658,4 +658,31 @@ export interface GMetricsParlayLeg {
   consensus?: any;
 }
 
+export interface GMetricsSingleBetSuggestion {
+  id: string;
+  fixtureId: string;
+  sport: 'SOCCER' | 'NBA';
+  matchTitle: string;
+  homeTeamName: string;
+  awayTeamName: string;
+  leagueName: string;
+  matchDate: string;
+  matchTime: string;
+  marketKey: string;
+  selectionLabel: string;
+  categoryLabel: string;
+  betType: 'HIGH_VALUE' | 'BANKER'; // 'HIGH_VALUE' (Cuota Alta 1.80-2.80 +EV) o 'BANKER' (Base Segura 1.35-1.75, Prob 72-86%)
+  probability: number;
+  fairMinOdd: number;
+  estimatedBookieOdd: number;
+  valueEdgePct: number;
+  recommendedKellyStakePct: number;
+  reasoning: string;
+  tacticalFactor: string;
+  rank?: number;
+  qualityScore?: number;
+}
+
+
+
 

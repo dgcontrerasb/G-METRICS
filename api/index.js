@@ -3375,18 +3375,26 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
 });
 app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
   const yesterdayStr = getColombiaDateStr(-1);
-  const auditCacheKey = `audit_finished_dia_vencido_v6_${yesterdayStr}`;
+  const auditCacheKey = `audit_finished_dia_vencido_v8_${yesterdayStr}`;
   const cachedAudit = getCacheItem(auditCacheKey);
-  if (cachedAudit && Array.isArray(cachedAudit.data) && cachedAudit.data.length > 0 && Date.now() - cachedAudit.timestamp < 30 * 60 * 1e3) {
+  if (
+    cachedAudit &&
+    cachedAudit.data &&
+    Array.isArray(cachedAudit.data.fixtures) &&
+    cachedAudit.data.fixtures.length > 0 &&
+    Date.now() - cachedAudit.timestamp < 30 * 60 * 1e3
+  ) {
     return res.json({
       success: true,
       source: "audit_cache_dia_vencido",
-      fixtures: cachedAudit.data
+      fixtures: cachedAudit.data.fixtures,
+      nbaEvents: cachedAudit.data.nbaEvents || []
     });
   }
   try {
-    const finishedFixtures = await runSingleFlight(auditCacheKey, async () => {
+    const auditPayload = await runSingleFlight(auditCacheKey, async () => {
       const results = [];
+      const nbaFinishedEvents = [];
       const datesToScan = [
         getColombiaDateStr(-1),
         getColombiaDateStr(-2),
@@ -3398,86 +3406,120 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
         const espnDate = dStr.replace(/-/g, "");
         try {
           const sbRes = await fetch(
-            `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=250`,
+            `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=300`,
             {
               headers: {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
               }
             }
           );
-          if (!sbRes.ok) continue;
-          const sbData = await sbRes.json();
-          const events = Array.isArray(sbData?.events) ? sbData.events : [];
-          for (const ev of events) {
-            const state = String(ev?.status?.type?.state || "").toLowerCase();
-            if (state !== "post" && ev?.status?.type?.completed !== true) continue;
-            const comp = ev?.competitions?.[0];
-            if (!comp) continue;
-            const competitors = Array.isArray(comp.competitors) ? comp.competitors : [];
-            const homeComp = competitors.find((c) => c.homeAway === "home") || competitors[0];
-            const awayComp = competitors.find((c) => c.homeAway === "away") || competitors[1];
-            if (!homeComp || !awayComp) continue;
-            const rawUid = String(ev?.uid || "");
-            const espnLeagueId = rawUid.match(/~l:(\d+)/)?.[1] || "0";
-            const catalogEntry = ESPN_LEAGUE_CATALOG[espnLeagueId];
-            if (!catalogEntry) continue;
-            const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || "Local");
-            const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || "Visitante");
-            if (isServerYouthOrLowTierMatch(catalogEntry.name, catalogEntry.country, homeName, awayName)) {
-              continue;
-            }
-            const espnEventId = String(ev.id || "");
-            const sbTelemetry = extractEspnScoreboardTelemetry(
-              ev,
-              comp,
-              homeComp,
-              awayComp,
-              homeName,
-              awayName,
-              90,
-              true
-            );
-            results.push({
-              espnEventId,
-              liveStats: sbTelemetry.liveStats,
-              liveEvents: sbTelemetry.liveEvents,
-              fixture: {
-                id: parseInt(espnEventId || "0", 10) || Math.floor(Math.random() * 9e5 + 1e5),
-                date: ev.date,
-                timestamp: Math.floor(new Date(ev.date).getTime() / 1e3),
-                venue: {
-                  name: comp?.venue?.fullName || "Estadio Oficial",
-                  city: comp?.venue?.address?.city || catalogEntry.country
-                },
-                status: {
-                  short: "FT",
-                  elapsed: 90
-                }
-              },
-              league: {
-                id: catalogEntry.id,
-                name: catalogEntry.name,
-                country: catalogEntry.country,
-                flag: catalogEntry.flag,
-                round: "Jornada Oficial"
-              },
-              teams: {
-                home: {
-                  id: parseInt(String(homeComp?.team?.id || "1"), 10) || 1,
-                  name: homeName,
-                  logo: String(homeComp?.team?.logo || "")
-                },
-                away: {
-                  id: parseInt(String(awayComp?.team?.id || "2"), 10) || 2,
-                  name: awayName,
-                  logo: String(awayComp?.team?.logo || "")
-                }
-              },
-              goals: {
-                home: parseInt(String(homeComp?.score || "0"), 10) || 0,
-                away: parseInt(String(awayComp?.score || "0"), 10) || 0
+          if (sbRes.ok) {
+            const sbData = await sbRes.json();
+            const events = Array.isArray(sbData?.events) ? sbData.events : [];
+            for (const ev of events) {
+              const state = String(ev?.status?.type?.state || "").toLowerCase();
+              if (state !== "post" && ev?.status?.type?.completed !== true) continue;
+              const comp = ev?.competitions?.[0];
+              if (!comp) continue;
+              const competitors = Array.isArray(comp.competitors) ? comp.competitors : [];
+              const homeComp = competitors.find((c) => c.homeAway === "home") || competitors[0];
+              const awayComp = competitors.find((c) => c.homeAway === "away") || competitors[1];
+              if (!homeComp || !awayComp) continue;
+              const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || "Local");
+              const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || "Visitante");
+              const rawUid = String(ev?.uid || "");
+              const espnLeagueId = rawUid.match(/~l:(\d+)/)?.[1] || "0";
+              const catalogEntry = ESPN_LEAGUE_CATALOG[espnLeagueId];
+              const rawCountry = String(comp?.venue?.address?.country || "Internacional");
+              const countryTranslated = COUNTRY_TRANSLATION_MAP[rawCountry];
+              const resolvedCountry = catalogEntry?.country || countryTranslated?.country || rawCountry || "Internacional";
+              const resolvedFlag = catalogEntry?.flag || countryTranslated?.flag || "🌍";
+              const rawSlug = String(ev?.season?.slug || "Liga Oficial").replace(/-/g, " ");
+              const resolvedLeagueName =
+                catalogEntry?.name ||
+                String(ev?.league?.name || comp?.league?.name || `Torneo ${resolvedCountry}`);
+              const resolvedLeagueId = catalogEntry?.id || parseInt(espnLeagueId, 10) || 10500;
+              const combinedCheck = `${resolvedLeagueName} ${rawSlug} ${homeName} ${awayName}`.toLowerCase();
+              if (/\b(u-?1[1-6]|sub-?1[1-6]|primavera|premier league 2|youth|juvenil|reservas|reserve)\b/i.test(combinedCheck)) {
+                continue;
               }
-            });
+              const espnEventId = String(ev.id || "");
+              const sbTelemetry = extractEspnScoreboardTelemetry(
+                ev,
+                comp,
+                homeComp,
+                awayComp,
+                homeName,
+                awayName,
+                90,
+                true
+              );
+              results.push({
+                espnEventId,
+                liveStats: sbTelemetry.liveStats,
+                liveEvents: sbTelemetry.liveEvents,
+                fixture: {
+                  id: parseInt(espnEventId || "0", 10) || Math.floor(Math.random() * 9e5 + 1e5),
+                  date: ev.date,
+                  timestamp: Math.floor(new Date(ev.date).getTime() / 1e3),
+                  venue: {
+                    name: comp?.venue?.fullName || "Estadio Oficial",
+                    city: comp?.venue?.address?.city || resolvedCountry
+                  },
+                  status: {
+                    short: "FT",
+                    elapsed: 90
+                  }
+                },
+                league: {
+                  id: resolvedLeagueId,
+                  name: resolvedLeagueName,
+                  country: resolvedCountry,
+                  flag: resolvedFlag,
+                  round: "Jornada Oficial"
+                },
+                teams: {
+                  home: {
+                    id: parseInt(String(homeComp?.team?.id || "1"), 10) || 1,
+                    name: homeName,
+                    logo: String(homeComp?.team?.logo || "")
+                  },
+                  away: {
+                    id: parseInt(String(awayComp?.team?.id || "2"), 10) || 2,
+                    name: awayName,
+                    logo: String(awayComp?.team?.logo || "")
+                  }
+                },
+                goals: {
+                  home: parseInt(String(homeComp?.score || "0"), 10) || 0,
+                  away: parseInt(String(awayComp?.score || "0"), 10) || 0
+                }
+              });
+            }
+          }
+        } catch {
+        }
+        try {
+          const nbaRes = await fetch(
+            `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${espnDate}`,
+            {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0"
+              }
+            }
+          );
+          if (nbaRes.ok) {
+            const nbaData = await nbaRes.json();
+            const bEvents = Array.isArray(nbaData?.events) ? nbaData.events : [];
+            for (const bev of bEvents) {
+              const bState = String(bev?.status?.type?.state || "").toLowerCase();
+              const bDesc = String(bev?.status?.type?.description || "").toLowerCase();
+              if (bState === "post" || bev?.status?.type?.completed === true || bDesc.includes("final")) {
+                bev._sportstatsLeague = { name: "NBA", country: "Estados Unidos" };
+                bev._auditDateStr = dStr;
+                nbaFinishedEvents.push(bev);
+              }
+            }
           }
         } catch {
         }
@@ -3487,7 +3529,7 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
         const cHome = item.liveStats?.home?.corners ?? 0;
         const cAway = item.liveStats?.away?.corners ?? 0;
         return cHome + cAway === 0;
-      }).slice(0, 50);
+      }).slice(0, 60);
       if (toEnrich.length > 0) {
         await Promise.allSettled(
           toEnrich.map(async (item) => {
@@ -3509,20 +3551,23 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
           })
         );
       }
-      if (results.length > 0) {
-        setCacheItem(auditCacheKey, results);
+      const payload = { fixtures: results, nbaEvents: nbaFinishedEvents };
+      if (results.length > 0 || nbaFinishedEvents.length > 0) {
+        setCacheItem(auditCacheKey, payload);
       }
-      return results;
+      return payload;
     });
     return res.json({
       success: true,
-      source: "espn_prime_finished_dia_vencido",
-      fixtures: finishedFixtures
+      source: "espn_prime_and_secondary_finished_dia_vencido",
+      fixtures: auditPayload.fixtures,
+      nbaEvents: auditPayload.nbaEvents
     });
   } catch (err) {
     return res.json({
       success: false,
       fixtures: [],
+      nbaEvents: [],
       error: err instanceof Error ? err.message : String(err)
     });
   }

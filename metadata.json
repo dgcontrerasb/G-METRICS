@@ -1,6 +1,6 @@
 {
-  "name": "SportStats Pro - Probabilistic Sports Analytics",
-  "description": "Plataforma de análisis probabilístico avanzado multideporte (Fútbol & NBA) con modelo Dixon-Coles bivariado, cálculo de xG, árbitros, fatiga y caché inteligente.",
+  "name": "G METRICS | La ciencia detrás de cada victoria",
+  "description": "Modelos probabilísticos avanzados y analítica deportiva de precisión. Deja el azar a un lado y toma decisiones con ventaja estadística.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

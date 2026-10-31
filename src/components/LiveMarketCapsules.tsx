@@ -586,7 +586,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
         const playerScored =
           Array.isArray(fixture.liveEvents) &&
           fixture.liveEvents.some(
-            (ev) => ev.type === 'GOAL' && starPlayerLastName && ev.playerName?.includes(starPlayerLastName)
+            (ev) => ev.type === 'GOAL' && starPlayerLastName && (ev.playerPrimary || (ev as any).playerName || '').includes(starPlayerLastName)
           );
         const fulfilled = playerScored || teamSOT >= 2;
         return {

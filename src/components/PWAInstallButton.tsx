@@ -216,9 +216,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         <button
           type="button"
           onClick={handleInstallClick}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-300 hover:text-white text-xs font-bold transition text-left cursor-pointer"
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-semibold transition text-left cursor-pointer"
         >
-          <Download className="w-4 h-4 text-emerald-400 shrink-0" />
+          <Download className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>Instalar Web App</span>
         </button>
         {renderGuideModal()}
@@ -226,17 +226,17 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
     );
   }
 
-  // Variante 2: Botón discreto en el pie de página (PC y Móvil)
+  // Variante 2: Botón discreto en el pie de página (PC y Móvil) con alto contraste sobre fondo claro
   if (variant === 'footer') {
     return (
       <>
         <button
           type="button"
           onClick={handleInstallClick}
-          className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/35 text-[11px] font-bold transition cursor-pointer flex items-center gap-1.5"
-          title="Instalar SportStats Pro como aplicación nativa en tu dispositivo"
+          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 text-[10.5px] font-semibold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+          title="Instalar G METRICS como aplicación en tu dispositivo"
         >
-          <Download className="w-3.5 h-3.5 text-emerald-400" />
+          <Download className="w-3.5 h-3.5 text-white shrink-0" />
           <span>Instalar App</span>
         </button>
         {renderGuideModal()}
@@ -265,7 +265,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-white truncate">
-                Instalar SportStats Pro
+                Instalar G METRICS
               </p>
               <p className="text-[11px] text-slate-300 truncate">
                 Acceso directo y pantalla completa en 1 clic

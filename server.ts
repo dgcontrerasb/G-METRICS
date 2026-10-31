@@ -2297,23 +2297,30 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
 // 0.15 Finished Matches Audit Endpoint (Modalidad Día Vencido: Consulta 100% oficial y consolidada)
 app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
   const yesterdayStr = getColombiaDateStr(-1);
-  const auditCacheKey = `audit_finished_dia_vencido_v6_${yesterdayStr}`;
-  const cachedAudit = getCacheItem<any[]>(auditCacheKey);
+  const auditCacheKey = `audit_finished_dia_vencido_v8_${yesterdayStr}`;
+  const cachedAudit = getCacheItem<{ fixtures: any[]; nbaEvents: any[] }>(auditCacheKey);
 
   // Caché de 30 minutos para partidos de días vencidos (son resultados finales inmutables)
-  if (cachedAudit && Array.isArray(cachedAudit.data) && cachedAudit.data.length > 0 && Date.now() - cachedAudit.timestamp < 30 * 60 * 1000) {
+  if (
+    cachedAudit &&
+    cachedAudit.data &&
+    Array.isArray(cachedAudit.data.fixtures) &&
+    cachedAudit.data.fixtures.length > 0 &&
+    Date.now() - cachedAudit.timestamp < 30 * 60 * 1000
+  ) {
     return res.json({
       success: true,
       source: 'audit_cache_dia_vencido',
-      fixtures: cachedAudit.data
+      fixtures: cachedAudit.data.fixtures,
+      nbaEvents: cachedAudit.data.nbaEvents || []
     });
   }
 
   try {
-    const finishedFixtures = await runSingleFlight(auditCacheKey, async () => {
+    const auditPayload = await runSingleFlight(auditCacheKey, async () => {
       const results: any[] = [];
+      const nbaFinishedEvents: any[] = [];
       // Modalidad Día Vencido: Escaneamos ayer (-1) y los 4 días anteriores (-2, -3, -4, -5)
-      // Esto otorga tiempo reglamentario completo para que todas las confederaciones y árbitros tengan sus actas cargadas
       const datesToScan = [
         getColombiaDateStr(-1),
         getColombiaDateStr(-2),
@@ -2324,108 +2331,148 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
 
       for (const dStr of datesToScan) {
         const espnDate = dStr.replace(/-/g, '');
+        // A. Fútbol (Principales + Secundarias vía ESPN Global Scoreboard a $0 costo)
         try {
           const sbRes = await fetch(
-            `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=250`,
+            `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=300`,
             {
               headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0'
               }
             }
           );
-          if (!sbRes.ok) continue;
-          const sbData = await sbRes.json();
-          const events = Array.isArray(sbData?.events) ? sbData.events : [];
+          if (sbRes.ok) {
+            const sbData = await sbRes.json();
+            const events = Array.isArray(sbData?.events) ? sbData.events : [];
 
-          for (const ev of events) {
-            const state = String(ev?.status?.type?.state || '').toLowerCase();
-            if (state !== 'post' && ev?.status?.type?.completed !== true) continue;
+            for (const ev of events) {
+              const state = String(ev?.status?.type?.state || '').toLowerCase();
+              if (state !== 'post' && ev?.status?.type?.completed !== true) continue;
 
-            const comp = ev?.competitions?.[0];
-            if (!comp) continue;
-            const competitors = Array.isArray(comp.competitors) ? comp.competitors : [];
-            const homeComp = competitors.find((c: any) => c.homeAway === 'home') || competitors[0];
-            const awayComp = competitors.find((c: any) => c.homeAway === 'away') || competitors[1];
-            if (!homeComp || !awayComp) continue;
+              const comp = ev?.competitions?.[0];
+              if (!comp) continue;
+              const competitors = Array.isArray(comp.competitors) ? comp.competitors : [];
+              const homeComp = competitors.find((c: any) => c.homeAway === 'home') || competitors[0];
+              const awayComp = competitors.find((c: any) => c.homeAway === 'away') || competitors[1];
+              if (!homeComp || !awayComp) continue;
 
-            const rawUid = String(ev?.uid || '');
-            const espnLeagueId = rawUid.match(/~l:(\d+)/)?.[1] || '0';
-            const catalogEntry = ESPN_LEAGUE_CATALOG[espnLeagueId];
-            if (!catalogEntry) continue;
+              const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || 'Local');
+              const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || 'Visitante');
 
-            const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || 'Local');
-            const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || 'Visitante');
-            if (isServerYouthOrLowTierMatch(catalogEntry.name, catalogEntry.country, homeName, awayName)) {
-              continue;
-            }
+              const rawUid = String(ev?.uid || '');
+              const espnLeagueId = rawUid.match(/~l:(\d+)/)?.[1] || '0';
+              const catalogEntry = ESPN_LEAGUE_CATALOG[espnLeagueId];
 
-            const espnEventId = String(ev.id || '');
-            const sbTelemetry = extractEspnScoreboardTelemetry(
-              ev,
-              comp,
-              homeComp,
-              awayComp,
-              homeName,
-              awayName,
-              90,
-              true
-            );
+              const rawCountry = String(comp?.venue?.address?.country || 'Internacional');
+              const countryTranslated = COUNTRY_TRANSLATION_MAP[rawCountry];
+              const resolvedCountry = catalogEntry?.country || countryTranslated?.country || rawCountry || 'Internacional';
+              const resolvedFlag = catalogEntry?.flag || countryTranslated?.flag || '🌍';
+              const rawSlug = String(ev?.season?.slug || 'Liga Oficial').replace(/-/g, ' ');
+              const resolvedLeagueName =
+                catalogEntry?.name ||
+                String(ev?.league?.name || comp?.league?.name || `Torneo ${resolvedCountry}`);
+              const resolvedLeagueId = catalogEntry?.id || parseInt(espnLeagueId, 10) || 10500;
 
-            results.push({
-              espnEventId,
-              liveStats: sbTelemetry.liveStats,
-              liveEvents: sbTelemetry.liveEvents,
-              fixture: {
-                id: parseInt(espnEventId || '0', 10) || Math.floor(Math.random() * 900000 + 100000),
-                date: ev.date,
-                timestamp: Math.floor(new Date(ev.date).getTime() / 1000),
-                venue: {
-                  name: comp?.venue?.fullName || 'Estadio Oficial',
-                  city: comp?.venue?.address?.city || catalogEntry.country
-                },
-                status: {
-                  short: 'FT',
-                  elapsed: 90
-                }
-              },
-              league: {
-                id: catalogEntry.id,
-                name: catalogEntry.name,
-                country: catalogEntry.country,
-                flag: catalogEntry.flag,
-                round: 'Jornada Oficial'
-              },
-              teams: {
-                home: {
-                  id: parseInt(String(homeComp?.team?.id || '1'), 10) || 1,
-                  name: homeName,
-                  logo: String(homeComp?.team?.logo || '')
-                },
-                away: {
-                  id: parseInt(String(awayComp?.team?.id || '2'), 10) || 2,
-                  name: awayName,
-                  logo: String(awayComp?.team?.logo || '')
-                }
-              },
-              goals: {
-                home: parseInt(String(homeComp?.score || '0'), 10) || 0,
-                away: parseInt(String(awayComp?.score || '0'), 10) || 0
+              // Excluir únicamente fútbol infantil/juvenil Sub-15/Sub-16 o reservas amateurs
+              const combinedCheck = `${resolvedLeagueName} ${rawSlug} ${homeName} ${awayName}`.toLowerCase();
+              if (/\b(u-?1[1-6]|sub-?1[1-6]|primavera|premier league 2|youth|juvenil|reservas|reserve)\b/i.test(combinedCheck)) {
+                continue;
               }
-            });
+
+              const espnEventId = String(ev.id || '');
+              const sbTelemetry = extractEspnScoreboardTelemetry(
+                ev,
+                comp,
+                homeComp,
+                awayComp,
+                homeName,
+                awayName,
+                90,
+                true
+              );
+
+              results.push({
+                espnEventId,
+                liveStats: sbTelemetry.liveStats,
+                liveEvents: sbTelemetry.liveEvents,
+                fixture: {
+                  id: parseInt(espnEventId || '0', 10) || Math.floor(Math.random() * 900000 + 100000),
+                  date: ev.date,
+                  timestamp: Math.floor(new Date(ev.date).getTime() / 1000),
+                  venue: {
+                    name: comp?.venue?.fullName || 'Estadio Oficial',
+                    city: comp?.venue?.address?.city || resolvedCountry
+                  },
+                  status: {
+                    short: 'FT',
+                    elapsed: 90
+                  }
+                },
+                league: {
+                  id: resolvedLeagueId,
+                  name: resolvedLeagueName,
+                  country: resolvedCountry,
+                  flag: resolvedFlag,
+                  round: 'Jornada Oficial'
+                },
+                teams: {
+                  home: {
+                    id: parseInt(String(homeComp?.team?.id || '1'), 10) || 1,
+                    name: homeName,
+                    logo: String(homeComp?.team?.logo || '')
+                  },
+                  away: {
+                    id: parseInt(String(awayComp?.team?.id || '2'), 10) || 2,
+                    name: awayName,
+                    logo: String(awayComp?.team?.logo || '')
+                  }
+                },
+                goals: {
+                  home: parseInt(String(homeComp?.score || '0'), 10) || 0,
+                  away: parseInt(String(awayComp?.score || '0'), 10) || 0
+                }
+              });
+            }
           }
         } catch {
           // continue to next mature date
         }
+
+        // B. Baloncesto NBA (Scoreboard finalizado oficial de ESPN a $0 costo)
+        try {
+          const nbaRes = await fetch(
+            `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${espnDate}`,
+            {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0'
+              }
+            }
+          );
+          if (nbaRes.ok) {
+            const nbaData = await nbaRes.json();
+            const bEvents = Array.isArray(nbaData?.events) ? nbaData.events : [];
+            for (const bev of bEvents) {
+              const bState = String(bev?.status?.type?.state || '').toLowerCase();
+              const bDesc = String(bev?.status?.type?.description || '').toLowerCase();
+              if (bState === 'post' || bev?.status?.type?.completed === true || bDesc.includes('final')) {
+                bev._sportstatsLeague = { name: 'NBA', country: 'Estados Unidos' };
+                bev._auditDateStr = dStr;
+                nbaFinishedEvents.push(bev);
+              }
+            }
+          }
+        } catch {
+          // ignore NBA date error
+        }
       }
 
-      // Enriquecer en lotes paralelos todos los partidos de ligas principales que lo requieran (sin tope de 15)
+      // Enriquecer en lotes paralelos los partidos finalizados que requieran telemetría de córners/tarjetas
       const toEnrich = results.filter((item) => {
         if (!item.espnEventId) return false;
         const cHome = item.liveStats?.home?.corners ?? 0;
         const cAway = item.liveStats?.away?.corners ?? 0;
-        // Si ya tiene córners > 0 registrados en el scoreboard, no requiere llamada extra
         return cHome + cAway === 0;
-      }).slice(0, 50);
+      }).slice(0, 60);
 
       if (toEnrich.length > 0) {
         await Promise.allSettled(
@@ -2450,21 +2497,24 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
         );
       }
 
-      if (results.length > 0) {
-        setCacheItem(auditCacheKey, results);
+      const payload = { fixtures: results, nbaEvents: nbaFinishedEvents };
+      if (results.length > 0 || nbaFinishedEvents.length > 0) {
+        setCacheItem(auditCacheKey, payload);
       }
-      return results;
+      return payload;
     });
 
     return res.json({
       success: true,
-      source: 'espn_prime_finished_dia_vencido',
-      fixtures: finishedFixtures
+      source: 'espn_prime_and_secondary_finished_dia_vencido',
+      fixtures: auditPayload.fixtures,
+      nbaEvents: auditPayload.nbaEvents
     });
   } catch (err: unknown) {
     return res.json({
       success: false,
       fixtures: [],
+      nbaEvents: [],
       error: err instanceof Error ? err.message : String(err)
     });
   }
@@ -3157,6 +3207,7 @@ app.get(['/api/status', '/api/admin/telemetry'], dataRateLimitMiddleware, async 
   const hasApiFootball = Boolean(getSecretKey('API_FOOTBALL_KEY'));
   const hasFootballData = Boolean(getSecretKey('FOOTBALL_DATA_KEY'));
   const hasOddsApi = Boolean(getSecretKey('ODDS_API_KEY'));
+  const hasBallDontLie = Boolean(getSecretKey('BALLDONTLIE_API_KEY'));
   const onlineUsers = getActiveOnlineUsersList();
   const totalRequests = serverCacheHits + serverCacheMisses;
   const cacheHitRatePct = totalRequests > 0 ? Math.round((serverCacheHits / totalRequests) * 1000) / 10 : 100;
@@ -3167,6 +3218,7 @@ app.get(['/api/status', '/api/admin/telemetry'], dataRateLimitMiddleware, async 
     apiFootball: hasApiFootball,
     footballData: hasFootballData,
     oddsApi: hasOddsApi,
+    ballDontLie: hasBallDontLie,
     remainingCalls: lastRemainingCalls,
     consumedTodayEst: Math.max(0, 100 - lastRemainingCalls),
     quotaShieldActive: lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD,
@@ -3194,26 +3246,32 @@ app.get(['/api/status', '/api/admin/telemetry'], dataRateLimitMiddleware, async 
   });
 });
 
-// 2b. The Odds API
+// 2b. The Odds API (Soporta Fútbol EPL y Baloncesto NBA oficial)
 app.get('/api/market-odds', dataRateLimitMiddleware, async (req, res) => {
+  const sport = sanitizeText((req.query.sport as string) || 'soccer_epl', 32);
   const oddsKey = getSecretKey('ODDS_API_KEY');
-  const cacheKey = 'odds_soccer';
+  const isNBA = sport.includes('nba') || sport.includes('basketball');
+  const cacheKey = isNBA ? 'odds_nba_v1' : 'odds_soccer';
   const cached = getCacheItem<any>(cacheKey);
 
-  if (cached && Date.now() - cached.timestamp < 60 * 60 * 1000) {
-    return res.json({ success: true, source: 'persistent_disk_cache', odds: cached.data });
+  // NBA: TTL de 10 minutos para mantener frescura de cuotas y no agotar las 500 solicitudes mensuales
+  const cacheTTL = isNBA ? 10 * 60 * 1000 : 60 * 60 * 1000;
+
+  if (cached && Date.now() - cached.timestamp < cacheTTL) {
+    return res.json({ success: true, source: 'persistent_disk_cache', sport: isNBA ? 'basketball_nba' : 'soccer_epl', odds: cached.data });
   }
 
   if (!oddsKey) {
-    return res.json({ success: false, message: 'No The Odds API key configured.', odds: cached?.data || [] });
+    return res.json({ success: false, message: 'No The Odds API key configured.', sport, odds: cached?.data || [] });
   }
 
   try {
     const data = await runSingleFlight(cacheKey, async () => {
-      const apiRes = await fetch(
-        `https://api.the-odds-api.com/v4/sports/soccer_epl/odds/?apiKey=${oddsKey}&regions=eu&markets=h2h`,
-        { method: 'GET' }
-      );
+      const targetUrl = isNBA
+        ? `https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?apiKey=${oddsKey}&regions=us,eu&markets=h2h,spreads,totals`
+        : `https://api.the-odds-api.com/v4/sports/soccer_epl/odds/?apiKey=${oddsKey}&regions=eu&markets=h2h`;
+
+      const apiRes = await fetch(targetUrl, { method: 'GET' });
       if (!apiRes.ok) {
         if (cached) return cached.data;
         return [];
@@ -3222,10 +3280,157 @@ app.get('/api/market-odds', dataRateLimitMiddleware, async (req, res) => {
       setCacheItem(cacheKey, fetched);
       return fetched;
     });
-    return res.json({ success: true, source: 'the_odds_api_coalesced', odds: data });
+    return res.json({
+      success: true,
+      source: 'the_odds_api_coalesced',
+      sport: isNBA ? 'basketball_nba' : 'soccer_epl',
+      odds: data
+    });
   } catch {
-    if (cached) return res.json({ success: true, source: 'fallback_disk_cache', odds: cached.data });
+    if (cached) return res.json({ success: true, source: 'fallback_disk_cache', sport, odds: cached.data });
     return res.json({ success: false, error: 'Error al consultar cuotas externas', odds: [] });
+  }
+});
+
+// 2b-2. ESPN NBA Match Summary (Boxscore, Lesiones oficiales y PickCenter cuotas reales)
+app.get('/api/nba/summary', dataRateLimitMiddleware, async (req, res) => {
+  const eventId = sanitizeText((req.query.eventId as string) || (req.query.id as string) || '', 32);
+  if (!eventId) {
+    return res.status(400).json({ success: false, error: 'Se requiere eventId de ESPN' });
+  }
+
+  const cacheKey = `nba_summary_${eventId}`;
+  const cached = getCacheItem<any>(cacheKey);
+
+  // Si el partido está guardado y es reciente (30s si está vivo, 5m si está programado)
+  const isFinished = cached?.data?.header?.competitions?.[0]?.status?.type?.completed;
+  const isLive = cached?.data?.header?.competitions?.[0]?.status?.type?.state === 'in';
+  const ttl = isFinished ? 24 * 60 * 60 * 1000 : isLive ? 25 * 1000 : 5 * 60 * 1000;
+
+  if (cached && Date.now() - cached.timestamp < ttl) {
+    return res.json({ success: true, source: 'persistent_disk_cache', data: cached.data });
+  }
+
+  try {
+    const summary = await runSingleFlight(cacheKey, async () => {
+      const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=${eventId}`;
+      const apiRes = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0'
+        }
+      });
+      if (!apiRes.ok) {
+        if (cached) return cached.data;
+        return null;
+      }
+      const data = await apiRes.json();
+      setCacheItem(cacheKey, data);
+      return data;
+    });
+
+    if (!summary && cached) {
+      return res.json({ success: true, source: 'fallback_disk_cache', data: cached.data });
+    }
+
+    return res.json({
+      success: true,
+      source: 'espn_official_summary',
+      data: summary
+    });
+  } catch (err: unknown) {
+    if (cached) return res.json({ success: true, source: 'fallback_disk_cache', data: cached.data });
+    return res.json({ success: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// 2b-3. ESPN NBA Official Team Rosters (Plantillas oficiales de los 30 equipos con dorsales y posiciones)
+app.get('/api/nba/rosters', dataRateLimitMiddleware, async (req, res) => {
+  const teamIdParam = sanitizeText((req.query.teamId as string) || (req.query.teamIds as string) || '', 64);
+  if (!teamIdParam) {
+    return res.status(400).json({ success: false, error: 'Se requiere teamId o teamIds' });
+  }
+
+  const teamIds = teamIdParam.split(',').map((id) => id.trim()).filter(Boolean);
+  const results: Record<string, any> = {};
+
+  try {
+    await Promise.all(
+      teamIds.map(async (tId) => {
+        const cacheKey = `nba_roster_${tId}`;
+        const cached = getCacheItem<any>(cacheKey);
+        // Rosters cambian poco durante el día -> TTL de 2 horas
+        if (cached && Date.now() - cached.timestamp < 2 * 60 * 60 * 1000) {
+          results[tId] = cached.data;
+          return;
+        }
+
+        try {
+          const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${tId}/roster`;
+          const apiRes = await fetch(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0'
+            }
+          });
+          if (apiRes.ok) {
+            const data = await apiRes.json();
+            setCacheItem(cacheKey, data);
+            results[tId] = data;
+          } else if (cached) {
+            results[tId] = cached.data;
+          }
+        } catch {
+          if (cached) results[tId] = cached.data;
+        }
+      })
+    );
+
+    return res.json({
+      success: true,
+      source: 'espn_official_rosters',
+      rosters: results
+    });
+  } catch (err: unknown) {
+    return res.json({ success: false, error: err instanceof Error ? err.message : String(err), rosters: {} });
+  }
+});
+
+// 2b-4. BallDontLie API Proxy (Refuerzo opcional de estadísticas y jugadores NBA)
+app.get('/api/nba/bdl/*', dataRateLimitMiddleware, async (req, res) => {
+  const bdlKey = getSecretKey('BALLDONTLIE_API_KEY');
+  const subPath = req.params[0] || 'teams';
+  const queryStr = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+
+  if (!bdlKey) {
+    return res.json({
+      success: false,
+      hasKey: false,
+      message: 'BALLDONTLIE_API_KEY no configurada. Usando base de datos interna y ESPN como refuerzo principal.'
+    });
+  }
+
+  const cacheKey = `bdl_${subPath}_${queryStr}`;
+  const cached = getCacheItem<any>(cacheKey);
+  if (cached && Date.now() - cached.timestamp < 30 * 60 * 1000) {
+    return res.json({ success: true, source: 'persistent_disk_cache', data: cached.data });
+  }
+
+  try {
+    const targetUrl = `https://api.balldontlie.io/v1/${subPath}${queryStr}`;
+    const apiRes = await fetch(targetUrl, {
+      headers: {
+        Authorization: bdlKey
+      }
+    });
+    if (!apiRes.ok) {
+      if (cached) return res.json({ success: true, source: 'fallback_disk_cache', data: cached.data });
+      return res.status(apiRes.status).json({ success: false, error: `Error de BallDontLie: ${apiRes.status}` });
+    }
+    const data = await apiRes.json();
+    setCacheItem(cacheKey, data);
+    return res.json({ success: true, source: 'balldontlie_live', data });
+  } catch (err: unknown) {
+    if (cached) return res.json({ success: true, source: 'fallback_disk_cache', data: cached.data });
+    return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -3366,7 +3571,7 @@ app.post('/api/set-secret-key', async (req, res) => {
   }
   clearAuthFailures(req);
 
-  const { key, footballDataKey, oddsApiKey } = req.body || {};
+  const { key, footballDataKey, oddsApiKey, ballDontLieKey } = req.body || {};
 
   try {
     const envPath = path.resolve(process.cwd(), '.env');
@@ -3399,6 +3604,16 @@ app.post('/api/set-secret-key', async (req, res) => {
         envContent = envContent.replace(/ODDS_API_KEY=.*/g, `ODDS_API_KEY="${clean}"`);
       } else {
         envContent += `\nODDS_API_KEY="${clean}"\n`;
+      }
+    }
+
+    if (ballDontLieKey && typeof ballDontLieKey === 'string' && ballDontLieKey.trim()) {
+      const clean = sanitizeText(ballDontLieKey.trim(), 128);
+      process.env.BALLDONTLIE_API_KEY = clean;
+      if (envContent.includes('BALLDONTLIE_API_KEY=')) {
+        envContent = envContent.replace(/BALLDONTLIE_API_KEY=.*/g, `BALLDONTLIE_API_KEY="${clean}"`);
+      } else {
+        envContent += `\nBALLDONTLIE_API_KEY="${clean}"\n`;
       }
     }
 

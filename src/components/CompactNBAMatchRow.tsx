@@ -3,6 +3,7 @@ import { NBAMatchFixture, NBAAnalysis } from '../types';
 import { Check, BarChart2, Star } from 'lucide-react';
 import { NBAPredictionCard } from './NBAPredictionCard';
 import { formatCompactTeamName } from '../services/leagueCategorizer';
+import { evaluateNBAMarketsLiveStatus } from '../services/nbaEngine';
 
 interface CompactNBAMatchRowProps {
   fixture: NBAMatchFixture;
@@ -36,6 +37,10 @@ export const CompactNBAMatchRow: React.FC<CompactNBAMatchRowProps> = React.memo(
   const isFinished = status === 'FINISHED';
   if (!analysis) return null;
   const isValueBet = Boolean(analysis?.marketOdds?.valueBetDetected);
+  const hasStarted = (isLive || isFinished) && Boolean(fixture.currentScore);
+  const evaluatedMarkets = hasStarted ? evaluateNBAMarketsLiveStatus(fixture, analysis) : [];
+  const hitsCount = evaluatedMarkets.filter((m) => m.isHit).length;
+  const mainPickHit = evaluatedMarkets[0]?.isHit ?? false;
 
   return (
     <div className={`transition-all duration-200 rounded-xl overflow-hidden border shadow-2xs ${
@@ -129,6 +134,19 @@ export const CompactNBAMatchRow: React.FC<CompactNBAMatchRowProps> = React.memo(
             ) : (
               <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono tabular-nums text-[10px] font-medium border border-slate-200/70 shrink-0">
                 {fixture.time}
+              </span>
+            )}
+
+            {hasStarted && (
+              <span
+                className={`px-1.5 py-0.5 rounded font-mono text-[9.5px] font-bold border shrink-0 ${
+                  mainPickHit
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                    : 'bg-rose-50 text-rose-800 border-rose-300'
+                }`}
+                title="Estado de las apuestas pre-partido y props de jugadores"
+              >
+                {mainPickHit ? '✅' : '❌'} {hitsCount}/6 Mercados
               </span>
             )}
 

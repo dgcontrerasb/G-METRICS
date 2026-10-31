@@ -67,6 +67,7 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
     return [
       `📊 DIAGNÓSTICO G METRICS (${nowStr})`,
       `🛡️ Blindaje Backend: ${serverTelemetry?.bundleVersion || 'v2.6-shield-6h'} (TTL: ${serverTelemetry?.scheduleTTLHours || 6}h)`,
+      `🏀 NBA Pipeline: The Odds API (${serverTelemetry?.oddsApi ? 'Activa' : 'Sin clave'}) | ESPN (${espnPulses} pulsos) | BallDontLie (${serverTelemetry?.ballDontLie ? 'Activa' : 'Respaldo 30 Franquicias'})`,
       `🟢 Online Ahora: ${onlineNow} (${onlineUsersFormatted}) | Pico: ${peakUsers} (${peakTimeStr})`,
       `📡 Cuota API-Football: ${remainingQuota !== null ? `${remainingQuota}/100 libres` : `${callsSinceBoot} llamadas en sesión`}`,
       `⚡ Eficiencia Caché: ${cacheHitRate}% (${cacheHits} hits / ${cacheMisses} misses) | Pulsos ESPN: ${espnPulses}`,
@@ -89,10 +90,10 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
         <div>
           <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-            <span>Monitor de Tráfico y Cuota API en Tiempo Real</span>
+            <span>Monitor de Tráfico, Cuota y Cuotas NBA en Tiempo Real</span>
           </h3>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            Sesiones activas, ahorro de caché y registro de consumo API-Football.
+            Sesiones activas, cuotas The Odds API, telemetría ESPN y BallDontLie.
           </p>
         </div>
         <button
@@ -103,6 +104,28 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
           <RefreshCw className={`w-3.5 h-3.5 text-cyan-600 ${isLoadingTelemetry ? 'animate-spin' : ''}`} />
           <span>Refrescar</span>
         </button>
+      </div>
+
+      {/* Proveedores de Datos Activos */}
+      <div className="p-3 rounded-2xl bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">🏀</span>
+          <span className="font-bold text-[11px]">Canales de Datos NBA:</span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap text-[10px] font-mono">
+          <span className="px-2 py-0.5 rounded-md bg-emerald-950/80 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span>The Odds API: {serverTelemetry?.oddsApi ? 'Activa (DraftKings / Pinnacle)' : 'Pendiente'}</span>
+          </span>
+          <span className="px-2 py-0.5 rounded-md bg-cyan-950/80 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+            <span>ESPN Oficial ($0 costo): Activo</span>
+          </span>
+          <span className="px-2 py-0.5 rounded-md bg-amber-950/80 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            <span>BallDontLie: {serverTelemetry?.ballDontLie ? 'API Conectada' : '30 Franquicias Reales'}</span>
+          </span>
+        </div>
       </div>
 
       {/* 4 KPI Cards */}

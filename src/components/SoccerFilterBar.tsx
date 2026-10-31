@@ -144,7 +144,7 @@ export const SoccerFilterBar: React.FC<SoccerFilterBarProps> = ({
               className="bg-slate-900/50 border border-slate-800 rounded-xl px-2 py-2 text-[11px] font-mono text-white focus:outline-none cursor-pointer truncate"
             >
               <option value="PRIME_CO" className="bg-[#161b22] text-emerald-300 font-bold">
-                ⚽ [CO] Principales Casas CO ({primeFixturesCount})
+                🇨🇴 Principales Casas CO ({primeFixturesCount})
               </option>
               <option value="ALL" className="bg-[#161b22] text-white">
                 🌐 Todas las Ligas ({totalFixturesCount})
@@ -155,15 +155,15 @@ export const SoccerFilterBar: React.FC<SoccerFilterBarProps> = ({
                 .map((intlGroup) => (
                   <optgroup
                     key={intlGroup.key}
-                    label={`🏆 ${intlGroup.name}`}
+                    label={`${intlGroup.flag || '🏆'} ${intlGroup.name}`}
                     className="bg-[#0b1220] text-amber-300 font-bold"
                   >
                     <option value="GROUP_INTL" className="bg-[#0b1220] text-white">
-                      🏆 Todos Int. ({intlGroup.totalMatches})
+                      {intlGroup.flag || '🏆'} Todos Int. ({intlGroup.totalMatches})
                     </option>
                     {intlGroup.leagues.map((l) => (
                       <option key={String(l.id)} value={`LEAGUE_${l.id}`} className="bg-[#0b1220] text-slate-200">
-                        ⭐ {l.name} ({l.matchCount})
+                        {l.flag || intlGroup.flag || '⭐'} {l.name} ({l.matchCount})
                       </option>
                     ))}
                   </optgroup>
@@ -174,15 +174,15 @@ export const SoccerFilterBar: React.FC<SoccerFilterBarProps> = ({
                 .map((countryGroup) => (
                   <optgroup
                     key={countryGroup.key}
-                    label={`⚽ [${countryGroup.key.slice(0, 3)}] ${countryGroup.name}`}
+                    label={`${countryGroup.flag || '⚽'} ${countryGroup.name}`}
                     className="bg-[#0b1220] text-emerald-300 font-bold"
                   >
                     <option value={`COUNTRY_${countryGroup.key}`} className="bg-[#0b1220] text-white">
-                      ⚽ Toda {countryGroup.name} ({countryGroup.totalMatches})
+                      {countryGroup.flag || '⚽'} Toda {countryGroup.name} ({countryGroup.totalMatches})
                     </option>
                     {countryGroup.leagues.map((l) => (
                       <option key={String(l.id)} value={`LEAGUE_${l.id}`} className="bg-[#0b1220] text-slate-200">
-                        ⚽ {l.name} ({l.matchCount})
+                        {l.flag || countryGroup.flag || '⚽'} {l.name} ({l.matchCount})
                       </option>
                     ))}
                   </optgroup>
