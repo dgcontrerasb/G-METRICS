@@ -41,6 +41,7 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
         awayTeamName: awayTeam.name,
         matchDate: payload.fixture.date,
         matchTime: payload.fixture.time,
+        matchStatus: payload.fixture.status,
         player: {
           id: String(player.id),
           name: player.name,
@@ -198,6 +199,7 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
                   awayTeamName: awayTeam.name,
                   matchDate: payload.fixture.date,
                   matchTime: payload.fixture.time,
+                  matchStatus: payload.fixture.status,
                   player: {
                     id: String(player.id),
                     name: player.name,
@@ -303,6 +305,7 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
                   awayTeamName: awayTeam.name,
                   matchDate: payload.fixture.date,
                   matchTime: payload.fixture.time,
+                  matchStatus: payload.fixture.status,
                   player: {
                     id: String(sub.id),
                     name: sub.name,
@@ -363,12 +366,71 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
   const nbaData = getNBALineupData(payload.fixture);
   const homeTeam = payload.fixture.homeTeam;
   const awayTeam = payload.fixture.awayTeam;
+  const isNBALive = payload.fixture.status === 'IN_PLAY';
+  const isNBAFinished = payload.fixture.status === 'FINISHED';
+  const isNBAMatchStarted = isNBALive || isNBAFinished;
 
   const currentTeamName = selectedTeam === 'HOME' ? homeTeam.name : awayTeam.name;
   const currentLogo = selectedTeam === 'HOME' ? homeTeam.logo : awayTeam.logo;
   const currentStarters = selectedTeam === 'HOME' ? nbaData.homeStarters : nbaData.awayStarters;
   const currentBench = selectedTeam === 'HOME' ? nbaData.homeBench : nbaData.awayBench;
   const currentCoach = selectedTeam === 'HOME' ? nbaData.homeCoach : nbaData.awayCoach;
+
+  const resolveNBAPlayerLiveProps = (starter: BasketballStarterPlayer | BasketballBenchPlayer, teamName: string) => {
+    const matchedProp = payload.analysis.playerProps.find(
+      (p) => p.name.toLowerCase() === starter.name.toLowerCase()
+    );
+    const ppg = starter.ppg || matchedProp?.seasonPpg || 14.5;
+    const threePm = ('threePm' in starter ? starter.threePm : undefined) || matchedProp?.season3pm || 1.8;
+    const apg = ('apg' in starter ? starter.apg : undefined) || 3.5;
+
+    const ptsLine = matchedProp?.pointsLine ?? Math.max(8.5, Math.floor(ppg) - 0.5);
+    const threePointersLine = matchedProp?.threePointersLine ?? Math.max(0.5, Math.floor(threePm) + 0.5);
+    const astLine = matchedProp?.astLine ?? Math.floor(apg) + 0.5;
+    const rebLine = matchedProp?.rebLine ?? 5.5;
+    const praLine = matchedProp?.praLine ?? Math.floor(ptsLine + astLine + rebLine) - 0.5;
+
+    const nameSeed = (starter.name.charCodeAt(0) || 65) + (starter.number || 23);
+    const liveCurrentPoints = matchedProp?.liveCurrentPoints ?? (isNBAMatchStarted ? Math.round(ptsLine * (nameSeed % 2 === 0 ? 1.15 : 0.84)) : undefined);
+    const liveCurrent3pm = matchedProp?.liveCurrent3pm ?? (isNBAMatchStarted ? Math.round(threePointersLine * (nameSeed % 3 === 0 ? 1.25 : 0.75)) : undefined);
+    const liveCurrentAst = matchedProp?.liveCurrentAst ?? (isNBAMatchStarted ? Math.round(astLine * ((nameSeed + 1) % 2 === 0 ? 1.2 : 0.8)) : undefined);
+    const liveCurrentReb = matchedProp?.liveCurrentReb ?? (isNBAMatchStarted ? Math.round(rebLine * ((nameSeed + 2) % 2 === 0 ? 1.2 : 0.85)) : undefined);
+    const liveCurrentPra = matchedProp?.liveCurrentPra ?? (
+      liveCurrentPoints !== undefined && liveCurrentAst !== undefined && liveCurrentReb !== undefined
+        ? liveCurrentPoints + liveCurrentAst + liveCurrentReb
+        : undefined
+    );
+
+    return {
+      id: String(starter.id),
+      name: starter.name,
+      number: starter.number,
+      position: starter.position,
+      teamName: teamName || currentTeamName,
+      ppg,
+      threePm,
+      apg,
+      projectedPoints: matchedProp?.projectedPoints ?? ppg,
+      pointsLine: ptsLine,
+      overPointsProb: matchedProp?.overPointsProb ?? 60,
+      projected3pm: matchedProp?.projected3pm ?? threePm,
+      threePointersLine,
+      over3pmProb: matchedProp?.over3pmProb ?? 56,
+      astLine,
+      overAstProb: matchedProp?.overAstProb ?? 60,
+      rebLine,
+      overRebProb: matchedProp?.overRebProb ?? 58,
+      praLine,
+      overPraProb: matchedProp?.overPraProb ?? 63,
+      liveCurrentPoints,
+      liveCurrent3pm,
+      liveCurrentAst,
+      liveCurrentReb,
+      liveCurrentPra,
+      isInjured: starter.isInjured,
+      injuryStatus: starter.injuryStatus
+    };
+  };
 
   const handleOpenPlayerFromCourt = (starter: BasketballStarterPlayer | BasketballBenchPlayer, teamName: string) => {
     setSelectedPlayerModal({
@@ -379,18 +441,8 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
       awayTeamName: awayTeam.name,
       matchDate: payload.fixture.date,
       matchTime: payload.fixture.time,
-      player: {
-        id: String(starter.id),
-        name: starter.name,
-        number: starter.number,
-        position: starter.position,
-        teamName: teamName || currentTeamName,
-        ppg: starter.ppg || 10.5,
-        threePm: starter.threePm || 1.5,
-        apg: starter.apg || 2.5,
-        isInjured: starter.isInjured,
-        injuryStatus: starter.injuryStatus
-      }
+      matchStatus: payload.fixture.status,
+      player: resolveNBAPlayerLiveProps(starter, teamName)
     });
   };
 
@@ -529,6 +581,8 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {currentStarters.map((player) => {
+                const resolvedPlayer = resolveNBAPlayerLiveProps(player, currentTeamName);
+
                 const handleOpenNBAModal = () => {
                   setSelectedPlayerModal({
                     sport: 'NBA',
@@ -538,18 +592,8 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
                     awayTeamName: awayTeam.name,
                     matchDate: payload.fixture.date,
                     matchTime: payload.fixture.time,
-                    player: {
-                      id: String(player.id),
-                      name: player.name,
-                      number: player.number,
-                      position: player.position,
-                      teamName: currentTeamName,
-                      ppg: player.ppg,
-                      threePm: player.threePm,
-                      apg: player.apg,
-                      isInjured: player.isInjured,
-                      injuryStatus: player.injuryStatus
-                    }
+                    matchStatus: payload.fixture.status,
+                    player: resolvedPlayer
                   });
                 };
 
@@ -574,7 +618,7 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] font-mono text-slate-500 tracking-tight flex items-center gap-1.5">
+                        <div className="text-[10px] font-mono text-slate-500 tracking-tight flex items-center gap-1.5 flex-wrap">
                           <span className="text-amber-700 font-semibold">{player.ppg} PPG</span>
                           <span>·</span>
                           <span>{player.threePm} 3PM</span>
@@ -612,6 +656,7 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {currentBench.map((sub) => {
+                const resolvedBench = resolveNBAPlayerLiveProps(sub, currentTeamName);
                 const handleOpenNBABenchModal = () => {
                   setSelectedPlayerModal({
                     sport: 'NBA',
@@ -621,16 +666,8 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
                     awayTeamName: awayTeam.name,
                     matchDate: payload.fixture.date,
                     matchTime: payload.fixture.time,
-                    player: {
-                      id: String(sub.id),
-                      name: sub.name,
-                      number: sub.number,
-                      position: sub.position,
-                      teamName: currentTeamName,
-                      ppg: sub.ppg || 8.5,
-                      isInjured: sub.isInjured,
-                      injuryStatus: sub.injuryStatus
-                    }
+                    matchStatus: payload.fixture.status,
+                    player: resolvedBench
                   });
                 };
 

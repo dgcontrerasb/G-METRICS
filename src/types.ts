@@ -398,9 +398,19 @@ export interface NBAPlayerProp {
   threePointersLine: number;
   over3pmProb: number;
   under3pmProb: number;
-  // Datos en vivo si el partido está en juego
+  // Proyección de Asistencias, Rebotes y Combo PRA
+  astLine?: number;
+  overAstProb?: number;
+  rebLine?: number;
+  overRebProb?: number;
+  praLine?: number;
+  overPraProb?: number;
+  // Datos en vivo o finales si el partido está en juego o finalizado
   liveCurrentPoints?: number;
   liveCurrent3pm?: number;
+  liveCurrentAst?: number;
+  liveCurrentReb?: number;
+  liveCurrentPra?: number;
 }
 
 export interface NBAQuarterScore {
@@ -495,6 +505,70 @@ export interface NBAMatchFixture {
     homeWins: number;
     awayWins: number;
   };
+  espnEventId?: string;
+  homeEspnId?: string;
+  awayEspnId?: string;
+  externalOdds?: {
+    bookmaker?: string;
+    homeMoneyline?: number;
+    awayMoneyline?: number;
+    spreadPoint?: number;
+    homeSpreadOdds?: number;
+    awaySpreadOdds?: number;
+    totalPoint?: number;
+    overOdds?: number;
+    underOdds?: number;
+  };
+  consensusOdds?: {
+    provider?: string;
+    homeMoneyline?: number;
+    awayMoneyline?: number;
+    spread?: string | number;
+    total?: string | number;
+    overOdds?: number;
+    underOdds?: number;
+  };
+  officialInjuries?: Array<{
+    athleteName: string;
+    teamName: string;
+    status: string; // 'Out', 'Day-To-Day', 'Questionable', 'Doubtful'
+    description?: string;
+  }>;
+}
+
+export interface NBAH2HMatch {
+  id: string;
+  date: string;
+  homeTeamName: string;
+  awayTeamName: string;
+  homeShortName: string;
+  awayShortName: string;
+  homeLogo: string;
+  awayLogo: string;
+  homeScore: number;
+  awayScore: number;
+  winner: 'HOME' | 'AWAY';
+  winnerName: string;
+  winnerShortName: string;
+  totalPoints: number;
+  margin: number;
+  overUnderResult: 'OVER' | 'UNDER';
+  venueName?: string;
+}
+
+export interface NBAH2HAnalysis {
+  totalMatches: number;
+  homeWins: number;
+  awayWins: number;
+  homeWinPct: number;
+  awayWinPct: number;
+  avgTotalPoints: number;
+  overCount: number;
+  underCount: number;
+  referenceLine: number;
+  highestScoringMatch: { score: string; total: number; date: string };
+  maxMarginMatch: { margin: number; winnerShortName: string; score: string };
+  recentMatches: NBAH2HMatch[];
 }
 
 export interface NBAAnalysis {

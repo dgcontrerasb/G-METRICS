@@ -5,11 +5,13 @@ import {
   X,
   Sparkles,
   Clock,
-  Sliders,
   Check,
   Flame,
   Ticket,
-  Share2
+  Share2,
+  BarChart2,
+  Target,
+  Zap
 } from 'lucide-react';
 import { useParlay } from '../context/ParlayContext';
 import { useToast } from '../context/ToastContext';
@@ -17,6 +19,8 @@ import { LiveMatchTimeline } from './LiveMatchTimeline';
 import { LiveMarketCapsules } from './LiveMarketCapsules';
 import { LineupRosterTab } from './LineupRosterTab';
 import { formatCompactTeamName } from '../services/leagueCategorizer';
+import { evaluateNBAMarketsLiveStatus, calculateNBAH2HAnalysis } from '../services/nbaEngine';
+import { PlayerStatsModal, PlayerModalPayload } from './PlayerStatsModal';
 
 export type DetailMatchPayload =
   | { type: 'SOCCER'; fixture: MatchFixture; analysis: MatchAnalysis }
@@ -252,7 +256,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
               <TabButton
                 active={activeTabNBA === 'PACE_STREAK'}
                 onClick={() => setActiveTabNBA('PACE_STREAK')}
-                label="⚡ Ritmo"
+                label="⚡ Ritmo & H2H"
               />
               <TabButton
                 active={activeTabNBA === 'LINEUPS'}
@@ -897,22 +901,33 @@ const NBATabContent: React.FC<{
   fixture: NBAMatchFixture;
   analysis: NBAAnalysis;
 }> = ({ tab, fixture, analysis }) => {
+  const [selectedPlayerModal, setSelectedPlayerModal] = useState<PlayerModalPayload | null>(null);
   const didacticAdvice = getNBADidacticAdvice(fixture, analysis);
   const favTeam = analysis.pHomeWin >= analysis.pAwayWin ? fixture.homeTeam : fixture.awayTeam;
   const favProb = Math.max(analysis.pHomeWin, analysis.pAwayWin);
 
+  const isLive = fixture.status === 'IN_PLAY';
+  const isFinished = fixture.status === 'FINISHED';
+  const hasStarted = (isLive || isFinished) && Boolean(fixture.currentScore);
+
   const { isPickInParlay, togglePick } = useParlay();
-  const inParlay = isPickInParlay(fixture.id);
+  const inParlay = isPickInParlay(fixture.id, 'NBA_ML');
+
+  const evaluatedMarkets = evaluateNBAMarketsLiveStatus(fixture, analysis);
 
   if (tab === 'LINEUPS') {
     return <LineupRosterTab payload={{ type: 'NBA', fixture, analysis }} />;
   }
 
   if (tab === 'PICKS') {
+    const teamHits = evaluatedMarkets.filter((m) => m.isHit).length;
+    const teamMisses = evaluatedMarkets.length - teamHits;
+
     return (
-      <div className="space-y-3 text-center">
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50/90 via-white to-amber-50/70 border border-amber-200/90 shadow-2xs">
-          <div className="flex items-center justify-center gap-2 mb-1">
+      <div className="space-y-3.5 text-left">
+        {/* 1. Tarjeta Principal de Recomendación Pre-Partido */}
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50/90 via-white to-amber-50/70 border border-amber-200/90 shadow-2xs text-center">
+          <div className="flex flex-wrap items-center justify-center gap-2 mb-1">
             <span className="text-[10px] font-mono font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
               <Flame className="w-3 h-3 text-amber-600" />
               {didacticAdvice.badgeLabel}
@@ -934,11 +949,10 @@ const NBATabContent: React.FC<{
               </strong>
             </div>
             <div>
-              Línea Totales: <strong className="text-slate-900">{analysis.fairTotalLine} pts</strong>
+              Meta Totales: <strong className="text-slate-900">+{analysis.fairTotalLine} pts</strong>
             </div>
           </div>
 
-          {/* Quick Add/Remove Parlay Button */}
           <div className="mt-2.5 flex items-center justify-center">
             <button
               type="button"
@@ -973,52 +987,466 @@ const NBATabContent: React.FC<{
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <div className="p-2.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
-            <div className="text-[9px] font-mono text-slate-500 uppercase truncate">{formatCompactTeamName(fixture.homeTeam.name)}</div>
-            <div className="text-sm font-mono font-bold text-emerald-700">{analysis.pHomeWin}%</div>
-            <div className="text-[9px] font-mono text-slate-500">ML Justo @{(100 / Math.max(analysis.pHomeWin, 1)).toFixed(2)}</div>
+        {/* 2. Auditoría de los 6 Mercados Generales del Partido */}
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-mono font-bold text-slate-800 uppercase tracking-tight">
+                🏀 6 Mercados Generales del Partido
+              </span>
+              {isLive && (
+                <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-mono text-[9.5px] font-bold animate-pulse">
+                  EN VIVO
+                </span>
+              )}
+              {isFinished && (
+                <span className="px-2 py-0.5 rounded-full bg-slate-900 text-white font-mono text-[9.5px] font-bold">
+                  RESULTADO FINAL
+                </span>
+              )}
+            </div>
+
+            {hasStarted && (
+              <div className="flex items-center gap-2 text-[10.5px] font-mono font-bold bg-slate-900 text-white px-2.5 py-1 rounded-lg">
+                <span className="text-emerald-400">✅ {teamHits} {isFinished ? 'Acertadas' : 'En Ritmo'}</span>
+                {teamMisses > 0 && (
+                  <>
+                    <span className="text-slate-500">·</span>
+                    <span className="text-rose-400">❌ {teamMisses} {isFinished ? 'No se dieron' : 'Bajo Ritmo'}</span>
+                  </>
+                )}
+              </div>
+            )}
           </div>
-          <div className="p-2.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
-            <div className="text-[9px] font-mono text-slate-500 uppercase truncate">{formatCompactTeamName(fixture.awayTeam.name)}</div>
-            <div className="text-sm font-mono font-bold text-sky-700">{analysis.pAwayWin}%</div>
-            <div className="text-[9px] font-mono text-slate-500">ML Justo @{(100 / Math.max(analysis.pAwayWin, 1)).toFixed(2)}</div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {evaluatedMarkets.map((mkt) => {
+              const mktInParlay = isPickInParlay(fixture.id, mkt.id);
+              return (
+                <div
+                  key={mkt.id}
+                  className={`p-3 rounded-xl border transition-all flex flex-col justify-between gap-2 shadow-2xs ${
+                    hasStarted
+                      ? mkt.isHit
+                        ? 'bg-emerald-50/90 border-emerald-400 ring-1 ring-emerald-200/80'
+                        : 'bg-rose-50/75 border-rose-300'
+                      : mktInParlay
+                      ? 'bg-amber-50 border-amber-400 ring-1 ring-amber-200'
+                      : 'bg-white border-slate-200/90 hover:border-amber-300'
+                  }`}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-mono font-bold uppercase text-slate-600 bg-white/90 px-2 py-0.5 rounded-md border border-slate-200/80">
+                        {mkt.category}
+                      </span>
+                      {hasStarted ? (
+                        <span
+                          className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                            mkt.isHit
+                              ? 'bg-emerald-600 text-white border-emerald-700'
+                              : 'bg-rose-600 text-white border-rose-700'
+                          }`}
+                        >
+                          {mkt.statusText}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                          {mkt.prob}% Prob.
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-xs sm:text-sm font-sans font-bold text-slate-900 leading-snug pt-0.5">
+                      {mkt.label}
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10.5px] font-mono text-slate-600 pt-0.5">
+                      <span>{mkt.subLabel}</span>
+                      {mkt.currentValueLabel && (
+                        <span
+                          className={`font-bold px-1.5 py-0.2 rounded ${
+                            mkt.isHit ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
+                          }`}
+                        >
+                          {mkt.currentValueLabel}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200/70">
+                    <span className="text-[10.5px] font-mono text-slate-600">
+                      Prob: <strong className="text-slate-900">{mkt.prob}%</strong> · Cuota{' '}
+                      <strong className="text-amber-800">@{mkt.odd.toFixed(2)}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        togglePick({
+                          id: `${fixture.id}_${mkt.id}`,
+                          fixtureId: fixture.id,
+                          sport: 'NBA',
+                          matchTitle: `${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`,
+                          homeTeamName: fixture.homeTeam.name,
+                          awayTeamName: fixture.awayTeam.name,
+                          matchDate: fixture.date,
+                          matchTime: fixture.time,
+                          marketKey: mkt.id,
+                          selectionLabel: mkt.label,
+                          referenceOdd: mkt.odd,
+                          userOdd: mkt.odd,
+                          probability: mkt.prob,
+                          isEV: mkt.prob >= 55
+                        });
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1 border ${
+                        mktInParlay
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : 'bg-white hover:bg-amber-50 text-slate-800 border-slate-300'
+                      }`}
+                    >
+                      <Ticket className="w-3 h-3 text-amber-600" />
+                      <span>{mktInParlay ? '✓ En Boleto' : '+ Boleto'}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
+
+        {/* 3. Mercados Individuales por Jugador (Sin auditoría individual roja/verde, limpio para el Boleto) */}
+        <div className="space-y-2 pt-2 border-t border-slate-200/90">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <div className="flex items-center gap-1.5">
+              <Target className="w-4 h-4 text-amber-600" />
+              <span className="text-xs font-mono font-bold text-slate-800 uppercase tracking-tight">
+                Proyecciones Individuales por Jugador (Player Props)
+              </span>
+            </div>
+            <span className="text-[10px] font-mono text-slate-500">
+              Haz clic en una línea para añadirla a tu Boleto
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {analysis.playerProps.map((player) => {
+              const safeName = player.name.replace(/\s+/g, '_');
+              const astLine = player.astLine ?? 4.5;
+              const rebLine = player.rebLine ?? 5.5;
+              const praLine = player.praLine ?? Math.floor(player.pointsLine + astLine + rebLine) - 0.5;
+
+              const indivProps = [
+                {
+                  key: `PROP_PTS_${safeName}`,
+                  shortLabel: `+${player.pointsLine} Pts`,
+                  fullLabel: `${player.name}: +${player.pointsLine} Puntos`,
+                  prob: player.overPointsProb,
+                  odd: Number((100 / Math.max(10, player.overPointsProb)).toFixed(2))
+                },
+                {
+                  key: `PROP_3PM_${safeName}`,
+                  shortLabel: `+${player.threePointersLine} 3PM`,
+                  fullLabel: `${player.name}: +${player.threePointersLine} Triples`,
+                  prob: player.over3pmProb,
+                  odd: Number((100 / Math.max(10, player.over3pmProb)).toFixed(2))
+                },
+                {
+                  key: `PROP_AST_${safeName}`,
+                  shortLabel: `+${astLine} Ast`,
+                  fullLabel: `${player.name}: +${astLine} Asistencias`,
+                  prob: player.overAstProb ?? 60,
+                  odd: 1.85
+                },
+                {
+                  key: `PROP_REB_${safeName}`,
+                  shortLabel: `+${rebLine} Reb`,
+                  fullLabel: `${player.name}: +${rebLine} Rebotes`,
+                  prob: player.overRebProb ?? 58,
+                  odd: 1.90
+                },
+                {
+                  key: `PROP_PRA_${safeName}`,
+                  shortLabel: `+${praLine} PRA`,
+                  fullLabel: `${player.name}: +${praLine} Combo PRA`,
+                  prob: player.overPraProb ?? 63,
+                  odd: 1.80
+                }
+              ];
+
+              return (
+                <div
+                  key={player.id}
+                  className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-sans font-bold text-slate-900 truncate flex items-center gap-1.5">
+                        <span>{player.name}</span>
+                        <span className="px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200 font-mono text-[9.5px]">
+                          {player.position}
+                        </span>
+                      </div>
+                      <div className="text-[10px] font-mono text-slate-500 truncate">
+                        {player.team} · Promedio: {player.seasonPpg} PPG / {player.season3pm} 3PM
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPlayerModal({
+                          sport: 'NBA',
+                          fixtureId: fixture.id,
+                          matchTitle: `${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`,
+                          homeTeamName: fixture.homeTeam.name,
+                          awayTeamName: fixture.awayTeam.name,
+                          matchDate: fixture.date,
+                          matchTime: fixture.time,
+                          matchStatus: fixture.status,
+                          player: {
+                            id: player.id,
+                            name: player.name,
+                            number: 23,
+                            position: player.position,
+                            teamName: player.team,
+                            ppg: player.seasonPpg,
+                            threePm: player.season3pm,
+                            usageRate: player.usageRate,
+                            projectedPoints: player.projectedPoints,
+                            pointsLine: player.pointsLine,
+                            overPointsProb: player.overPointsProb,
+                            projected3pm: player.projected3pm,
+                            threePointersLine: player.threePointersLine,
+                            over3pmProb: player.over3pmProb,
+                            astLine: player.astLine,
+                            overAstProb: player.overAstProb,
+                            rebLine: player.rebLine,
+                            overRebProb: player.overRebProb,
+                            praLine: player.praLine,
+                            overPraProb: player.overPraProb
+                          }
+                        });
+                      }}
+                      className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-mono text-[10px] font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <BarChart2 className="w-3 h-3 text-amber-600" />
+                      <span>Detalle</span>
+                    </button>
+                  </div>
+
+                  {/* Botones de Apuestas Individuales del Jugador (Limpios para el Boleto) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 font-mono">
+                    {indivProps.map((ip) => {
+                      const propInParlay = isPickInParlay(fixture.id, ip.key);
+                      return (
+                        <button
+                          key={ip.key}
+                          type="button"
+                          onClick={() => {
+                            togglePick({
+                              id: `${fixture.id}_${ip.key}`,
+                              fixtureId: fixture.id,
+                              sport: 'NBA',
+                              matchTitle: `${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`,
+                              homeTeamName: fixture.homeTeam.name,
+                              awayTeamName: fixture.awayTeam.name,
+                              matchDate: fixture.date,
+                              matchTime: fixture.time,
+                              marketKey: ip.key,
+                              selectionLabel: ip.fullLabel,
+                              referenceOdd: ip.odd,
+                              userOdd: ip.odd,
+                              probability: ip.prob,
+                              isEV: ip.prob >= 58
+                            });
+                          }}
+                          className={`p-1.5 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                            propInParlay
+                              ? 'bg-slate-900 text-white border-slate-900 ring-1 ring-amber-400'
+                              : 'bg-slate-50 hover:bg-amber-50/70 border-slate-200/90 text-slate-900'
+                          }`}
+                          title={`${ip.fullLabel} (@${ip.odd.toFixed(2)}) — Clic para añadir al boleto`}
+                        >
+                          <div className="flex items-center justify-between gap-1 w-full">
+                            <span className="text-[10.5px] font-bold truncate">{ip.shortLabel}</span>
+                            <Ticket className={`w-2.5 h-2.5 shrink-0 ${propInParlay ? 'text-amber-400' : 'text-amber-600'}`} />
+                          </div>
+                          <div className="text-[9px] flex items-center justify-between opacity-90 mt-0.5">
+                            <span className={propInParlay ? 'text-amber-300 font-semibold' : 'text-emerald-700 font-semibold'}>
+                              {ip.prob}% prob.
+                            </span>
+                            <span>@{ip.odd.toFixed(2)}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <PlayerStatsModal
+          payload={selectedPlayerModal}
+          isOpen={Boolean(selectedPlayerModal)}
+          onClose={() => setSelectedPlayerModal(null)}
+        />
       </div>
     );
   }
 
   if (tab === 'QUARTERS_3PM') {
+    const threeMkt = evaluatedMarkets.find((m) => m.id === 'NBA_3PM_TOTAL');
+
     return (
       <div className="space-y-3 text-center">
         {analysis.threePointersMarket && (
-          <div className="p-3 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-            <div className="text-[10px] font-mono font-semibold text-slate-500 mb-2 uppercase tracking-wider">
-              Mercado de Triples (3PM Proyectados)
+          <div
+            className={`p-3 rounded-2xl border shadow-2xs ${
+              hasStarted && threeMkt
+                ? threeMkt.isHit
+                  ? 'bg-emerald-50/80 border-emerald-400'
+                  : 'bg-rose-50/70 border-rose-300'
+                : 'bg-white border-slate-200/90'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 mb-2 px-1">
+              <span className="text-[10px] font-mono font-semibold text-slate-600 uppercase tracking-wider">
+                Mercado de Triples (Meta: +{ Math.max(16.5, analysis.threePointersMarket.threePointLine - 2) } Triples)
+              </span>
+              {hasStarted && threeMkt && (
+                <span
+                  className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                    threeMkt.isHit ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                  }`}
+                >
+                  {threeMkt.statusText} ({threeMkt.currentValueLabel})
+                </span>
+              )}
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <MetricBox label="Local Triples" value={`${analysis.threePointersMarket.projectedHome3PM}`} sub="3PM" />
-              <MetricBox label="Visita Triples" value={`${analysis.threePointersMarket.projectedAway3PM}`} sub="3PM" />
-              <MetricBox label="Total Partido" value={`${analysis.threePointersMarket.projectedTotal3PM}`} sub="3PM total" highlight />
+              <MetricBox label="Local Triples" value={`${analysis.threePointersMarket.projectedHome3PM}`} sub="3PM esperados" />
+              <MetricBox label="Visita Triples" value={`${analysis.threePointersMarket.projectedAway3PM}`} sub="3PM esperados" />
+              <MetricBox label="Total Partido" value={`${analysis.threePointersMarket.projectedTotal3PM}`} sub={`Meta +${Math.max(16.5, analysis.threePointersMarket.threePointLine - 2)}`} highlight />
             </div>
           </div>
         )}
 
         {analysis.quarterProjections && (
-          <div className="p-3 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-            <div className="text-[10px] font-mono font-semibold text-slate-500 mb-2 uppercase tracking-wider">
-              Desglose Proyectado por Cuartos
+          <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <span className="text-[10.5px] font-mono font-bold text-slate-700 uppercase tracking-wider">
+                Desglose y Auditoría por Cuartos (1Q - 4Q y 1ra Mitad)
+              </span>
+              <span className="text-[10px] font-sans text-slate-500">
+                Arriba: Pronóstico · Centro: Marcador Real · Abajo: Meta de puntos
+              </span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {analysis.quarterProjections.slice(0, 4).map((qp) => (
-                <MetricBox
-                  key={qp.quarter}
-                  label={qp.label || qp.quarter}
-                  value={`${qp.projectedTotal} pts`}
-                  sub={`${qp.projectedHome}-${qp.projectedAway}`}
-                />
-              ))}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+              {analysis.quarterProjections.map((qp) => {
+                const hasQActual = qp.actualHome !== undefined && qp.actualAway !== undefined;
+                const actualTotal = hasQActual ? qp.actualHome! + qp.actualAway! : 0;
+                const isQFinal = qp.status === 'FINAL';
+                const isQInPlay = qp.status === 'IN_PLAY';
+                const qOverHit = hasQActual && actualTotal > qp.overLine;
+                const minPointsNeeded = Math.ceil(qp.overLine);
+
+                return (
+                  <div
+                    key={qp.quarter}
+                    className={`p-2.5 rounded-xl border text-left flex flex-col justify-between gap-2 transition-all shadow-2xs ${
+                      isQFinal
+                        ? qOverHit
+                          ? 'bg-emerald-50/90 border-emerald-400 ring-1 ring-emerald-200/70'
+                          : 'bg-rose-50/75 border-rose-300'
+                        : isQInPlay
+                        ? qOverHit
+                          ? 'bg-emerald-50/90 border-emerald-400'
+                          : 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-200/60'
+                        : 'bg-slate-50/80 border-slate-200/90'
+                    }`}
+                  >
+                    {/* 1. ARRIBA: Pronóstico de la Página + Estado del Cuarto */}
+                    <div className="space-y-1 border-b border-slate-200/70 pb-1.5">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[11px] font-mono font-extrabold text-slate-900">
+                          {qp.quarter === '1H' ? '1ra Mitad' : `Cuarto ${qp.quarter}`}
+                        </span>
+                        {isQFinal ? (
+                          <span
+                            className={`px-1.5 py-0.5 rounded-full text-[9px] font-mono font-bold ${
+                              qOverHit ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                            }`}
+                          >
+                            {qOverHit ? '✅ Acertado' : '❌ No se dio'}
+                          </span>
+                        ) : isQInPlay ? (
+                          <span
+                            className={`px-1.5 py-0.5 rounded-full text-[9px] font-mono font-bold ${
+                              qOverHit ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-slate-950 animate-pulse'
+                            }`}
+                          >
+                            {qOverHit ? '✅ Ya Acertado' : '⏳ En juego'}
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-slate-200/80 text-slate-700">
+                            🕒 Por jugar
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] font-mono text-amber-900 bg-amber-100/70 border border-amber-200/80 rounded-md px-1.5 py-0.5 font-semibold">
+                        Pronóstico: +{qp.overLine} pts
+                      </div>
+                    </div>
+
+                    {/* 2. CENTRO: Resultado Real (o En Vivo / Esperado) */}
+                    <div className="text-center py-0.5">
+                      <span className="text-[9px] font-mono uppercase tracking-wider text-slate-500 block">
+                        {isQFinal
+                          ? 'Resultado Real'
+                          : isQInPlay
+                          ? 'Marcador en Vivo'
+                          : 'Puntos Esperados'}
+                      </span>
+                      <div className="text-base font-mono font-black text-slate-900 leading-tight mt-0.5">
+                        {hasQActual ? `${actualTotal} pts` : `~${qp.projectedTotal} pts`}
+                      </div>
+                      <div className="text-[10px] font-mono font-semibold text-slate-700">
+                        {hasQActual
+                          ? `${fixture.homeTeam.shortName} ${qp.actualHome} - ${qp.actualAway} ${fixture.awayTeam.shortName}`
+                          : `Proy: ${qp.projectedHome} - ${qp.projectedAway}`}
+                      </div>
+                    </div>
+
+                    {/* 3. ABAJO: Explicación clara de la meta (sin jerga confusa de "Línea") */}
+                    <div className="pt-1.5 border-t border-slate-200/70 text-[9.5px] font-sans leading-snug text-slate-600 text-center">
+                      {isQFinal ? (
+                        qOverHit ? (
+                          <span className="text-emerald-800 font-semibold">
+                            Meta era {minPointsNeeded}+ pts (Superada por +{actualTotal - minPointsNeeded + 1} pts)
+                          </span>
+                        ) : (
+                          <span className="text-rose-800 font-medium">
+                            Meta era {minPointsNeeded}+ pts (Faltaron {Math.max(1, minPointsNeeded - actualTotal)} pts)
+                          </span>
+                        )
+                      ) : isQInPlay ? (
+                        <span className="text-amber-900 font-medium">
+                          Meta: Se necesitan {minPointsNeeded}+ pts en total
+                        </span>
+                      ) : (
+                        <span>
+                          Meta: Hacer <strong>{minPointsNeeded}+ pts</strong> · Fav: <strong>{qp.favorite}</strong>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1027,15 +1455,281 @@ const NBATabContent: React.FC<{
   }
 
   // tab === 'PACE_STREAK'
+  const h2hData = calculateNBAH2HAnalysis(fixture);
+  const homePace = fixture.homeTeam.pace;
+  const awayPace = fixture.awayTeam.pace;
+  const combinedPace = analysis.expectedPace || Math.round(((homePace + awayPace) / 2) * 10) / 10;
+  const isFastPace = combinedPace >= 100.5;
+  const isSlowPace = combinedPace <= 98.0;
+
   return (
-    <div className="space-y-3 text-center">
-      <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-        <div className="text-[10px] font-mono font-semibold text-slate-500 mb-2 uppercase tracking-wider">
-          Ritmo de Posesiones (Pace) y Racha
+    <div className="space-y-2.5 text-center">
+      {/* 1. RESUMEN EJECUTIVO DE LA SERIE H2H (HEAD TO HEAD) */}
+      <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5 text-left">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs">⚔️</span>
+            <span className="text-[10px] font-mono font-bold text-slate-700 uppercase tracking-wider">
+              Historial Directo (H2H · Últimos {h2hData.totalMatches} Duelos)
+            </span>
+          </div>
+          <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold border border-slate-200">
+            Línea Ref: ~{h2hData.referenceLine} pts
+          </span>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <MetricBox label={fixture.homeTeam.shortName} value={`Pace ${fixture.homeTeam.pace}`} sub={`Racha: ${fixture.homeTeam.streak}`} />
-          <MetricBox label={fixture.awayTeam.shortName} value={`Pace ${fixture.awayTeam.pace}`} sub={`Racha: ${fixture.awayTeam.streak}`} />
+
+        {/* Marcador de Serie / Balance de Victorias */}
+        <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/80">
+          <div className="flex items-center justify-between gap-2">
+            {/* Equipo Local */}
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <img
+                src={fixture.homeTeam.logo}
+                alt=""
+                className="w-6 h-6 object-contain shrink-0"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+              <div className="min-w-0 text-left">
+                <div className="font-bold text-[11px] sm:text-xs text-slate-900 truncate">
+                  {fixture.homeTeam.shortName}
+                </div>
+                <div className="text-[9px] font-mono font-semibold text-emerald-700">
+                  {h2hData.homeWins}V ({h2hData.homeWinPct}%)
+                </div>
+              </div>
+            </div>
+
+            {/* Marcador Central */}
+            <div className="shrink-0 text-center px-2.5 py-0.5 rounded-lg bg-white border border-slate-200 shadow-2xs">
+              <span className="text-xs sm:text-sm font-mono font-black text-slate-900 tracking-tight">
+                {h2hData.homeWins} - {h2hData.awayWins}
+              </span>
+              <span className="block text-[7.5px] font-mono uppercase text-slate-500 font-bold tracking-tight">
+                SERIE
+              </span>
+            </div>
+
+            {/* Equipo Visita */}
+            <div className="flex items-center justify-end gap-2 min-w-0 flex-1 text-right">
+              <div className="min-w-0">
+                <div className="font-bold text-[11px] sm:text-xs text-slate-900 truncate">
+                  {fixture.awayTeam.shortName}
+                </div>
+                <div className="text-[9px] font-mono font-semibold text-sky-700">
+                  {h2hData.awayWins}V ({h2hData.awayWinPct}%)
+                </div>
+              </div>
+              <img
+                src={fixture.awayTeam.logo}
+                alt=""
+                className="w-6 h-6 object-contain shrink-0"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+            </div>
+          </div>
+
+          {/* Barra de proporción visual */}
+          <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-2.5 flex">
+            <div
+              className="bg-emerald-500 h-full transition-all"
+              style={{ width: `${h2hData.homeWinPct}%` }}
+              title={`${fixture.homeTeam.shortName}: ${h2hData.homeWinPct}%`}
+            />
+            <div
+              className="bg-sky-500 h-full transition-all"
+              style={{ width: `${h2hData.awayWinPct}%` }}
+              title={`${fixture.awayTeam.shortName}: ${h2hData.awayWinPct}%`}
+            />
+          </div>
+        </div>
+
+        {/* 3 Métricas Clave de los Enfrentamientos */}
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+          <MetricBox
+            label="Promedio Puntos"
+            value={`${h2hData.avgTotalPoints} pts`}
+            sub="Por duelo directo"
+            highlight
+          />
+          <MetricBox
+            label="Tendencia Altas"
+            value={`${h2hData.overCount}A / ${h2hData.underCount}B`}
+            sub={`Línea ${h2hData.referenceLine}`}
+          />
+          <MetricBox
+            label="Mayor Margen"
+            value={`+${h2hData.maxMarginMatch.margin} pts`}
+            sub={h2hData.maxMarginMatch.winnerShortName}
+          />
+        </div>
+      </div>
+
+      {/* 2. LISTADO DETALLADO DE LOS ÚLTIMOS 5 ENFRENTAMIENTOS DIRECTOS */}
+      <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2 text-left">
+        <div className="flex items-center justify-between gap-2 px-1">
+          <span className="text-[10px] font-mono font-bold text-slate-700 uppercase tracking-wider">
+            Detalle de los Últimos Partidos Cara a Cara
+          </span>
+          <span className="text-[9px] font-sans text-slate-500">
+            Resaltado en negrita el ganador
+          </span>
+        </div>
+
+        <div className="space-y-1.5">
+          {h2hData.recentMatches.map((m) => {
+            const homeWon = m.homeScore > m.awayScore;
+
+            return (
+              <div
+                key={m.id}
+                className="p-2 sm:p-2.5 rounded-xl bg-slate-50/90 hover:bg-slate-100/80 border border-slate-200/90 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2"
+              >
+                {/* Meta de fecha y sede */}
+                <div className="flex items-center justify-between sm:justify-start gap-1.5 shrink-0 sm:w-28">
+                  <div className="text-left leading-tight">
+                    <span className="text-[9.5px] font-mono font-bold text-slate-800 block">
+                      {m.date}
+                    </span>
+                    <span className="text-[8px] font-sans text-slate-500 block truncate max-w-[105px]" title={m.venueName}>
+                      {m.venueName}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Duelo de Marcador Central con Logos (Sin cortes, proporciones fluidas) */}
+                <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-1 min-w-0 py-0.5">
+                  {/* Local en ese partido */}
+                  <div className={`flex items-center gap-1 text-right justify-end flex-1 min-w-0 ${homeWon ? 'font-bold text-slate-950' : 'text-slate-600 font-normal'}`}>
+                    <span className="text-[10.5px] sm:text-[11px] truncate leading-tight">{m.homeShortName}</span>
+                    <img
+                      src={m.homeLogo}
+                      alt=""
+                      className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain shrink-0"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                    <span className="font-mono text-xs font-bold shrink-0">{m.homeScore}</span>
+                  </div>
+
+                  <span className="text-slate-300 font-mono text-[9px] font-bold shrink-0">-</span>
+
+                  {/* Visitante en ese partido */}
+                  <div className={`flex items-center gap-1 text-left justify-start flex-1 min-w-0 ${!homeWon ? 'font-bold text-slate-950' : 'text-slate-600 font-normal'}`}>
+                    <span className="font-mono text-xs font-bold shrink-0">{m.awayScore}</span>
+                    <img
+                      src={m.awayLogo}
+                      alt=""
+                      className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain shrink-0"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                    <span className="text-[10.5px] sm:text-[11px] truncate leading-tight">{m.awayShortName}</span>
+                  </div>
+                </div>
+
+                {/* Badge de resultado y tendencia O/U */}
+                <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 border-t sm:border-t-0 pt-1 sm:pt-0 border-slate-200/80">
+                  <span className="text-[8.5px] font-mono text-slate-600 shrink-0">
+                    {m.totalPoints} pts
+                  </span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold border shrink-0 ${
+                      m.overUnderResult === 'OVER'
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : 'bg-sky-50 text-sky-800 border-sky-200'
+                    }`}
+                  >
+                    {m.overUnderResult === 'OVER' ? '🔥 Alta' : '❄️ Baja'}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-slate-200/80 text-slate-800 shrink-0">
+                    +{m.margin} {m.winnerShortName.slice(0, 3)}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. RITMO DE POSESIONES (PACE) Y EFICIENCIA OFENSIVA/DEFENSIVA */}
+      <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5 text-left">
+        <div className="flex items-center justify-between gap-2 flex-wrap px-1">
+          <div className="flex items-center gap-1.5">
+            <Zap className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-[10px] font-mono font-bold text-slate-700 uppercase tracking-wider">
+              Ritmo de Posesiones (Pace) y Eficiencia
+            </span>
+          </div>
+          <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+            Ritmo Conjunto: {combinedPace} pos.
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {/* Local */}
+          <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/90 text-left space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-900 truncate">
+                {fixture.homeTeam.name}
+              </span>
+              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-white border border-slate-200 text-slate-700">
+                Racha: {fixture.homeTeam.streak}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1 text-center">
+              <div className="p-1 rounded-lg bg-white border border-slate-200">
+                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Pace</span>
+                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.homeTeam.pace}</span>
+              </div>
+              <div className="p-1 rounded-lg bg-white border border-slate-200">
+                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Off Rtg</span>
+                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.homeTeam.offensiveRating}</span>
+              </div>
+              <div className="p-1 rounded-lg bg-white border border-slate-200">
+                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Def Rtg</span>
+                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.homeTeam.defensiveRating}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Visita */}
+          <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/90 text-left space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-900 truncate">
+                {fixture.awayTeam.name}
+              </span>
+              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-white border border-slate-200 text-slate-700">
+                Racha: {fixture.awayTeam.streak}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1 text-center">
+              <div className="p-1 rounded-lg bg-white border border-slate-200">
+                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Pace</span>
+                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.awayTeam.pace}</span>
+              </div>
+              <div className="p-1 rounded-lg bg-white border border-slate-200">
+                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Off Rtg</span>
+                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.awayTeam.offensiveRating}</span>
+              </div>
+              <div className="p-1 rounded-lg bg-white border border-slate-200">
+                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Def Rtg</span>
+                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.awayTeam.defensiveRating}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Diagnóstico de Ritmo */}
+        <div className="p-2 rounded-xl bg-amber-50/60 border border-amber-200/80 text-[10px] font-sans text-amber-950 flex items-start gap-1.5 text-left">
+          <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <strong>Lectura Analítica:</strong>{' '}
+            {isFastPace ? (
+              <span>Ritmo Alto ({combinedPace} pos/48m). Mayor volumen de tiros y transición rápida. Favorable a líneas Over de puntos y triples.</span>
+            ) : isSlowPace ? (
+              <span>Ritmo Pausado ({combinedPace} pos/48m). Posesiones largas de media cancha y defensa física. Mayor control defensivo.</span>
+            ) : (
+              <span>Ritmo Equilibrado ({combinedPace} pos/48m). Flujo estándar de la NBA con posesiones balanceadas entre transición y juego posicional.</span>
+            )}
+          </div>
         </div>
       </div>
     </div>

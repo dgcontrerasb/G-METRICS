@@ -13,7 +13,6 @@ import {
   FileText,
   History,
   Image as ImageIcon,
-  Sliders,
   Power,
   Menu,
   Search,
