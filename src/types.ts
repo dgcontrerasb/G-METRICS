@@ -72,6 +72,7 @@ export type MatchStatus =
   | 'FINISHED'
   | 'TIMED'
   | 'SCHEDULED'
+  | 'UPCOMING'
   | 'AWARDED';
 
 export interface MatchScore {
@@ -153,6 +154,7 @@ export interface TimelineEventItem {
   type: MatchEventType;
   teamSide: 'HOME' | 'AWAY' | 'NEUTRAL';
   teamName?: string;
+  playerName?: string;
   playerPrimary?: string;
   playerSecondary?: string;
   detail?: string;
@@ -636,4 +638,24 @@ export interface ParlayPick {
   probability: number; // 0-100 percentage
   isEV?: boolean;
 }
+
+export interface GMetricsParlayLeg {
+  fixtureId: string;
+  matchTitle: string;
+  homeTeamName: string;
+  awayTeamName: string;
+  leagueName: string;
+  matchDate: string;
+  matchTime: string;
+  estimatedEndTimestamp: number;
+  marketKey: string;
+  selectionLabel: string;
+  categoryLabel: string;
+  probability: number;
+  fairMinOdd: number;
+  estimatedBookieOdd: number;
+  whySelected: string;
+  consensus?: any;
+}
+
 
