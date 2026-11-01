@@ -5231,16 +5231,58 @@ app.post("/api/admin/parlays-beta", async (req, res) => {
   }
 });
 var ADMIN_USER_FEEDBACK_CACHE_KEY = "__admin_user_feedback_v1__";
+function cleanFeedbackUserIdentity(rawUser, rawName) {
+  let u = String(rawUser || "usuario").trim();
+  let n = String(rawName || u).trim();
+  if (u.startsWith("{") || u.includes('"id":')) {
+    try {
+      const parsed = JSON.parse(u);
+      u = parsed.username || parsed.email || "usuario";
+      if (!n || n.startsWith("{") || n.includes('"id":')) {
+        n = parsed.displayName || parsed.name || u;
+      }
+    } catch {
+      u = "usuario";
+    }
+  }
+  if (n.startsWith("{") || n.includes('"id":')) {
+    try {
+      const parsed = JSON.parse(n);
+      n = parsed.displayName || parsed.name || parsed.username || "Usuario";
+    } catch {
+      n = u !== "usuario" ? u : "Usuario";
+    }
+  }
+  const cleanUser = sanitizeText(u.toLowerCase(), 32) || "usuario";
+  const cleanName = sanitizeText(n, 45) || cleanUser;
+  return { cleanUser, cleanName };
+}
+function normalizeFeedbackList(items) {
+  if (!Array.isArray(items)) return [];
+  return items.map((it) => {
+    if (!it || typeof it !== "object") return it;
+    if (
+      String(it.u || "").startsWith("{") ||
+      String(it.u || "").includes('"id":') ||
+      String(it.n || "").startsWith("{")
+    ) {
+      const { cleanUser, cleanName } = cleanFeedbackUserIdentity(it.u, it.n);
+      return { ...it, u: cleanUser, n: cleanName };
+    }
+    return it;
+  });
+}
 async function loadUserFeedbackList() {
   const cached = getCacheItem(ADMIN_USER_FEEDBACK_CACHE_KEY);
   if (cached && Array.isArray(cached.data)) {
-    return cached.data;
+    return normalizeFeedbackList(cached.data);
   }
   if (isSupabaseConfigured()) {
     const remote = await getSupabaseKvCache(ADMIN_USER_FEEDBACK_CACHE_KEY);
     if (remote && Array.isArray(remote.data)) {
-      setCacheItem(ADMIN_USER_FEEDBACK_CACHE_KEY, remote.data);
-      return remote.data;
+      const normalized = normalizeFeedbackList(remote.data);
+      setCacheItem(ADMIN_USER_FEEDBACK_CACHE_KEY, normalized);
+      return normalized;
     }
   }
   return [];
@@ -5249,8 +5291,7 @@ app.post("/api/feedback", dataRateLimitMiddleware, async (req, res) => {
   try {
     const { username, displayName, rating, category, comment } = req.body || {};
     const numRating = Math.min(5, Math.max(1, Math.round(Number(rating) || 5)));
-    const cleanUser = sanitizeText(String(username || "usuario").toLowerCase(), 32) || "usuario";
-    const cleanName = sanitizeText(String(displayName || cleanUser), 45) || cleanUser;
+    const { cleanUser, cleanName } = cleanFeedbackUserIdentity(username, displayName);
     const cleanCat = sanitizeText(String(category || "General"), 40) || "General";
     const cleanMsg = sanitizeText(String(comment || ""), 250);
     const newItem = {

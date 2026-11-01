@@ -84,10 +84,34 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
     setErrorMsg(null);
 
     let username = 'usuario';
-    let displayName = '';
+    let displayName = 'Usuario';
     try {
-      username = localStorage.getItem('sportstats_auth_user') || 'usuario';
-      displayName = localStorage.getItem('sportstats_client_name') || username;
+      const rawUser = localStorage.getItem('sportstats_auth_user');
+      if (rawUser) {
+        try {
+          const parsed = JSON.parse(rawUser);
+          if (parsed && typeof parsed === 'object') {
+            username = parsed.username || parsed.email || 'usuario';
+            displayName =
+              parsed.displayName ||
+              parsed.name ||
+              localStorage.getItem('sportstats_client_name') ||
+              username;
+          } else {
+            username = String(rawUser);
+            displayName = localStorage.getItem('sportstats_client_name') || username;
+          }
+        } catch {
+          username = rawUser;
+          displayName = localStorage.getItem('sportstats_client_name') || username;
+        }
+      } else {
+        const clientName = localStorage.getItem('sportstats_client_name');
+        if (clientName) {
+          username = clientName;
+          displayName = clientName;
+        }
+      }
     } catch {
       // ignore
     }

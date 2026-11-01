@@ -11,6 +11,46 @@ export interface AdminFeedbackRecord {
   t: number;
 }
 
+function formatFeedbackIdentity(u: string, n?: string): { name: string; username: string | null } {
+  let cleanUser = String(u || '').trim();
+  let cleanName = String(n || '').trim();
+
+  // Si vino con JSON stringified o fragmento JSON tipo '{"id":"1cd1da59...'
+  if (cleanUser.startsWith('{') || cleanUser.includes('"id":')) {
+    try {
+      const parsed = JSON.parse(cleanUser);
+      cleanUser = parsed.username || parsed.email || 'usuario';
+      if (!cleanName || cleanName.startsWith('{')) {
+        cleanName = parsed.displayName || parsed.name || cleanUser;
+      }
+    } catch {
+      cleanUser = 'usuario';
+    }
+  }
+
+  if (cleanName.startsWith('{') || cleanName.includes('"id":')) {
+    try {
+      const parsed = JSON.parse(cleanName);
+      cleanName = parsed.displayName || parsed.name || parsed.username || 'Usuario';
+    } catch {
+      cleanName = cleanUser !== 'usuario' ? cleanUser : 'Usuario Registrado';
+    }
+  }
+
+  if (!cleanName || cleanName === 'usuario') {
+    cleanName = cleanUser && cleanUser !== 'usuario' ? cleanUser : 'Usuario Registrado';
+  }
+
+  const showUsername =
+    cleanUser &&
+    cleanUser !== 'usuario' &&
+    cleanUser.toLowerCase() !== cleanName.toLowerCase()
+      ? cleanUser
+      : null;
+
+  return { name: cleanName, username: showUsername };
+}
+
 export const AdminFeedbackTab: React.FC = () => {
   const [items, setItems] = useState<AdminFeedbackRecord[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -257,9 +297,21 @@ export const AdminFeedbackTab: React.FC = () => {
             >
               <div className="space-y-1 flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md text-[11px]">
-                    @{item.u}
-                  </span>
+                  {(() => {
+                    const identity = formatFeedbackIdentity(item.u, item.n);
+                    return (
+                      <>
+                        <span className="font-bold text-slate-900 text-xs flex items-center gap-1">
+                          👤 {identity.name}
+                        </span>
+                        {identity.username && (
+                          <span className="font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-md text-[10px]">
+                            @{identity.username}
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                   <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 font-bold text-[11px]">
                     {'⭐'.repeat(Math.min(5, Math.max(1, Number(item.r) || 5)))} ({item.r}/5)
                   </span>
