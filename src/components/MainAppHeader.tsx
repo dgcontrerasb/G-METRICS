@@ -16,7 +16,10 @@ import {
   Power,
   Menu,
   Search,
-  Download
+  Download,
+  Clock,
+  Crown,
+  Sparkles
 } from 'lucide-react';
 
 export interface MainAppHeaderProps {
@@ -108,8 +111,75 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
   }, []);
 
   const isAdminVisible =
-    localStorage.getItem('sportstats_admin_remember') === 'true' ||
-    Boolean(activeLicenseInfo?.clientName && activeLicenseInfo.clientName.toLowerCase().includes('propietario'));
+    Boolean(activeLicenseInfo?.clientName && activeLicenseInfo.clientName.toLowerCase().includes('propietario')) ||
+    (localStorage.getItem('sportstats_admin_remember') === 'true' &&
+      JSON.parse(localStorage.getItem('sportstats_auth_user') || '{}')?.role === 'admin');
+
+  const userPlanData = React.useMemo(() => {
+    // 1. Verificar si es administrador propietario
+    let storedUser: any = null;
+    try {
+      const raw = localStorage.getItem('sportstats_auth_user');
+      if (raw) storedUser = JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+
+    const isActualAdmin =
+      Boolean(storedUser?.role === 'admin') ||
+      (localStorage.getItem('sportstats_admin_remember') === 'true') ||
+      Boolean(
+        activeLicenseInfo?.clientName &&
+        (activeLicenseInfo.clientName.toLowerCase().includes('propietario') ||
+         activeLicenseInfo.clientName.toLowerCase().includes('admin'))
+      );
+
+    if (isActualAdmin) {
+      return { daysRemaining: null, isPermanent: true, isExpired: false, label: 'VIP Vitalicio' };
+    }
+
+    // 2. Calcular días restantes desde expiryTimestamp o activeLicenseInfo
+    let expiryTimestamp: number | null = null;
+    if (activeLicenseInfo?.expiryTimestamp) {
+      expiryTimestamp = Number(activeLicenseInfo.expiryTimestamp);
+    } else if (storedUser?.expiresAt) {
+      expiryTimestamp = Number(storedUser.expiresAt);
+    }
+
+    if (expiryTimestamp) {
+      const nowMs = Date.now();
+      const diff = expiryTimestamp - nowMs;
+      const days = Math.max(0, Math.ceil(diff / (24 * 60 * 60 * 1000)));
+      return {
+        daysRemaining: days,
+        isPermanent: false,
+        isExpired: days <= 0,
+        label: activeLicenseInfo?.planLabel || storedUser?.planLabel || `Pase VIP (${days}d)`
+      };
+    }
+
+    // 3. Si activeLicenseInfo tiene daysRemaining numérico explícito
+    if (activeLicenseInfo && activeLicenseInfo.daysRemaining !== null && activeLicenseInfo.daysRemaining !== undefined) {
+      return {
+        daysRemaining: activeLicenseInfo.daysRemaining,
+        isPermanent: false,
+        isExpired: Boolean(activeLicenseInfo.isExpired),
+        label: activeLicenseInfo.planLabel || 'Plan VIP'
+      };
+    }
+
+    // 4. Si tiene usuario activo pero sin expiry registrado, calcular por defecto de prueba
+    if (storedUser) {
+      return {
+        daysRemaining: 3,
+        isPermanent: false,
+        isExpired: false,
+        label: 'Prueba Gratuita (3 Días)'
+      };
+    }
+
+    return null;
+  }, [activeLicenseInfo]);
 
   const fiveDays = React.useMemo(() => {
     return [0, 1, 2, 3, 4].map((offset) => {
@@ -166,8 +236,44 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
           )}
         </div>
 
-        {/* Right Zone: Sincronizar + Fondo + Exportar */}
+        {/* Right Zone: Tiempo VIP + Sincronizar + Fondo + Exportar */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Indicador de Tiempo de Membresía / Prueba VIP */}
+          {userPlanData && (
+            userPlanData.isPermanent ? (
+              <div
+                className="h-8 px-2 sm:px-2.5 rounded-lg bg-amber-50 border border-amber-200/90 text-amber-800 text-xs font-bold flex items-center gap-1.5 shadow-2xs select-none"
+                title="Acceso Propietario / Vitalicio Activo"
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="hidden sm:inline font-mono">Vitalicio</span>
+                <span className="sm:hidden font-mono text-[11px]">VIP</span>
+              </div>
+            ) : userPlanData.isExpired || userPlanData.daysRemaining === 0 ? (
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('open-vip-payment-modal'))}
+                className="h-8 px-2 sm:px-2.5 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs animate-pulse"
+                title="Tu acceso VIP ha finalizado. Clic para reactivar tu pase"
+              >
+                <Clock className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <span className="font-mono text-xs">0d</span>
+                <span className="hidden sm:inline font-sans text-[11px] font-semibold text-rose-700">Renovar</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('open-vip-payment-modal'))}
+                className="h-8 px-2 sm:px-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/90 text-emerald-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title={`Te quedan ${userPlanData.daysRemaining ?? 0} ${(userPlanData.daysRemaining ?? 0) === 1 ? 'día' : 'días'} de acceso VIP. Clic para recargar o ver opciones`}
+              >
+                <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="font-mono text-xs">{userPlanData.daysRemaining ?? 0}d</span>
+                <span className="hidden sm:inline font-sans text-[11px] font-semibold text-emerald-700">VIP</span>
+              </button>
+            )
+          )}
+
           {/* Refresh / Connection status button */}
           <button
             type="button"
@@ -201,20 +307,20 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
             <span className="hidden xl:inline">Fondo</span>
           </button>
 
-          {/* Export Dropdown (Excel / PDF) */}
+          {/* Export Dropdown (Excel / PDF) - Rediseñado armónico con tema claro */}
           <div className="relative" ref={downloadMenuRef}>
             <button
               type="button"
               onClick={() => setIsDownloadMenuOpen(!isDownloadMenuOpen)}
               disabled={currentTotalVisible === 0}
-              className="h-8 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-              title="Exportar pronósticos en Excel o PDF"
+              className="h-8 px-2.5 sm:px-3 rounded-lg bg-slate-100 hover:bg-slate-200/80 disabled:opacity-40 text-slate-700 hover:text-slate-900 border border-slate-200/90 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+              title="Exportar pronósticos y estadísticas a Excel o PDF"
             >
-              <Download className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">
+              <Download className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span className="hidden md:inline">
                 {hasSelection ? `Exportar (${selectedCount})` : 'Exportar'}
               </span>
-              <ChevronDown className={`w-3 h-3 transition-transform ${isDownloadMenuOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isDownloadMenuOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {isDownloadMenuOpen && (

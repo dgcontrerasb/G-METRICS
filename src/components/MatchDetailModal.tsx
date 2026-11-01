@@ -21,6 +21,7 @@ import { LineupRosterTab } from './LineupRosterTab';
 import { formatCompactTeamName } from '../services/leagueCategorizer';
 import { evaluateNBAMarketsLiveStatus, calculateNBAH2HAnalysis } from '../services/nbaEngine';
 import { PlayerStatsModal, PlayerModalPayload } from './PlayerStatsModal';
+import { ProGate } from './ProGate';
 
 export type DetailMatchPayload =
   | { type: 'SOCCER'; fixture: MatchFixture; analysis: MatchAnalysis }
@@ -767,7 +768,7 @@ const SoccerTabContent: React.FC<{
   }
 
   if (tab === 'LIVE_MARKETS' || tab === 'PICKS') {
-    return (
+    const soccerPicksView = (
       <div className="space-y-3">
         {/* Listado Completo de 6 Cápsulas de Mercado Accionables (+ Boleto) */}
         <LiveMarketCapsules
@@ -820,6 +821,8 @@ const SoccerTabContent: React.FC<{
         </div>
       </div>
     );
+
+    return tab === 'PICKS' ? <ProGate featureName="Picks Algorítmicos">{soccerPicksView}</ProGate> : soccerPicksView;
   }
 
   if (tab === 'GOALS_CORNERS') {
@@ -924,7 +927,8 @@ const NBATabContent: React.FC<{
     const teamMisses = evaluatedMarkets.length - teamHits;
 
     return (
-      <div className="space-y-3.5 text-left">
+      <ProGate featureName="Picks NBA +EV">
+        <div className="space-y-3.5 text-left">
         {/* 1. Tarjeta Principal de Recomendación Pre-Partido */}
         <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50/90 via-white to-amber-50/70 border border-amber-200/90 shadow-2xs text-center">
           <div className="flex flex-wrap items-center justify-center gap-2 mb-1">
@@ -1294,7 +1298,8 @@ const NBATabContent: React.FC<{
           isOpen={Boolean(selectedPlayerModal)}
           onClose={() => setSelectedPlayerModal(null)}
         />
-      </div>
+        </div>
+      </ProGate>
     );
   }
 

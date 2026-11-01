@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 32" fill="none">
+  <rect width="32" height="32" rx="8" fill="#200020"/>
+  <path d="M11 9h3.8v7.5L20 9h4v14h-3.8v-7.5L15 23h-4V9z" fill="#FF2680"/>
+  <text x="38" y="22" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="900" fill="#200020" letter-spacing="-0.5">nequi</text>
+  <circle cx="91" cy="19.5" r="2.5" fill="#FF2680"/>
+</svg>

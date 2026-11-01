@@ -9,7 +9,10 @@ import {
   Search,
   Unlock,
   Download,
-  Trash2
+  Trash2,
+  Sparkles,
+  Gift,
+  Copy
 } from 'lucide-react';
 import type { SupabaseUserItem } from '../AdminLicenseModal';
 
@@ -47,6 +50,40 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   const [userRenewDays, setUserRenewDays] = useState<Record<string, number>>({});
   const [editingDaysUserId, setEditingDaysUserId] = useState<string | null>(null);
   const [customDaysInputValue, setCustomDaysInputValue] = useState<string>('15');
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+  const [codeDays, setCodeDays] = useState<number>(30);
+  const [codeCopied, setCodeCopied] = useState(false);
+
+  const handleGenerateCode = async () => {
+    setIsGeneratingCode(true);
+    try {
+      const res = await fetch('/api/admin/codes/generate', {
+        method: 'POST',
+        headers: buildAdminHeaders(resolveCurrentPin(), true),
+        body: JSON.stringify({ days: codeDays })
+      });
+      const data = await res.json();
+      if (data.success && data.code) {
+        setGeneratedCode(data.code);
+        setCodeCopied(false);
+      } else {
+        setActionFeedback(data.error || 'Error al generar código');
+      }
+    } catch {
+      setActionFeedback('Error de red al generar código');
+    } finally {
+      setIsGeneratingCode(false);
+    }
+  };
+
+  const handleCopyGeneratedCode = () => {
+    if (generatedCode) {
+      navigator.clipboard.writeText(generatedCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    }
+  };
 
   const resolveCurrentPin = () =>
     activePin.trim() || localStorage.getItem('sportstats_admin_saved_pin') || '';
@@ -421,6 +458,70 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           </button>
         </div>
       )}
+
+      {/* Generador de Códigos VIP Dinámicos (Diseño Nativo Integrado) */}
+      <div className="bg-slate-50/90 p-3.5 rounded-2xl border border-slate-200/90 space-y-2.5 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <span className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+              <Gift className="w-3.5 h-3.5" />
+            </span>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-slate-900">Generar Código VIP Dinámico</span>
+                <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
+                  1 solo uso
+                </span>
+              </div>
+              <p className="text-[10.5px] text-slate-500">
+                Genera un código para enviar por WhatsApp tras recibir el pago ($9.900 COP / $3.50 USD).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+            <select
+              value={codeDays}
+              onChange={(e) => setCodeDays(Number(e.target.value))}
+              className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-medium focus:outline-none focus:border-emerald-500 shadow-2xs"
+            >
+              <option value={30}>🗓️ 30 Días (Mensual)</option>
+              <option value={60}>🗓️ 60 Días</option>
+              <option value={90}>🗓️ 90 Días (Trimestral)</option>
+              <option value={7}>📅 7 Días</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={handleGenerateCode}
+              disabled={isGeneratingCode}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95 disabled:opacity-50"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+              <span>{isGeneratingCode ? 'Generando...' : 'Generar'}</span>
+            </button>
+          </div>
+        </div>
+
+        {generatedCode && (
+          <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2 animate-fadeIn">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-[11px] font-bold text-emerald-900 shrink-0">Código Generado:</span>
+              <span className="font-mono text-xs font-extrabold text-emerald-950 bg-white px-2 py-0.5 rounded border border-emerald-300 tracking-wider select-all truncate">
+                {generatedCode}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyGeneratedCode}
+              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1 shadow-2xs transition shrink-0 cursor-pointer"
+            >
+              {codeCopied ? <Check className="w-3.5 h-3.5 text-emerald-200" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{codeCopied ? 'Copiado' : 'Copiar'}</span>
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Quick Create / Activate User Form */}
       <form

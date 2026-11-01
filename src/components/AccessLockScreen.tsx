@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { User, Lock, MessageCircle, ChevronRight, AlertCircle, Smartphone, ShieldAlert, Check, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { User, Lock, MessageCircle, ChevronRight, AlertCircle, Smartphone, ShieldAlert, Check, Eye, EyeOff, Sparkles, Mail } from 'lucide-react';
 import { getOrCreateDeviceId, verifyLicenseToken, saveActiveLicense, createLicenseToken, LicenseValidationResult } from '../services/licenseService';
 import { SportStatsLogo } from './SportStatsLogo';
 import { useTheme } from '../context/ThemeContext';
+import { getBrowserSupabase, signInWithGoogleOAuth } from '../services/supabaseBrowser';
 
 interface AccessLockScreenProps {
   onUnlock: (result: LicenseValidationResult, key: string) => void;
@@ -15,8 +16,16 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
   const [deviceId, setDeviceId] = useState('');
   const [friendlyDeviceName, setFriendlyDeviceName] = useState('');
   
-  // Tabs: 'LOGIN' (Usuario + PIN) | 'REGISTER' (Solicitar Nueva Cuenta)
-  const [activeTab, setActiveTab] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
+  // Tabs: 'GOOGLE' (Continuar con Google) | 'LOGIN' (Usuario + PIN)
+  const [activeTab, setActiveTab] = useState<'GOOGLE' | 'LOGIN'>('GOOGLE');
+
+  // Form State - Google
+  const [googleEmail, setGoogleEmail] = useState('');
+  const [googleDisplayName, setGoogleDisplayName] = useState('');
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [acceptedGoogleLegal, setAcceptedGoogleLegal] = useState(false);
+  const [showManualEmail, setShowManualEmail] = useState(false);
 
   // Form State - Login
   const [usernameInput, setUsernameInput] = useState('');
@@ -184,6 +193,183 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
     }
   };
 
+  // Procesa la sesión de Google verificada y asigna 3 días gratis o acceso de administrador
+  const processGoogleLogin = useCallback(async (cleanEmail: string, cleanName?: string) => {
+    setGoogleLoading(true);
+    setGoogleError(null);
+
+    const devId = deviceId || getOrCreateDeviceId();
+    const devName = friendlyDeviceName || 'Dispositivo Web';
+
+    try {
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail.trim().toLowerCase(),
+          displayName: (cleanName || cleanEmail.split('@')[0]).trim(),
+          deviceId: devId,
+          deviceName: devName,
+          fingerprint: devId
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.success && data.user) {
+        const safeUser = { ...data.user, pin: '[PROTECTED]' };
+        localStorage.setItem('sportstats_auth_user', JSON.stringify(safeUser));
+        localStorage.setItem('sportstats_client_name', data.user.displayName || data.user.username);
+
+        if (data.sessionToken) {
+          sessionStorage.setItem('sportstats_session_jwt', data.sessionToken);
+        }
+
+        if (data.user.role === 'admin') {
+          sessionStorage.setItem('futbolstats_admin_pin', '120328');
+          localStorage.setItem('sportstats_admin_saved_pin', '120328');
+          localStorage.setItem('sportstats_admin_remember', 'true');
+        } else {
+          // Limpiar banderas de administrador si se ingresa con una cuenta cliente
+          localStorage.removeItem('sportstats_admin_saved_pin');
+          localStorage.removeItem('sportstats_admin_remember');
+          sessionStorage.removeItem('futbolstats_admin_pin');
+        }
+
+        const sessionToken = createLicenseToken(
+          devId,
+          data.user.role === 'admin' ? 'PERMANENT' : (data.user.planType as any) || '30D',
+          data.user.expiresAt || undefined
+        );
+        const expFormatted = data.user.expiresAt
+          ? new Date(data.user.expiresAt).toLocaleDateString('es-ES')
+          : 'Permanente (Vitalicio)';
+
+        const daysRemaining = data.user.expiresAt
+          ? Math.max(0, Math.ceil((data.user.expiresAt - Date.now()) / (24 * 60 * 60 * 1000)))
+          : null;
+
+        const isUserExpired = !data.isPro;
+        const unlockResult: LicenseValidationResult = {
+          isValid: true,
+          status: isUserExpired ? 'EXPIRED' : 'ACTIVE',
+          message: data.message || 'Autenticación exitosa',
+          isPermanent: data.user.expiresAt === null,
+          isExpired: isUserExpired,
+          expiryTimestamp: data.user.expiresAt,
+          expiryDateFormatted: expFormatted,
+          daysRemaining,
+          targetDeviceId: devId,
+          planLabel: data.user.planLabel,
+          clientName: data.user.displayName || data.user.username
+        };
+
+        saveActiveLicense(sessionToken.key, unlockResult);
+        onUnlock(unlockResult, sessionToken.key);
+        return true;
+      } else {
+        setGoogleError(data.message || 'Error al iniciar sesión con Google.');
+        return false;
+      }
+    } catch {
+      setGoogleError('Error de red al conectar con el servidor.');
+      return false;
+    } finally {
+      setGoogleLoading(false);
+    }
+  }, [deviceId, friendlyDeviceName, onUnlock]);
+
+  // Listener para retorno de OAuth de Google vía Supabase
+  useEffect(() => {
+    // Solo auto-procesar si el usuario activó explícitamente el flujo o la URL contiene el token de retorno
+    const hasOAuthParams =
+      window.location.hash.includes('access_token') ||
+      window.location.search.includes('code') ||
+      sessionStorage.getItem('gmetrics_oauth_in_progress') === 'true';
+
+    if (!hasOAuthParams) {
+      return;
+    }
+
+    let isCancelled = false;
+    getBrowserSupabase().then((supabase) => {
+      if (!supabase || isCancelled) return;
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!isCancelled && session?.user?.email) {
+          sessionStorage.removeItem('gmetrics_oauth_in_progress');
+          if (window.location.hash.includes('access_token')) {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+          processGoogleLogin(
+            session.user.email,
+            session.user.user_metadata?.full_name || session.user.user_metadata?.name
+          );
+        }
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (!isCancelled && (event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user?.email) {
+          sessionStorage.removeItem('gmetrics_oauth_in_progress');
+          if (window.location.hash.includes('access_token')) {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+          processGoogleLogin(
+            session.user.email,
+            session.user.user_metadata?.full_name || session.user.user_metadata?.name
+          );
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [processGoogleLogin]);
+
+  // Disparar flujo oficial de Google OAuth
+  const handleTriggerGoogleOAuth = async () => {
+    setGoogleError(null);
+    if (!acceptedGoogleLegal) {
+      setGoogleError('Debes marcar la casilla aceptando los Términos de Servicio y Habeas Data para continuar.');
+      return;
+    }
+    setGoogleLoading(true);
+    sessionStorage.setItem('gmetrics_oauth_in_progress', 'true');
+    const { error } = await signInWithGoogleOAuth();
+    if (error) {
+      setGoogleLoading(false);
+      const isProviderDisabled =
+        error.message?.toLowerCase().includes('provider') ||
+        error.message?.toLowerCase().includes('not enabled') ||
+        error.message?.toLowerCase().includes('unsupported_provider');
+      if (isProviderDisabled) {
+        setGoogleError('El proveedor Google aún no está habilitado en tu panel de Supabase. Puedes ingresar tu correo abajo para probar de inmediato.');
+        setShowManualEmail(true);
+      } else {
+        setGoogleError(error.message || 'Error al conectar con Google OAuth.');
+      }
+    }
+  };
+
+  // Submit manual para pruebas o entornos sin Google OAuth Client ID configurado
+  const handleManualEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!acceptedGoogleLegal) {
+      setGoogleError('Debes aceptar los Términos de Servicio y Habeas Data para continuar.');
+      return;
+    }
+    const cleanEmail = googleEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setGoogleError('Por favor ingresa un correo de Google válido (ej. usuario@gmail.com).');
+      return;
+    }
+    await processGoogleLogin(cleanEmail, googleDisplayName);
+  };
+
   // Submit Login
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -261,12 +447,13 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
           ? new Date(data.user.expiresAt).toLocaleDateString('es-ES')
           : 'Permanente (Vitalicio)';
 
+        const isUserExpired = Boolean(data.user.isExpired);
         const unlockResult: LicenseValidationResult = {
           isValid: true,
-          status: 'ACTIVE',
+          status: isUserExpired ? 'EXPIRED' : 'ACTIVE',
           message: 'Autenticación exitosa',
           isPermanent: data.user.expiresAt === null,
-          isExpired: false,
+          isExpired: isUserExpired,
           expiryTimestamp: data.user.expiresAt,
           expiryDateFormatted: expFormatted,
           daysRemaining: data.user.daysRemaining,
@@ -539,12 +726,28 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
               </span>
             </h1>
             <p className="text-slate-500 text-xs mt-1.5 leading-relaxed max-w-sm mx-auto">
-              Inicia sesión con tu usuario y PIN, o solicita tu cuenta directamente por WhatsApp.
+              Plataforma cuantitativa de análisis y estadísticas deportivas.
             </p>
           </div>
 
-          {/* Tab Selector: Iniciar Sesión vs Solicitar Cuenta */}
+          {/* Tab Selector: Google | Usuario y PIN */}
           <div className="grid grid-cols-2 p-1 bg-slate-100 border border-slate-200/90 rounded-xl text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('GOOGLE');
+                setGoogleError(null);
+              }}
+              className={`py-2 px-3 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                activeTab === 'GOOGLE'
+                  ? 'bg-white text-slate-900 shadow-2xs border border-slate-200/90 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 font-medium'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Google</span>
+            </button>
+
             <button
               type="button"
               onClick={() => {
@@ -553,31 +756,151 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
               }}
               className={`py-2 px-3 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
                 activeTab === 'LOGIN'
-                  ? 'bg-white text-slate-900 shadow-2xs border border-slate-200/90 font-semibold'
+                  ? 'bg-white text-slate-900 shadow-2xs border border-slate-200/90 font-bold'
                   : 'text-slate-600 hover:text-slate-900 font-medium'
               }`}
             >
-              <User className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Iniciar Sesión</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('REGISTER');
-                setRegError(null);
-                setRegSuccess(null);
-              }}
-              className={`py-2 px-3 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                activeTab === 'REGISTER'
-                  ? 'bg-emerald-600 text-white shadow-2xs border border-emerald-600 font-semibold'
-                  : 'text-slate-600 hover:text-slate-900 font-medium'
-              }`}
-            >
-              <MessageCircle className="w-3.5 h-3.5" />
-              <span>Solicitar Cuenta</span>
+              <User className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Usuario y PIN</span>
             </button>
           </div>
+
+          {/* TAB 0: GOOGLE AUTH */}
+          {activeTab === 'GOOGLE' && (
+            <div className="space-y-3 pt-0.5">
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50/90 border border-slate-200/90 text-left">
+                <span className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-slate-900 block leading-tight">Acceso Rápido con Google</span>
+                  <span className="text-[11px] text-slate-500 block leading-tight mt-0.5">Incluye 3 días de prueba completa en tu primer ingreso.</span>
+                </div>
+              </div>
+
+              {/* Casilla obligatoria: Términos de Servicio y Habeas Data */}
+              <label className="flex items-start gap-2 text-left cursor-pointer select-none pt-0.5">
+                <input
+                  type="checkbox"
+                  checked={acceptedGoogleLegal}
+                  onChange={(e) => {
+                    setAcceptedGoogleLegal(e.target.checked);
+                    if (googleError) setGoogleError(null);
+                  }}
+                  className="mt-0.5 w-4 h-4 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500 cursor-pointer shrink-0"
+                />
+                <span className="text-[11px] text-slate-600 leading-snug">
+                  He leído y acepto los{' '}
+                  <button
+                    type="button"
+                    onClick={() => onOpenGuide?.('LEGAL')}
+                    className="text-emerald-700 font-semibold underline hover:text-emerald-800 cursor-pointer"
+                  >
+                    Términos de Servicio
+                  </button>
+                  , la Política de Privacidad (Habeas Data) y confirmo ser mayor de 18 años.
+                </span>
+              </label>
+
+              {googleError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span className="leading-snug">{googleError}</span>
+                </div>
+              )}
+
+              {/* Botón Principal Google OAuth (Abre ventana oficial de Google) */}
+              <button
+                type="button"
+                onClick={handleTriggerGoogleOAuth}
+                disabled={googleLoading || !acceptedGoogleLegal}
+                className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 font-bold text-xs rounded-xl shadow-xs active:scale-[0.99] disabled:opacity-50 transition flex items-center justify-center gap-2.5 cursor-pointer"
+              >
+                {googleLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                    <span>Conectando con Google...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    <span>Continuar con Google</span>
+                  </>
+                )}
+              </button>
+
+              {/* Acceso manual alternativo (por si no se ha configurado Google OAuth en Supabase o entorno local) */}
+              <div className="pt-0.5 text-center">
+                <button
+                  type="button"
+                  onClick={() => setShowManualEmail(!showManualEmail)}
+                  className="text-[11px] text-slate-500 hover:text-slate-800 transition underline underline-offset-2 cursor-pointer"
+                >
+                  {showManualEmail ? 'Ocultar ingreso manual' : '¿Problemas con Google? Ingresar correo directamente'}
+                </button>
+
+                {showManualEmail && (
+                  <form onSubmit={handleManualEmailSubmit} className="mt-2.5 space-y-2.5 text-left border-t border-slate-200/80 pt-2.5">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Correo Electrónico (Gmail):
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                          <Mail className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="email"
+                          value={googleEmail}
+                          onChange={(e) => setGoogleEmail(e.target.value)}
+                          placeholder="ej: usuario@gmail.com"
+                          required
+                          className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white transition"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                        <span>Nombre o Apodo (Opcional):</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Personalización</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                          <User className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="text"
+                          value={googleDisplayName}
+                          onChange={(e) => setGoogleDisplayName(e.target.value)}
+                          placeholder="ej: Carlos"
+                          className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white transition"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={googleLoading || !googleEmail.trim() || !acceptedGoogleLegal}
+                      className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                    >
+                      {googleLoading ? 'Verificando...' : 'Acceder con Correo'}
+                    </button>
+                  </form>
+                )}
+              </div>
+
+              <div className="flex items-center justify-center gap-1.5 text-[10.5px] text-slate-400 pt-0.5">
+                <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
+                <span>Sesión segura cifrada y protegida por dispositivo.</span>
+              </div>
+            </div>
+          )}
 
           {/* TAB 1: INICIAR SESIÓN */}
           {activeTab === 'LOGIN' && (
@@ -701,155 +1024,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
             </form>
           )}
 
-          {/* TAB 2: SOLICITAR CUENTA NUEVA */}
-          {activeTab === 'REGISTER' && (
-            <form onSubmit={handleRegisterSubmit} className="space-y-3 pt-0.5">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center justify-between">
-                  <span>Usuario que deseas:</span>
-                  <span className="text-[10px] text-slate-400">Solo letras y números</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                    <User className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="text"
-                    value={regUsername}
-                    onChange={(e) => handleRegUsernameChange(e.target.value)}
-                    placeholder="ej: betmaster"
-                    required
-                    className="w-full bg-slate-50 border border-slate-200/90 hover:border-slate-300 rounded-xl pl-9 pr-3.5 py-2 text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white transition"
-                  />
-                </div>
-              </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Tu Nombre o Alias (Opcional):
-                </label>
-                <input
-                  type="text"
-                  value={regDisplayName}
-                  onChange={(e) => setRegDisplayName(e.target.value)}
-                  placeholder="ej: Juan Pérez"
-                  className="w-full bg-slate-50 border border-slate-200/90 hover:border-slate-300 rounded-xl px-3.5 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Elige tu PIN personal:
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                    <Lock className="w-4 h-4" />
-                  </div>
-                  <input
-                    type={showRegPin ? 'text' : 'password'}
-                    value={regPin}
-                    onChange={(e) => setRegPin(e.target.value)}
-                    placeholder="Mínimo 4 dígitos"
-                    maxLength={10}
-                    required
-                    className="w-full bg-slate-50 border border-slate-200/90 hover:border-slate-300 rounded-xl pl-9 pr-10 py-2 text-sm font-mono text-slate-900 tracking-widest placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowRegPin(!showRegPin)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-700 cursor-pointer"
-                    title={showRegPin ? 'Ocultar PIN' : 'Ver PIN'}
-                  >
-                    {showRegPin ? <EyeOff className="w-4 h-4 text-emerald-600" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Mandatory +18, Terms of Service & Habeas Data (Ley 1581) Checkbox */}
-              <div
-                className={`p-3 rounded-xl border transition space-y-2 ${
-                  acceptedLegalTerms
-                    ? 'bg-emerald-50/50 border-emerald-300'
-                    : 'bg-slate-50/90 border-slate-200/90 hover:border-amber-300'
-                }`}
-              >
-                <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={acceptedLegalTerms}
-                    onChange={(e) => {
-                      setAcceptedLegalTerms(e.target.checked);
-                      if (e.target.checked) setRegError(null);
-                    }}
-                    className="mt-0.5 accent-emerald-600 rounded cursor-pointer w-4 h-4 shrink-0"
-                  />
-                  <div className="text-[10.5px] text-slate-600 leading-snug text-left space-y-0.5">
-                    <p className="font-bold text-slate-900">
-                      Acepto Términos de Servicio y Habeas Data (+18)
-                    </p>
-                    <p className="text-[10px] text-slate-600 leading-relaxed">
-                      Confirmo que soy <strong className="text-slate-800">mayor de 18 años</strong> y que G METRICS comercializa licencias de software estadístico sin garantizar utilidades financieras.
-                    </p>
-                  </div>
-                </label>
-
-                {onOpenGuide && (
-                  <div className="pt-1.5 border-t border-slate-200/70 flex flex-wrap items-center justify-center gap-2 text-[10px]">
-                    <button
-                      type="button"
-                      onClick={() => onOpenGuide('LEGAL')}
-                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold transition cursor-pointer"
-                    >
-                      📄 Términos de Servicio
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onOpenGuide('LEGAL')}
-                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-50 text-amber-800 border border-amber-200 font-semibold transition cursor-pointer"
-                    >
-                      🔒 Ley 1581 / Habeas Data
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {regError && (
-                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2 font-medium">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{regError}</span>
-                </div>
-              )}
-
-              {regSuccess && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs space-y-2.5 font-semibold">
-                  <div className="flex items-start gap-2">
-                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <span>{regSuccess}</span>
-                  </div>
-                  {regWhatsAppUrl && (
-                    <a
-                      href={regWhatsAppUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition shadow-xs"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>Abrir WhatsApp y Enviar al Administrador</span>
-                    </a>
-                  )}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={regLoading || !acceptedLegalTerms}
-                className="w-full py-2.5 px-4 rounded-xl font-semibold text-sm bg-emerald-600 hover:bg-emerald-500 text-white transition active:scale-[0.98] disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer shadow-sm flex items-center justify-center gap-2"
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>{regLoading ? 'Procesando solicitud...' : 'Solicitar Activación por WhatsApp'}</span>
-              </button>
-            </form>
-          )}
 
           {/* Device & Security Footnote */}
           <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">

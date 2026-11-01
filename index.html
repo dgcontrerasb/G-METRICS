@@ -44,37 +44,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@800;900&family=Orbitron:wght@800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <script>
-      // Interceptar y silenciar conexiones WebSocket de Vite HMR en el entorno de iframe de AI Studio
       (() => {
-        const OrigWebSocket = window.WebSocket;
-        if (OrigWebSocket) {
-          const PatchedWebSocket = function(url, protocols) {
-            const isViteHmr =
-              protocols === 'vite-hmr' ||
-              (Array.isArray(protocols) && protocols.includes('vite-hmr')) ||
-              String(url || '').includes('vite');
-            if (isViteHmr) {
-              const dummy = new EventTarget();
-              dummy.url = String(url || '');
-              dummy.readyState = 1; // OPEN
-              dummy.protocol = 'vite-hmr';
-              dummy.extensions = '';
-              dummy.bufferedAmount = 0;
-              dummy.binaryType = 'blob';
-              dummy.send = function() {};
-              dummy.close = function() { this.readyState = 3; };
-              return dummy;
-            }
-            return protocols !== undefined ? new OrigWebSocket(url, protocols) : new OrigWebSocket(url);
-          };
-          PatchedWebSocket.prototype = OrigWebSocket.prototype;
-          PatchedWebSocket.CONNECTING = OrigWebSocket.CONNECTING;
-          PatchedWebSocket.OPEN = OrigWebSocket.OPEN;
-          PatchedWebSocket.CLOSING = OrigWebSocket.CLOSING;
-          PatchedWebSocket.CLOSED = OrigWebSocket.CLOSED;
-          window.WebSocket = PatchedWebSocket;
-        }
-
         const origConsoleError = console.error;
         console.error = function(...args) {
           const fullText = args.map(arg => {

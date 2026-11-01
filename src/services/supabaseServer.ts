@@ -323,6 +323,7 @@ export async function verifyAndConsumeRecoveryOtp(deviceId: string, otpInput: st
 export interface AppUser {
   id: string;
   username: string;
+  email?: string | null;
   displayName?: string;
   pin: string;
   role: 'admin' | 'client';
@@ -339,6 +340,9 @@ export interface AppUser {
   notes?: string | null;
   daysRemaining?: number | null;
   isExpired?: boolean;
+  isPro?: boolean;
+  authProvider?: 'pin' | 'google';
+  feedbackBonusClaimed?: boolean;
 }
 
 export function normalizeUsername(input: string): string {
@@ -357,6 +361,7 @@ export interface LoginResult {
   sessionToken?: string;
   boundDeviceName?: string | null;
   whatsappContact?: string;
+  isPro?: boolean;
 }
 
 export async function loginAppUser(
@@ -482,6 +487,8 @@ export async function loginAppUser(
         }
 
         const isAdmin = data.role === 'admin';
+        const isExpired = !isAdmin && Boolean(data.expires_at && Number(data.expires_at) < nowMs);
+        const isPro = !isExpired;
 
         if (!isAdmin) {
           const deletedSet = getDeletedUsernamesSet();
@@ -511,14 +518,6 @@ export async function loginAppUser(
               success: false,
               code: 'SUSPENDED',
               message: 'Tu cuenta ha sido suspendida. Contacta al administrador.'
-            };
-          }
-
-          if (data.expires_at && data.expires_at < nowMs) {
-            return {
-              success: false,
-              code: 'EXPIRED',
-              message: 'Tu plan de acceso ha vencido. Contacta al administrador para renovar.'
             };
           }
         }
@@ -558,12 +557,13 @@ export async function loginAppUser(
         const resolvedUser: AppUser = {
           id: data.id,
           username: data.username,
+          email: data.email || null,
           displayName: data.display_name || undefined,
           pin: '[PROTECTED]',
           role: data.role || 'client',
-          status: data.status || 'active',
+          status: isExpired ? 'expired' : (data.status || 'active'),
           planType: data.plan_type || '30D',
-          planLabel: data.plan_label || 'Pase Activo',
+          planLabel: data.plan_label || (isPro ? 'Pase Activo' : 'Plan Vencido'),
           createdAt: Number(data.created_at || nowMs),
           expiresAt: data.expires_at ? Number(data.expires_at) : null,
           boundDeviceId: data.bound_device_id,
@@ -573,7 +573,10 @@ export async function loginAppUser(
           whatsappNumber: data.whatsapp_number,
           notes: data.notes,
           daysRemaining,
-          isExpired: data.expires_at ? data.expires_at < nowMs : false
+          isExpired,
+          isPro,
+          authProvider: (data.auth_provider as any) || 'pin',
+          feedbackBonusClaimed: Boolean(data.feedback_bonus_claimed)
         };
 
         const sessionToken = createSessionJwt({
@@ -586,7 +589,8 @@ export async function loginAppUser(
 
         return {
           success: true,
-          message: 'Autenticación exitosa',
+          isPro,
+          message: isPro ? 'Autenticación exitosa' : 'Tu plan de acceso ha vencido. Puedes ver marcadores básicos o activar tu plan VIP.',
           sessionToken,
           user: resolvedUser
         };
@@ -1393,3 +1397,475 @@ END $$;
 
 
 
+
+// =========================================================================
+// GOOGLE AUTH, ANTIFRAUDE Y GESTIÓN DE CÓDIGOS DINÁMICOS VIP ($0 USD/MES)
+// =========================================================================
+
+export async function loginOrRegisterGoogleUser(
+  rawEmail: string,
+  rawDisplayName: string,
+  deviceId: string,
+  deviceName?: string,
+  deviceFingerprint?: string
+): Promise<LoginResult> {
+  const email = String(rawEmail || '').toLowerCase().trim();
+  if (!email || !email.includes('@')) {
+    return {
+      success: false,
+      code: 'SERVER_ERROR',
+      message: 'Correo electrónico de Google inválido.'
+    };
+  }
+
+  const cleanDevice = sanitizeText(String(deviceId || ''), 48).toUpperCase();
+  const friendlyDevName = sanitizeText(String(deviceName || 'Dispositivo Web / Móvil'), 80);
+  const nowMs = Date.now();
+
+  const isOwnerAdmin =
+    email === 'dgcontrerasb@gmail.com' ||
+    email === 'dgcontreras@gmail.com' ||
+    email.startsWith('dgcontreras');
+
+  if (isOwnerAdmin) {
+    const sessionToken = createSessionJwt({
+      userId: 'admin-owner',
+      username: 'admin',
+      role: 'admin',
+      deviceId: cleanDevice,
+      ttlDays: 30,
+    });
+
+    return {
+      success: true,
+      isPro: true,
+      message: 'Acceso de Administrador verificado con Google',
+      sessionToken,
+      user: {
+        id: 'admin-owner',
+        username: 'admin',
+        email,
+        displayName: 'Geovanny Contreras (Propietario)',
+        pin: '[PROTECTED]',
+        role: 'admin',
+        status: 'active',
+        planType: 'PERMANENT',
+        planLabel: 'Acceso Propietario Ilimitado',
+        createdAt: nowMs,
+        expiresAt: null,
+        boundDeviceId: cleanDevice,
+        boundDeviceName: friendlyDevName,
+        whatsappNumber: '573213902708',
+        lastActiveAt: nowMs,
+        isPro: true,
+        isExpired: false,
+        authProvider: 'google',
+        feedbackBonusClaimed: true
+      }
+    };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      success: false,
+      code: 'SERVER_ERROR',
+      message: 'Error de conexión con el servidor de autenticación.'
+    };
+  }
+
+  try {
+    // 1. Buscar si ya existe por email
+    const { data: existingUser } = await client
+      .from('sportstats_users')
+      .select('*')
+      .ilike('email', email)
+      .maybeSingle();
+
+    if (existingUser) {
+      if (existingUser.status === 'suspended') {
+        return { success: false, code: 'SUSPENDED', message: 'Tu cuenta ha sido suspendida. Contacta al administrador.' };
+      }
+      if (existingUser.status === 'deleted') {
+        return { success: false, code: 'USER_NOT_FOUND', message: 'Esta cuenta ha sido eliminada por el administrador.' };
+      }
+
+      // En entorno local o dispositivo de pruebas del administrador: auto-vincular sin bloquear
+      const isLocalOrDev = process.env.NODE_ENV !== 'production' || !process.env.VERCEL;
+      const isAdminTestDevice = isLocalOrDev || cleanDevice.startsWith('DEV-');
+
+      if (!existingUser.bound_device_id || (isAdminTestDevice && existingUser.bound_device_id !== cleanDevice)) {
+        await client.from('sportstats_users').update({
+          bound_device_id: cleanDevice,
+          bound_device_name: friendlyDevName,
+          last_active_at: nowMs
+        }).eq('id', existingUser.id);
+        existingUser.bound_device_id = cleanDevice;
+      } else if (existingUser.bound_device_id !== cleanDevice) {
+        return {
+          success: false,
+          code: 'DEVICE_LOCKED',
+          message: `Esta cuenta ya está vinculada a otro dispositivo (${existingUser.bound_device_name || 'dispositivo principal'}).`,
+          boundDeviceName: existingUser.bound_device_name
+        };
+      }
+
+      const isExpired = Boolean(existingUser.expires_at && Number(existingUser.expires_at) < nowMs);
+      const isPro = !isExpired;
+
+      const sessionToken = createSessionJwt({
+        userId: existingUser.id,
+        username: existingUser.username,
+        role: existingUser.role || 'client',
+        deviceId: cleanDevice,
+        ttlDays: 30
+      });
+
+      return {
+        success: true,
+        isPro,
+        message: isPro ? 'Sesión iniciada con éxito.' : 'Tu periodo de prueba o plan ha vencido.',
+        sessionToken,
+        user: {
+          id: existingUser.id,
+          username: existingUser.username,
+          email: existingUser.email,
+          displayName: existingUser.display_name || rawDisplayName,
+          pin: '[PROTECTED]',
+          role: existingUser.role || 'client',
+          status: isExpired ? 'expired' : (existingUser.status || 'active'),
+          planType: existingUser.plan_type || 'GOOGLE_TRIAL',
+          planLabel: existingUser.plan_label || (isPro ? 'Plan VIP' : 'Plan Vencido'),
+          createdAt: Number(existingUser.created_at) || nowMs,
+          expiresAt: existingUser.expires_at ? Number(existingUser.expires_at) : null,
+          boundDeviceId: existingUser.bound_device_id,
+          boundDeviceName: existingUser.bound_device_name,
+          whatsappNumber: existingUser.whatsapp_number,
+          feedbackBonusClaimed: Boolean(existingUser.feedback_bonus_claimed),
+          lastActiveAt: nowMs,
+          isPro,
+          isExpired,
+          authProvider: 'google'
+        }
+      };
+    }
+
+    // 2. Usuario NUEVO con Google
+    // Exención de pruebas: Si es localhost / dev o dispositivo de pruebas del administrador, siempre otorgar los 3 días de prueba
+    const isLocalOrDev = process.env.NODE_ENV !== 'production' || !process.env.VERCEL;
+    const isAdminTestDevice = isLocalOrDev || cleanDevice.startsWith('DEV-');
+    let hasUsedTrial = false;
+
+    if (!isAdminTestDevice && cleanDevice) {
+      const { data: deviceUser } = await client
+        .from('sportstats_users')
+        .select('id, username')
+        .eq('bound_device_id', cleanDevice)
+        .limit(1)
+        .maybeSingle();
+
+      if (deviceUser) {
+        hasUsedTrial = true;
+      }
+    }
+
+    const expiresAt = hasUsedTrial ? nowMs : (nowMs + 3 * 24 * 60 * 60 * 1000);
+    const isPro = !hasUsedTrial;
+    const planLabel = hasUsedTrial ? 'Prueba no disponible (Dispositivo previo)' : 'Prueba Gratuita (3 Días)';
+
+    // Nombre de usuario: Estrictamente alfanumérico a-z0-9 (sin guion bajo ni caracteres especiales) para cumplir restricción PostgreSQL
+    const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 14) || 'user';
+    const randPart = Math.random().toString(36).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 4);
+    let generatedUsername = `${baseUsername}${randPart}`.slice(0, 20);
+    if (generatedUsername.length < 3) {
+      generatedUsername = `user${Math.floor(100 + Math.random() * 900)}`;
+    }
+
+    const newUserData = {
+      username: generatedUsername,
+      email,
+      display_name: rawDisplayName || email.split('@')[0],
+      pin_hash: 'GOOGLE_OAUTH',
+      role: 'client',
+      status: isPro ? 'active' : 'expired',
+      plan_type: hasUsedTrial ? 'EXPIRED_TRIAL' : 'GOOGLE_3D_TRIAL',
+      plan_label: planLabel,
+      created_at: nowMs,
+      expires_at: expiresAt,
+      bound_device_id: cleanDevice,
+      bound_device_name: friendlyDevName,
+      auth_provider: 'google',
+      feedback_bonus_claimed: false,
+      device_fingerprint: deviceFingerprint || cleanDevice
+    };
+
+    const { data: insertedUser, error: insertError } = await client
+      .from('sportstats_users')
+      .insert(newUserData)
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('[Supabase Google Register Error]:', insertError.message);
+      return {
+        success: false,
+        code: 'SERVER_ERROR',
+        message: `No fue posible registrar tu cuenta de Google: ${insertError.message}`
+      };
+    }
+
+    const sessionToken = createSessionJwt({
+      userId: insertedUser.id,
+      username: insertedUser.username,
+      role: 'client',
+      deviceId: cleanDevice,
+      ttlDays: 30
+    });
+
+    return {
+      success: true,
+      isPro,
+      message: isPro 
+        ? '¡Bienvenido! Tienes 3 días de prueba gratuita completa.' 
+        : 'Tu dispositivo ya utilizó una prueba previa. Activa tu plan VIP para acceder a todos los análisis.',
+      sessionToken,
+      user: {
+        id: insertedUser.id,
+        username: insertedUser.username,
+        email: insertedUser.email,
+        displayName: insertedUser.display_name,
+        pin: '[PROTECTED]',
+        role: 'client',
+        status: insertedUser.status,
+        planType: insertedUser.plan_type,
+        planLabel: insertedUser.plan_label,
+        createdAt: Number(insertedUser.created_at),
+        expiresAt: Number(insertedUser.expires_at),
+        boundDeviceId: insertedUser.bound_device_id,
+        boundDeviceName: insertedUser.bound_device_name,
+        whatsappNumber: null,
+        feedbackBonusClaimed: false,
+        lastActiveAt: nowMs,
+        isPro,
+        isExpired: !isPro,
+        authProvider: 'google'
+      }
+    };
+  } catch (err: any) {
+    console.error('[Supabase Google Auth Error]:', err);
+    return {
+      success: false,
+      code: 'SERVER_ERROR',
+      message: err?.message || 'Error inesperado durante la autenticación con Google.'
+    };
+  }
+}
+
+export async function redeemActivationCode(
+  code: string,
+  userIdentifier: string
+): Promise<{ success: boolean; message: string; newExpiresAt?: number }> {
+  const cleanCode = String(code || '').trim().toUpperCase();
+  const cleanUser = String(userIdentifier || '').trim();
+
+  if (!cleanCode || cleanCode.length < 5) {
+    return { success: false, message: 'Código de activación inválido.' };
+  }
+  if (!cleanUser) {
+    return { success: false, message: 'Usuario no identificado.' };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, message: 'Error de conexión con el servidor.' };
+  }
+
+  try {
+    // 1. Buscar código activo (con tolerancia para letra O vs número 0)
+    const codeVariant1 = cleanCode.replace(/0/g, 'O');
+    const codeVariant2 = cleanCode.replace(/O/g, '0');
+    const { data: codeData, error: codeErr } = await client
+      .from('sportstats_activation_codes')
+      .select('*')
+      .in('code', [cleanCode, codeVariant1, codeVariant2])
+      .eq('is_used', false)
+      .maybeSingle();
+
+    if (codeErr || !codeData) {
+      return { success: false, message: 'El código ingresado no existe o ya fue utilizado.' };
+    }
+
+    // 2. Buscar al usuario de forma exhaustiva (por email, username, display_name o id)
+    let userData = null;
+
+    if (cleanUser.includes('@')) {
+      const { data } = await client.from('sportstats_users').select('*').ilike('email', cleanUser).maybeSingle();
+      if (data) userData = data;
+    }
+
+    if (!userData) {
+      const { data } = await client.from('sportstats_users').select('*').ilike('username', cleanUser.toLowerCase()).maybeSingle();
+      if (data) userData = data;
+    }
+
+    if (!userData) {
+      const { data } = await client.from('sportstats_users').select('*').ilike('display_name', cleanUser).maybeSingle();
+      if (data) userData = data;
+    }
+
+    if (!userData) {
+      const { data } = await client.from('sportstats_users').select('*').eq('id', cleanUser).maybeSingle();
+      if (data) userData = data;
+    }
+
+    if (!userData) {
+      return { success: false, message: 'Usuario no encontrado en la base de datos.' };
+    }
+
+    const nowMs = Date.now();
+    const daysToAdd = Number(codeData.days) || 30;
+    const msToAdd = daysToAdd * 24 * 60 * 60 * 1000;
+
+    const baseTimestamp = (userData.expires_at && Number(userData.expires_at) > nowMs)
+      ? Number(userData.expires_at)
+      : nowMs;
+    const newExpiresAt = baseTimestamp + msToAdd;
+
+    // 3. Marcar código como usado de forma transaccional
+    await client
+      .from('sportstats_activation_codes')
+      .update({
+        is_used: true,
+        used_by: userData.email || userData.username,
+        used_at: new Date().toISOString()
+      })
+      .eq('id', codeData.id);
+
+    // 4. Actualizar usuario
+    await client
+      .from('sportstats_users')
+      .update({
+        expires_at: newExpiresAt,
+        status: 'active',
+        plan_type: `VIP_${daysToAdd}D`,
+        plan_label: `Plan VIP (${daysToAdd} Días)`,
+        last_active_at: nowMs
+      })
+      .eq('id', userData.id);
+
+    return {
+      success: true,
+      message: `¡Código canjeado con éxito! Se activaron ${daysToAdd} días en tu Plan VIP.`,
+      newExpiresAt
+    };
+  } catch (err) {
+    console.error('[Redeem Code Error]:', err);
+    return { success: false, message: 'Error interno al procesar el código de activación.' };
+  }
+}
+
+export async function claimFeedbackBonus(
+  userIdentifier: string
+): Promise<{ success: boolean; message: string; newExpiresAt?: number }> {
+  const cleanUser = String(userIdentifier || '').trim();
+  if (!cleanUser) {
+    return { success: false, message: 'Usuario no identificado.' };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, message: 'Error de conexión con el servidor.' };
+  }
+
+  try {
+    const isEmail = cleanUser.includes('@');
+    let userQuery = client.from('sportstats_users').select('*');
+    if (isEmail) {
+      userQuery = userQuery.ilike('email', cleanUser);
+    } else {
+      userQuery = userQuery.eq('username', cleanUser.toLowerCase());
+    }
+
+    const { data: userData, error: userErr } = await userQuery.maybeSingle();
+
+    if (userErr || !userData) {
+      return { success: false, message: 'Usuario no encontrado.' };
+    }
+
+    if (userData.feedback_bonus_claimed) {
+      return { success: false, message: 'Ya has reclamado previamente tu día adicional por feedback.' };
+    }
+
+    const nowMs = Date.now();
+    const msToAdd = 24 * 60 * 60 * 1000;
+    const baseTimestamp = (userData.expires_at && Number(userData.expires_at) > nowMs)
+      ? Number(userData.expires_at)
+      : nowMs;
+    const newExpiresAt = baseTimestamp + msToAdd;
+
+    await client
+      .from('sportstats_users')
+      .update({
+        expires_at: newExpiresAt,
+        status: 'active',
+        feedback_bonus_claimed: true,
+        last_active_at: nowMs
+      })
+      .eq('id', userData.id);
+
+    return {
+      success: true,
+      message: '¡Muchas gracias por tu opinión! Se ha sumado 1 día adicional a tu cuenta.',
+      newExpiresAt
+    };
+  } catch (err) {
+    console.error('[Feedback Bonus Error]:', err);
+    return { success: false, message: 'Error al aplicar el bono de feedback.' };
+  }
+}
+
+export async function adminGenerateActivationCode(days: number = 30): Promise<{ success: boolean; code?: string; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: 'Sin conexión a base de datos' };
+
+  try {
+    // Caracteres legibles sin ambigüedad (se eliminan 0, O, 1, I, L)
+    const CHARS = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+    let rand = '';
+    for (let i = 0; i < 8; i++) {
+      rand += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
+    }
+    const code = `VIP-${rand.slice(0, 4)}${rand.slice(4, 8)}-${days}D`;
+
+    const { error } = await client
+      .from('sportstats_activation_codes')
+      .insert({
+        code,
+        days,
+        is_used: false,
+        created_at: new Date().toISOString()
+      });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true, code };
+  } catch (err) {
+    return { success: false, error: 'Error al generar código' };
+  }
+}
+
+export async function adminListActivationCodes(): Promise<any[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  try {
+    const { data } = await client
+      .from('sportstats_activation_codes')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    return data || [];
+  } catch {
+    return [];
+  }
+}

@@ -136,6 +136,30 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
       if (res.ok && data.success) {
         try {
           localStorage.setItem(FEEDBACK_SENT_KEY, 'true');
+          // Reclamar automáticamente bono de +1 día si no se ha reclamado
+          fetch('/api/user/feedback-bonus', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userIdentifier: username })
+          })
+            .then((r) => r.json())
+            .then((bonusData) => {
+              if (bonusData.success && bonusData.newExpiresAt) {
+                const rawUser = localStorage.getItem('sportstats_auth_user');
+                if (rawUser) {
+                  try {
+                    const parsed = JSON.parse(rawUser);
+                    parsed.expiresAt = bonusData.newExpiresAt;
+                    parsed.feedbackBonusClaimed = true;
+                    parsed.isPro = true;
+                    localStorage.setItem('sportstats_auth_user', JSON.stringify(parsed));
+                  } catch {
+                    // ignore
+                  }
+                }
+              }
+            })
+            .catch(() => {});
         } catch {
           // ignore
         }
@@ -144,7 +168,7 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
           setSubmittedSuccess(false);
           setComment('');
           onClose();
-        }, 1800);
+        }, 2200);
       } else {
         setErrorMsg(data.error || 'No se pudo enviar tu calificación. Intenta de nuevo.');
       }
@@ -170,10 +194,10 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
             </span>
             <div className="min-w-0 leading-tight">
               <span className="text-[11px] font-bold text-slate-900 group-hover:text-emerald-700 transition block truncate">
-                ¿Calificas G METRICS?
+                ¿Calificas G METRICS? (+1 Día Gratis)
               </span>
-              <span className="text-[9.5px] text-slate-500 block truncate">
-                Toca aquí · Toma 10 seg ⭐
+              <span className="text-[9.5px] text-emerald-600 font-semibold block truncate">
+                Deja tu opinión y gana +1 día VIP ⭐
               </span>
             </div>
           </button>
@@ -238,10 +262,13 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
                   <CheckCircle2 className="w-6 h-6 text-emerald-600" />
                 </div>
                 <h4 className="text-sm font-bold text-slate-900">
-                  ¡Gracias por tu calificación!
+                  ¡Gracias por tu calificación! 🎉
                 </h4>
-                <p className="text-xs text-slate-500 max-w-xs mx-auto">
-                  Tu comentario ha sido recibido de forma privada por el Administrador de G METRICS.
+                <p className="text-xs text-emerald-600 font-semibold max-w-xs mx-auto">
+                  ¡Se ha sumado +1 día adicional a tu prueba gratuita!
+                </p>
+                <p className="text-[11px] text-slate-500 max-w-xs mx-auto mt-0.5">
+                  Tu opinión nos ayuda a perfeccionar las métricas de la plataforma.
                 </p>
               </div>
             ) : (

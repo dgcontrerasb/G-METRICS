@@ -20,7 +20,12 @@ import {
   adminDeleteAppUser,
   getSupabaseKvCache,
   setSupabaseKvCache,
-  SUPABASE_SQL_SCHEMA
+  SUPABASE_SQL_SCHEMA,
+  loginOrRegisterGoogleUser,
+  redeemActivationCode,
+  claimFeedbackBonus,
+  adminGenerateActivationCode,
+  adminListActivationCodes
 } from './src/services/supabaseServer';
 import {
   securityHeadersMiddleware,
@@ -37,11 +42,6 @@ import {
 } from './src/services/securityShield';
 
 dotenv.config();
-
-// HMR is disabled in AI Studio environment to prevent WebSocket errors and save resources
-if (!process.env.DISABLE_HMR) {
-  process.env.DISABLE_HMR = 'true';
-}
 
 // Anticaída de proceso Node.js ante excepciones no capturadas o rechazos de promesas
 process.on('uncaughtException', (err) => {
@@ -4325,6 +4325,89 @@ app.post('/api/auth/register-request', dataRateLimitMiddleware, async (req, res)
   }
 });
 
+app.get('/api/auth/config', (req, res) => {
+  return res.json({
+    success: true,
+    supabaseUrl: process.env.SUPABASE_URL || null,
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || null
+  });
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { email, displayName, deviceId, deviceName, fingerprint } = req.body || {};
+    const result = await loginOrRegisterGoogleUser(email, displayName, deviceId, deviceName, fingerprint);
+    if (result.success && result.user) {
+      recordOnlinePresence({
+        username: String(result.user.username || result.user.email || '').toLowerCase(),
+        displayName: result.user.displayName || String(result.user.email || ''),
+        deviceId: String(deviceId || ''),
+        deviceInfo: String(deviceName || '')
+      });
+    }
+    return res.json(result);
+  } catch {
+    return res.status(500).json({ success: false, message: 'Error al procesar autenticación con Google' });
+  }
+});
+
+app.post('/api/user/redeem-code', async (req, res) => {
+  try {
+    const { code, userIdentifier } = req.body || {};
+    const result = await redeemActivationCode(code, userIdentifier);
+    return res.json(result);
+  } catch {
+    return res.status(500).json({ success: false, message: 'Error al canjear código' });
+  }
+});
+
+app.post('/api/user/feedback-bonus', async (req, res) => {
+  try {
+    const { userIdentifier } = req.body || {};
+    const result = await claimFeedbackBonus(userIdentifier);
+    return res.json(result);
+  } catch {
+    return res.status(500).json({ success: false, message: 'Error al aplicar bono de feedback' });
+  }
+});
+
+app.post('/api/admin/codes/generate', async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: 'No autorizado' });
+  }
+  clearAuthFailures(req);
+
+  try {
+    const { days = 30 } = req.body || {};
+    const result = await adminGenerateActivationCode(Number(days) || 30);
+    return res.json(result);
+  } catch {
+    return res.status(500).json({ success: false, error: 'Error al generar código de activación' });
+  }
+});
+
+app.get('/api/admin/codes/list', async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: 'No autorizado' });
+  }
+  clearAuthFailures(req);
+
+  try {
+    const codes = await adminListActivationCodes();
+    return res.json({ success: true, codes });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Error al listar códigos de activación' });
+  }
+});
+
 app.get('/api/admin/users/list', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
@@ -4863,7 +4946,6 @@ async function startServer() {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: false,
       },
       appType: 'spa',
     });

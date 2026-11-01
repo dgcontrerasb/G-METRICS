@@ -25,6 +25,7 @@ import { FintechSidebar } from './components/FintechSidebar';
 import { AppFooter } from './components/AppFooter';
 import { AppModalsContainer } from './components/AppModalsContainer';
 import { UserFeedbackWidget } from './components/UserFeedbackWidget';
+import { VipPaymentModal } from './components/VipPaymentModal';
 import { SoccerWorkspaceView } from './components/workspace/SoccerWorkspaceView';
 import { NBAWorkspaceView } from './components/workspace/NBAWorkspaceView';
 import { LiveAlertsOverlay } from './components/workspace/LiveAlertsOverlay';
@@ -36,6 +37,8 @@ import {
   getOrCreateDeviceId,
   verifyLicenseToken,
   clearActiveLicense,
+  createLicenseToken,
+  saveActiveLicense,
   LicenseValidationResult
 } from './services/licenseService';
 import {
@@ -45,8 +48,12 @@ import {
   triggerNativeSystemNotification,
   LiveGoalAlertItem
 } from './services/favoritesService';
+import { getBrowserSupabase } from './services/supabaseBrowser';
+import { Power, Sparkles } from 'lucide-react';
 
 export default function App() {
+  // Animación de entrada y salida de sesión
+  const [authTransition, setAuthTransition] = useState<'LOGIN' | 'LOGOUT' | null>(null);
   // License & Access Control State
   const [isAppUnlocked, setIsAppUnlocked] = useState<boolean>(() => {
     try {
@@ -75,26 +82,52 @@ export default function App() {
   const { paletteConfig, theme } = useTheme();
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [isVipModalOpen, setIsVipModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpenVip = () => setIsVipModalOpen(true);
+    window.addEventListener('open-vip-payment-modal', handleOpenVip);
+    return () => window.removeEventListener('open-vip-payment-modal', handleOpenVip);
+  }, []);
   const [mobileActiveTab, setMobileActiveTab] = useState<MobileTab>('MATCHES');
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState<boolean>(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
 
   const handleLogoutSession = useCallback(() => {
-    try {
-      clearActiveLicense();
-      localStorage.removeItem('sportstats_admin_remember');
-      localStorage.removeItem('sportstats_admin_saved_pin');
-      localStorage.removeItem('sportstats_auth_user');
-      localStorage.removeItem('sportstats_client_name');
-      sessionStorage.removeItem('futbolstats_admin_pin');
-      sessionStorage.removeItem('sportstats_exp_alert_dismissed');
-    } catch {
-      // ignore storage errors
-    }
-    setIsAdminModalOpen(false);
-    setActiveLicenseInfo(null);
-    setIsAppUnlocked(false);
-    window.location.reload();
+    setAuthTransition('LOGOUT');
+
+    setTimeout(async () => {
+      try {
+        const supabase = await getBrowserSupabase();
+        if (supabase) {
+          await supabase.auth.signOut().catch(() => {});
+        }
+        clearActiveLicense();
+        localStorage.removeItem('sportstats_admin_remember');
+        localStorage.removeItem('sportstats_admin_saved_pin');
+        localStorage.removeItem('sportstats_auth_user');
+        localStorage.removeItem('sportstats_client_name');
+        sessionStorage.clear();
+
+        // Limpiar tokens internos de Supabase para evitar auto-reconexión indeseada
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('sb-') || k.includes('supabase'))) {
+            localStorage.removeItem(k);
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+
+      setIsAdminModalOpen(false);
+      setActiveLicenseInfo(null);
+      setIsAppUnlocked(false);
+
+      setTimeout(() => {
+        setAuthTransition(null);
+      }, 300);
+    }, 600);
   }, []);
 
   // Active sport switcher: Soccer vs NBA
@@ -1769,8 +1802,14 @@ export default function App() {
       {!isAppUnlocked ? (
         <AccessLockScreen
           onUnlock={(result) => {
-            setIsAppUnlocked(true);
-            setActiveLicenseInfo(result);
+            setAuthTransition('LOGIN');
+            setTimeout(() => {
+              setIsAppUnlocked(true);
+              setActiveLicenseInfo(result);
+              setTimeout(() => {
+                setAuthTransition(null);
+              }, 400);
+            }, 600);
           }}
           onOpenAdmin={() => setIsAdminModalOpen(true)}
           onOpenGuide={handleOpenGuideModal}
@@ -1980,6 +2019,45 @@ export default function App() {
             onClose={() => setIsFeedbackModalOpen(false)}
           />
 
+          {/* Modal de Pagos y Activación VIP ($9.900 COP / $3.50 USD) */}
+          <VipPaymentModal
+            isOpen={isVipModalOpen}
+            onClose={() => setIsVipModalOpen(false)}
+            userEmail={(() => {
+              try {
+                const raw = localStorage.getItem('sportstats_auth_user');
+                if (raw) {
+                  const u = JSON.parse(raw);
+                  return u.email || u.username;
+                }
+              } catch {}
+              return activeLicenseInfo?.clientName;
+            })()}
+            isExpired={Boolean(activeLicenseInfo?.isExpired)}
+            daysRemaining={activeLicenseInfo?.daysRemaining}
+            onCodeRedeemed={(newExpires) => {
+              const devId = getOrCreateDeviceId();
+              const diff = newExpires - Date.now();
+              const calcDays = Math.max(0, Math.ceil(diff / (24 * 60 * 60 * 1000)));
+              const newToken = createLicenseToken(devId, `${calcDays}D` as any, newExpires);
+              const updatedResult: LicenseValidationResult = {
+                isValid: true,
+                status: 'ACTIVE',
+                message: 'Licencia actualizada con éxito',
+                isPermanent: false,
+                isExpired: false,
+                expiryTimestamp: newExpires,
+                expiryDateFormatted: new Date(newExpires).toLocaleDateString('es-ES'),
+                daysRemaining: calcDays,
+                targetDeviceId: devId,
+                planLabel: `Pase VIP (${calcDays} Días)`,
+                clientName: activeLicenseInfo?.clientName
+              };
+              saveActiveLicense(newToken.key, updatedResult);
+              setActiveLicenseInfo(updatedResult);
+            }}
+          />
+
           {/* Fixed Mobile Bottom Navigation Bar (Thumb Zone) */}
           <MobileBottomNav
             activeTab={mobileActiveTab}
@@ -2072,6 +2150,42 @@ export default function App() {
         onCloseSavedSlipsModal={() => setIsSavedSlipsOpen(false)}
         onOpenSavedSlipsModal={() => setIsSavedSlipsOpen(true)}
       />
+
+      {/* Animación fluida de Inicio y Cierre de Sesión */}
+      {authTransition && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 backdrop-blur-md transition-all duration-300">
+          <div className="bg-white/95 border border-slate-200/90 rounded-3xl p-6 sm:p-7 max-w-sm w-full mx-4 text-center shadow-2xl space-y-3.5 transform transition-all duration-300">
+            <div className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center border shadow-xs ${
+              authTransition === 'LOGIN'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                : 'bg-slate-100 border-slate-300 text-slate-700'
+            }`}>
+              {authTransition === 'LOGIN' ? (
+                <Sparkles className="w-7 h-7 text-emerald-600 animate-pulse" />
+              ) : (
+                <Power className="w-7 h-7 text-slate-600 animate-pulse" />
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-base font-bold text-slate-900">
+                {authTransition === 'LOGIN' ? '¡Bienvenido a G METRICS!' : 'Cerrando sesión segura...'}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                {authTransition === 'LOGIN'
+                  ? 'Verificando licencia y cargando telemetría deportiva en vivo...'
+                  : 'Desconectando sesión y guardando preferencias locales.'}
+              </p>
+            </div>
+
+            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+              <div className={`h-full w-2/3 rounded-full animate-pulse ${
+                authTransition === 'LOGIN' ? 'bg-emerald-500' : 'bg-slate-500'
+              }`} />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

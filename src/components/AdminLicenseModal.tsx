@@ -750,7 +750,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
               }`}
             >
               <Ticket className="w-3.5 h-3.5 text-amber-600" />
-              <span>Parlays IA (Beta)</span>
+              <span>Parlays (Beta)</span>
               <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 font-mono text-[9px] font-black uppercase">
                 BETA
               </span>

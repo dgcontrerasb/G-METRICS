@@ -631,6 +631,8 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
           await client.from("sportstats_users").update({ pin_hash: upgradedHash }).eq("id", data.id);
         }
         const isAdmin = data.role === "admin";
+        const isExpired = !isAdmin && Boolean(data.expires_at && Number(data.expires_at) < nowMs);
+        const isPro = !isExpired;
         if (!isAdmin) {
           const deletedSet = getDeletedUsernamesSet();
           if (deletedSet.has(username) || data.status === "deleted" || data.plan_type === "DELETED" || data.notes === "[DELETED]") {
@@ -652,13 +654,6 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
               success: false,
               code: "SUSPENDED",
               message: "Tu cuenta ha sido suspendida. Contacta al administrador."
-            };
-          }
-          if (data.expires_at && data.expires_at < nowMs) {
-            return {
-              success: false,
-              code: "EXPIRED",
-              message: "Tu plan de acceso ha vencido. Contacta al administrador para renovar."
             };
           }
         }
@@ -688,12 +683,13 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
         const resolvedUser = {
           id: data.id,
           username: data.username,
+          email: data.email || null,
           displayName: data.display_name || void 0,
           pin: "[PROTECTED]",
           role: data.role || "client",
-          status: data.status || "active",
+          status: isExpired ? "expired" : data.status || "active",
           planType: data.plan_type || "30D",
-          planLabel: data.plan_label || "Pase Activo",
+          planLabel: data.plan_label || (isPro ? "Pase Activo" : "Plan Vencido"),
           createdAt: Number(data.created_at || nowMs),
           expiresAt: data.expires_at ? Number(data.expires_at) : null,
           boundDeviceId: data.bound_device_id,
@@ -703,7 +699,10 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
           whatsappNumber: data.whatsapp_number,
           notes: data.notes,
           daysRemaining,
-          isExpired: data.expires_at ? data.expires_at < nowMs : false
+          isExpired,
+          isPro,
+          authProvider: data.auth_provider || "pin",
+          feedbackBonusClaimed: Boolean(data.feedback_bonus_claimed)
         };
         const sessionToken = createSessionJwt({
           userId: resolvedUser.id,
@@ -714,7 +713,8 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
         });
         return {
           success: true,
-          message: "Autenticaci\xF3n exitosa",
+          isPro,
+          message: isPro ? "Autenticaci\xF3n exitosa" : "Tu plan de acceso ha vencido. Puedes ver marcadores b\xE1sicos o activar tu plan VIP.",
           sessionToken,
           user: resolvedUser
         };
@@ -1369,12 +1369,361 @@ BEGIN
   END IF;
 END $$;
 `;
+async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, deviceName, deviceFingerprint) {
+  const email = String(rawEmail || "").toLowerCase().trim();
+  if (!email || !email.includes("@")) {
+    return {
+      success: false,
+      code: "SERVER_ERROR",
+      message: "Correo electr\xF3nico de Google inv\xE1lido."
+    };
+  }
+  const cleanDevice = sanitizeText(String(deviceId || ""), 48).toUpperCase();
+  const friendlyDevName = sanitizeText(String(deviceName || "Dispositivo Web / M\xF3vil"), 80);
+  const nowMs = Date.now();
+  const isOwnerAdmin = email === "dgcontrerasb@gmail.com" || email === "dgcontreras@gmail.com" || email.startsWith("dgcontreras");
+  if (isOwnerAdmin) {
+    const sessionToken = createSessionJwt({
+      userId: "admin-owner",
+      username: "admin",
+      role: "admin",
+      deviceId: cleanDevice,
+      ttlDays: 30
+    });
+    return {
+      success: true,
+      isPro: true,
+      message: "Acceso de Administrador verificado con Google",
+      sessionToken,
+      user: {
+        id: "admin-owner",
+        username: "admin",
+        email,
+        displayName: "Geovanny Contreras (Propietario)",
+        pin: "[PROTECTED]",
+        role: "admin",
+        status: "active",
+        planType: "PERMANENT",
+        planLabel: "Acceso Propietario Ilimitado",
+        createdAt: nowMs,
+        expiresAt: null,
+        boundDeviceId: cleanDevice,
+        boundDeviceName: friendlyDevName,
+        whatsappNumber: "573213902708",
+        lastActiveAt: nowMs,
+        isPro: true,
+        isExpired: false,
+        authProvider: "google",
+        feedbackBonusClaimed: true
+      }
+    };
+  }
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      success: false,
+      code: "SERVER_ERROR",
+      message: "Error de conexi\xF3n con el servidor de autenticaci\xF3n."
+    };
+  }
+  try {
+    const { data: existingUser } = await client.from("sportstats_users").select("*").ilike("email", email).maybeSingle();
+    if (existingUser) {
+      if (existingUser.status === "suspended") {
+        return { success: false, code: "SUSPENDED", message: "Tu cuenta ha sido suspendida. Contacta al administrador." };
+      }
+      if (existingUser.status === "deleted") {
+        return { success: false, code: "USER_NOT_FOUND", message: "Esta cuenta ha sido eliminada por el administrador." };
+      }
+      const isLocalOrDev2 = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
+      const isAdminTestDevice2 = isLocalOrDev2 || cleanDevice.startsWith("DEV-");
+      if (!existingUser.bound_device_id || isAdminTestDevice2 && existingUser.bound_device_id !== cleanDevice) {
+        await client.from("sportstats_users").update({
+          bound_device_id: cleanDevice,
+          bound_device_name: friendlyDevName,
+          last_active_at: nowMs
+        }).eq("id", existingUser.id);
+        existingUser.bound_device_id = cleanDevice;
+      } else if (existingUser.bound_device_id !== cleanDevice) {
+        return {
+          success: false,
+          code: "DEVICE_LOCKED",
+          message: `Esta cuenta ya est\xE1 vinculada a otro dispositivo (${existingUser.bound_device_name || "dispositivo principal"}).`,
+          boundDeviceName: existingUser.bound_device_name
+        };
+      }
+      const isExpired = Boolean(existingUser.expires_at && Number(existingUser.expires_at) < nowMs);
+      const isPro2 = !isExpired;
+      const sessionToken2 = createSessionJwt({
+        userId: existingUser.id,
+        username: existingUser.username,
+        role: existingUser.role || "client",
+        deviceId: cleanDevice,
+        ttlDays: 30
+      });
+      return {
+        success: true,
+        isPro: isPro2,
+        message: isPro2 ? "Sesi\xF3n iniciada con \xE9xito." : "Tu periodo de prueba o plan ha vencido.",
+        sessionToken: sessionToken2,
+        user: {
+          id: existingUser.id,
+          username: existingUser.username,
+          email: existingUser.email,
+          displayName: existingUser.display_name || rawDisplayName,
+          pin: "[PROTECTED]",
+          role: existingUser.role || "client",
+          status: isExpired ? "expired" : existingUser.status || "active",
+          planType: existingUser.plan_type || "GOOGLE_TRIAL",
+          planLabel: existingUser.plan_label || (isPro2 ? "Plan VIP" : "Plan Vencido"),
+          createdAt: Number(existingUser.created_at) || nowMs,
+          expiresAt: existingUser.expires_at ? Number(existingUser.expires_at) : null,
+          boundDeviceId: existingUser.bound_device_id,
+          boundDeviceName: existingUser.bound_device_name,
+          whatsappNumber: existingUser.whatsapp_number,
+          feedbackBonusClaimed: Boolean(existingUser.feedback_bonus_claimed),
+          lastActiveAt: nowMs,
+          isPro: isPro2,
+          isExpired,
+          authProvider: "google"
+        }
+      };
+    }
+    const isLocalOrDev = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
+    const isAdminTestDevice = isLocalOrDev || cleanDevice.startsWith("DEV-");
+    let hasUsedTrial = false;
+    if (!isAdminTestDevice && cleanDevice) {
+      const { data: deviceUser } = await client.from("sportstats_users").select("id, username").eq("bound_device_id", cleanDevice).limit(1).maybeSingle();
+      if (deviceUser) {
+        hasUsedTrial = true;
+      }
+    }
+    const expiresAt = hasUsedTrial ? nowMs : nowMs + 3 * 24 * 60 * 60 * 1e3;
+    const isPro = !hasUsedTrial;
+    const planLabel = hasUsedTrial ? "Prueba no disponible (Dispositivo previo)" : "Prueba Gratuita (3 D\xEDas)";
+    const baseUsername = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 14) || "user";
+    const randPart = Math.random().toString(36).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 4);
+    let generatedUsername = `${baseUsername}${randPart}`.slice(0, 20);
+    if (generatedUsername.length < 3) {
+      generatedUsername = `user${Math.floor(100 + Math.random() * 900)}`;
+    }
+    const newUserData = {
+      username: generatedUsername,
+      email,
+      display_name: rawDisplayName || email.split("@")[0],
+      pin_hash: "GOOGLE_OAUTH",
+      role: "client",
+      status: isPro ? "active" : "expired",
+      plan_type: hasUsedTrial ? "EXPIRED_TRIAL" : "GOOGLE_3D_TRIAL",
+      plan_label: planLabel,
+      created_at: nowMs,
+      expires_at: expiresAt,
+      bound_device_id: cleanDevice,
+      bound_device_name: friendlyDevName,
+      auth_provider: "google",
+      feedback_bonus_claimed: false,
+      device_fingerprint: deviceFingerprint || cleanDevice
+    };
+    const { data: insertedUser, error: insertError } = await client.from("sportstats_users").insert(newUserData).select().single();
+    if (insertError) {
+      console.error("[Supabase Google Register Error]:", insertError.message);
+      return {
+        success: false,
+        code: "SERVER_ERROR",
+        message: `No fue posible registrar tu cuenta de Google: ${insertError.message}`
+      };
+    }
+    const sessionToken = createSessionJwt({
+      userId: insertedUser.id,
+      username: insertedUser.username,
+      role: "client",
+      deviceId: cleanDevice,
+      ttlDays: 30
+    });
+    return {
+      success: true,
+      isPro,
+      message: isPro ? "\xA1Bienvenido! Tienes 3 d\xEDas de prueba gratuita completa." : "Tu dispositivo ya utiliz\xF3 una prueba previa. Activa tu plan VIP para acceder a todos los an\xE1lisis.",
+      sessionToken,
+      user: {
+        id: insertedUser.id,
+        username: insertedUser.username,
+        email: insertedUser.email,
+        displayName: insertedUser.display_name,
+        pin: "[PROTECTED]",
+        role: "client",
+        status: insertedUser.status,
+        planType: insertedUser.plan_type,
+        planLabel: insertedUser.plan_label,
+        createdAt: Number(insertedUser.created_at),
+        expiresAt: Number(insertedUser.expires_at),
+        boundDeviceId: insertedUser.bound_device_id,
+        boundDeviceName: insertedUser.bound_device_name,
+        whatsappNumber: null,
+        feedbackBonusClaimed: false,
+        lastActiveAt: nowMs,
+        isPro,
+        isExpired: !isPro,
+        authProvider: "google"
+      }
+    };
+  } catch (err) {
+    console.error("[Supabase Google Auth Error]:", err);
+    return {
+      success: false,
+      code: "SERVER_ERROR",
+      message: err?.message || "Error inesperado durante la autenticaci\xF3n con Google."
+    };
+  }
+}
+async function redeemActivationCode(code, userIdentifier) {
+  const cleanCode = String(code || "").trim().toUpperCase();
+  const cleanUser = String(userIdentifier || "").trim();
+  if (!cleanCode || cleanCode.length < 5) {
+    return { success: false, message: "C\xF3digo de activaci\xF3n inv\xE1lido." };
+  }
+  if (!cleanUser) {
+    return { success: false, message: "Usuario no identificado." };
+  }
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, message: "Error de conexi\xF3n con el servidor." };
+  }
+  try {
+    const codeVariant1 = cleanCode.replace(/0/g, "O");
+    const codeVariant2 = cleanCode.replace(/O/g, "0");
+    const { data: codeData, error: codeErr } = await client.from("sportstats_activation_codes").select("*").in("code", [cleanCode, codeVariant1, codeVariant2]).eq("is_used", false).maybeSingle();
+    if (codeErr || !codeData) {
+      return { success: false, message: "El c\xF3digo ingresado no existe o ya fue utilizado." };
+    }
+    let userData = null;
+    if (cleanUser.includes("@")) {
+      const { data } = await client.from("sportstats_users").select("*").ilike("email", cleanUser).maybeSingle();
+      if (data) userData = data;
+    }
+    if (!userData) {
+      const { data } = await client.from("sportstats_users").select("*").ilike("username", cleanUser.toLowerCase()).maybeSingle();
+      if (data) userData = data;
+    }
+    if (!userData) {
+      const { data } = await client.from("sportstats_users").select("*").ilike("display_name", cleanUser).maybeSingle();
+      if (data) userData = data;
+    }
+    if (!userData) {
+      const { data } = await client.from("sportstats_users").select("*").eq("id", cleanUser).maybeSingle();
+      if (data) userData = data;
+    }
+    if (!userData) {
+      return { success: false, message: "Usuario no encontrado en la base de datos." };
+    }
+    const nowMs = Date.now();
+    const daysToAdd = Number(codeData.days) || 30;
+    const msToAdd = daysToAdd * 24 * 60 * 60 * 1e3;
+    const baseTimestamp = userData.expires_at && Number(userData.expires_at) > nowMs ? Number(userData.expires_at) : nowMs;
+    const newExpiresAt = baseTimestamp + msToAdd;
+    await client.from("sportstats_activation_codes").update({
+      is_used: true,
+      used_by: userData.email || userData.username,
+      used_at: (/* @__PURE__ */ new Date()).toISOString()
+    }).eq("id", codeData.id);
+    await client.from("sportstats_users").update({
+      expires_at: newExpiresAt,
+      status: "active",
+      plan_type: `VIP_${daysToAdd}D`,
+      plan_label: `Plan VIP (${daysToAdd} D\xEDas)`,
+      last_active_at: nowMs
+    }).eq("id", userData.id);
+    return {
+      success: true,
+      message: `\xA1C\xF3digo canjeado con \xE9xito! Se activaron ${daysToAdd} d\xEDas en tu Plan VIP.`,
+      newExpiresAt
+    };
+  } catch (err) {
+    console.error("[Redeem Code Error]:", err);
+    return { success: false, message: "Error interno al procesar el c\xF3digo de activaci\xF3n." };
+  }
+}
+async function claimFeedbackBonus(userIdentifier) {
+  const cleanUser = String(userIdentifier || "").trim();
+  if (!cleanUser) {
+    return { success: false, message: "Usuario no identificado." };
+  }
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, message: "Error de conexi\xF3n con el servidor." };
+  }
+  try {
+    const isEmail = cleanUser.includes("@");
+    let userQuery = client.from("sportstats_users").select("*");
+    if (isEmail) {
+      userQuery = userQuery.ilike("email", cleanUser);
+    } else {
+      userQuery = userQuery.eq("username", cleanUser.toLowerCase());
+    }
+    const { data: userData, error: userErr } = await userQuery.maybeSingle();
+    if (userErr || !userData) {
+      return { success: false, message: "Usuario no encontrado." };
+    }
+    if (userData.feedback_bonus_claimed) {
+      return { success: false, message: "Ya has reclamado previamente tu d\xEDa adicional por feedback." };
+    }
+    const nowMs = Date.now();
+    const msToAdd = 24 * 60 * 60 * 1e3;
+    const baseTimestamp = userData.expires_at && Number(userData.expires_at) > nowMs ? Number(userData.expires_at) : nowMs;
+    const newExpiresAt = baseTimestamp + msToAdd;
+    await client.from("sportstats_users").update({
+      expires_at: newExpiresAt,
+      status: "active",
+      feedback_bonus_claimed: true,
+      last_active_at: nowMs
+    }).eq("id", userData.id);
+    return {
+      success: true,
+      message: "\xA1Muchas gracias por tu opini\xF3n! Se ha sumado 1 d\xEDa adicional a tu cuenta.",
+      newExpiresAt
+    };
+  } catch (err) {
+    console.error("[Feedback Bonus Error]:", err);
+    return { success: false, message: "Error al aplicar el bono de feedback." };
+  }
+}
+async function adminGenerateActivationCode(days = 30) {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: "Sin conexi\xF3n a base de datos" };
+  try {
+    const CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+    let rand = "";
+    for (let i = 0; i < 8; i++) {
+      rand += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
+    }
+    const code = `VIP-${rand.slice(0, 4)}${rand.slice(4, 8)}-${days}D`;
+    const { error } = await client.from("sportstats_activation_codes").insert({
+      code,
+      days,
+      is_used: false,
+      created_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true, code };
+  } catch (err) {
+    return { success: false, error: "Error al generar c\xF3digo" };
+  }
+}
+async function adminListActivationCodes() {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  try {
+    const { data } = await client.from("sportstats_activation_codes").select("*").order("created_at", { ascending: false }).limit(50);
+    return data || [];
+  } catch {
+    return [];
+  }
+}
 
 // server.ts
 dotenv.config();
-if (!process.env.DISABLE_HMR) {
-  process.env.DISABLE_HMR = "true";
-}
 process.on("uncaughtException", (err) => {
   console.error("[Process uncaughtException Protected]:", err);
 });
@@ -3377,13 +3726,7 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
   const yesterdayStr = getColombiaDateStr(-1);
   const auditCacheKey = `audit_finished_dia_vencido_v8_${yesterdayStr}`;
   const cachedAudit = getCacheItem(auditCacheKey);
-  if (
-    cachedAudit &&
-    cachedAudit.data &&
-    Array.isArray(cachedAudit.data.fixtures) &&
-    cachedAudit.data.fixtures.length > 0 &&
-    Date.now() - cachedAudit.timestamp < 30 * 60 * 1e3
-  ) {
+  if (cachedAudit && cachedAudit.data && Array.isArray(cachedAudit.data.fixtures) && cachedAudit.data.fixtures.length > 0 && Date.now() - cachedAudit.timestamp < 30 * 60 * 1e3) {
     return res.json({
       success: true,
       source: "audit_cache_dia_vencido",
@@ -3433,11 +3776,9 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
               const rawCountry = String(comp?.venue?.address?.country || "Internacional");
               const countryTranslated = COUNTRY_TRANSLATION_MAP[rawCountry];
               const resolvedCountry = catalogEntry?.country || countryTranslated?.country || rawCountry || "Internacional";
-              const resolvedFlag = catalogEntry?.flag || countryTranslated?.flag || "🌍";
+              const resolvedFlag = catalogEntry?.flag || countryTranslated?.flag || "\u{1F30D}";
               const rawSlug = String(ev?.season?.slug || "Liga Oficial").replace(/-/g, " ");
-              const resolvedLeagueName =
-                catalogEntry?.name ||
-                String(ev?.league?.name || comp?.league?.name || `Torneo ${resolvedCountry}`);
+              const resolvedLeagueName = catalogEntry?.name || String(ev?.league?.name || comp?.league?.name || `Torneo ${resolvedCountry}`);
               const resolvedLeagueId = catalogEntry?.id || parseInt(espnLeagueId, 10) || 10500;
               const combinedCheck = `${resolvedLeagueName} ${rawSlug} ${homeName} ${awayName}`.toLowerCase();
               if (/\b(u-?1[1-6]|sub-?1[1-6]|primavera|premier league 2|youth|juvenil|reservas|reserve)\b/i.test(combinedCheck)) {
@@ -4155,6 +4496,7 @@ app.get(["/api/status", "/api/admin/telemetry"], dataRateLimitMiddleware, async 
   const hasApiFootball = Boolean(getSecretKey("API_FOOTBALL_KEY"));
   const hasFootballData = Boolean(getSecretKey("FOOTBALL_DATA_KEY"));
   const hasOddsApi = Boolean(getSecretKey("ODDS_API_KEY"));
+  const hasBallDontLie = Boolean(getSecretKey("BALLDONTLIE_API_KEY"));
   const onlineUsers = getActiveOnlineUsersList();
   const totalRequests = serverCacheHits + serverCacheMisses;
   const cacheHitRatePct = totalRequests > 0 ? Math.round(serverCacheHits / totalRequests * 1e3) / 10 : 100;
@@ -4164,6 +4506,7 @@ app.get(["/api/status", "/api/admin/telemetry"], dataRateLimitMiddleware, async 
     apiFootball: hasApiFootball,
     footballData: hasFootballData,
     oddsApi: hasOddsApi,
+    ballDontLie: hasBallDontLie,
     remainingCalls: lastRemainingCalls,
     consumedTodayEst: Math.max(0, 100 - lastRemainingCalls),
     quotaShieldActive: lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD,
@@ -4191,21 +4534,22 @@ app.get(["/api/status", "/api/admin/telemetry"], dataRateLimitMiddleware, async 
   });
 });
 app.get("/api/market-odds", dataRateLimitMiddleware, async (req, res) => {
+  const sport = sanitizeText(req.query.sport || "soccer_epl", 32);
   const oddsKey = getSecretKey("ODDS_API_KEY");
-  const cacheKey = "odds_soccer";
+  const isNBA = sport.includes("nba") || sport.includes("basketball");
+  const cacheKey = isNBA ? "odds_nba_v1" : "odds_soccer";
   const cached = getCacheItem(cacheKey);
-  if (cached && Date.now() - cached.timestamp < 60 * 60 * 1e3) {
-    return res.json({ success: true, source: "persistent_disk_cache", odds: cached.data });
+  const cacheTTL = isNBA ? 10 * 60 * 1e3 : 60 * 60 * 1e3;
+  if (cached && Date.now() - cached.timestamp < cacheTTL) {
+    return res.json({ success: true, source: "persistent_disk_cache", sport: isNBA ? "basketball_nba" : "soccer_epl", odds: cached.data });
   }
   if (!oddsKey) {
-    return res.json({ success: false, message: "No The Odds API key configured.", odds: cached?.data || [] });
+    return res.json({ success: false, message: "No The Odds API key configured.", sport, odds: cached?.data || [] });
   }
   try {
     const data = await runSingleFlight(cacheKey, async () => {
-      const apiRes = await fetch(
-        `https://api.the-odds-api.com/v4/sports/soccer_epl/odds/?apiKey=${oddsKey}&regions=eu&markets=h2h`,
-        { method: "GET" }
-      );
+      const targetUrl = isNBA ? `https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?apiKey=${oddsKey}&regions=us,eu&markets=h2h,spreads,totals` : `https://api.the-odds-api.com/v4/sports/soccer_epl/odds/?apiKey=${oddsKey}&regions=eu&markets=h2h`;
+      const apiRes = await fetch(targetUrl, { method: "GET" });
       if (!apiRes.ok) {
         if (cached) return cached.data;
         return [];
@@ -4214,10 +4558,136 @@ app.get("/api/market-odds", dataRateLimitMiddleware, async (req, res) => {
       setCacheItem(cacheKey, fetched);
       return fetched;
     });
-    return res.json({ success: true, source: "the_odds_api_coalesced", odds: data });
+    return res.json({
+      success: true,
+      source: "the_odds_api_coalesced",
+      sport: isNBA ? "basketball_nba" : "soccer_epl",
+      odds: data
+    });
   } catch {
-    if (cached) return res.json({ success: true, source: "fallback_disk_cache", odds: cached.data });
+    if (cached) return res.json({ success: true, source: "fallback_disk_cache", sport, odds: cached.data });
     return res.json({ success: false, error: "Error al consultar cuotas externas", odds: [] });
+  }
+});
+app.get("/api/nba/summary", dataRateLimitMiddleware, async (req, res) => {
+  const eventId = sanitizeText(req.query.eventId || req.query.id || "", 32);
+  if (!eventId) {
+    return res.status(400).json({ success: false, error: "Se requiere eventId de ESPN" });
+  }
+  const cacheKey = `nba_summary_${eventId}`;
+  const cached = getCacheItem(cacheKey);
+  const isFinished = cached?.data?.header?.competitions?.[0]?.status?.type?.completed;
+  const isLive = cached?.data?.header?.competitions?.[0]?.status?.type?.state === "in";
+  const ttl = isFinished ? 24 * 60 * 60 * 1e3 : isLive ? 25 * 1e3 : 5 * 60 * 1e3;
+  if (cached && Date.now() - cached.timestamp < ttl) {
+    return res.json({ success: true, source: "persistent_disk_cache", data: cached.data });
+  }
+  try {
+    const summary = await runSingleFlight(cacheKey, async () => {
+      const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=${eventId}`;
+      const apiRes = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0"
+        }
+      });
+      if (!apiRes.ok) {
+        if (cached) return cached.data;
+        return null;
+      }
+      const data = await apiRes.json();
+      setCacheItem(cacheKey, data);
+      return data;
+    });
+    if (!summary && cached) {
+      return res.json({ success: true, source: "fallback_disk_cache", data: cached.data });
+    }
+    return res.json({
+      success: true,
+      source: "espn_official_summary",
+      data: summary
+    });
+  } catch (err) {
+    if (cached) return res.json({ success: true, source: "fallback_disk_cache", data: cached.data });
+    return res.json({ success: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+app.get("/api/nba/rosters", dataRateLimitMiddleware, async (req, res) => {
+  const teamIdParam = sanitizeText(req.query.teamId || req.query.teamIds || "", 64);
+  if (!teamIdParam) {
+    return res.status(400).json({ success: false, error: "Se requiere teamId o teamIds" });
+  }
+  const teamIds = teamIdParam.split(",").map((id) => id.trim()).filter(Boolean);
+  const results = {};
+  try {
+    await Promise.all(
+      teamIds.map(async (tId) => {
+        const cacheKey = `nba_roster_${tId}`;
+        const cached = getCacheItem(cacheKey);
+        if (cached && Date.now() - cached.timestamp < 2 * 60 * 60 * 1e3) {
+          results[tId] = cached.data;
+          return;
+        }
+        try {
+          const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${tId}/roster`;
+          const apiRes = await fetch(url, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0"
+            }
+          });
+          if (apiRes.ok) {
+            const data = await apiRes.json();
+            setCacheItem(cacheKey, data);
+            results[tId] = data;
+          } else if (cached) {
+            results[tId] = cached.data;
+          }
+        } catch {
+          if (cached) results[tId] = cached.data;
+        }
+      })
+    );
+    return res.json({
+      success: true,
+      source: "espn_official_rosters",
+      rosters: results
+    });
+  } catch (err) {
+    return res.json({ success: false, error: err instanceof Error ? err.message : String(err), rosters: {} });
+  }
+});
+app.get("/api/nba/bdl/*", dataRateLimitMiddleware, async (req, res) => {
+  const bdlKey = getSecretKey("BALLDONTLIE_API_KEY");
+  const subPath = req.params[0] || "teams";
+  const queryStr = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  if (!bdlKey) {
+    return res.json({
+      success: false,
+      hasKey: false,
+      message: "BALLDONTLIE_API_KEY no configurada. Usando base de datos interna y ESPN como refuerzo principal."
+    });
+  }
+  const cacheKey = `bdl_${subPath}_${queryStr}`;
+  const cached = getCacheItem(cacheKey);
+  if (cached && Date.now() - cached.timestamp < 30 * 60 * 1e3) {
+    return res.json({ success: true, source: "persistent_disk_cache", data: cached.data });
+  }
+  try {
+    const targetUrl = `https://api.balldontlie.io/v1/${subPath}${queryStr}`;
+    const apiRes = await fetch(targetUrl, {
+      headers: {
+        Authorization: bdlKey
+      }
+    });
+    if (!apiRes.ok) {
+      if (cached) return res.json({ success: true, source: "fallback_disk_cache", data: cached.data });
+      return res.status(apiRes.status).json({ success: false, error: `Error de BallDontLie: ${apiRes.status}` });
+    }
+    const data = await apiRes.json();
+    setCacheItem(cacheKey, data);
+    return res.json({ success: true, source: "balldontlie_live", data });
+  } catch (err) {
+    if (cached) return res.json({ success: true, source: "fallback_disk_cache", data: cached.data });
+    return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 app.get("/api/standings", dataRateLimitMiddleware, async (req, res) => {
@@ -4329,7 +4799,7 @@ app.post("/api/set-secret-key", async (req, res) => {
     return res.status(403).json({ success: false, error: "No autorizado para modificar claves de servidor" });
   }
   clearAuthFailures(req);
-  const { key, footballDataKey, oddsApiKey } = req.body || {};
+  const { key, footballDataKey, oddsApiKey, ballDontLieKey } = req.body || {};
   try {
     const envPath = path2.resolve(process.cwd(), ".env");
     let envContent = fs2.existsSync(envPath) ? fs2.readFileSync(envPath, "utf8") : "";
@@ -4363,6 +4833,17 @@ FOOTBALL_DATA_KEY="${clean}"
       } else {
         envContent += `
 ODDS_API_KEY="${clean}"
+`;
+      }
+    }
+    if (ballDontLieKey && typeof ballDontLieKey === "string" && ballDontLieKey.trim()) {
+      const clean = sanitizeText(ballDontLieKey.trim(), 128);
+      process.env.BALLDONTLIE_API_KEY = clean;
+      if (envContent.includes("BALLDONTLIE_API_KEY=")) {
+        envContent = envContent.replace(/BALLDONTLIE_API_KEY=.*/g, `BALLDONTLIE_API_KEY="${clean}"`);
+      } else {
+        envContent += `
+BALLDONTLIE_API_KEY="${clean}"
 `;
       }
     }
@@ -4965,6 +5446,81 @@ app.post("/api/auth/register-request", dataRateLimitMiddleware, async (req, res)
     return res.status(500).json({ success: false, message: "Error al procesar solicitud" });
   }
 });
+app.get("/api/auth/config", (req, res) => {
+  return res.json({
+    success: true,
+    supabaseUrl: process.env.SUPABASE_URL || null,
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || null
+  });
+});
+app.post("/api/auth/google", async (req, res) => {
+  try {
+    const { email, displayName, deviceId, deviceName, fingerprint } = req.body || {};
+    const result = await loginOrRegisterGoogleUser(email, displayName, deviceId, deviceName, fingerprint);
+    if (result.success && result.user) {
+      recordOnlinePresence({
+        username: String(result.user.username || result.user.email || "").toLowerCase(),
+        displayName: result.user.displayName || String(result.user.email || ""),
+        deviceId: String(deviceId || ""),
+        deviceInfo: String(deviceName || "")
+      });
+    }
+    return res.json(result);
+  } catch {
+    return res.status(500).json({ success: false, message: "Error al procesar autenticaci\xF3n con Google" });
+  }
+});
+app.post("/api/user/redeem-code", async (req, res) => {
+  try {
+    const { code, userIdentifier } = req.body || {};
+    const result = await redeemActivationCode(code, userIdentifier);
+    return res.json(result);
+  } catch {
+    return res.status(500).json({ success: false, message: "Error al canjear c\xF3digo" });
+  }
+});
+app.post("/api/user/feedback-bonus", async (req, res) => {
+  try {
+    const { userIdentifier } = req.body || {};
+    const result = await claimFeedbackBonus(userIdentifier);
+    return res.json(result);
+  } catch {
+    return res.status(500).json({ success: false, message: "Error al aplicar bono de feedback" });
+  }
+});
+app.post("/api/admin/codes/generate", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado" });
+  }
+  clearAuthFailures(req);
+  try {
+    const { days = 30 } = req.body || {};
+    const result = await adminGenerateActivationCode(Number(days) || 30);
+    return res.json(result);
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al generar c\xF3digo de activaci\xF3n" });
+  }
+});
+app.get("/api/admin/codes/list", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado" });
+  }
+  clearAuthFailures(req);
+  try {
+    const codes = await adminListActivationCodes();
+    return res.json({ success: true, codes });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al listar c\xF3digos de activaci\xF3n" });
+  }
+});
 app.get("/api/admin/users/list", async (req, res) => {
   if (checkAuthLockout(req, res)) return;
   const pin = extractAdminCredential(req);
@@ -5138,12 +5694,11 @@ async function loadAndPruneMonthlyParlayLedger() {
     };
     setCacheItem(ADMIN_MONTHLY_PARLAYS_CACHE_KEY, ledger);
     if (isSupabaseConfigured()) {
-      setSupabaseKvCache(ADMIN_MONTHLY_PARLAYS_CACHE_KEY, ledger).catch(() => {});
+      setSupabaseKvCache(ADMIN_MONTHLY_PARLAYS_CACHE_KEY, ledger).catch(() => {
+      });
     }
   } else {
-    const cleanRecords = ledger.records.filter(
-      (r) => r && typeof r === "object" && r.id && String(r.d || "").startsWith(currentMonth)
-    ).slice(0, 120);
+    const cleanRecords = ledger.records.filter((r) => r && typeof r === "object" && r.id && String(r.d || "").startsWith(currentMonth)).slice(0, 120);
     if (cleanRecords.length !== ledger.records.length) {
       ledger.records = cleanRecords;
       ledger.updatedAt = now;
@@ -5261,11 +5816,7 @@ function normalizeFeedbackList(items) {
   if (!Array.isArray(items)) return [];
   return items.map((it) => {
     if (!it || typeof it !== "object") return it;
-    if (
-      String(it.u || "").startsWith("{") ||
-      String(it.u || "").includes('"id":') ||
-      String(it.n || "").startsWith("{")
-    ) {
+    if (String(it.u || "").startsWith("{") || String(it.u || "").includes('"id":') || String(it.n || "").startsWith("{")) {
       const { cleanUser, cleanName } = cleanFeedbackUserIdentity(it.u, it.n);
       return { ...it, u: cleanUser, n: cleanName };
     }
@@ -5381,8 +5932,7 @@ async function startServer() {
     const { createServer: createViteServer } = await import(vitePkg);
     const vite = await createViteServer({
       server: {
-        middlewareMode: true,
-        hmr: false
+        middlewareMode: true
       },
       appType: "spa"
     });

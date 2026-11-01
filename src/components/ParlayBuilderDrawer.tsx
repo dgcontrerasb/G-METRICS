@@ -51,11 +51,21 @@ export const ParlayBuilderDrawer: React.FC<ParlayBuilderDrawerProps> = ({ onOpen
 
   const isAdminBeta = useMemo(() => {
     try {
-      return localStorage.getItem('sportstats_admin_remember') === 'true';
+      const rawUser = localStorage.getItem('sportstats_auth_user');
+      const u = rawUser ? JSON.parse(rawUser) : null;
+      return (
+        u?.role === 'admin' ||
+        localStorage.getItem('sportstats_admin_remember') === 'true'
+      );
     } catch {
       return false;
     }
   }, [isOpen]);
+
+  // Los parlays están en fase Beta cerrada: solo disponibles para administradores
+  if (!isAdminBeta) {
+    return null;
+  }
 
   const adminStressEval = useMemo(() => {
     if (!isAdminBeta || picks.length === 0) return null;
