@@ -360,113 +360,242 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
   const renderSidebarContent = (isCompactRail: boolean) => {
     if (isCompactRail) {
       return (
-        <div className="flex flex-col items-center justify-between h-full py-2.5 px-1.5 select-none">
+        <div className="flex flex-col items-center justify-between h-full py-3 px-1.5 select-none bg-white/95">
+          {/* Zona Superior: Toggle + Selector de Deportes Vectorial + Navegación */}
           <div className="flex flex-col items-center gap-2.5 w-full">
-            <button
-              type="button"
-              onClick={onToggleDesktopCollapse}
-              className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 flex items-center justify-center transition-colors cursor-pointer border border-slate-200/80"
-              title="Desplegar menú lateral"
-            >
-              <PanelLeftOpen className="w-4 h-4" />
-            </button>
-
-            {/* Sport Switcher Compact */}
-            <div className="flex flex-col gap-1 w-full items-center pt-1.5 border-t border-slate-200/80">
+            {/* Toggle Expansión */}
+            <div className="group relative flex items-center justify-center w-full">
               <button
                 type="button"
-                onClick={() => onSelectSport('SOCCER')}
-                className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm transition-all cursor-pointer border ${
-                  activeSport === 'SOCCER'
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                }`}
-                title="Fútbol"
+                onClick={onToggleDesktopCollapse}
+                className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 flex items-center justify-center transition-all cursor-pointer border border-slate-200/80 shadow-2xs hover:scale-105 active:scale-95"
+                aria-label="Expandir menú lateral"
               >
-                ⚽
+                <PanelLeftOpen className="w-4 h-4 text-slate-700" />
               </button>
-              <button
-                type="button"
-                onClick={() => onSelectSport('NBA')}
-                className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm transition-all cursor-pointer border ${
-                  activeSport === 'NBA'
-                    ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-2xs'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                }`}
-                title="Baloncesto NBA"
-              >
-                🏀
-              </button>
+              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white shadow-xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                Expandir menú lateral
+                <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-900" />
+              </div>
             </div>
 
-            {/* Priority Navigation Compact */}
-            <div className="flex flex-col gap-1 w-full items-center pt-1.5 border-t border-slate-200/80">
-              <button
-                type="button"
-                onClick={() => onSelectMainTab('LIVE')}
-                className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border ${
-                  mainTab === 'LIVE'
-                    ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
-                    : 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100'
-                }`}
-                title={`Partidos en Vivo (${liveMatchesCount})`}
-              >
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-current"></span>
-                </span>
-                {liveMatchesCount > 0 && (
-                  <span className="absolute -top-1 -right-1 px-1 py-0.2 rounded-full bg-slate-900 text-white font-mono text-[9px] font-bold">
-                    {liveMatchesCount}
+            {/* Sport Switcher Vectorial Executive Dark Capsule */}
+            <div className="p-1 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col gap-1 w-11 items-center shadow-md">
+              {/* Fútbol */}
+              <div className="group relative flex items-center justify-center w-full">
+                <button
+                  type="button"
+                  onClick={() => onSelectSport('SOCCER')}
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                    activeSport === 'SOCCER'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/80'
+                  }`}
+                  aria-label="Fútbol"
+                >
+                  <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="m12 7 3.5 2.5v4L12 16l-3.5-2.5v-4z" fill="currentColor" fillOpacity={activeSport === 'SOCCER' ? '0.35' : '0.1'} />
+                    <path d="m12 7 3.5 2.5v4L12 16l-3.5-2.5v-4z" />
+                    <path d="M12 7V2" />
+                    <path d="m15.5 9.5 4.5-1.5" />
+                    <path d="m15.5 13.5 4 3" />
+                    <path d="m8.5 13.5-4 3" />
+                    <path d="m8.5 9.5-4.5-1.5" />
+                    <path d="M12 16v6" />
+                  </svg>
+                </button>
+                <div className="pointer-events-none absolute left-full ml-3 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                  Fútbol Pro
+                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+                </div>
+              </div>
+
+              {/* Baloncesto NBA */}
+              <div className="group relative flex items-center justify-center w-full">
+                <button
+                  type="button"
+                  onClick={() => onSelectSport('NBA')}
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                    activeSport === 'NBA'
+                      ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 shadow-xs'
+                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/80'
+                  }`}
+                  aria-label="Baloncesto NBA"
+                >
+                  <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M2.1 12h19.8" />
+                    <path d="M12 2.1v19.8" />
+                    <path d="M4.93 4.93a10 10 0 0 1 0 14.14" />
+                    <path d="M19.07 4.93a10 10 0 0 0 0 14.14" />
+                  </svg>
+                </button>
+                <div className="pointer-events-none absolute left-full ml-3 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                  Baloncesto NBA
+                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+                </div>
+              </div>
+            </div>
+
+            {/* Separador fino */}
+            <div className="w-8 h-px bg-slate-200/80 my-0.5" />
+
+            {/* Navegación Principal (En Vivo, Joyas, Cartelera) */}
+            <div className="flex flex-col gap-2 w-full items-center">
+              {/* Partidos en Vivo */}
+              <div className="group relative flex items-center justify-center w-full">
+                <button
+                  type="button"
+                  onClick={() => onSelectMainTab('LIVE')}
+                  className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border shadow-2xs hover:scale-105 active:scale-95 ${
+                    mainTab === 'LIVE'
+                      ? 'bg-gradient-to-b from-rose-950 via-rose-900 to-rose-950 text-rose-200 border-rose-800 shadow-sm ring-1 ring-rose-500/30'
+                      : 'bg-white text-rose-700 border-slate-200/90 hover:bg-rose-50/60 hover:border-rose-200'
+                  }`}
+                  aria-label={`Partidos en Vivo (${liveMatchesCount})`}
+                >
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600" />
                   </span>
-                )}
-              </button>
+                  {liveMatchesCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1 px-1.5 py-0.2 rounded-full bg-slate-900 text-white font-mono text-[9px] font-bold shadow-xs border border-slate-700">
+                      {liveMatchesCount}
+                    </span>
+                  )}
+                </button>
+                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                  Partidos en Vivo ({liveMatchesCount})
+                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+                </div>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => onSelectMainTab('TOP_PICKS')}
-                className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border ${
-                  mainTab === 'TOP_PICKS'
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-                title={`Joyas del Día (${topPicksCount})`}
-              >
-                <Flame className="w-4 h-4" />
-              </button>
+              {/* Joyas del Día (Top Picks) */}
+              <div className="group relative flex items-center justify-center w-full">
+                <button
+                  type="button"
+                  onClick={() => onSelectMainTab('TOP_PICKS')}
+                  className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border shadow-2xs hover:scale-105 active:scale-95 ${
+                    mainTab === 'TOP_PICKS'
+                      ? 'bg-slate-900 text-emerald-400 border-slate-800 shadow-sm ring-1 ring-emerald-500/25'
+                      : 'bg-white text-slate-600 border-slate-200/90 hover:bg-slate-50 hover:text-emerald-700 hover:border-emerald-300/50'
+                  }`}
+                  aria-label={`Joyas del Día (${topPicksCount})`}
+                >
+                  <Flame className="w-4.5 h-4.5" />
+                </button>
+                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                  Joyas Cuantitativas ({topPicksCount})
+                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+                </div>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => onSelectMainTab('ALL_LEAGUES')}
-                className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border ${
-                  mainTab === 'ALL_LEAGUES'
-                    ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-                title={`Cartelera Completa (${allLeaguesCount})`}
-              >
-                <Globe className="w-4 h-4" />
-              </button>
+              {/* Cartelera Completa */}
+              <div className="group relative flex items-center justify-center w-full">
+                <button
+                  type="button"
+                  onClick={() => onSelectMainTab('ALL_LEAGUES')}
+                  className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border shadow-2xs hover:scale-105 active:scale-95 ${
+                    mainTab === 'ALL_LEAGUES'
+                      ? 'bg-slate-900 text-slate-100 border-slate-800 shadow-sm ring-1 ring-slate-700'
+                      : 'bg-white text-slate-600 border-slate-200/90 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300'
+                  }`}
+                  aria-label={`Cartelera Completa (${allLeaguesCount})`}
+                >
+                  <Globe className="w-4.5 h-4.5" />
+                </button>
+                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                  Cartelera Completa ({allLeaguesCount})
+                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-col items-center gap-1.5 border-t border-slate-200/80 pt-2">
-            <button
-              type="button"
-              onClick={onOpenSavedSlips}
-              className="w-10 h-10 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 flex items-center justify-center cursor-pointer"
-              title="Mis Boletos Guardados"
-            >
-              <History className="w-4 h-4 text-emerald-600" />
-            </button>
-            <button
-              type="button"
-              onClick={onOpenWallpaperModal}
-              className="w-10 h-10 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 flex items-center justify-center cursor-pointer"
-              title="Cambiar Fondo de Pantalla"
-            >
-              <ImageIcon className="w-4 h-4 text-slate-600" />
-            </button>
+          {/* Zona Inferior: Boletos + Guía + Fondo + Salir + (Admin si aplica) */}
+          <div className="flex flex-col items-center gap-2 w-full pt-2.5 border-t border-slate-200/80">
+            {/* Panel Admin (Solo visible para administrador) */}
+            {isAdminVisible && (
+              <div className="group relative flex items-center justify-center w-full">
+                <button
+                  type="button"
+                  onClick={onOpenAdminModal}
+                  className="w-10 h-10 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 flex items-center justify-center transition-all cursor-pointer shadow-xs hover:scale-105 active:scale-95"
+                  aria-label="Panel de Administración"
+                >
+                  <ShieldCheck className="w-4.5 h-4.5 text-amber-400" />
+                </button>
+                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                  Panel de Administración
+                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+                </div>
+              </div>
+            )}
+
+            {/* Mis Boletos Guardados */}
+            <div className="group relative flex items-center justify-center w-full">
+              <button
+                type="button"
+                onClick={onOpenSavedSlips}
+                className="w-10 h-10 rounded-xl bg-white hover:bg-slate-50 text-slate-600 hover:text-emerald-700 border border-slate-200/90 hover:border-emerald-300/60 flex items-center justify-center transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                aria-label="Mis Boletos Guardados"
+              >
+                <History className="w-4.5 h-4.5" />
+              </button>
+              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                Mis Boletos Guardados
+                <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+              </div>
+            </div>
+
+            {/* Guía y Glosario Didáctico A-Z */}
+            <div className="group relative flex items-center justify-center w-full">
+              <button
+                type="button"
+                onClick={() => onOpenGuideModal('GUIDE')}
+                className="w-10 h-10 rounded-xl bg-white hover:bg-slate-50 text-slate-600 hover:text-amber-700 border border-slate-200/90 hover:border-amber-300/60 flex items-center justify-center transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                aria-label="Guía Didáctica y Glosario A-Z"
+              >
+                <BookOpen className="w-4.5 h-4.5" />
+              </button>
+              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                Guía y Glosario A-Z
+                <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+              </div>
+            </div>
+
+            {/* Personalizar Fondo de Pantalla */}
+            <div className="group relative flex items-center justify-center w-full">
+              <button
+                type="button"
+                onClick={onOpenWallpaperModal}
+                className="w-10 h-10 rounded-xl bg-white hover:bg-slate-50 text-slate-600 hover:text-purple-700 border border-slate-200/90 hover:border-purple-300/60 flex items-center justify-center transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                aria-label="Cambiar Fondo de Pantalla"
+              >
+                <ImageIcon className="w-4.5 h-4.5" />
+              </button>
+              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                Fondo Cinematográfico
+                <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+              </div>
+            </div>
+
+            {/* Cerrar Sesión */}
+            <div className="group relative flex items-center justify-center w-full">
+              <button
+                type="button"
+                onClick={onLogoutSession}
+                className="w-10 h-10 rounded-xl bg-white hover:bg-rose-50/60 text-slate-400 hover:text-rose-600 border border-slate-200/90 hover:border-rose-300/60 flex items-center justify-center transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                aria-label="Cerrar sesión en este dispositivo"
+              >
+                <Power className="w-4.5 h-4.5" />
+              </button>
+              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                Cerrar Sesión
+                <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+              </div>
+            </div>
           </div>
         </div>
       );
