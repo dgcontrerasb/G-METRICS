@@ -1369,7 +1369,7 @@ BEGIN
   END IF;
 END $$;
 `;
-async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, deviceName, deviceFingerprint) {
+async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, deviceName, deviceFingerprint, accessToken) {
   const email = String(rawEmail || "").toLowerCase().trim();
   if (!email || !email.includes("@")) {
     return {
@@ -1377,6 +1377,33 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
       code: "SERVER_ERROR",
       message: "Correo electr\xF3nico de Google inv\xE1lido."
     };
+  }
+  const client = getSupabaseClient();
+  const isLocalOrDev = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
+  if (client && !isLocalOrDev) {
+    if (!accessToken) {
+      return {
+        success: false,
+        code: "UNAUTHORIZED",
+        message: "Acceso no autorizado: Se requiere verificaci\xF3n oficial con Google OAuth."
+      };
+    }
+    try {
+      const { data: authData, error: authErr } = await client.auth.getUser(accessToken);
+      if (authErr || !authData?.user?.email || authData.user.email.toLowerCase() !== email) {
+        return {
+          success: false,
+          code: "UNAUTHORIZED",
+          message: "Token de Google inv\xE1lido o no coincide con el usuario autenticado."
+        };
+      }
+    } catch {
+      return {
+        success: false,
+        code: "UNAUTHORIZED",
+        message: "Fallo al verificar credenciales con el proveedor de identidad."
+      };
+    }
   }
   const cleanDevice = sanitizeText(String(deviceId || ""), 48).toUpperCase();
   const friendlyDevName = sanitizeText(String(deviceName || "Dispositivo Web / M\xF3vil"), 80);
@@ -1418,7 +1445,6 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
       }
     };
   }
-  const client = getSupabaseClient();
   if (!client) {
     return {
       success: false,
@@ -1435,8 +1461,8 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
       if (existingUser.status === "deleted") {
         return { success: false, code: "USER_NOT_FOUND", message: "Esta cuenta ha sido eliminada por el administrador." };
       }
-      const isLocalOrDev2 = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
-      const isAdminTestDevice2 = isLocalOrDev2 || cleanDevice.startsWith("DEV-");
+      const isLocalOrDev3 = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
+      const isAdminTestDevice2 = isLocalOrDev3 || cleanDevice.startsWith("DEV-");
       if (!existingUser.bound_device_id || isAdminTestDevice2 && existingUser.bound_device_id !== cleanDevice) {
         await client.from("sportstats_users").update({
           bound_device_id: cleanDevice,
@@ -1489,8 +1515,8 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
         }
       };
     }
-    const isLocalOrDev = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
-    const isAdminTestDevice = isLocalOrDev || cleanDevice.startsWith("DEV-");
+    const isLocalOrDev2 = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
+    const isAdminTestDevice = isLocalOrDev2 || cleanDevice.startsWith("DEV-");
     let hasUsedTrial = false;
     if (!isAdminTestDevice && cleanDevice) {
       const { data: deviceUser } = await client.from("sportstats_users").select("id, username").eq("bound_device_id", cleanDevice).limit(1).maybeSingle();
@@ -5455,8 +5481,8 @@ app.get("/api/auth/config", (req, res) => {
 });
 app.post("/api/auth/google", async (req, res) => {
   try {
-    const { email, displayName, deviceId, deviceName, fingerprint } = req.body || {};
-    const result = await loginOrRegisterGoogleUser(email, displayName, deviceId, deviceName, fingerprint);
+    const { email, displayName, deviceId, deviceName, fingerprint, accessToken } = req.body || {};
+    const result = await loginOrRegisterGoogleUser(email, displayName, deviceId, deviceName, fingerprint, accessToken);
     if (result.success && result.user) {
       recordOnlinePresence({
         username: String(result.user.username || result.user.email || "").toLowerCase(),

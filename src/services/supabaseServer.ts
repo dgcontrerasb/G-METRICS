@@ -1407,7 +1407,8 @@ export async function loginOrRegisterGoogleUser(
   rawDisplayName: string,
   deviceId: string,
   deviceName?: string,
-  deviceFingerprint?: string
+  deviceFingerprint?: string,
+  accessToken?: string
 ): Promise<LoginResult> {
   const email = String(rawEmail || '').toLowerCase().trim();
   if (!email || !email.includes('@')) {
@@ -1416,6 +1417,36 @@ export async function loginOrRegisterGoogleUser(
       code: 'SERVER_ERROR',
       message: 'Correo electrónico de Google inválido.'
     };
+  }
+
+  const client = getSupabaseClient();
+  const isLocalOrDev = process.env.NODE_ENV !== 'production' || !process.env.VERCEL;
+
+  // Validación criptográfica estricta en producción: Se exige token verificado de Google
+  if (client && !isLocalOrDev) {
+    if (!accessToken) {
+      return {
+        success: false,
+        code: 'UNAUTHORIZED',
+        message: 'Acceso no autorizado: Se requiere verificación oficial con Google OAuth.'
+      };
+    }
+    try {
+      const { data: authData, error: authErr } = await client.auth.getUser(accessToken);
+      if (authErr || !authData?.user?.email || authData.user.email.toLowerCase() !== email) {
+        return {
+          success: false,
+          code: 'UNAUTHORIZED',
+          message: 'Token de Google inválido o no coincide con el usuario autenticado.'
+        };
+      }
+    } catch {
+      return {
+        success: false,
+        code: 'UNAUTHORIZED',
+        message: 'Fallo al verificar credenciales con el proveedor de identidad.'
+      };
+    }
   }
 
   const cleanDevice = sanitizeText(String(deviceId || ''), 48).toUpperCase();
@@ -1465,7 +1496,6 @@ export async function loginOrRegisterGoogleUser(
     };
   }
 
-  const client = getSupabaseClient();
   if (!client) {
     return {
       success: false,

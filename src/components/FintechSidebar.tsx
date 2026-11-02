@@ -1324,29 +1324,37 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
 
   return (
     <>
-      {/* Desktop Collapsible Sidebar (lg and up) */}
+      {/* Desktop Fixed Sidebar (lg and up) - Anclado permanente sin desplazarse con el scroll */}
       <aside
-        className={`hidden lg:flex flex-col shrink-0 bg-white/95 backdrop-blur-md border-r border-slate-200/90 shadow-xs sticky top-0 h-screen z-30 transition-all duration-200 ${
+        className={`hidden lg:flex flex-col shrink-0 bg-white/95 backdrop-blur-md border-r border-slate-200/90 shadow-xs fixed top-0 left-0 bottom-0 h-screen z-30 transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isDesktopCollapsed ? 'w-[68px]' : 'w-72'
         }`}
       >
         {renderSidebarContent(isDesktopCollapsed)}
       </aside>
 
-      {/* Mobile Slide-Over Drawer (< lg) */}
+      {/* Espaciador Desktop para reservar el ancho sin solapar la cartelera */}
       <div
-        className={`lg:hidden fixed inset-0 z-50 flex transition-opacity duration-200 ${
+        aria-hidden="true"
+        className={`hidden lg:block shrink-0 transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          isDesktopCollapsed ? 'w-[68px]' : 'w-72'
+        }`}
+      />
+
+      {/* Mobile Slide-Over Drawer (< lg) - Animación Fluida Apple / Linear */}
+      <div
+        className={`lg:hidden fixed inset-0 z-50 flex transition-opacity duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isMobileDrawerOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         aria-hidden={!isMobileDrawerOpen}
       >
         <div
-          className="fixed inset-0 bg-slate-900/45 backdrop-blur-xs"
+          className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm transition-opacity duration-300"
           onClick={onCloseMobileDrawer}
           aria-hidden="true"
         />
         <aside
-          className={`relative w-72 max-w-[85vw] bg-white h-full shadow-2xl border-r border-slate-200 flex flex-col z-10 transition-transform duration-200 ${
+          className={`relative w-72 max-w-[85vw] bg-white h-full shadow-2xl border-r border-slate-200 flex flex-col z-10 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             isMobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >

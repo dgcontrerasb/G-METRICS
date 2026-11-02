@@ -4335,8 +4335,8 @@ app.get('/api/auth/config', (req, res) => {
 
 app.post('/api/auth/google', async (req, res) => {
   try {
-    const { email, displayName, deviceId, deviceName, fingerprint } = req.body || {};
-    const result = await loginOrRegisterGoogleUser(email, displayName, deviceId, deviceName, fingerprint);
+    const { email, displayName, deviceId, deviceName, fingerprint, accessToken } = req.body || {};
+    const result = await loginOrRegisterGoogleUser(email, displayName, deviceId, deviceName, fingerprint, accessToken);
     if (result.success && result.user) {
       recordOnlinePresence({
         username: String(result.user.username || result.user.email || '').toLowerCase(),

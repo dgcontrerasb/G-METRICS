@@ -20,12 +20,9 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
   const [activeTab, setActiveTab] = useState<'GOOGLE' | 'LOGIN'>('GOOGLE');
 
   // Form State - Google
-  const [googleEmail, setGoogleEmail] = useState('');
-  const [googleDisplayName, setGoogleDisplayName] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [acceptedGoogleLegal, setAcceptedGoogleLegal] = useState(false);
-  const [showManualEmail, setShowManualEmail] = useState(false);
 
   // Form State - Login
   const [usernameInput, setUsernameInput] = useState('');
@@ -194,7 +191,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
   };
 
   // Procesa la sesión de Google verificada y asigna 3 días gratis o acceso de administrador
-  const processGoogleLogin = useCallback(async (cleanEmail: string, cleanName?: string) => {
+  const processGoogleLogin = useCallback(async (cleanEmail: string, cleanName?: string, accessToken?: string) => {
     setGoogleLoading(true);
     setGoogleError(null);
 
@@ -210,7 +207,8 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
           displayName: (cleanName || cleanEmail.split('@')[0]).trim(),
           deviceId: devId,
           deviceName: devName,
-          fingerprint: devId
+          fingerprint: devId,
+          accessToken: accessToken || ''
         })
       });
 
@@ -302,7 +300,8 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
           }
           processGoogleLogin(
             session.user.email,
-            session.user.user_metadata?.full_name || session.user.user_metadata?.name
+            session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+            session.access_token
           );
         }
       });
@@ -315,7 +314,8 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
           }
           processGoogleLogin(
             session.user.email,
-            session.user.user_metadata?.full_name || session.user.user_metadata?.name
+            session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+            session.access_token
           );
         }
       });
@@ -342,32 +342,8 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
     const { error } = await signInWithGoogleOAuth();
     if (error) {
       setGoogleLoading(false);
-      const isProviderDisabled =
-        error.message?.toLowerCase().includes('provider') ||
-        error.message?.toLowerCase().includes('not enabled') ||
-        error.message?.toLowerCase().includes('unsupported_provider');
-      if (isProviderDisabled) {
-        setGoogleError('El proveedor Google aún no está habilitado en tu panel de Supabase. Puedes ingresar tu correo abajo para probar de inmediato.');
-        setShowManualEmail(true);
-      } else {
-        setGoogleError(error.message || 'Error al conectar con Google OAuth.');
-      }
+      setGoogleError(error.message || 'Error al conectar con Google OAuth.');
     }
-  };
-
-  // Submit manual para pruebas o entornos sin Google OAuth Client ID configurado
-  const handleManualEmailSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!acceptedGoogleLegal) {
-      setGoogleError('Debes aceptar los Términos de Servicio y Habeas Data para continuar.');
-      return;
-    }
-    const cleanEmail = googleEmail.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
-      setGoogleError('Por favor ingresa un correo de Google válido (ej. usuario@gmail.com).');
-      return;
-    }
-    await processGoogleLogin(cleanEmail, googleDisplayName);
   };
 
   // Submit Login
@@ -833,67 +809,6 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
                   </>
                 )}
               </button>
-
-              {/* Acceso manual alternativo (por si no se ha configurado Google OAuth en Supabase o entorno local) */}
-              <div className="pt-0.5 text-center">
-                <button
-                  type="button"
-                  onClick={() => setShowManualEmail(!showManualEmail)}
-                  className="text-[11px] text-slate-500 hover:text-slate-800 transition underline underline-offset-2 cursor-pointer"
-                >
-                  {showManualEmail ? 'Ocultar ingreso manual' : '¿Problemas con Google? Ingresar correo directamente'}
-                </button>
-
-                {showManualEmail && (
-                  <form onSubmit={handleManualEmailSubmit} className="mt-2.5 space-y-2.5 text-left border-t border-slate-200/80 pt-2.5">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Correo Electrónico (Gmail):
-                      </label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                          <Mail className="w-4 h-4" />
-                        </div>
-                        <input
-                          type="email"
-                          value={googleEmail}
-                          onChange={(e) => setGoogleEmail(e.target.value)}
-                          placeholder="ej: usuario@gmail.com"
-                          required
-                          className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white transition"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center justify-between">
-                        <span>Nombre o Apodo (Opcional):</span>
-                        <span className="text-[10px] text-slate-400 font-normal">Personalización</span>
-                      </label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                          <User className="w-4 h-4" />
-                        </div>
-                        <input
-                          type="text"
-                          value={googleDisplayName}
-                          onChange={(e) => setGoogleDisplayName(e.target.value)}
-                          placeholder="ej: Carlos"
-                          className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white transition"
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={googleLoading || !googleEmail.trim() || !acceptedGoogleLegal}
-                      className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-xs transition cursor-pointer"
-                    >
-                      {googleLoading ? 'Verificando...' : 'Acceder con Correo'}
-                    </button>
-                  </form>
-                )}
-              </div>
 
               <div className="flex items-center justify-center gap-1.5 text-[10.5px] text-slate-400 pt-0.5">
                 <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
