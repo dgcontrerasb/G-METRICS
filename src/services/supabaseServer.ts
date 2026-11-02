@@ -1422,8 +1422,16 @@ export async function loginOrRegisterGoogleUser(
   const client = getSupabaseClient();
   const isLocalOrDev = process.env.NODE_ENV !== 'production' || !process.env.VERCEL;
 
-  // Si viene token oficial de Google OAuth, validarlo contra Supabase
-  if (client && accessToken) {
+  // Validación de seguridad estricta: Se exige token verificado de Google OAuth emitido por Supabase
+  if (!accessToken) {
+    return {
+      success: false,
+      code: 'UNAUTHORIZED',
+      message: 'Acceso no autorizado: Se requiere verificación oficial con Google OAuth.'
+    };
+  }
+
+  if (client) {
     try {
       const { data: authData, error: authErr } = await client.auth.getUser(accessToken);
       if (authErr || !authData?.user?.email || authData.user.email.toLowerCase() !== email) {
@@ -1434,7 +1442,11 @@ export async function loginOrRegisterGoogleUser(
         };
       }
     } catch {
-      // Si falla la verificación remota de token por red, permitir flujo de contingencia
+      return {
+        success: false,
+        code: 'UNAUTHORIZED',
+        message: 'Fallo al verificar credenciales con el proveedor de identidad.'
+      };
     }
   }
 

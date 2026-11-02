@@ -1380,7 +1380,14 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
   }
   const client = getSupabaseClient();
   const isLocalOrDev = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
-  if (client && accessToken) {
+  if (!accessToken) {
+    return {
+      success: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso no autorizado: Se requiere verificaci\xF3n oficial con Google OAuth."
+    };
+  }
+  if (client) {
     try {
       const { data: authData, error: authErr } = await client.auth.getUser(accessToken);
       if (authErr || !authData?.user?.email || authData.user.email.toLowerCase() !== email) {
@@ -1391,6 +1398,11 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
         };
       }
     } catch {
+      return {
+        success: false,
+        code: "UNAUTHORIZED",
+        message: "Fallo al verificar credenciales con el proveedor de identidad."
+      };
     }
   }
   const cleanDevice = sanitizeText(String(deviceId || ""), 48).toUpperCase();

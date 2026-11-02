@@ -52,19 +52,26 @@ export async function getBrowserSupabase(): Promise<SupabaseClient | null> {
  */
 export async function signInWithGoogleOAuth(): Promise<{ error: Error | null }> {
   try {
+    const config = await fetchSupabasePublicConfig();
     const supabase = await getBrowserSupabase();
-    if (!supabase) {
-      return { error: new Error('No se pudo inicializar el cliente de autenticación de Supabase.') };
+    if (supabase) {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+      if (!error) return { error: null };
     }
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin,
-      },
-    });
+    // Si el cliente JS no tiene anonKey en el frontend, redirigir directamente al endpoint OAuth oficial de Supabase
+    if (config.supabaseUrl) {
+      const targetUrl = `${config.supabaseUrl.replace(/\/$/, '')}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(window.location.origin)}`;
+      window.location.href = targetUrl;
+      return { error: null };
+    }
 
-    return { error };
+    return { error: new Error('No se pudo encontrar la URL de autenticación de Supabase.') };
   } catch (err: any) {
     return { error: err || new Error('Error al iniciar OAuth con Google') };
   }
