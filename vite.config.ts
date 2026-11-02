@@ -12,13 +12,11 @@ export default defineConfig(() => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: [
+          'splash-white.png',
           'custom-logo.png',
           'logo.png',
           'icon.png',
           'apple-touch-icon.png',
-          'pwa-192x192.png',
-          'pwa-512x512.png',
-          'pwa-maskable-512x512.png',
           'Barcelona.jpg',
           'CR7.jpg',
           'CR7wallpaper.jpg',
@@ -39,19 +37,19 @@ export default defineConfig(() => {
           scope: '/',
           icons: [
             {
-              src: '/pwa-192x192.png?v=2',
+              src: '/splash-white.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-512x512.png?v=2',
+              src: '/splash-white.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-maskable-512x512.png?v=2',
+              src: '/splash-white.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',

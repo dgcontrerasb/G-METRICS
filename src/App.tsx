@@ -52,6 +52,15 @@ import { getBrowserSupabase } from './services/supabaseBrowser';
 export default function App() {
   // Animación de entrada y salida de sesión
   const [authTransition, setAuthTransition] = useState<'LOGIN' | 'LOGOUT' | null>(null);
+  // Splash de apertura de la aplicación: se mantiene visible 1.5s para apreciar la animación fluida sin parpadeos
+  const [isAppSplash, setIsAppSplash] = useState<boolean>(true);
+
+  useEffect(() => {
+    const splashTimer = setTimeout(() => {
+      setIsAppSplash(false);
+    }, 1500);
+    return () => clearTimeout(splashTimer);
+  }, []);
   // License & Access Control State
   const [isAppUnlocked, setIsAppUnlocked] = useState<boolean>(() => {
     try {
@@ -2161,6 +2170,20 @@ export default function App() {
         onCloseSavedSlipsModal={() => setIsSavedSlipsOpen(false)}
         onOpenSavedSlipsModal={() => setIsSavedSlipsOpen(true)}
       />
+
+      {/* Splash de Apertura Inicial de la APP (Se mantiene 1.5s sin parpadeos) */}
+      {isAppSplash && (
+        <div className="fixed inset-0 z-[99999] flex flex-col items-center justify-center bg-white transition-opacity duration-300 select-none">
+          <div className="flex flex-col items-center justify-center text-center space-y-3 px-6 max-w-lg w-full">
+            <div className="py-2 flex items-center justify-center">
+              <div className="loader-loading-minimal" />
+            </div>
+            <p className="text-xs text-slate-500 font-sans tracking-wide">
+              Cargando modelos probabilísticos y telemetría en vivo...
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Animación fluida de Inicio y Cierre de Sesión (Pantalla Completa Blanca Minimalista) */}
       {authTransition && (
