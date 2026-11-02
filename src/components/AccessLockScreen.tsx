@@ -191,7 +191,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
   };
 
   // Procesa la sesión de Google verificada y asigna 3 días gratis o acceso de administrador
-  const processGoogleLogin = useCallback(async (cleanEmail: string, cleanName?: string, accessToken?: string) => {
+  const processGoogleLogin = useCallback(async (cleanEmail: string, cleanName?: string, accessToken?: string, providerToken?: string) => {
     setGoogleLoading(true);
     setGoogleError(null);
 
@@ -208,7 +208,8 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
           deviceId: devId,
           deviceName: devName,
           fingerprint: devId,
-          accessToken: accessToken || ''
+          accessToken: accessToken || '',
+          providerToken: providerToken || ''
         })
       });
 
@@ -279,33 +280,45 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
 
   // Listener para retorno de OAuth de Google vía Supabase
   useEffect(() => {
-    // 1. Detección directa y extracción de token desde el Hash de la URL (flujo OAuth nativo)
+    // 1. Detección directa y extracción de token desde el Hash y Query de la URL (flujo OAuth nativo)
     const rawHash = window.location.hash.startsWith('#') ? window.location.hash.substring(1) : window.location.hash;
     const hashParams = new URLSearchParams(rawHash);
-    const hashAccessToken = hashParams.get('access_token');
+    const searchParams = new URLSearchParams(window.location.search);
 
-    if (hashAccessToken) {
+    const hashAccessToken = hashParams.get('access_token') || searchParams.get('access_token');
+    const providerToken = hashParams.get('provider_token') || searchParams.get('provider_token');
+
+    if (hashAccessToken || providerToken) {
       sessionStorage.removeItem('gmetrics_oauth_in_progress');
       window.history.replaceState(null, '', window.location.pathname);
-      try {
-        const base64Url = hashAccessToken.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(
-          atob(base64)
-            .split('')
-            .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-            .join('')
-        );
-        const payload = JSON.parse(jsonPayload);
-        const email = payload.email || payload.user_metadata?.email;
-        const name = payload.user_metadata?.full_name || payload.user_metadata?.name || payload.name;
 
-        if (email) {
-          processGoogleLogin(email, name, hashAccessToken);
-          return;
+      let extractedEmail = '';
+      let extractedName = '';
+
+      // Extraer email desde el JWT si existe
+      const tokenForPayload = hashAccessToken || providerToken || '';
+      try {
+        const parts = tokenForPayload.split('.');
+        if (parts.length === 3) {
+          const base64Url = parts[1];
+          const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+          const jsonPayload = decodeURIComponent(
+            atob(base64)
+              .split('')
+              .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+              .join('')
+          );
+          const payload = JSON.parse(jsonPayload);
+          extractedEmail = payload.email || payload.user_metadata?.email || '';
+          extractedName = payload.user_metadata?.full_name || payload.user_metadata?.name || payload.name || '';
         }
       } catch (err) {
-        console.error('Error decodificando token oficial de Google:', err);
+        console.warn('Extracción inicial de payload JWT diferida a verificación de backend:', err);
+      }
+
+      if (extractedEmail) {
+        processGoogleLogin(extractedEmail, extractedName, hashAccessToken || undefined, providerToken || undefined);
+        return;
       }
     }
 
@@ -331,7 +344,8 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
           processGoogleLogin(
             session.user.email,
             session.user.user_metadata?.full_name || session.user.user_metadata?.name,
-            session.access_token
+            session.access_token,
+            session.provider_token || undefined
           );
         }
       });
@@ -345,7 +359,8 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
           processGoogleLogin(
             session.user.email,
             session.user.user_metadata?.full_name || session.user.user_metadata?.name,
-            session.access_token
+            session.access_token,
+            session.provider_token || undefined
           );
         }
       });

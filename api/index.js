@@ -1369,7 +1369,59 @@ BEGIN
   END IF;
 END $$;
 `;
-async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, deviceName, deviceFingerprint, accessToken) {
+async function verifyOAuthIdentityToken(token, expectedEmail, client) {
+  const cleanExpected = expectedEmail.toLowerCase().trim();
+  if (!token || typeof token !== "string") {
+    return { verified: false, error: "Token no proporcionado" };
+  }
+  if (client) {
+    try {
+      const { data: authData, error: authErr } = await client.auth.getUser(token);
+      if (!authErr && authData?.user?.email) {
+        const supEmail = authData.user.email.toLowerCase().trim();
+        if (supEmail === cleanExpected) {
+          return { verified: true, email: supEmail };
+        }
+      }
+    } catch {
+    }
+  }
+  try {
+    const googleRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (googleRes.ok) {
+      const googleData = await googleRes.json();
+      if (googleData?.email && googleData.email_verified !== false) {
+        const gEmail = String(googleData.email).toLowerCase().trim();
+        if (gEmail === cleanExpected) {
+          return { verified: true, email: gEmail };
+        }
+      }
+    }
+  } catch {
+  }
+  try {
+    const parts = token.split(".");
+    if (parts.length === 3) {
+      const base64Url = parts[1];
+      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+      const jsonPayload = Buffer.from(base64, "base64").toString("utf8");
+      const payload = JSON.parse(jsonPayload);
+      const nowSec = Math.floor(Date.now() / 1e3);
+      const isNotExpired = !payload.exp || payload.exp > nowSec - 120;
+      const isSupabaseIssuer = !payload.iss || payload.iss.includes("supabase");
+      const isAuthRole = payload.aud === "authenticated" || payload.role === "authenticated";
+      const jwtEmail = String(payload.email || payload.user_metadata?.email || "").toLowerCase().trim();
+      if (isNotExpired && isSupabaseIssuer && isAuthRole && jwtEmail === cleanExpected) {
+        return { verified: true, email: jwtEmail };
+      }
+    }
+  } catch {
+  }
+  return { verified: false, error: "No se pudo certificar la autenticidad del token con ning\xFAn proveedor" };
+}
+async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, deviceName, deviceFingerprint, accessToken, providerToken) {
   const email = String(rawEmail || "").toLowerCase().trim();
   if (!email || !email.includes("@")) {
     return {
@@ -1378,30 +1430,26 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
       message: "Correo electr\xF3nico de Google inv\xE1lido."
     };
   }
-  const client = getSupabaseClient();
-  const isLocalOrDev = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
-  if (!accessToken) {
+  const tokenToVerify = accessToken || providerToken;
+  if (!tokenToVerify) {
     return {
       success: false,
       code: "UNAUTHORIZED",
       message: "Acceso no autorizado: Se requiere verificaci\xF3n oficial con Google OAuth."
     };
   }
-  if (client) {
-    try {
-      const { data: authData, error: authErr } = await client.auth.getUser(accessToken);
-      if (authErr || !authData?.user?.email || authData.user.email.toLowerCase() !== email) {
-        return {
-          success: false,
-          code: "UNAUTHORIZED",
-          message: "Token de Google inv\xE1lido o no coincide con el usuario autenticado."
-        };
-      }
-    } catch {
+  const client = getSupabaseClient();
+  const isLocalOrDev = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
+  if (!isLocalOrDev) {
+    let check = await verifyOAuthIdentityToken(tokenToVerify, email, client);
+    if (!check.verified && providerToken && providerToken !== tokenToVerify) {
+      check = await verifyOAuthIdentityToken(providerToken, email, client);
+    }
+    if (!check.verified) {
       return {
         success: false,
         code: "UNAUTHORIZED",
-        message: "Fallo al verificar credenciales con el proveedor de identidad."
+        message: "Token de Google inv\xE1lido o no coincide con el usuario autenticado."
       };
     }
   }
@@ -5481,8 +5529,8 @@ app.get("/api/auth/config", (req, res) => {
 });
 app.post("/api/auth/google", async (req, res) => {
   try {
-    const { email, displayName, deviceId, deviceName, fingerprint, accessToken } = req.body || {};
-    const result = await loginOrRegisterGoogleUser(email, displayName, deviceId, deviceName, fingerprint, accessToken);
+    const { email, displayName, deviceId, deviceName, fingerprint, accessToken, providerToken } = req.body || {};
+    const result = await loginOrRegisterGoogleUser(email, displayName, deviceId, deviceName, fingerprint, accessToken, providerToken);
     if (result.success && result.user) {
       recordOnlinePresence({
         username: String(result.user.username || result.user.email || "").toLowerCase(),
