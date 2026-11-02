@@ -1,12 +1,15 @@
-import React from 'react';
-import { MatchFixture } from '../types';
-import { AdminLicenseModal } from './AdminLicenseModal';
-import { SimulatorModal } from './SimulatorModal';
-import { MatchDetailModal, DetailMatchPayload } from './MatchDetailModal';
-import { WallpaperSelectorModal } from './WallpaperSelectorModal';
-import { DidacticGuideModal, GuideModalTab } from './DidacticGuideModal';
-import { SavedSlipsHistoryModal } from './SavedSlipsHistoryModal';
-import { ParlayBuilderDrawer } from './ParlayBuilderDrawer';
+import React, { Suspense } from 'react';
+import type { MatchFixture } from '../types';
+import type { DetailMatchPayload } from './MatchDetailModal';
+import type { GuideModalTab } from './DidacticGuideModal';
+
+const AdminLicenseModal = React.lazy(() => import('./AdminLicenseModal').then(m => ({ default: m.AdminLicenseModal })));
+const SimulatorModal = React.lazy(() => import('./SimulatorModal').then(m => ({ default: m.SimulatorModal })));
+const MatchDetailModal = React.lazy(() => import('./MatchDetailModal').then(m => ({ default: m.MatchDetailModal })));
+const WallpaperSelectorModal = React.lazy(() => import('./WallpaperSelectorModal').then(m => ({ default: m.WallpaperSelectorModal })));
+const DidacticGuideModal = React.lazy(() => import('./DidacticGuideModal').then(m => ({ default: m.DidacticGuideModal })));
+const SavedSlipsHistoryModal = React.lazy(() => import('./SavedSlipsHistoryModal').then(m => ({ default: m.SavedSlipsHistoryModal })));
+const ParlayBuilderDrawer = React.lazy(() => import('./ParlayBuilderDrawer').then(m => ({ default: m.ParlayBuilderDrawer })));
 
 export interface AppModalsContainerProps {
   isAdminModalOpen: boolean;
@@ -68,60 +71,72 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
   onOpenSavedSlipsModal
 }) => {
   return (
-    <>
+    <Suspense fallback={null}>
       {/* Persistent Admin License Modal (shared across lock screen & unlocked dashboard) */}
-      <AdminLicenseModal
-        isOpen={isAdminModalOpen}
-        onClose={onCloseAdminModal}
-        onLogout={onLogoutSession}
-        onLicenseChanged={onLicenseChanged}
-        fixtures={fixtures}
-      />
+      {isAdminModalOpen && (
+        <AdminLicenseModal
+          isOpen={isAdminModalOpen}
+          onClose={onCloseAdminModal}
+          onLogout={onLogoutSession}
+          onLicenseChanged={onLicenseChanged}
+          fixtures={fixtures}
+        />
+      )}
 
       {/* Interactive Simulator Modal */}
-      <SimulatorModal
-        isOpen={isSimulatorOpen}
-        onClose={onCloseSimulator}
-        initialFixture={selectedMatchForSimulator}
-      />
+      {isSimulatorOpen && (
+        <SimulatorModal
+          isOpen={isSimulatorOpen}
+          onClose={onCloseSimulator}
+          initialFixture={selectedMatchForSimulator}
+        />
+      )}
 
       {/* Focused Match Detail Modal (Bottom Sheet on Mobile / Glass Terminal on Desktop) */}
-      <MatchDetailModal
-        isOpen={Boolean(detailModalPayload)}
-        payload={detailModalPayload}
-        onClose={onCloseDetailModal}
-        isSelected={detailModalPayload ? selectedFixtureIds.has(detailModalPayload.fixture.id) : false}
-        onToggleSelect={onToggleSelect}
-        onOpenSimulator={onOpenSimulator}
-      />
+      {Boolean(detailModalPayload) && (
+        <MatchDetailModal
+          isOpen={Boolean(detailModalPayload)}
+          payload={detailModalPayload}
+          onClose={onCloseDetailModal}
+          isSelected={detailModalPayload ? selectedFixtureIds.has(detailModalPayload.fixture.id) : false}
+          onToggleSelect={onToggleSelect}
+          onOpenSimulator={onOpenSimulator}
+        />
+      )}
 
       {/* Cinematic Wallpaper Customizer Modal */}
-      <WallpaperSelectorModal
-        isOpen={isWallpaperModalOpen}
-        onClose={onCloseWallpaperModal}
-        currentWallpaperUrl={selectedWallpaper}
-        onSelectWallpaper={onSelectWallpaper}
-        opacity={wallpaperOpacity}
-        onChangeOpacity={onChangeOpacity}
-        blur={wallpaperBlur}
-        onChangeBlur={onChangeBlur}
-      />
+      {isWallpaperModalOpen && (
+        <WallpaperSelectorModal
+          isOpen={isWallpaperModalOpen}
+          onClose={onCloseWallpaperModal}
+          currentWallpaperUrl={selectedWallpaper}
+          onSelectWallpaper={onSelectWallpaper}
+          opacity={wallpaperOpacity}
+          onChangeOpacity={onChangeOpacity}
+          blur={wallpaperBlur}
+          onChangeBlur={onChangeBlur}
+        />
+      )}
 
       {/* Beginner Didactic Guide, Technical Glossary & Legal Notice Modal */}
-      <DidacticGuideModal
-        isOpen={isGuideOpen}
-        onClose={onCloseGuideModal}
-        initialTab={guideInitialTab}
-      />
+      {isGuideOpen && (
+        <DidacticGuideModal
+          isOpen={isGuideOpen}
+          onClose={onCloseGuideModal}
+          initialTab={guideInitialTab}
+        />
+      )}
 
       {/* Saved Parlay Slips History Modal */}
-      <SavedSlipsHistoryModal
-        isOpen={isSavedSlipsOpen}
-        onClose={onCloseSavedSlipsModal}
-      />
+      {isSavedSlipsOpen && (
+        <SavedSlipsHistoryModal
+          isOpen={isSavedSlipsOpen}
+          onClose={onCloseSavedSlipsModal}
+        />
+      )}
 
       {/* Floating Parlay Builder Drawer & Action Pill */}
       <ParlayBuilderDrawer onOpenHistory={onOpenSavedSlipsModal} />
-    </>
+    </Suspense>
   );
 };

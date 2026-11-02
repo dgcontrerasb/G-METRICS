@@ -37,6 +37,16 @@ const STORAGE_KEY_PICKS = 'sportstats_parlay_slip';
 const STORAGE_KEY_STAKE = 'sportstats_parlay_stake';
 const DEFAULT_STAKE = 20000; // $20,000 COP
 
+const triggerHaptic = (ms: number | number[] = 35) => {
+  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    try {
+      navigator.vibrate(ms);
+    } catch {
+      // ignore
+    }
+  }
+};
+
 const ParlayContext = createContext<ParlayContextType | undefined>(undefined);
 
 export const ParlayProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -135,11 +145,13 @@ export const ParlayProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return [...prev, newPick];
     });
 
+    triggerHaptic(40);
     showToast(msg);
     return { success: true, replacedPrevious: replaced, message: msg };
   }, [showToast]);
 
   const removePick = useCallback((pickId: string) => {
+    triggerHaptic(25);
     setPicks((prev) => {
       const removed = prev.find((p) => p.id === pickId);
       const next = prev.filter((p) => p.id !== pickId);
@@ -151,6 +163,7 @@ export const ParlayProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [showToast]);
 
   const togglePick = useCallback((pick: ParlayPick) => {
+    triggerHaptic(30);
     setPicks((prev) => {
       const existing = prev.find((p) => p.fixtureId === pick.fixtureId && p.marketKey === pick.marketKey);
       if (existing) {

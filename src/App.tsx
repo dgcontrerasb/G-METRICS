@@ -4,12 +4,8 @@ import { fetchUpcomingFixtures, getColombiaDateString, syncLivePulseFixtures, fe
 import { calculateMatchAnalysis, clearAnalysisCacheForFixture } from './services/mathEngine';
 import { fetchNBAFixtures } from './services/nbaApiService';
 import { calculateNBAAnalysis } from './services/nbaEngine';
-import {
-  exportToExcel,
-  exportToPDF,
+import type {
   ExportItem,
-  exportNBAToExcel,
-  exportNBAToPDF,
   NBAExportItem
 } from './services/exportService';
 import { DetailMatchPayload } from './components/MatchDetailModal';
@@ -25,9 +21,12 @@ import { FintechSidebar } from './components/FintechSidebar';
 import { AppFooter } from './components/AppFooter';
 import { AppModalsContainer } from './components/AppModalsContainer';
 import { UserFeedbackWidget } from './components/UserFeedbackWidget';
-import { VipPaymentModal } from './components/VipPaymentModal';
 import { SoccerWorkspaceView } from './components/workspace/SoccerWorkspaceView';
 import { NBAWorkspaceView } from './components/workspace/NBAWorkspaceView';
+
+const VipPaymentModal = React.lazy(() =>
+  import('./components/VipPaymentModal').then((m) => ({ default: m.VipPaymentModal }))
+);
 import { LiveAlertsOverlay } from './components/workspace/LiveAlertsOverlay';
 import { useTheme } from './context/ThemeContext';
 import { getSoccerDidacticAdvice, getNBADidacticAdvice } from './services/didacticService';
@@ -1679,6 +1678,13 @@ export default function App() {
 
   // Toggle selection for a single fixture (memoized with useCallback)
   const handleToggleSelect = useCallback((fixtureId: string) => {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate(25);
+      } catch {
+        // ignore
+      }
+    }
     setSelectedFixtureIds((prev) => {
       const next = new Set(prev);
       if (next.has(fixtureId)) {
@@ -1764,7 +1770,8 @@ export default function App() {
   };
 
   // Download handlers
-  const handleDownloadExcel = (onlySelected = false) => {
+  const handleDownloadExcel = async (onlySelected = false) => {
+    const { exportToExcel, exportNBAToExcel } = await import('./services/exportService');
     if (activeSport === 'NBA') {
       const items = getNBAItemsForExport(onlySelected);
       if (items.length === 0) return;
@@ -1776,7 +1783,8 @@ export default function App() {
     }
   };
 
-  const handleDownloadPDF = (onlySelected = false) => {
+  const handleDownloadPDF = async (onlySelected = false) => {
+    const { exportToPDF, exportNBAToPDF } = await import('./services/exportService');
     if (activeSport === 'NBA') {
       const items = getNBAItemsForExport(onlySelected);
       if (items.length === 0) return;
@@ -2020,43 +2028,47 @@ export default function App() {
           />
 
           {/* Modal de Pagos y Activación VIP ($9.900 COP / $3.50 USD) */}
-          <VipPaymentModal
-            isOpen={isVipModalOpen}
-            onClose={() => setIsVipModalOpen(false)}
-            userEmail={(() => {
-              try {
-                const raw = localStorage.getItem('sportstats_auth_user');
-                if (raw) {
-                  const u = JSON.parse(raw);
-                  return u.email || u.username;
-                }
-              } catch {}
-              return activeLicenseInfo?.clientName;
-            })()}
-            isExpired={Boolean(activeLicenseInfo?.isExpired)}
-            daysRemaining={activeLicenseInfo?.daysRemaining}
-            onCodeRedeemed={(newExpires) => {
-              const devId = getOrCreateDeviceId();
-              const diff = newExpires - Date.now();
-              const calcDays = Math.max(0, Math.ceil(diff / (24 * 60 * 60 * 1000)));
-              const newToken = createLicenseToken(devId, `${calcDays}D` as any, newExpires);
-              const updatedResult: LicenseValidationResult = {
-                isValid: true,
-                status: 'ACTIVE',
-                message: 'Licencia actualizada con éxito',
-                isPermanent: false,
-                isExpired: false,
-                expiryTimestamp: newExpires,
-                expiryDateFormatted: new Date(newExpires).toLocaleDateString('es-ES'),
-                daysRemaining: calcDays,
-                targetDeviceId: devId,
-                planLabel: `Pase VIP (${calcDays} Días)`,
-                clientName: activeLicenseInfo?.clientName
-              };
-              saveActiveLicense(newToken.key, updatedResult);
-              setActiveLicenseInfo(updatedResult);
-            }}
-          />
+          {isVipModalOpen && (
+            <React.Suspense fallback={null}>
+              <VipPaymentModal
+                isOpen={isVipModalOpen}
+                onClose={() => setIsVipModalOpen(false)}
+                userEmail={(() => {
+                  try {
+                    const raw = localStorage.getItem('sportstats_auth_user');
+                    if (raw) {
+                      const u = JSON.parse(raw);
+                      return u.email || u.username;
+                    }
+                  } catch {}
+                  return activeLicenseInfo?.clientName;
+                })()}
+                isExpired={Boolean(activeLicenseInfo?.isExpired)}
+                daysRemaining={activeLicenseInfo?.daysRemaining}
+                onCodeRedeemed={(newExpires) => {
+                  const devId = getOrCreateDeviceId();
+                  const diff = newExpires - Date.now();
+                  const calcDays = Math.max(0, Math.ceil(diff / (24 * 60 * 60 * 1000)));
+                  const newToken = createLicenseToken(devId, `${calcDays}D` as any, newExpires);
+                  const updatedResult: LicenseValidationResult = {
+                    isValid: true,
+                    status: 'ACTIVE',
+                    message: 'Licencia actualizada con éxito',
+                    isPermanent: false,
+                    isExpired: false,
+                    expiryTimestamp: newExpires,
+                    expiryDateFormatted: new Date(newExpires).toLocaleDateString('es-ES'),
+                    daysRemaining: calcDays,
+                    targetDeviceId: devId,
+                    planLabel: `Pase VIP (${calcDays} Días)`,
+                    clientName: activeLicenseInfo?.clientName
+                  };
+                  saveActiveLicense(newToken.key, updatedResult);
+                  setActiveLicenseInfo(updatedResult);
+                }}
+              />
+            </React.Suspense>
+          )}
 
           {/* Fixed Mobile Bottom Navigation Bar (Thumb Zone) */}
           <MobileBottomNav

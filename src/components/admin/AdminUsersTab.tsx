@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Check,
   UserCheck,
@@ -12,7 +12,11 @@ import {
   Trash2,
   Sparkles,
   Gift,
-  Copy
+  Copy,
+  LayoutGrid,
+  List,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import type { SupabaseUserItem } from '../AdminLicenseModal';
 
@@ -41,6 +45,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 }) => {
   const [userFilter, setUserFilter] = useState<'ALL' | 'ONLINE' | 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'BOUND'>('ALL');
   const [userSearch, setUserSearch] = useState('');
+  const [adminUserViewMode, setAdminUserViewMode] = useState<'CARDS' | 'COMPACT'>('CARDS');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [confirmDeleteUserKey, setConfirmDeleteUserKey] = useState<string | null>(null);
   const [newQuickUsername, setNewQuickUsername] = useState('');
@@ -441,6 +448,42 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // Filtrado y paginación reactiva de usuarios
+  const filteredUsersList = useMemo(() => {
+    return appUsersList.filter((u) => {
+      const isUserOnline =
+        (u.lastActiveAt ? Date.now() - u.lastActiveAt < 3 * 60 * 1000 : false) ||
+        (Array.isArray(serverTelemetry?.onlineUsers) &&
+          serverTelemetry.onlineUsers.some(
+            (ou: any) =>
+              (ou.username && ou.username.toLowerCase() === (u.username || '').toLowerCase()) ||
+              (ou.deviceId && u.boundDeviceId && ou.deviceId === u.boundDeviceId)
+          ));
+      if (userFilter === 'ONLINE' && !isUserOnline) return false;
+      if (userFilter === 'ACTIVE' && u.status !== 'active') return false;
+      if (userFilter === 'BOUND' && !u.boundDeviceId) return false;
+      if (userFilter === 'PENDING' && u.status !== 'pending') return false;
+      if (userFilter === 'SUSPENDED' && u.status !== 'suspended') return false;
+
+      if (userSearch.trim()) {
+        const q = userSearch.toLowerCase();
+        const userMatch = (u.username || '').toLowerCase().includes(q);
+        const nameMatch = (u.displayName || '').toLowerCase().includes(q);
+        const notesMatch = (u.notes || '').toLowerCase().includes(q);
+        const phoneMatch = (u.whatsappNumber || '').toLowerCase().includes(q);
+        return userMatch || nameMatch || notesMatch || phoneMatch;
+      }
+      return true;
+    });
+  }, [appUsersList, userFilter, userSearch, serverTelemetry]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsersList.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedUsers = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredUsersList.slice(start, start + pageSize);
+  }, [filteredUsersList, safeCurrentPage, pageSize]);
+
   return (
     <div className="space-y-3.5">
       {/* Feedback Toast */}
@@ -622,6 +665,32 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
             />
           </div>
+          {/* Toggle Vista Tarjetas / Tabla */}
+          <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setAdminUserViewMode('CARDS')}
+              className={`p-1 px-1.5 rounded-md text-xs flex items-center gap-1 transition ${
+                adminUserViewMode === 'CARDS' ? 'bg-slate-900 text-white font-bold' : 'text-slate-500 hover:text-slate-900'
+              }`}
+              title="Vista de Tarjetas"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden md:inline text-[11px]">Tarjetas</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminUserViewMode('COMPACT')}
+              className={`p-1 px-1.5 rounded-md text-xs flex items-center gap-1 transition ${
+                adminUserViewMode === 'COMPACT' ? 'bg-slate-900 text-white font-bold' : 'text-slate-500 hover:text-slate-900'
+              }`}
+              title="Vista de Tabla Compacta"
+            >
+              <List className="w-3.5 h-3.5" />
+              <span className="hidden md:inline text-[11px]">Tabla</span>
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={handleDownloadUsersExcel}
@@ -659,33 +728,145 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         </div>
       ) : (
         <div className="space-y-2.5">
-          {appUsersList
-            .filter((u) => {
-              const isUserOnline =
-                (u.lastActiveAt ? Date.now() - u.lastActiveAt < 3 * 60 * 1000 : false) ||
-                (Array.isArray(serverTelemetry?.onlineUsers) &&
-                  serverTelemetry.onlineUsers.some(
-                    (ou: any) =>
-                      (ou.username && ou.username.toLowerCase() === (u.username || '').toLowerCase()) ||
-                      (ou.deviceId && u.boundDeviceId && ou.deviceId === u.boundDeviceId)
-                  ));
-              if (userFilter === 'ONLINE' && !isUserOnline) return false;
-              if (userFilter === 'ACTIVE' && u.status !== 'active') return false;
-              if (userFilter === 'BOUND' && !u.boundDeviceId) return false;
-              if (userFilter === 'PENDING' && u.status !== 'pending') return false;
-              if (userFilter === 'SUSPENDED' && u.status !== 'suspended') return false;
-
-              if (userSearch.trim()) {
-                const q = userSearch.toLowerCase();
-                const userMatch = (u.username || '').toLowerCase().includes(q);
-                const nameMatch = (u.displayName || '').toLowerCase().includes(q);
-                const notesMatch = (u.notes || '').toLowerCase().includes(q);
-                const phoneMatch = (u.whatsappNumber || '').toLowerCase().includes(q);
-                return userMatch || nameMatch || notesMatch || phoneMatch;
-              }
-              return true;
-            })
-            .map((u) => {
+          {paginatedUsers.length === 0 ? (
+            <div className="text-center py-6 text-slate-500 text-xs bg-slate-50 rounded-xl border border-slate-200">
+              No se encontraron usuarios coincidentes con el filtro o búsqueda.
+            </div>
+          ) : adminUserViewMode === 'COMPACT' ? (
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-2xs">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px] uppercase tracking-wider">
+                  <tr>
+                    <th className="py-2.5 px-3">Usuario</th>
+                    <th className="py-2.5 px-3">Estado / Plan</th>
+                    <th className="py-2.5 px-3">Dispositivo</th>
+                    <th className="py-2.5 px-3">Conexión</th>
+                    <th className="py-2.5 px-3 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {paginatedUsers.map((u) => {
+                    const isSuspended = u.status === 'suspended';
+                    const isExpired = u.isExpired || (u.expiresAt ? u.expiresAt < Date.now() : false);
+                    const isBound = !!u.boundDeviceId;
+                    const daysLeft = u.daysRemaining;
+                    const isUserOnline =
+                      (u.lastActiveAt ? Date.now() - u.lastActiveAt < 3 * 60 * 1000 : false) ||
+                      (Array.isArray(serverTelemetry?.onlineUsers) &&
+                        serverTelemetry.onlineUsers.some(
+                          (ou: any) =>
+                            (ou.username && ou.username.toLowerCase() === (u.username || '').toLowerCase()) ||
+                            (ou.deviceId && u.boundDeviceId && ou.deviceId === u.boundDeviceId)
+                        ));
+                    return (
+                      <tr key={u.id} className="hover:bg-slate-50/70 transition">
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono font-bold text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                              @{u.username}
+                            </span>
+                            {u.displayName && <span className="text-slate-700 font-medium text-[11px]">{u.displayName}</span>}
+                            {u.role === 'admin' && <span className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-1 rounded font-bold">Admin</span>}
+                          </div>
+                          {u.notes && <p className="text-[10px] text-slate-400 truncate max-w-[200px] mt-0.5">{u.notes}</p>}
+                        </td>
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                            isSuspended
+                              ? 'bg-rose-100 text-rose-800'
+                              : isExpired
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {isSuspended ? 'SUSPENDIDO' : isExpired ? 'VENCIDO' : `${daysLeft != null ? daysLeft + 'd restantes' : 'ACTIVO'}`}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-[11px] whitespace-nowrap">
+                          {isBound ? (
+                            <span className="inline-flex items-center gap-1 text-slate-700 font-mono text-[10px]">
+                              <Smartphone className="w-3 h-3 text-indigo-500 shrink-0" />
+                              <span className="truncate max-w-[90px]">{u.boundDeviceId?.slice(0, 8)}...</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-[10px]">Sin vincular</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 whitespace-nowrap text-[11px]">
+                          {isUserOnline ? (
+                            <span className="text-emerald-700 font-bold flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> En Línea
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-[10px]">
+                              {u.lastActiveAt ? new Date(u.lastActiveAt).toLocaleDateString() : '—'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleAddDaysToUser(u.username, 30)}
+                              className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold transition cursor-pointer"
+                              title="+30 Días"
+                            >
+                              +30d
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleUserStatus(u.username, u.status)}
+                              className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10px] font-semibold transition cursor-pointer"
+                              title={isSuspended ? 'Reactivar' : 'Pausar'}
+                            >
+                              {isSuspended ? 'Activar' : 'Pausar'}
+                            </button>
+                            {isBound && (
+                              <button
+                                type="button"
+                                onClick={() => handleUnbindDevice(u.username)}
+                                className="px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-medium transition cursor-pointer"
+                                title="Desvincular Dispositivo"
+                              >
+                                Desvinc.
+                              </button>
+                            )}
+                            {confirmDeleteUserKey === (u.username || u.id) ? (
+                              <div className="inline-flex items-center gap-1 bg-rose-50 border border-rose-300 rounded px-1.5 py-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteUser(u.id, u.username)}
+                                  className="text-rose-700 font-bold text-[10px]"
+                                >
+                                  Sí
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteUserKey(null)}
+                                  className="text-slate-500 text-[10px]"
+                                >
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteUserKey(u.username || u.id)}
+                                className="p-1 rounded text-rose-500 hover:bg-rose-50 cursor-pointer"
+                                title="Eliminar"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            paginatedUsers.map((u) => {
               const isSuspended = u.status === 'suspended';
               const isExpired = u.isExpired || (u.expiresAt ? u.expiresAt < Date.now() : false);
               const isBound = !!u.boundDeviceId;
@@ -1023,7 +1204,64 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   </div>
                 </div>
               );
-            })}
+            })
+          )}
+
+          {/* Barra de Paginación */}
+          {filteredUsersList.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 px-1 border-t border-slate-200 text-xs">
+              <div className="flex items-center gap-2 text-slate-600 flex-wrap">
+                <span>Mostrando</span>
+                <span className="font-bold text-slate-900">
+                  {(safeCurrentPage - 1) * pageSize + 1} - {Math.min(safeCurrentPage * pageSize, filteredUsersList.length)}
+                </span>
+                <span>de</span>
+                <span className="font-bold text-slate-900">{filteredUsersList.length}</span>
+                <span>usuarios</span>
+
+                <span className="mx-1 text-slate-300">|</span>
+                <span className="text-slate-500">Por pág:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-white border border-slate-200 rounded-md px-1.5 py-0.5 text-xs text-slate-800 font-medium focus:outline-none focus:border-indigo-500"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  title="Página Anterior"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <span className="px-2.5 py-1 text-xs font-semibold text-slate-700">
+                  Pág. {safeCurrentPage} de {totalPages}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  title="Página Siguiente"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

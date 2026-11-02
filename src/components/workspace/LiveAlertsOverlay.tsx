@@ -13,6 +13,16 @@ export const LiveAlertsOverlay: React.FC<LiveAlertsOverlayProps> = ({
   onAlertClick,
   onDismissAlert
 }) => {
+  React.useEffect(() => {
+    if (liveGoalAlerts.length > 0 && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate([60, 40, 100]);
+      } catch {
+        // ignore
+      }
+    }
+  }, [liveGoalAlerts]);
+
   if (liveGoalAlerts.length === 0) return null;
 
   return (

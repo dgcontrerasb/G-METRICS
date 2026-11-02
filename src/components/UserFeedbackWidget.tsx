@@ -183,41 +183,41 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
     <>
       {/* 1. Notificación Micro-Cápsula Sutil y Compacta para invitar a calificar */}
       {showFloatingPrompt && !isOpen && (
-        <div className="fixed bottom-16 sm:bottom-4 left-3 sm:left-4 z-40 max-w-[295px] sm:max-w-xs bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-full shadow-lg px-3 py-1.5 text-slate-800 animate-fadeIn flex items-center justify-between gap-2">
+        <div className="fixed bottom-16 sm:bottom-5 left-3 sm:left-5 z-40 max-w-[340px] sm:max-w-sm bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-xl px-3 py-2 text-slate-800 animate-fadeIn flex items-center justify-between gap-2.5">
           <button
             type="button"
             onClick={handleOpenModalFromPrompt}
-            className="flex items-center gap-2 min-w-0 text-left group cursor-pointer"
+            className="flex items-center gap-2.5 min-w-0 text-left group cursor-pointer"
           >
-            <span className="w-6 h-6 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
-              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+            <span className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-200/90 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+              <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
             </span>
             <div className="min-w-0 leading-tight">
-              <span className="text-[11px] font-bold text-slate-900 group-hover:text-emerald-700 transition block truncate">
-                ¿Calificas G METRICS? (+1 Día Gratis)
+              <span className="text-xs font-bold text-slate-900 group-hover:text-emerald-700 transition block">
+                ¿Te gusta G-METRICS?
               </span>
-              <span className="text-[9.5px] text-emerald-600 font-semibold block truncate">
-                Deja tu opinión y gana +1 día VIP ⭐
+              <span className="text-[11px] text-emerald-600 font-semibold block mt-0.5">
+                Califica y gana +1 día VIP gratis ⭐
               </span>
             </div>
           </button>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={handleOpenModalFromPrompt}
-              className="px-2.5 py-1 rounded-full bg-slate-900 hover:bg-emerald-600 text-white font-bold text-[10px] transition cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-2xs cursor-pointer active:scale-95"
             >
-              Calificar
+              Opinar
             </button>
             <button
               type="button"
               onClick={handleDismissPrompt}
-              className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-              title="Más tarde"
-              aria-label="Más tarde"
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              title="Cerrar aviso"
+              aria-label="Cerrar aviso"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
