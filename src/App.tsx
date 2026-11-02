@@ -53,15 +53,15 @@ export default function App() {
   // Animación de entrada y salida de sesión
   const [authTransition, setAuthTransition] = useState<'LOGIN' | 'LOGOUT' | null>(null);
 
-  // Desmontaje suave del Splash Crítico de index.html cuando React está listo
+  // Desmontaje suave del Splash Crítico de index.html con tiempo prudencial garantizado (1.5s) y fade-out fluido
   useEffect(() => {
     const criticalSplash = document.getElementById('pwa-critical-splash');
     if (criticalSplash) {
       const timer = setTimeout(() => {
-        criticalSplash.style.transition = 'opacity 0.4s ease-out';
+        criticalSplash.style.transition = 'opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1)';
         criticalSplash.style.opacity = '0';
-        setTimeout(() => criticalSplash.remove(), 400);
-      }, 700);
+        setTimeout(() => criticalSplash.remove(), 500);
+      }, 1500);
       return () => clearTimeout(timer);
     }
   }, []);
