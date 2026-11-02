@@ -806,7 +806,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                           <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
-                              onClick={() => handleAddDaysToUser(u.username, 30)}
+                              onClick={() => handleRenewUser(u.id, u.username, 30, 'ADD')}
                               className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold transition cursor-pointer"
                               title="+30 Días"
                             >
@@ -823,7 +823,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                             {isBound && (
                               <button
                                 type="button"
-                                onClick={() => handleUnbindDevice(u.username)}
+                                onClick={() => handleResetUserDevice(u.id, u.username)}
                                 className="px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-medium transition cursor-pointer"
                                 title="Desvincular Dispositivo"
                               >

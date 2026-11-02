@@ -355,7 +355,7 @@ export function normalizeUsername(input: string): string {
 
 export interface LoginResult {
   success: boolean;
-  code?: 'USER_NOT_FOUND' | 'INVALID_PIN' | 'PENDING_APPROVAL' | 'SUSPENDED' | 'EXPIRED' | 'DEVICE_LOCKED' | 'SERVER_ERROR';
+  code?: 'USER_NOT_FOUND' | 'INVALID_PIN' | 'PENDING_APPROVAL' | 'SUSPENDED' | 'EXPIRED' | 'DEVICE_LOCKED' | 'SERVER_ERROR' | 'UNAUTHORIZED';
   message: string;
   user?: AppUser;
   sessionToken?: string;

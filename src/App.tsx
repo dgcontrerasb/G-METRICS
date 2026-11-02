@@ -48,7 +48,6 @@ import {
   LiveGoalAlertItem
 } from './services/favoritesService';
 import { getBrowserSupabase } from './services/supabaseBrowser';
-import { Power, Sparkles } from 'lucide-react';
 
 export default function App() {
   // Animación de entrada y salida de sesión
@@ -125,8 +124,8 @@ export default function App() {
 
       setTimeout(() => {
         setAuthTransition(null);
-      }, 300);
-    }, 600);
+      }, 400);
+    }, 1250);
   }, []);
 
   // Active sport switcher: Soccer vs NBA
@@ -2163,38 +2162,23 @@ export default function App() {
         onOpenSavedSlipsModal={() => setIsSavedSlipsOpen(true)}
       />
 
-      {/* Animación fluida de Inicio y Cierre de Sesión */}
+      {/* Animación fluida de Inicio y Cierre de Sesión (Pantalla Completa Blanca Minimalista) */}
       {authTransition && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 backdrop-blur-md transition-all duration-300">
-          <div className="bg-white/95 border border-slate-200/90 rounded-3xl p-6 sm:p-7 max-w-sm w-full mx-4 text-center shadow-2xl space-y-3.5 transform transition-all duration-300">
-            <div className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center border shadow-xs ${
-              authTransition === 'LOGIN'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
-                : 'bg-slate-100 border-slate-300 text-slate-700'
-            }`}>
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white transition-opacity duration-300 select-none">
+          <div className="flex flex-col items-center justify-center text-center space-y-3 px-6 max-w-lg w-full">
+            <div className="py-2 flex items-center justify-center">
               {authTransition === 'LOGIN' ? (
-                <Sparkles className="w-7 h-7 text-emerald-600 animate-pulse" />
+                <div className="loader-loading-minimal" />
               ) : (
-                <Power className="w-7 h-7 text-slate-600 animate-pulse" />
+                <div className="loader-goodbye-minimal" />
               )}
             </div>
 
-            <div>
-              <h3 className="text-base font-bold text-slate-900">
-                {authTransition === 'LOGIN' ? '¡Bienvenido a G METRICS!' : 'Cerrando sesión segura...'}
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                {authTransition === 'LOGIN'
-                  ? 'Verificando licencia y cargando telemetría deportiva en vivo...'
-                  : 'Desconectando sesión y guardando preferencias locales.'}
-              </p>
-            </div>
-
-            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-              <div className={`h-full w-2/3 rounded-full animate-pulse ${
-                authTransition === 'LOGIN' ? 'bg-emerald-500' : 'bg-slate-500'
-              }`} />
-            </div>
+            <p className="text-xs text-slate-500 font-sans tracking-wide">
+              {authTransition === 'LOGIN'
+                ? 'Cargando modelos probabilísticos y telemetría en vivo...'
+                : 'Hardware y sesión desvinculados correctamente.'}
+            </p>
           </div>
         </div>
       )}

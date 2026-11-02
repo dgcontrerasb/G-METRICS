@@ -29,6 +29,11 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   // Control del banner flotante temporal (aparece al ingresar y se desvanece tras 10 segundos)
   useEffect(() => {
     if (variant !== 'floating') return;
+    // En móviles desactivamos el banner flotante para evitar solapamientos visuales
+    if (isMobile || isAndroid || isIOS) {
+      setFloatingStage('gone');
+      return;
+    }
     if (isInstalled) {
       setFloatingStage('gone');
       return;
@@ -83,6 +88,12 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
 
   // Si ya está instalada como PWA, jamás mostrar nada en ninguna variante
   if (isInstalled) {
+    return null;
+  }
+
+  // La notificación flotante está expresamente desactivada en dispositivos móviles
+  // En móviles el usuario ya cuenta con la opción limpia en el menú y en el pie de página
+  if (variant === 'floating' && (isMobile || isAndroid || isIOS)) {
     return null;
   }
 
@@ -252,7 +263,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   return (
     <>
       <div
-        className={`fixed bottom-20 sm:bottom-5 left-3 right-3 sm:left-auto sm:right-5 sm:w-[360px] z-50 transition-all duration-500 ease-out ${
+        className={`hidden sm:block fixed sm:bottom-5 sm:right-5 sm:w-[360px] z-50 transition-all duration-500 ease-out ${
           floatingStage === 'visible'
             ? 'opacity-100 translate-y-0'
             : 'opacity-0 translate-y-3 pointer-events-none'
