@@ -12,7 +12,8 @@ export default defineConfig(() => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: [
-          'splash-white.png',
+          'icon-512.png',
+          'icon-maskable-512.png',
           'custom-logo.png',
           'logo.png',
           'icon.png',
@@ -30,26 +31,20 @@ export default defineConfig(() => {
           name: 'G METRICS | La ciencia detrás de cada victoria',
           short_name: 'G METRICS',
           description: 'Modelos probabilísticos avanzados y analítica deportiva de precisión. Deja el azar a un lado y toma decisiones con ventaja estadística.',
-          theme_color: '#ffffff',
-          background_color: '#ffffff',
+          theme_color: '#1c1e1d',
+          background_color: '#1c1e1d',
           display: 'standalone',
           start_url: '/',
           scope: '/',
           icons: [
             {
-              src: '/splash-white.png',
-              sizes: '192x192',
-              type: 'image/png',
-              purpose: 'any',
-            },
-            {
-              src: '/splash-white.png',
+              src: '/icon-512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/splash-white.png',
+              src: '/icon-maskable-512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
