@@ -4329,7 +4329,7 @@ app.get('/api/auth/config', (req, res) => {
   return res.json({
     success: true,
     supabaseUrl: process.env.SUPABASE_URL || null,
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || null
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_ANON_KEY || null
   });
 });
 
