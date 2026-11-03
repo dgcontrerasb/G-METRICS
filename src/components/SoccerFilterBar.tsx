@@ -149,6 +149,11 @@ export const SoccerFilterBar: React.FC<SoccerFilterBarProps> = ({
               <option value="ALL" className="bg-[#161b22] text-white">
                 🌐 Todas las Ligas ({totalFixturesCount})
               </option>
+              <option value="GROUP_INTL" className="bg-[#0b1220] text-white">
+                🏆 Todos los torneos internacionales ({availableCompetitionGroups
+                  .filter((g) => g.category === 'INTERNATIONAL')
+                  .reduce((total, g) => total + g.totalMatches, 0)})
+              </option>
 
               {availableCompetitionGroups
                 .filter((g) => g.category === 'INTERNATIONAL')
@@ -158,9 +163,6 @@ export const SoccerFilterBar: React.FC<SoccerFilterBarProps> = ({
                     label={`${intlGroup.flag || '🏆'} ${intlGroup.name}`}
                     className="bg-[#0b1220] text-amber-300 font-bold"
                   >
-                    <option value="GROUP_INTL" className="bg-[#0b1220] text-white">
-                      {intlGroup.flag || '🏆'} Todos Int. ({intlGroup.totalMatches})
-                    </option>
                     {intlGroup.leagues.map((l) => (
                       <option key={String(l.id)} value={`LEAGUE_${l.id}`} className="bg-[#0b1220] text-slate-200">
                         {l.flag || intlGroup.flag || '⭐'} {l.name} ({l.matchCount})

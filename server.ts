@@ -441,6 +441,41 @@ const ESPN_LEAGUE_CATALOG: Record<string, { id: number; name: string; country: s
   '18000': { id: 20, name: 'CAF Confederation Cup', country: 'Internacional', flag: '🌍' }
 };
 
+function resolveEspnInternationalLeague(name: string): { name: string; flag: string } | null {
+  const normalized = name.toLowerCase().replace(/[._-]+/g, ' ');
+  const knownTournaments: Array<[RegExp, string, string]> = [
+    [/\b(caf champions league)\b/, 'CAF Champions League', '🌍'],
+    [/\b(caf confederation cup)\b/, 'CAF Confederation Cup', '🌍'],
+    [/\b(africa cup of nations|afcon)\b/, 'Africa Cup of Nations', '🌍'],
+    [/\b(afc champions league elite)\b/, 'AFC Champions League Elite', '🌏'],
+    [/\b(afc champions league (two|2))\b/, 'AFC Champions League Two', '🌏'],
+    [/\b(afc champions league)\b/, 'AFC Champions League', '🌏'],
+    [/\b(afc asian cup)\b/, 'AFC Asian Cup', '🌏'],
+    [/\b(concacaf champions cup)\b/, 'CONCACAF Champions Cup', '🌎'],
+    [/\b(concacaf champions league)\b/, 'CONCACAF Champions League', '🌎'],
+    [/\b(gold cup|copa oro)\b/, 'CONCACAF Gold Cup', '🌎'],
+    [/\b(concacaf nations league)\b/, 'CONCACAF Nations League', '🌎'],
+    [/\b(leagues cup)\b/, 'Leagues Cup', '🌎'],
+    [/\b(copa libertadores|libertadores)\b/, 'Copa Libertadores', '🌎'],
+    [/\b(copa sudamericana|sudamericana)\b/, 'Copa Sudamericana', '🌎'],
+    [/\b(recopa sudamericana|recopa)\b/, 'Recopa Sudamericana', '🌎'],
+    [/\b(copa america|copa am[eé]rica)\b/, 'Copa América', '🌎'],
+    [/\b(uefa )?champions league\b|\buefa champions\b/, 'UEFA Champions League', '⭐'],
+    [/\b(uefa )?europa league\b/, 'UEFA Europa League', '⭐'],
+    [/\b(uefa )?conference league\b/, 'UEFA Conference League', '⭐'],
+    [/\b(uefa super cup)\b/, 'UEFA Super Cup', '⭐'],
+    [/\b(uefa nations league)\b/, 'UEFA Nations League', '⭐'],
+    [/\b(uefa european championship|european championship|uefa euro|eurocopa)\b/, 'UEFA European Championship', '⭐'],
+    [/\b(fifa club world cup|club world cup|mundial de clubes)\b/, 'FIFA Club World Cup', '🌍'],
+    [/\b(fifa world cup|world cup|copa mundial)\b/, 'FIFA World Cup', '🌍']
+  ];
+
+  for (const [pattern, tournamentName, flag] of knownTournaments) {
+    if (pattern.test(normalized)) return { name: tournamentName, flag };
+  }
+  return null;
+}
+
 const COUNTRY_TRANSLATION_MAP: Record<string, { country: string; flag: string }> = {
   England: { country: 'Inglaterra', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
   Spain: { country: 'España', flag: '🇪🇸' },
@@ -1591,19 +1626,23 @@ async function fetchEspnSoccerFixtures(targetDate: string, clientTz = 'America/B
       const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || 'Visitante');
       const espnEventId = String(ev.id || '');
       const slug = String(ev?.season?.slug || 'Jornada Regular').replace(/-/g, ' ');
+      const rawLeagueName = String(ev?.league?.name || comp?.league?.name || comp?.name || '');
+      const internationalLeague = resolveEspnInternationalLeague(`${rawLeagueName} ${slug} ${rawUid}`);
 
       const isNatTeamMatch =
         !catalogEntry && isServerNationalTeamSub17PlusMatch(slug, rawCountry, homeName, awayName);
 
       const leagueId = catalogEntry?.id || parseInt(espnLeagueId, 10) || 1;
-      const countryName = isNatTeamMatch
+      const countryName = internationalLeague
+        ? 'Internacional'
+        : isNatTeamMatch
         ? 'Internacional'
         : catalogEntry?.country || countryTranslated?.country || rawCountry;
-      const flag = isNatTeamMatch
+      const flag = internationalLeague?.flag || (isNatTeamMatch
         ? '🌍'
-        : catalogEntry?.flag || countryTranslated?.flag || '⚽';
+        : catalogEntry?.flag || countryTranslated?.flag || '⚽');
 
-      let leagueName = catalogEntry?.name || `Liga ${countryName}`;
+      let leagueName = internationalLeague?.name || catalogEntry?.name || rawLeagueName || `Liga ${countryName}`;
       if (isNatTeamMatch) {
         const natCtx = `${slug} ${homeName} ${awayName}`.toLowerCase();
         const isW = /\b(women'?s?|femenin[ao]s?|femenil|frauen|femminile|w)\b/i.test(natCtx);
@@ -1935,14 +1974,14 @@ function isServerYouthOrLowTierMatch(leagueName: string, countryName: string, ho
     return true;
   }
 
-  const isEliteIntlCountry = ['world', 'europe', 'south america', 'north & central america', 'asia', 'international', 'europa', 'sudamérica', 'sudamerica', 'internacional'].some(
+  const isEliteIntlCountry = ['world', 'europe', 'south america', 'north & central america', 'asia', 'africa', 'international', 'europa', 'uefa', 'conmebol', 'concacaf', 'afc', 'caf', 'sudamérica', 'sudamerica', 'internacional'].some(
     (ic) => cName === ic || cName.includes(ic)
   );
   const isEliteIntlTournament =
-    /\b(uefa champions|champions league|europa league|conference league|super cup|copa libertadores|libertadores|copa sudamericana|sudamericana|recopa|copa america|copa am[eé]rica|eurocopa|world cup|mundial|nations league|eliminatorias|wc qualification|world cup qualification|concacaf champions|afc champions|leagues cup|gold cup|copa oro|club world cup)\b/i.test(
+    /\b(uefa champions league|champions league|uefa europa league|europa league|uefa conference league|conference league|uefa super cup|uefa nations league|european championship|eurocopa|caf champions league|caf confederation cup|africa cup of nations|afcon|afc champions league|afc asian cup|copa libertadores|libertadores|copa sudamericana|sudamericana|recopa|copa america|copa am[eé]rica|world cup|mundial|nations league|eliminatorias|wc qualification|world cup qualification|concacaf champions cup|concacaf champions league|leagues cup|gold cup|copa oro|club world cup|fifa intercontinental cup)\b/i.test(
       lName
     ) &&
-    !/\b(caf|ofc|afc cup|asean|cosafa|cecafa|wafcon|u17|u20|u23|women|youth)\b/i.test(`${lName} ${cName}`);
+    !/\b(ofc|afc cup|asean|cosafa|cecafa|wafcon|u17|u20|u23|women|youth)\b/i.test(`${lName} ${cName}`);
 
   if (isEliteIntlTournament && (isEliteIntlCountry || !cName)) {
     return false;

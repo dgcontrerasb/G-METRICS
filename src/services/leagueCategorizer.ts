@@ -36,6 +36,15 @@ const INTL_KEYWORDS = [
   'gold cup',
   'afc champions',
   'caf champions',
+  'caf confederation cup',
+  'africa cup of nations',
+  'afcon',
+  'afc asian cup',
+  'concacaf champions cup',
+  'concacaf nations league',
+  'uefa super cup',
+  'uefa nations league',
+  'european championship',
   'fifa club',
   'club world cup',
   'mundial de clubes',
@@ -444,14 +453,14 @@ export function isExcludedYouthOrAmateurLeague(
   }
 
   // 2. Check if it is a top-tier International Tournament (UEFA, CONMEBOL, FIFA, CONCACAF, AFC Champions Elite)
-  const isEliteIntlCountry = ['world', 'europe', 'south america', 'north & central america', 'asia', 'international', 'europa', 'sudamérica', 'sudamerica', 'internacional'].some(
+  const isEliteIntlCountry = ['world', 'europe', 'south america', 'north & central america', 'asia', 'africa', 'international', 'europa', 'uefa', 'conmebol', 'concacaf', 'afc', 'caf', 'sudamérica', 'sudamerica', 'internacional'].some(
     (ic) => cName === ic || cName.includes(ic)
   );
   const isEliteIntlTournament =
-    /\b(uefa champions|champions league|europa league|conference league|super cup|copa libertadores|libertadores|copa sudamericana|sudamericana|recopa|copa america|copa am[eé]rica|eurocopa|world cup|mundial|nations league|eliminatorias|wc qualification|world cup qualification|concacaf champions|afc champions|leagues cup|gold cup|copa oro|club world cup)\b/i.test(
+    /\b(uefa champions league|champions league|uefa europa league|europa league|uefa conference league|conference league|uefa super cup|uefa nations league|european championship|eurocopa|caf champions league|caf confederation cup|africa cup of nations|afcon|afc champions league|afc asian cup|copa libertadores|libertadores|copa sudamericana|sudamericana|recopa|copa america|copa am[eé]rica|world cup|mundial|nations league|eliminatorias|wc qualification|world cup qualification|concacaf champions cup|concacaf champions league|leagues cup|gold cup|copa oro|club world cup|fifa intercontinental cup)\b/i.test(
       lName
     ) &&
-    !/\b(caf|ofc|afc cup|asean|cosafa|cecafa|wafcon|u17|u20|u23|women|youth)\b/i.test(`${lName} ${cName}`);
+    !/\b(ofc|afc cup|asean|cosafa|cecafa|wafcon|u17|u20|u23|women|youth)\b/i.test(`${lName} ${cName}`);
 
   if (isEliteIntlTournament && (isEliteIntlCountry || !cName)) {
     return false; // Allowed Elite International Tournament
@@ -579,6 +588,41 @@ export function isInternationalCompetition(
   return false;
 }
 
+function canonicalInternationalCompetitionName(leagueName: string): string {
+  const normalized = leagueName
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[._-]+/g, ' ');
+  const knownTournaments: Array<[RegExp, string]> = [
+    [/\bafc champions league elite\b/, 'AFC Champions League Elite'],
+    [/\bafc champions league (two|2)\b/, 'AFC Champions League Two'],
+    [/\bafc champions league\b/, 'AFC Champions League'],
+    [/\bcaf champions league\b/, 'CAF Champions League'],
+    [/\bconcacaf champions (cup|league)\b/, 'CONCACAF Champions Cup'],
+    [/\buefa champions league\b|\bchampions league\b/, 'UEFA Champions League'],
+    [/\buefa europa league\b|\beuropa league\b/, 'UEFA Europa League'],
+    [/\buefa conference league\b|\bconference league\b/, 'UEFA Conference League'],
+    [/\buefa super cup\b/, 'UEFA Super Cup'],
+    [/\bconcacaf nations league\b/, 'CONCACAF Nations League'],
+    [/\buefa nations league\b/, 'UEFA Nations League'],
+    [/\bcaf confederation cup\b/, 'CAF Confederation Cup'],
+    [/\bafrica cup of nations\b|\bafcon\b/, 'Africa Cup of Nations'],
+    [/\bafc asian cup\b/, 'AFC Asian Cup'],
+    [/\bcopa libertadores\b|\blibertadores\b/, 'Copa Libertadores'],
+    [/\bcopa sudamericana\b|\bsudamericana\b/, 'Copa Sudamericana'],
+    [/\brecopa( sudamericana)?\b/, 'Recopa Sudamericana'],
+    [/\bcopa america\b/, 'Copa América'],
+    [/\bgold cup\b|\bcopa oro\b/, 'CONCACAF Gold Cup'],
+    [/\bleagues cup\b/, 'Leagues Cup'],
+    [/\bfifa club world cup\b|\bmundial de clubes\b/, 'FIFA Club World Cup'],
+    [/\bfifa intercontinental cup\b/, 'FIFA Intercontinental Cup'],
+    [/\bfifa world cup\b|\bworld cup\b|\bcopa mundial\b/, 'FIFA World Cup']
+  ];
+
+  return knownTournaments.find(([pattern]) => pattern.test(normalized))?.[1] || leagueName.trim() || 'Torneo Internacional';
+}
+
 /**
  * Maps a fixture's league to a country key or INTL.
  * Strictly prioritizes exact country match FIRST so homonym league names (like "Ligue 1" or "Premier League")
@@ -602,23 +646,43 @@ export function identifyCompetitionCategory(
   const lLower = l.toLowerCase();
   const cLower = c.toLowerCase();
 
-  // 1. Check International Tournament or National Team Sub-17+ Match
+  // 1. Keep national-team fixtures in their own category, separate from club tournaments.
+  if (isNationalTeamSub17PlusMatch(l, c, teamHome, teamAway)) {
+    return {
+      key: 'INTL_SELECTIONS',
+      name: 'Selecciones',
+      displayName: '🌍 Selecciones',
+      flag: '🌍',
+      isInternational: true,
+      priority: 0
+    };
+  }
+
+  // 2. Give each international club tournament its own stable, canonical category.
   if (isInternationalCompetition(l, c, teamHome, teamAway)) {
+    const tournamentName = canonicalInternationalCompetitionName(l);
     let flag = '🏆';
-    if (lLower.includes('libertadores') || lLower.includes('sudamericana') || lLower.includes('conmebol')) {
+    const categoryName = tournamentName.toLowerCase();
+    if (categoryName.includes('libertadores') || categoryName.includes('sudamericana') || categoryName.includes('copa am')) {
       flag = '🌎';
-    } else if (lLower.includes('champions') || lLower.includes('europa') || lLower.includes('conference') || lLower.includes('uefa')) {
+    } else if (categoryName.includes('champions') || categoryName.includes('europa') || categoryName.includes('conference') || categoryName.includes('uefa')) {
       flag = '⭐';
-    } else if (lLower.includes('concacaf') || lLower.includes('gold cup')) {
+    } else if (categoryName.includes('concacaf') || categoryName.includes('gold cup')) {
       flag = '🏆';
-    } else if (lLower.includes('mundial') || lLower.includes('world cup') || lLower.includes('selecciones')) {
+    } else if (categoryName.includes('mundial') || categoryName.includes('world cup') || categoryName.includes('selecciones')) {
       flag = '🌍';
     }
 
+    const tournamentKey = categoryName
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
     return {
-      key: 'INTL',
-      name: 'Torneos Internacionales',
-      displayName: `${flag} Torneos Internacionales`,
+      key: `INTL_${tournamentKey || 'OTHER'}`,
+      name: tournamentName,
+      displayName: `${flag} ${tournamentName}`,
       flag,
       isInternational: true,
       priority: 0

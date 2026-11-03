@@ -156,6 +156,23 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
       map.set(`COUNTRY_${g.key}`, g);
       map.set(`GROUP_${g.key}`, g);
     }
+    const internationalGroups = availableCompetitionGroups.filter((g) => g.category === 'INTERNATIONAL');
+    if (internationalGroups.length > 0) {
+      const allInternationalFixtures = internationalGroups.flatMap((g) => g.fixtures);
+      const allInternationalLeagues = internationalGroups.flatMap((g) => g.leagues);
+      const allInternationalGroup: CompetitionGroup = {
+        ...internationalGroups[0],
+        key: 'INTL',
+        name: 'Torneos Internacionales',
+        displayName: '🏆 Torneos Internacionales',
+        flag: '🏆',
+        totalMatches: allInternationalFixtures.length,
+        leagues: allInternationalLeagues,
+        fixtures: allInternationalFixtures
+      };
+      map.set('INTL', allInternationalGroup);
+      map.set('GROUP_INTL', allInternationalGroup);
+    }
     return map;
   }, [availableCompetitionGroups]);
 
@@ -1055,7 +1072,9 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
 
                   {/* Cualquier liga adicional con partidos hoy que no esté en la lista fija */}
                   {extraDynamicSoccerGroups.map((group) => {
-                    const filterKey = group.key === 'INTL' ? 'GROUP_INTL' : `COUNTRY_${group.key}`;
+                    const filterKey = group.category === 'INTERNATIONAL'
+                      ? `LEAGUE_${group.leagues[0]?.name ?? group.name}`
+                      : `COUNTRY_${group.key}`;
                     const isSelectedGroup =
                       (selectedLeague === group.key || selectedLeague === filterKey) && mainTab === 'ALL_LEAGUES';
                     const hasLiveInGroup = group.fixtures.some((f) => f.status === 'IN_PLAY');

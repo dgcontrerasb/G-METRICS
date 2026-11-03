@@ -2124,6 +2124,39 @@ var ESPN_LEAGUE_CATALOG = {
   "2391": { id: 12, name: "CAF Champions League", country: "Internacional", flag: "\u{1F30D}" },
   "18000": { id: 20, name: "CAF Confederation Cup", country: "Internacional", flag: "\u{1F30D}" }
 };
+function resolveEspnInternationalLeague(name) {
+  const normalized = name.toLowerCase().replace(/[._-]+/g, " ");
+  const knownTournaments = [
+    [/\b(caf champions league)\b/, "CAF Champions League", "\u{1F30D}"],
+    [/\b(caf confederation cup)\b/, "CAF Confederation Cup", "\u{1F30D}"],
+    [/\b(africa cup of nations|afcon)\b/, "Africa Cup of Nations", "\u{1F30D}"],
+    [/\b(afc champions league elite)\b/, "AFC Champions League Elite", "\u{1F30F}"],
+    [/\b(afc champions league (two|2))\b/, "AFC Champions League Two", "\u{1F30F}"],
+    [/\b(afc champions league)\b/, "AFC Champions League", "\u{1F30F}"],
+    [/\b(afc asian cup)\b/, "AFC Asian Cup", "\u{1F30F}"],
+    [/\b(concacaf champions cup)\b/, "CONCACAF Champions Cup", "\u{1F30E}"],
+    [/\b(concacaf champions league)\b/, "CONCACAF Champions League", "\u{1F30E}"],
+    [/\b(gold cup|copa oro)\b/, "CONCACAF Gold Cup", "\u{1F30E}"],
+    [/\b(concacaf nations league)\b/, "CONCACAF Nations League", "\u{1F30E}"],
+    [/\b(leagues cup)\b/, "Leagues Cup", "\u{1F30E}"],
+    [/\b(copa libertadores|libertadores)\b/, "Copa Libertadores", "\u{1F30E}"],
+    [/\b(copa sudamericana|sudamericana)\b/, "Copa Sudamericana", "\u{1F30E}"],
+    [/\b(recopa sudamericana|recopa)\b/, "Recopa Sudamericana", "\u{1F30E}"],
+    [/\b(copa america|copa am[eé]rica)\b/, "Copa Am\xE9rica", "\u{1F30E}"],
+    [/\b(uefa )?champions league\b|\buefa champions\b/, "UEFA Champions League", "\u2B50"],
+    [/\b(uefa )?europa league\b/, "UEFA Europa League", "\u2B50"],
+    [/\b(uefa )?conference league\b/, "UEFA Conference League", "\u2B50"],
+    [/\b(uefa super cup)\b/, "UEFA Super Cup", "\u2B50"],
+    [/\b(uefa nations league)\b/, "UEFA Nations League", "\u2B50"],
+    [/\b(uefa european championship|european championship|uefa euro|eurocopa)\b/, "UEFA European Championship", "\u2B50"],
+    [/\b(fifa club world cup|club world cup|mundial de clubes)\b/, "FIFA Club World Cup", "\u{1F30D}"],
+    [/\b(fifa world cup|world cup|copa mundial)\b/, "FIFA World Cup", "\u{1F30D}"]
+  ];
+  for (const [pattern, tournamentName, flag] of knownTournaments) {
+    if (pattern.test(normalized)) return { name: tournamentName, flag };
+  }
+  return null;
+}
 var COUNTRY_TRANSLATION_MAP = {
   England: { country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
   Spain: { country: "Espa\xF1a", flag: "\u{1F1EA}\u{1F1F8}" },
@@ -3056,11 +3089,13 @@ async function fetchEspnSoccerFixtures(targetDate, clientTz = "America/Bogota") 
       const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || "Visitante");
       const espnEventId = String(ev.id || "");
       const slug = String(ev?.season?.slug || "Jornada Regular").replace(/-/g, " ");
+      const rawLeagueName = String(ev?.league?.name || comp?.league?.name || comp?.name || "");
+      const internationalLeague = resolveEspnInternationalLeague(`${rawLeagueName} ${slug} ${rawUid}`);
       const isNatTeamMatch = !catalogEntry && isServerNationalTeamSub17PlusMatch(slug, rawCountry, homeName, awayName);
       const leagueId = catalogEntry?.id || parseInt(espnLeagueId, 10) || 1;
-      const countryName = isNatTeamMatch ? "Internacional" : catalogEntry?.country || countryTranslated?.country || rawCountry;
-      const flag = isNatTeamMatch ? "\u{1F30D}" : catalogEntry?.flag || countryTranslated?.flag || "\u26BD";
-      let leagueName = catalogEntry?.name || `Liga ${countryName}`;
+      const countryName = internationalLeague ? "Internacional" : isNatTeamMatch ? "Internacional" : catalogEntry?.country || countryTranslated?.country || rawCountry;
+      const flag = internationalLeague?.flag || (isNatTeamMatch ? "\u{1F30D}" : catalogEntry?.flag || countryTranslated?.flag || "\u26BD");
+      let leagueName = internationalLeague?.name || catalogEntry?.name || rawLeagueName || `Liga ${countryName}`;
       if (isNatTeamMatch) {
         const natCtx = `${slug} ${homeName} ${awayName}`.toLowerCase();
         const isW = /\b(women'?s?|femenin[ao]s?|femenil|frauen|femminile|w)\b/i.test(natCtx);
@@ -3511,12 +3546,12 @@ function isServerYouthOrLowTierMatch(leagueName, countryName, homeName, awayName
   )) {
     return true;
   }
-  const isEliteIntlCountry = ["world", "europe", "south america", "north & central america", "asia", "international", "europa", "sudam\xE9rica", "sudamerica", "internacional"].some(
+  const isEliteIntlCountry = ["world", "europe", "south america", "north & central america", "asia", "africa", "international", "europa", "uefa", "conmebol", "concacaf", "afc", "caf", "sudam\xE9rica", "sudamerica", "internacional"].some(
     (ic) => cName === ic || cName.includes(ic)
   );
-  const isEliteIntlTournament = /\b(uefa champions|champions league|europa league|conference league|super cup|copa libertadores|libertadores|copa sudamericana|sudamericana|recopa|copa america|copa am[eé]rica|eurocopa|world cup|mundial|nations league|eliminatorias|wc qualification|world cup qualification|concacaf champions|afc champions|leagues cup|gold cup|copa oro|club world cup)\b/i.test(
+  const isEliteIntlTournament = /\b(uefa champions league|champions league|uefa europa league|europa league|uefa conference league|conference league|uefa super cup|uefa nations league|european championship|eurocopa|caf champions league|caf confederation cup|africa cup of nations|afcon|afc champions league|afc asian cup|copa libertadores|libertadores|copa sudamericana|sudamericana|recopa|copa america|copa am[eé]rica|world cup|mundial|nations league|eliminatorias|wc qualification|world cup qualification|concacaf champions cup|concacaf champions league|leagues cup|gold cup|copa oro|club world cup|fifa intercontinental cup)\b/i.test(
     lName
-  ) && !/\b(caf|ofc|afc cup|asean|cosafa|cecafa|wafcon|u17|u20|u23|women|youth)\b/i.test(`${lName} ${cName}`);
+  ) && !/\b(ofc|afc cup|asean|cosafa|cecafa|wafcon|u17|u20|u23|women|youth)\b/i.test(`${lName} ${cName}`);
   if (isEliteIntlTournament && (isEliteIntlCountry || !cName)) {
     return false;
   }

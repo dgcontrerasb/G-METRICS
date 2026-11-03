@@ -56,7 +56,12 @@ export const CompetitionBlock: React.FC<CompetitionBlockProps> = ({
     onToggleSelectGroupFixtures(groupFixtureIds, !allSelectedInGroup);
   };
 
-  const displayTitle = group.leagues.length === 1 ? group.leagues[0].name : group.name;
+  const displayTitle =
+    group.category === 'INTERNATIONAL'
+      ? group.name
+      : group.leagues.length === 1
+      ? group.leagues[0].name
+      : group.name;
 
   return (
     <div className="border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs bg-white/95 backdrop-blur-md transition-all">
