@@ -2,7 +2,7 @@ import React from 'react';
 import { Search } from 'lucide-react';
 import { CountryFlag } from './CountryFlag';
 import { getColombiaDateString } from '../services/apiService';
-import { CompetitionGroup } from '../services/leagueCategorizer';
+import { CompetitionGroup, STATIC_SOCCER_CATALOG } from '../services/leagueCategorizer';
 
 export type SoccerFilterType =
   | 'ALL'
@@ -154,22 +154,27 @@ export const SoccerFilterBar: React.FC<SoccerFilterBarProps> = ({
                   .filter((g) => g.category === 'INTERNATIONAL')
                   .reduce((total, g) => total + g.totalMatches, 0)})
               </option>
-
-              {availableCompetitionGroups
-                .filter((g) => g.category === 'INTERNATIONAL')
-                .map((intlGroup) => (
-                  <optgroup
-                    key={intlGroup.key}
-                    label={`${intlGroup.flag || '🏆'} ${intlGroup.name}`}
-                    className="bg-[#0b1220] text-amber-300 font-bold"
-                  >
-                    {intlGroup.leagues.map((l) => (
-                      <option key={String(l.id)} value={`LEAGUE_${l.id}`} className="bg-[#0b1220] text-slate-200">
-                        {l.flag || intlGroup.flag || '⭐'} {l.name} ({l.matchCount})
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
+              <optgroup label="Torneos y selecciones" className="bg-[#0b1220] text-amber-300 font-bold">
+                {STATIC_SOCCER_CATALOG.filter((item) => item.key.startsWith('INTL_')).map((item) => {
+                  const group = availableCompetitionGroups.find((candidate) => candidate.key === item.key);
+                  return (
+                    <option key={item.key} value={item.key} className="bg-[#0b1220] text-slate-200">
+                      {item.flag} {item.displayName} ({group?.totalMatches || 0})
+                    </option>
+                  );
+                })}
+                {availableCompetitionGroups
+                  .filter(
+                    (group) =>
+                      group.category === 'INTERNATIONAL' &&
+                      !STATIC_SOCCER_CATALOG.some((item) => item.key === group.key)
+                  )
+                  .map((group) => (
+                    <option key={group.key} value={group.key} className="bg-[#0b1220] text-slate-200">
+                      {group.flag} {group.name} ({group.totalMatches})
+                    </option>
+                  ))}
+              </optgroup>
 
               {availableCompetitionGroups
                 .filter((g) => g.category === 'COUNTRY')

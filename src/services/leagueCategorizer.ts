@@ -45,6 +45,7 @@ const INTL_KEYWORDS = [
   'uefa super cup',
   'uefa nations league',
   'european championship',
+  'fifa intercontinental cup',
   'fifa club',
   'club world cup',
   'mundial de clubes',
@@ -845,6 +846,15 @@ export function matchesLeagueSelection(fixture: MatchFixture, selectedLeague: st
     return isInternationalCompetition(fixture.league?.name, fixture.league?.country);
   }
 
+  if (selectedLeague.startsWith('INTL_')) {
+    return identifyCompetitionCategory(
+      lName,
+      cName,
+      fixture.homeTeam?.name,
+      fixture.awayTeam?.name
+    ).key === selectedLeague;
+  }
+
   // 2. Specific single league by ID (e.g. "LEAGUE_39", "LEAGUE_2", or "LEAGUE_Premier League-England")
   if (selectedLeague.startsWith('LEAGUE_')) {
     const target = selectedLeague.replace('LEAGUE_', '').trim();
@@ -978,6 +988,30 @@ export interface StaticCatalogLeagueItem {
 export const STATIC_SOCCER_CATALOG: StaticCatalogLeagueItem[] = [
   // Ligas Principales
   { key: 'GROUP_INTL', displayName: 'Torneos Internacionales (UEFA / CONMEBOL)', flag: '🏆', tier: 'PRIMARY' },
+  { key: 'INTL_SELECTIONS', displayName: 'Selecciones', flag: '🌍', tier: 'PRIMARY' },
+  { key: 'INTL_uefa_champions_league', displayName: 'UEFA Champions League', flag: '⭐', tier: 'PRIMARY' },
+  { key: 'INTL_uefa_europa_league', displayName: 'UEFA Europa League', flag: '⭐', tier: 'PRIMARY' },
+  { key: 'INTL_uefa_conference_league', displayName: 'UEFA Conference League', flag: '⭐', tier: 'PRIMARY' },
+  { key: 'INTL_uefa_super_cup', displayName: 'UEFA Super Cup', flag: '⭐', tier: 'PRIMARY' },
+  { key: 'INTL_uefa_nations_league', displayName: 'UEFA Nations League', flag: '⭐', tier: 'PRIMARY' },
+  { key: 'INTL_uefa_european_championship', displayName: 'UEFA European Championship', flag: '⭐', tier: 'PRIMARY' },
+  { key: 'INTL_copa_libertadores', displayName: 'Copa Libertadores', flag: '🌎', tier: 'PRIMARY' },
+  { key: 'INTL_copa_sudamericana', displayName: 'Copa Sudamericana', flag: '🌎', tier: 'PRIMARY' },
+  { key: 'INTL_recopa_sudamericana', displayName: 'Recopa Sudamericana', flag: '🌎', tier: 'PRIMARY' },
+  { key: 'INTL_concacaf_champions_cup', displayName: 'CONCACAF Champions Cup', flag: '🌎', tier: 'PRIMARY' },
+  { key: 'INTL_concacaf_gold_cup', displayName: 'CONCACAF Gold Cup', flag: '🌎', tier: 'PRIMARY' },
+  { key: 'INTL_concacaf_nations_league', displayName: 'CONCACAF Nations League', flag: '🌎', tier: 'PRIMARY' },
+  { key: 'INTL_leagues_cup', displayName: 'Leagues Cup', flag: '🌎', tier: 'PRIMARY' },
+  { key: 'INTL_afc_champions_league_elite', displayName: 'AFC Champions League Elite', flag: '🌏', tier: 'PRIMARY' },
+  { key: 'INTL_afc_champions_league_two', displayName: 'AFC Champions League Two', flag: '🌏', tier: 'PRIMARY' },
+  { key: 'INTL_afc_champions_league', displayName: 'AFC Champions League', flag: '🌏', tier: 'PRIMARY' },
+  { key: 'INTL_afc_asian_cup', displayName: 'AFC Asian Cup', flag: '🌏', tier: 'PRIMARY' },
+  { key: 'INTL_caf_champions_league', displayName: 'CAF Champions League', flag: '🌍', tier: 'PRIMARY' },
+  { key: 'INTL_caf_confederation_cup', displayName: 'CAF Confederation Cup', flag: '🌍', tier: 'PRIMARY' },
+  { key: 'INTL_africa_cup_of_nations', displayName: 'Africa Cup of Nations', flag: '🌍', tier: 'PRIMARY' },
+  { key: 'INTL_fifa_club_world_cup', displayName: 'FIFA Club World Cup', flag: '🌍', tier: 'PRIMARY' },
+  { key: 'INTL_fifa_intercontinental_cup', displayName: 'FIFA Intercontinental Cup', flag: '🌍', tier: 'PRIMARY' },
+  { key: 'INTL_fifa_world_cup', displayName: 'FIFA World Cup', flag: '🌍', tier: 'PRIMARY' },
   { key: 'COUNTRY_COLOMBIA', displayName: 'Colombia (Liga y Copa BetPlay)', flag: '🇨🇴', tier: 'PRIMARY' },
   { key: 'COUNTRY_ENGLAND', displayName: 'Inglaterra (Premier League / FA Cup)', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', tier: 'PRIMARY' },
   { key: 'COUNTRY_SPAIN', displayName: 'España (LaLiga / Copa del Rey)', flag: '🇪🇸', tier: 'PRIMARY' },

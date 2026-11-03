@@ -30,7 +30,12 @@ const VipPaymentModal = React.lazy(() =>
 import { LiveAlertsOverlay } from './components/workspace/LiveAlertsOverlay';
 import { useTheme } from './context/ThemeContext';
 import { getSoccerDidacticAdvice, getNBADidacticAdvice } from './services/didacticService';
-import { groupFixturesByCompetition, matchesLeagueSelection, isColombianBookmakerPrimeLeague } from './services/leagueCategorizer';
+import {
+  groupFixturesByCompetition,
+  matchesLeagueSelection,
+  isColombianBookmakerPrimeLeague,
+  STATIC_SOCCER_CATALOG
+} from './services/leagueCategorizer';
 import {
   getActiveStoredLicense,
   getOrCreateDeviceId,
@@ -1443,6 +1448,13 @@ export default function App() {
     if (!selectedLeague || selectedLeague === 'ALL') return '';
     if (selectedLeague === 'PRIME_CO') return 'Ligas Principales · Casas de Apuestas Colombia (Alta Precisión)';
     if (selectedLeague === 'GROUP_INTL' || selectedLeague === 'INTL') return 'Torneos Internacionales';
+    if (selectedLeague.startsWith('INTL_')) {
+      return (
+        availableCompetitionGroups.find((group) => group.key === selectedLeague)?.name ||
+        STATIC_SOCCER_CATALOG.find((item) => item.key === selectedLeague)?.displayName ||
+        selectedLeague
+      );
+    }
     if (selectedLeague.startsWith('LEAGUE_')) {
       const target = selectedLeague.replace('LEAGUE_', '').trim();
       for (const group of availableCompetitionGroups) {
