@@ -22,24 +22,28 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
         timeStyle: 'short'
       })
     : 'Hoy';
-  const remainingQuota =
-    serverTelemetry?.remainingCalls !== null && serverTelemetry?.remainingCalls !== undefined
-      ? Number(serverTelemetry.remainingCalls)
-      : null;
-  const consumedEst =
-    serverTelemetry?.consumedTodayEst !== null && serverTelemetry?.consumedTodayEst !== undefined
-      ? Number(serverTelemetry.consumedTodayEst)
-      : serverTelemetry?.apiFootballCallsSinceBoot ?? 0;
-  const callsSinceBoot = serverTelemetry?.apiFootballCallsSinceBoot ?? 0;
+  const footballDataConfigured = Boolean(serverTelemetry?.footballData);
+  const footballDataRequests = serverTelemetry?.footballDataRequestsSinceBoot ?? 0;
+  const footballDataCacheHits = serverTelemetry?.footballDataCacheHits ?? 0;
+  const footballDataLastSuccessAt = serverTelemetry?.footballDataLastSuccessAt
+    ? new Date(serverTelemetry.footballDataLastSuccessAt).getTime()
+    : 0;
+  const footballDataRecentlyReached =
+    footballDataConfigured && footballDataLastSuccessAt > 0 && Date.now() - footballDataLastSuccessAt < 6 * 60 * 60 * 1000;
+  const footballDataLastSuccess = serverTelemetry?.footballDataLastSuccessAt
+    ? new Date(serverTelemetry.footballDataLastSuccessAt).toLocaleTimeString('es-CO')
+    : 'Sin consulta exitosa en esta sesión';
+  const footballDataStatus = !footballDataConfigured
+    ? 'Sin clave'
+    : footballDataRecentlyReached
+    ? 'Respuesta reciente'
+    : 'Clave configurada, sin respuesta reciente';
   const cacheHits = serverTelemetry?.serverCacheHits ?? 0;
   const cacheMisses = serverTelemetry?.serverCacheMisses ?? 0;
   const cacheHitRate = serverTelemetry?.cacheHitRatePct ?? 100;
   const espnPulses = serverTelemetry?.espnPulseCallsCount ?? 0;
   const onlineList: any[] = Array.isArray(serverTelemetry?.onlineUsers)
     ? serverTelemetry.onlineUsers
-    : [];
-  const apiLogList: any[] = Array.isArray(serverTelemetry?.apiFootballAuditLog)
-    ? serverTelemetry.apiFootballAuditLog
     : [];
 
   const buildDiagnosticReportText = () => {
@@ -53,25 +57,13 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
             )
             .join(', ')
         : 'Ninguno en ventana de 3 min';
-    const recentApiCallsFormatted =
-      apiLogList.length > 0
-        ? apiLogList
-            .slice(0, 8)
-            .map(
-              (c) =>
-                `  - [${new Date(c.at).toLocaleTimeString('es-CO')}] ${c.endpoint} | Fecha: ${c.targetDate} | Partidos: ${c.fixturesCount} | Libres: ${c.remainingAfter ?? '?'}`
-            )
-            .join('\n')
-        : '  - 0 llamadas a API-Football en sesión (100% Caché/ESPN)';
-
     return [
       `📊 DIAGNÓSTICO G METRICS (${nowStr})`,
-      `🛡️ Blindaje Backend: ${serverTelemetry?.bundleVersion || 'v2.6-shield-6h'} (TTL: ${serverTelemetry?.scheduleTTLHours || 6}h)`,
+      `⚽ Motor de fútbol: ${serverTelemetry?.soccerEngine || 'ESPN + Football-Data.org'} | ESPN: ${serverTelemetry?.espnSoccer === false ? 'Sin respuesta' : 'Activo'} | Football-Data: ${footballDataStatus}`,
+      `🗄️ Persistencia: Supabase ${serverTelemetry?.supabasePersistence ? 'Activa' : 'Local'} | Football-Data: ${footballDataRequests} consultas / ${footballDataCacheHits} hits de caché | Último éxito: ${footballDataLastSuccess}`,
       `🏀 NBA Pipeline: The Odds API (${serverTelemetry?.oddsApi ? 'Activa' : 'Sin clave'}) | ESPN (${espnPulses} pulsos) | BallDontLie (${serverTelemetry?.ballDontLie ? 'Activa' : 'Respaldo 30 Franquicias'})`,
       `🟢 Online Ahora: ${onlineNow} (${onlineUsersFormatted}) | Pico: ${peakUsers} (${peakTimeStr})`,
-      `📡 Cuota API-Football: ${remainingQuota !== null ? `${remainingQuota}/100 libres` : `${callsSinceBoot} llamadas en sesión`}`,
-      `⚡ Eficiencia Caché: ${cacheHitRate}% (${cacheHits} hits / ${cacheMisses} misses) | Pulsos ESPN: ${espnPulses}`,
-      `📋 Últimas llamadas API:\n${recentApiCallsFormatted}`
+      `⚡ Eficiencia Caché: ${cacheHitRate}% (${cacheHits} hits / ${cacheMisses} misses) | Pulsos ESPN: ${espnPulses}`
     ].join('\n');
   };
 
@@ -90,10 +82,10 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
         <div>
           <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-            <span>Monitor de Tráfico, Cuota y Cuotas NBA en Tiempo Real</span>
+            <span>Monitor de Tráfico, Fuentes y Caché en Tiempo Real</span>
           </h3>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            Sesiones activas, cuotas The Odds API, telemetría ESPN y BallDontLie.
+            Sesiones activas, motor híbrido de fútbol, telemetría ESPN y fuentes NBA.
           </p>
         </div>
         <button
@@ -104,6 +96,13 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
           <RefreshCw className={`w-3.5 h-3.5 text-cyan-600 ${isLoadingTelemetry ? 'animate-spin' : ''}`} />
           <span>Refrescar</span>
         </button>
+      </div>
+
+      <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span className="font-bold text-emerald-900">⚽ Motor Híbrido Oficial (ESPN + Football-Data.org)</span>
+        <span className="font-mono text-emerald-800">
+          ESPN primario · Football-Data {footballDataStatus.toLowerCase()} · Supabase {serverTelemetry?.supabasePersistence ? 'conectado' : 'no conectado'}
+        </span>
       </div>
 
       {/* Proveedores de Datos Activos */}
@@ -153,20 +152,16 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
           <span className="text-[10px] text-slate-500 mt-0.5 truncate">{peakTimeStr}</span>
         </div>
 
-        <div className="bg-cyan-50/50 border border-cyan-200 rounded-2xl p-3 flex flex-col justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-800 flex items-center gap-1">
+        <div className="bg-emerald-50/50 border border-emerald-200 rounded-2xl p-3 flex flex-col justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
             <Database className="w-3 h-3 text-cyan-600" />
-            <span>Cuota API Hoy</span>
+            <span>Football-Data.org</span>
           </span>
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl font-bold font-mono text-slate-900">
-              {remainingQuota !== null ? `${consumedEst}/100` : callsSinceBoot}
-            </span>
-            <span className="text-[10px] text-slate-500">
-              {remainingQuota !== null ? `(${remainingQuota} libres)` : 'sesión'}
-            </span>
+            <span className="text-xl font-bold font-mono text-slate-900">{footballDataRecentlyReached ? 'Disponible' : footballDataConfigured ? 'Sin respuesta' : 'Sin clave'}</span>
+            <span className="text-[10px] text-slate-500">TTL {serverTelemetry?.footballDataCacheTtlHours ?? 6}h</span>
           </div>
-          <span className="text-[10px] text-emerald-700 mt-0.5 font-semibold">Blindaje 6h activo</span>
+          <span className="text-[10px] text-slate-500 mt-0.5">{footballDataRequests} consultas · {footballDataCacheHits} cache hits</span>
         </div>
 
         <div className="bg-indigo-50/50 border border-indigo-200 rounded-2xl p-3 flex flex-col justify-between">
@@ -222,7 +217,7 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
         </pre>
       </div>
 
-      {/* Two Columns: Connected Users Now & Recent API-Football Audit Log */}
+      {/* Two Columns: Connected Users Now & Football-Data Cache */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 space-y-2">
           <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
@@ -261,42 +256,15 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
 
         <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 space-y-2">
           <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-            <h4 className="text-xs font-bold text-slate-800">
-              📡 Llamadas API-Football ({apiLogList.length})
-            </h4>
+            <h4 className="text-xs font-bold text-slate-800">📡 Football-Data.org · caché 6h</h4>
             <span className="text-[10px] text-slate-400">Tiempo real</span>
           </div>
-          {apiLogList.length === 0 ? (
-            <div className="py-4 text-center space-y-1">
-              <p className="text-xs font-bold text-emerald-700">
-                ✅ 0 llamadas nuevas en esta sesión
-              </p>
-              <p className="text-[10px] text-slate-500">
-                Sirviendo 100% desde caché de 6h y pulso gratuito ESPN.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-              {apiLogList.map((entry, idx) => (
-                <div
-                  key={`${entry.at}-${idx}`}
-                  className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between gap-2 text-xs"
-                >
-                  <div className="min-w-0">
-                    <span className="font-mono font-bold text-cyan-800">
-                      {entry.targetDate} ({entry.fixturesCount} juegos)
-                    </span>
-                    <p className="text-[10px] text-slate-500 font-mono truncate">
-                      {new Date(entry.at).toLocaleTimeString('es-CO')} · {entry.endpoint}
-                    </p>
-                  </div>
-                  <span className="text-[10px] font-mono text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md shrink-0">
-                    Libres: {entry.remainingAfter ?? '?'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="p-2 rounded-xl bg-white border border-slate-200/80 space-y-1 text-xs">
+            <p className="font-semibold text-slate-800">{footballDataStatus}</p>
+            <p className="text-[10px] text-slate-500">Solicitudes en sesión: {footballDataRequests} · caché: {footballDataCacheHits} hits</p>
+            <p className="text-[10px] text-slate-500">Última respuesta válida: {footballDataLastSuccess}</p>
+            <p className="text-[10px] text-slate-500">Supabase: {serverTelemetry?.supabasePersistence ? 'persistencia disponible' : 'se usa caché local'}</p>
+          </div>
         </div>
       </div>
     </div>

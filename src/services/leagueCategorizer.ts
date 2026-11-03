@@ -41,7 +41,13 @@ const INTL_KEYWORDS = [
   'afcon',
   'afc asian cup',
   'concacaf champions cup',
+  'copa centroamericana',
+  'central american cup',
   'concacaf nations league',
+  'eliminatorias conmebol',
+  'eliminatorias afc',
+  'afcon qualifiers',
+  'fifa friendlies',
   'uefa super cup',
   'uefa nations league',
   'european championship',
@@ -234,7 +240,7 @@ const ALLOWED_PRIME_COUNTRIES: Record<string, {
 }> = {
   COLOMBIA: {
     countryMatches: ['colombia'],
-    allowedLeaguesPattern: /\b(primera a|primera b|liga betplay|torneo betplay|copa betplay|copa colombia|superliga|dimayor)\b/i
+    allowedLeaguesPattern: /\b(primera a|liga betplay|copa betplay|copa colombia|superliga)\b/i
   },
   ENGLAND: {
     countryMatches: ['england', 'inglaterra'],
@@ -263,7 +269,7 @@ const ALLOWED_PRIME_COUNTRIES: Record<string, {
   },
   ARGENTINA: {
     countryMatches: ['argentina'],
-    allowedLeaguesPattern: /\b(liga profesional|primera divisi[oó]n|copa de la liga|copa argentina|trofeo de campeones|primera nacional)\b/i,
+    allowedLeaguesPattern: /\b(liga profesional|primera divisi[oó]n|copa de la liga|copa argentina|trofeo de campeones)\b/i,
     excludedLeaguesPattern: /\b(primera b|primera c|primera d|torneo federal|reserva|proyecci[oó]n|femenino)\b/i
   },
   BRAZIL: {
@@ -303,7 +309,7 @@ const ALLOWED_PRIME_COUNTRIES: Record<string, {
   },
   CHILE: {
     countryMatches: ['chile'],
-    allowedLeaguesPattern: /\b(primera divisi[oó]n|primera b|copa chile|supercopa)\b/i,
+    allowedLeaguesPattern: /\b(primera divisi[oó]n|copa chile|supercopa)\b/i,
     excludedLeaguesPattern: /\b(segunda divisi[oó]n|tercera)\b/i
   },
   URUGUAY: {
@@ -350,6 +356,16 @@ const ALLOWED_PRIME_COUNTRIES: Record<string, {
     countryMatches: ['japan', 'japon', 'japón'],
     allowedLeaguesPattern: /\b(j1 league|j\.league|emperor cup|j-league cup)\b/i,
     excludedLeaguesPattern: /\b(j2 league|j3 league|we league|university)\b/i
+  },
+  NORWAY: {
+    countryMatches: ['norway', 'noruega'],
+    allowedLeaguesPattern: /\b(eliteserien)\b/i,
+    excludedLeaguesPattern: /\b(obos ligaen|2\. divisjon|3\. divisjon|women|u19|u21)\b/i
+  },
+  SWEDEN: {
+    countryMatches: ['sweden', 'suecia'],
+    allowedLeaguesPattern: /\b(allsvenskan)\b/i,
+    excludedLeaguesPattern: /\b(superettan|ettan|women|u19|u21)\b/i
   }
 };
 
@@ -458,7 +474,7 @@ export function isExcludedYouthOrAmateurLeague(
     (ic) => cName === ic || cName.includes(ic)
   );
   const isEliteIntlTournament =
-    /\b(uefa champions league|champions league|uefa europa league|europa league|uefa conference league|conference league|uefa super cup|uefa nations league|european championship|eurocopa|caf champions league|caf confederation cup|africa cup of nations|afcon|afc champions league|afc asian cup|copa libertadores|libertadores|copa sudamericana|sudamericana|recopa|copa america|copa am[eé]rica|world cup|mundial|nations league|eliminatorias|wc qualification|world cup qualification|concacaf champions cup|concacaf champions league|leagues cup|gold cup|copa oro|club world cup|fifa intercontinental cup)\b/i.test(
+    /\b(uefa champions league|champions league|uefa europa league|europa league|uefa conference league|conference league|uefa super cup|uefa nations league|european championship|eurocopa|caf champions league|caf confederation cup|africa cup of nations|afcon|afcon qualifiers|afc champions league|afc asian cup|copa libertadores|libertadores|copa sudamericana|sudamericana|recopa|copa america|copa am[eé]rica|world cup|mundial|nations league|eliminatorias|qualifying|qualifiers|wc qualification|world cup qualification|concacaf champions cup|concacaf champions league|copa centroamericana|central american cup|leagues cup|gold cup|copa oro|fifa friendlies|international friendlies|club world cup|fifa intercontinental cup)\b/i.test(
       lName
     ) &&
     !/\b(ofc|afc cup|asean|cosafa|cecafa|wafcon|u17|u20|u23|women|youth)\b/i.test(`${lName} ${cName}`);
@@ -601,12 +617,18 @@ function canonicalInternationalCompetitionName(leagueName: string): string {
     [/\bafc champions league\b/, 'AFC Champions League'],
     [/\bcaf champions league\b/, 'CAF Champions League'],
     [/\bconcacaf champions (cup|league)\b/, 'CONCACAF Champions Cup'],
+    [/\bcopa centroamericana\b|\bcentral american cup\b/, 'Copa Centroamericana CONCACAF'],
     [/\buefa champions league\b|\bchampions league\b/, 'UEFA Champions League'],
     [/\buefa europa league\b|\beuropa league\b/, 'UEFA Europa League'],
     [/\buefa conference league\b|\bconference league\b/, 'UEFA Conference League'],
     [/\buefa super cup\b/, 'UEFA Super Cup'],
     [/\bconcacaf nations league\b/, 'CONCACAF Nations League'],
     [/\buefa nations league\b/, 'UEFA Nations League'],
+    [/\b(eliminatorias|qualifiers|qualifying).*conmebol\b|\bconmebol.*(qualifiers|qualifying)\b/, 'Eliminatorias CONMEBOL'],
+    [/\b(eliminatorias|qualifiers|qualifying).*afc\b|\bafc.*(qualifiers|qualifying)\b/, 'Eliminatorias AFC'],
+    [/\b(clasificacion|qualification|qualifiers) afcon\b/, 'Clasificación AFCON'],
+    [/\b(afcon|africa cup of nations).*(qualifiers|qualifying)\b/, 'Clasificación AFCON'],
+    [/\b(fifa friendlies|international friendlies|amistosos internacionales)\b/, 'Amistosos FIFA'],
     [/\bcaf confederation cup\b/, 'CAF Confederation Cup'],
     [/\bafrica cup of nations\b|\bafcon\b/, 'Africa Cup of Nations'],
     [/\bafc asian cup\b/, 'AFC Asian Cup'],
@@ -1003,8 +1025,13 @@ export const STATIC_SOCCER_CATALOG: StaticCatalogLeagueItem[] = [
   { key: 'INTL_copa_sudamericana', displayName: 'Copa Sudamericana', flag: '🌎', tier: 'PRIMARY' },
   { key: 'INTL_recopa_sudamericana', displayName: 'Recopa Sudamericana', flag: '🌎', tier: 'PRIMARY' },
   { key: 'INTL_concacaf_champions_cup', displayName: 'CONCACAF Champions Cup', flag: '🌎', tier: 'PRIMARY' },
+  { key: 'INTL_copa_centroamericana_concacaf', displayName: 'Copa Centroamericana CONCACAF', flag: '🌎', tier: 'PRIMARY' },
   { key: 'INTL_concacaf_gold_cup', displayName: 'CONCACAF Gold Cup', flag: '🌎', tier: 'PRIMARY' },
   { key: 'INTL_concacaf_nations_league', displayName: 'CONCACAF Nations League', flag: '🌎', tier: 'PRIMARY' },
+  { key: 'INTL_eliminatorias_conmebol', displayName: 'Eliminatorias CONMEBOL', flag: '🌎', tier: 'PRIMARY' },
+  { key: 'INTL_eliminatorias_afc', displayName: 'Eliminatorias AFC', flag: '🌏', tier: 'PRIMARY' },
+  { key: 'INTL_clasificacion_afcon', displayName: 'Clasificación AFCON', flag: '🌍', tier: 'PRIMARY' },
+  { key: 'INTL_amistosos_fifa', displayName: 'Amistosos FIFA', flag: '🌍', tier: 'PRIMARY' },
   { key: 'INTL_leagues_cup', displayName: 'Leagues Cup', flag: '🌎', tier: 'PRIMARY' },
   { key: 'INTL_afc_champions_league_elite', displayName: 'AFC Champions League Elite', flag: '🌏', tier: 'PRIMARY' },
   { key: 'INTL_afc_champions_league_two', displayName: 'AFC Champions League Two', flag: '🌏', tier: 'PRIMARY' },

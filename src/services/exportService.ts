@@ -30,7 +30,9 @@ export function exportToExcel(items: ExportItem[], fileNamePrefix = 'Pronosticos
     'xG Total',
     'Ambos Marcan',
     'Mas de 2.5 Goles (%)',
-    'Veredicto / Pronostico'
+    'Veredicto / Pronostico',
+    'Fuentes de datos',
+    'Validación marcador Football-Data'
   ];
 
   const rows = items.map(({ fixture, analysis }) => {
@@ -56,7 +58,11 @@ export function exportToExcel(items: ExportItem[], fileNamePrefix = 'Pronosticos
       `${dixonColes.totalXG.toFixed(2)}`,
       `"${btts}"`,
       `${goalsMarket.over25}%`,
-      `"${cleanVerdict}"`
+      `"${cleanVerdict}"`,
+      `"${(fixture.sourceProviders || []).join(' + ') || 'No especificada'}"`,
+      `"${fixture.footballDataCrossCheck
+        ? `${fixture.footballDataCrossCheck.matchesPrimary ? 'Coincide' : 'DISCREPA'} (${fixture.footballDataCrossCheck.homeScore}-${fixture.footballDataCrossCheck.awayScore})`
+        : 'Sin cruce Football-Data'}"`
     ].join(';');
   });
 

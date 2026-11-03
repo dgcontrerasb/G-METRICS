@@ -1846,6 +1846,9 @@ var peakOnlineAt = (/* @__PURE__ */ new Date()).toISOString();
 var serverCacheHits = 0;
 var serverCacheMisses = 0;
 var espnPulseCallsCount = 0;
+var footballDataRequestsSinceBoot = 0;
+var footballDataCacheHits = 0;
+var footballDataLastSuccessAt = null;
 var supabaseTelemetryHydrated = false;
 var serverBootTimeIso = (/* @__PURE__ */ new Date()).toISOString();
 function purgeExpiredOnlineSessions() {
@@ -1884,6 +1887,15 @@ async function hydrateTelemetryFromSupabaseIfNeeded() {
       if (typeof d.espnPulseCallsCount === "number" && espnPulseCallsCount < d.espnPulseCallsCount) {
         espnPulseCallsCount = d.espnPulseCallsCount;
       }
+      if (typeof d.footballDataRequestsSinceBoot === "number") {
+        footballDataRequestsSinceBoot = Math.max(footballDataRequestsSinceBoot, d.footballDataRequestsSinceBoot);
+      }
+      if (typeof d.footballDataCacheHits === "number") {
+        footballDataCacheHits = Math.max(footballDataCacheHits, d.footballDataCacheHits);
+      }
+      if (typeof d.footballDataLastSuccessAt === "string") {
+        footballDataLastSuccessAt = d.footballDataLastSuccessAt;
+      }
     }
   } catch {
   }
@@ -1896,7 +1908,10 @@ function saveTelemetrySnapshotToCache(syncToSupabase = false) {
     apiFootballAuditLog,
     serverCacheHits,
     serverCacheMisses,
-    espnPulseCallsCount
+    espnPulseCallsCount,
+    footballDataRequestsSinceBoot,
+    footballDataCacheHits,
+    footballDataLastSuccessAt
   };
   setCacheItem("__server_telemetry_v1__", snapshot);
   if (syncToSupabase && isSupabaseConfigured()) {
@@ -2016,16 +2031,6 @@ function setCacheItem(key, data) {
   memoryCache.set(key, { data, timestamp: Date.now() });
   persistCacheToDisk();
 }
-function updateQuotaFromHeaders(headers) {
-  const rem = headers.get("x-ratelimit-requests-remaining");
-  if (rem) {
-    const val = parseInt(rem, 10);
-    if (!isNaN(val)) {
-      lastRemainingCalls = val;
-      quotaShieldActive = val <= QUOTA_SHIELD_THRESHOLD;
-    }
-  }
-}
 async function runSingleFlight(key, fn) {
   const existing = inFlightRequests.get(key);
   if (existing) {
@@ -2060,9 +2065,6 @@ function getSecretKey(keyName) {
   }
   return "";
 }
-function getSecretApiKey() {
-  return getSecretKey("API_FOOTBALL_KEY");
-}
 function getColombiaDateStr(offsetDays = 0, timeZone = "America/Bogota") {
   const d = /* @__PURE__ */ new Date();
   if (offsetDays !== 0) {
@@ -2085,11 +2087,23 @@ function getColombiaDateStr(offsetDays = 0, timeZone = "America/Bogota") {
   }
 }
 var ESPN_LEAGUE_CATALOG = {
+  "775": { id: 2, name: "UEFA Champions League", country: "Internacional", flag: "\u2B50" },
+  "776": { id: 3, name: "UEFA Europa League", country: "Internacional", flag: "\u2B50" },
+  "20296": { id: 848, name: "UEFA Conference League", country: "Internacional", flag: "\u2B50" },
+  "783": { id: 13, name: "Copa Libertadores", country: "Internacional", flag: "\u{1F30E}" },
+  "5454": { id: 11, name: "Copa Sudamericana", country: "Internacional", flag: "\u{1F30E}" },
+  "3929": { id: 3929, name: "Copa Centroamericana CONCACAF", country: "Internacional", flag: "\u{1F30E}" },
+  "2466": { id: 2466, name: "AFC Champions League Two", country: "Internacional", flag: "\u{1F30F}" },
+  "787": { id: 29, name: "Eliminatorias CONMEBOL", country: "Internacional", flag: "\u{1F30E}" },
+  "789": { id: 30, name: "Eliminatorias AFC", country: "Internacional", flag: "\u{1F30F}" },
+  "2395": { id: 5, name: "UEFA Nations League", country: "Internacional", flag: "\u2B50" },
+  "19267": { id: 14, name: "CONCACAF Nations League", country: "Internacional", flag: "\u{1F30E}" },
+  "8315": { id: 29, name: "Clasificaci\xF3n AFCON", country: "Internacional", flag: "\u{1F30D}" },
+  "3922": { id: 10, name: "Amistosos FIFA", country: "Internacional", flag: "\u{1F30D}" },
   "700": { id: 39, name: "Premier League", country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
   "3920": { id: 48, name: "EFL Cup (Carabao Cup)", country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
+  "3914": { id: 40, name: "EFL Championship", country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
   "3915": { id: 40, name: "EFL Championship", country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
-  "3916": { id: 41, name: "EFL League One", country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
-  "3917": { id: 42, name: "EFL League Two", country: "Inglaterra", flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}" },
   "740": { id: 140, name: "LaLiga EA Sports", country: "Espa\xF1a", flag: "\u{1F1EA}\u{1F1F8}" },
   "3951": { id: 143, name: "Copa del Rey", country: "Espa\xF1a", flag: "\u{1F1EA}\u{1F1F8}" },
   "3921": { id: 141, name: "LaLiga Hypermotion", country: "Espa\xF1a", flag: "\u{1F1EA}\u{1F1F8}" },
@@ -2107,10 +2121,14 @@ var ESPN_LEAGUE_CATALOG = {
   "3901": { id: 144, name: "Pro League", country: "B\xE9lgica", flag: "\u{1F1E7}\u{1F1EA}" },
   "3946": { id: 203, name: "S\xFCper Lig", country: "Turqu\xEDa", flag: "\u{1F1F9}\u{1F1F7}" },
   "650": { id: 239, name: "Liga BetPlay Dimayor", country: "Colombia", flag: "\u{1F1E8}\u{1F1F4}" },
+  "8313": { id: 239, name: "Copa BetPlay Dimayor", country: "Colombia", flag: "\u{1F1E8}\u{1F1F4}" },
   "745": { id: 128, name: "Liga Profesional Argentina", country: "Argentina", flag: "\u{1F1E6}\u{1F1F7}" },
+  "8107": { id: 130, name: "Copa Argentina", country: "Argentina", flag: "\u{1F1E6}\u{1F1F7}" },
   "630": { id: 71, name: "Brasileir\xE3o S\xE9rie A", country: "Brasil", flag: "\u{1F1E7}\u{1F1F7}" },
   "4007": { id: 72, name: "Brasileir\xE3o S\xE9rie B", country: "Brasil", flag: "\u{1F1E7}\u{1F1F7}" },
+  "8306": { id: 73, name: "Copa do Brasil", country: "Brasil", flag: "\u{1F1E7}\u{1F1F7}" },
   "640": { id: 265, name: "Primera Divisi\xF3n", country: "Chile", flag: "\u{1F1E8}\u{1F1F1}" },
+  "8312": { id: 266, name: "Copa Chile", country: "Chile", flag: "\u{1F1E8}\u{1F1F1}" },
   "670": { id: 281, name: "Liga 1", country: "Per\xFA", flag: "\u{1F1F5}\u{1F1EA}" },
   "660": { id: 242, name: "LigaPro", country: "Ecuador", flag: "\u{1F1EA}\u{1F1E8}" },
   "680": { id: 268, name: "Campeonato Uruguayo", country: "Uruguay", flag: "\u{1F1FA}\u{1F1FE}" },
@@ -2118,8 +2136,12 @@ var ESPN_LEAGUE_CATALOG = {
   "3949": { id: 299, name: "Liga FUTVE", country: "Venezuela", flag: "\u{1F1FB}\u{1F1EA}" },
   "620": { id: 344, name: "Divisi\xF3n Profesional", country: "Bolivia", flag: "\u{1F1E7}\u{1F1F4}" },
   "760": { id: 262, name: "Liga MX", country: "M\xE9xico", flag: "\u{1F1F2}\u{1F1FD}" },
+  "3932": { id: 263, name: "Liga de Expansi\xF3n MX", country: "M\xE9xico", flag: "\u{1F1F2}\u{1F1FD}" },
   "770": { id: 253, name: "MLS", country: "Estados Unidos", flag: "\u{1F1FA}\u{1F1F8}" },
   "21231": { id: 307, name: "Saudi Pro League", country: "Arabia Saudita", flag: "\u{1F1F8}\u{1F1E6}" },
+  "750": { id: 98, name: "J1 League", country: "Jap\xF3n", flag: "\u{1F1EF}\u{1F1F5}" },
+  "3960": { id: 103, name: "Eliteserien", country: "Noruega", flag: "\u{1F1F3}\u{1F1F4}" },
+  "3945": { id: 113, name: "Allsvenskan", country: "Suecia", flag: "\u{1F1F8}\u{1F1EA}" },
   "3902": { id: 17, name: "AFC Champions League Elite", country: "Internacional", flag: "\u{1F30F}" },
   "2391": { id: 12, name: "CAF Champions League", country: "Internacional", flag: "\u{1F30D}" },
   "18000": { id: 20, name: "CAF Confederation Cup", country: "Internacional", flag: "\u{1F30D}" }
@@ -2129,15 +2151,23 @@ function resolveEspnInternationalLeague(name) {
   const knownTournaments = [
     [/\b(caf champions league)\b/, "CAF Champions League", "\u{1F30D}"],
     [/\b(caf confederation cup)\b/, "CAF Confederation Cup", "\u{1F30D}"],
+    [/\b(afcon|africa cup of nations).*(qualifiers|qualifying)\b/, "Clasificaci\xF3n AFCON", "\u{1F30D}"],
     [/\b(africa cup of nations|afcon)\b/, "Africa Cup of Nations", "\u{1F30D}"],
     [/\b(afc champions league elite)\b/, "AFC Champions League Elite", "\u{1F30F}"],
     [/\b(afc champions league (two|2))\b/, "AFC Champions League Two", "\u{1F30F}"],
     [/\b(afc champions league)\b/, "AFC Champions League", "\u{1F30F}"],
     [/\b(afc asian cup)\b/, "AFC Asian Cup", "\u{1F30F}"],
     [/\b(concacaf champions cup)\b/, "CONCACAF Champions Cup", "\u{1F30E}"],
+    [/\b(copa centroamericana|concacaf central american cup)\b/, "Copa Centroamericana CONCACAF", "\u{1F30E}"],
+    [/\b(copa centroamericana|concacaf central american cup)\b/, "Copa Centroamericana CONCACAF", "\u{1F30E}"],
     [/\b(concacaf champions league)\b/, "CONCACAF Champions League", "\u{1F30E}"],
     [/\b(gold cup|copa oro)\b/, "CONCACAF Gold Cup", "\u{1F30E}"],
     [/\b(concacaf nations league)\b/, "CONCACAF Nations League", "\u{1F30E}"],
+    [/\b(eliminatorias|qualifiers|qualifying).*conmebol\b|\bconmebol.*(qualifiers|qualifying)\b/, "Eliminatorias CONMEBOL", "\u{1F30E}"],
+    [/\b(eliminatorias|qualifiers|qualifying).*afc\b|\bafc.*(qualifiers|qualifying)\b/, "Eliminatorias AFC", "\u{1F30F}"],
+    [/\b(clasificacion afcon|qualification afcon|qualifiers afcon)\b/, "Clasificaci\xF3n AFCON", "\u{1F30D}"],
+    [/\b(afcon|africa cup of nations).*(qualifiers|qualifying)\b/, "Clasificaci\xF3n AFCON", "\u{1F30D}"],
+    [/\b(fifa friendlies|international friendlies|amistosos internacionales)\b/, "Amistosos FIFA", "\u{1F30D}"],
     [/\b(leagues cup)\b/, "Leagues Cup", "\u{1F30E}"],
     [/\b(copa libertadores|libertadores)\b/, "Copa Libertadores", "\u{1F30E}"],
     [/\b(copa sudamericana|sudamericana)\b/, "Copa Sudamericana", "\u{1F30E}"],
@@ -2148,6 +2178,9 @@ function resolveEspnInternationalLeague(name) {
     [/\b(uefa )?conference league\b/, "UEFA Conference League", "\u2B50"],
     [/\b(uefa super cup)\b/, "UEFA Super Cup", "\u2B50"],
     [/\b(uefa nations league)\b/, "UEFA Nations League", "\u2B50"],
+    [/\b(eliminatorias|qualifiers|qualifying).*conmebol\b|\bconmebol.*(qualifiers|qualifying)\b/, "Eliminatorias CONMEBOL", "\u{1F30E}"],
+    [/\b(eliminatorias|qualifiers|qualifying).*afc\b|\bafc.*(qualifiers|qualifying)\b/, "Eliminatorias AFC", "\u{1F30F}"],
+    [/\b(fifa friendlies|international friendlies|amistosos internacionales)\b/, "Amistosos FIFA", "\u{1F30D}"],
     [/\b(uefa european championship|european championship|uefa euro|eurocopa)\b/, "UEFA European Championship", "\u2B50"],
     [/\b(fifa club world cup|club world cup|mundial de clubes)\b/, "FIFA Club World Cup", "\u{1F30D}"],
     [/\b(fifa world cup|world cup|copa mundial)\b/, "FIFA World Cup", "\u{1F30D}"]
@@ -2178,7 +2211,10 @@ var COUNTRY_TRANSLATION_MAP = {
   Venezuela: { country: "Venezuela", flag: "\u{1F1FB}\u{1F1EA}" },
   Bolivia: { country: "Bolivia", flag: "\u{1F1E7}\u{1F1F4}" },
   Mexico: { country: "M\xE9xico", flag: "\u{1F1F2}\u{1F1FD}" },
-  USA: { country: "Estados Unidos", flag: "\u{1F1FA}\u{1F1F8}" }
+  USA: { country: "Estados Unidos", flag: "\u{1F1FA}\u{1F1F8}" },
+  Japan: { country: "Jap\xF3n", flag: "\u{1F1EF}\u{1F1F5}" },
+  Norway: { country: "Noruega", flag: "\u{1F1F3}\u{1F1F4}" },
+  Sweden: { country: "Suecia", flag: "\u{1F1F8}\u{1F1EA}" }
 };
 function normalizeTeamKey(name) {
   return (name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\b(fc|cf|sc|ac|cd|ud|sd|rcd|fk|pfk|sk|bk|if|ik|sv|vfb|tsg|fsv|club|deportivo|atletico|athletic|real|sporting|unidos|united|city|town|rovers|wanderers|al|el|de|del|la|las|los|sad|baku|jeddah|riyadh)\b/g, "").replace(/[^a-z0-9]/g, "").trim();
@@ -2437,224 +2473,6 @@ function extractEspnScoreboardTelemetry(ev, comp, homeComp, awayComp, homeName, 
     elapsedMin || 45
   );
   return { liveStats, liveEvents };
-}
-function extractApiFootballLiveTelemetry(rawFix, overrideHomeScore, overrideAwayScore, overrideMinute, isHalfTime, isFinished) {
-  const homeName = String(rawFix?.teams?.home?.name || "Local");
-  const awayName = String(rawFix?.teams?.away?.name || "Visitante");
-  const homeId = rawFix?.teams?.home?.id;
-  const awayId = rawFix?.teams?.away?.id;
-  const homeScore = overrideHomeScore ?? Number(rawFix?.goals?.home ?? rawFix?.score?.fulltime?.home ?? 0);
-  const awayScore = overrideAwayScore ?? Number(rawFix?.goals?.away ?? rawFix?.score?.fulltime?.away ?? 0);
-  const currentMin = overrideMinute ?? Number(rawFix?.fixture?.status?.elapsed || 45);
-  const fId = String(rawFix?.fixture?.id || "match");
-  const rawEvents = Array.isArray(rawFix?.events) ? rawFix.events : [];
-  const events = [
-    {
-      id: `kickoff_${fId}`,
-      minute: 1,
-      displayMinute: "1'",
-      type: "PERIOD_START",
-      teamSide: "NEUTRAL",
-      detail: "Inicio del primer tiempo"
-    }
-  ];
-  let homeGoalsRecorded = 0;
-  let awayGoalsRecorded = 0;
-  let homeYellows = 0;
-  let awayYellows = 0;
-  let homeReds = 0;
-  let awayReds = 0;
-  rawEvents.forEach((ev, idx) => {
-    const evTeamId = ev?.team?.id;
-    const evTeamName = String(ev?.team?.name || "");
-    const side = homeId && evTeamId === homeId || singleTeamFuzzyMatch(normalizeTeamKey(evTeamName), normalizeTeamKey(homeName)) ? "HOME" : awayId && evTeamId === awayId || singleTeamFuzzyMatch(normalizeTeamKey(evTeamName), normalizeTeamKey(awayName)) ? "AWAY" : "HOME";
-    const teamLabel = side === "HOME" ? homeName : awayName;
-    const min = Math.min(120, Math.max(1, Number(ev?.time?.elapsed || 30)));
-    const extra = ev?.time?.extra ? `+${ev.time.extra}` : "";
-    const displayMinute = `${min}${extra}'`;
-    const rawPlayer = ev?.player?.name;
-    const rawAssist = ev?.assist?.name;
-    const playerPrimary = resolveServerPlayerName(rawPlayer, teamLabel, 9 - idx % 4, false);
-    const playerSecondary = rawAssist ? resolveServerPlayerName(rawAssist, teamLabel, 7, false) : void 0;
-    const evType = String(ev?.type || "").toLowerCase();
-    const evDetail = String(ev?.detail || "").toLowerCase();
-    if (evType === "goal" && !evDetail.includes("missed")) {
-      if (side === "HOME") homeGoalsRecorded++;
-      else awayGoalsRecorded++;
-      const isPen = evDetail.includes("penalty");
-      const isOG = evDetail.includes("own goal");
-      events.push({
-        id: `af_goal_${fId}_${idx}_${min}`,
-        minute: min,
-        displayMinute,
-        type: "GOAL",
-        teamSide: side,
-        teamName: teamLabel,
-        playerPrimary,
-        playerSecondary,
-        detail: isPen ? `Gol de penal convertido por ${playerPrimary}` : isOG ? `Gol en propia puerta (${playerPrimary})` : playerSecondary ? `Gol de ${playerPrimary} \xB7 Asistencia de ${playerSecondary}` : `Anotaci\xF3n oficial de ${playerPrimary} para ${teamLabel}`
-      });
-    } else if (evType === "card") {
-      if (evDetail.includes("red")) {
-        if (side === "HOME") homeReds++;
-        else awayReds++;
-        events.push({
-          id: `af_rc_${fId}_${idx}_${min}`,
-          minute: min,
-          displayMinute,
-          type: "RED_CARD",
-          teamSide: side,
-          teamName: teamLabel,
-          playerPrimary,
-          detail: `Tarjeta roja / expulsi\xF3n para ${playerPrimary}`
-        });
-      } else {
-        if (side === "HOME") homeYellows++;
-        else awayYellows++;
-        events.push({
-          id: `af_yc_${fId}_${idx}_${min}`,
-          minute: min,
-          displayMinute,
-          type: "YELLOW_CARD",
-          teamSide: side,
-          teamName: teamLabel,
-          playerPrimary,
-          detail: `Amonestaci\xF3n con tarjeta amarilla para ${playerPrimary}`
-        });
-      }
-    } else if (evType === "subst") {
-      const subIn = resolveServerPlayerName(rawAssist || rawPlayer, teamLabel, 12 + idx % 5, true);
-      const subOut = resolveServerPlayerName(rawPlayer, teamLabel, 6 + idx % 5, false);
-      events.push({
-        id: `af_sub_${fId}_${idx}_${min}`,
-        minute: min,
-        displayMinute,
-        type: "SUBSTITUTION",
-        teamSide: side,
-        teamName: teamLabel,
-        playerPrimary: subIn,
-        playerSecondary: subOut,
-        detail: `Sustituci\xF3n en ${teamLabel}: ingresa ${subIn} por ${subOut}`
-      });
-    }
-  });
-  const htHome = rawFix?.score?.halftime?.home;
-  const htAway = rawFix?.score?.halftime?.away;
-  const missingHomeGoals = Math.max(0, homeScore - homeGoalsRecorded);
-  const missingAwayGoals = Math.max(0, awayScore - awayGoalsRecorded);
-  for (let i = 0; i < missingHomeGoals; i++) {
-    const inFirstHalf = typeof htHome === "number" && i < htHome;
-    const goalMin = inFirstHalf ? Math.min(44, Math.max(8, Math.round((i + 1) / (missingHomeGoals + 1) * Math.min(44, currentMin)))) : Math.min(currentMin, Math.max(12, Math.round((i + 1) / (missingHomeGoals + 1) * currentMin)));
-    const scorer = resolveServerPlayerName(null, homeName, 9 - i % 3, false);
-    events.push({
-      id: `reconciled_goal_home_${fId}_${i}`,
-      minute: goalMin,
-      displayMinute: `${goalMin}'`,
-      type: "GOAL",
-      teamSide: "HOME",
-      teamName: homeName,
-      playerPrimary: scorer,
-      detail: `Anotaci\xF3n oficial de ${scorer} para ${homeName}`
-    });
-  }
-  for (let i = 0; i < missingAwayGoals; i++) {
-    const inFirstHalf = typeof htAway === "number" && i < htAway;
-    const goalMin = inFirstHalf ? Math.min(44, Math.max(11, Math.round((i + 1) / (missingAwayGoals + 1) * Math.min(44, currentMin)))) : Math.min(currentMin, Math.max(16, Math.round((i + 1) / (missingAwayGoals + 1) * currentMin)));
-    const scorer = resolveServerPlayerName(null, awayName, 10 - i % 3, false);
-    events.push({
-      id: `reconciled_goal_away_${fId}_${i}`,
-      minute: goalMin,
-      displayMinute: `${goalMin}'`,
-      type: "GOAL",
-      teamSide: "AWAY",
-      teamName: awayName,
-      playerPrimary: scorer,
-      detail: `Anotaci\xF3n oficial de ${scorer} para ${awayName}`
-    });
-  }
-  if (isHalfTime || currentMin >= 45 || isFinished) {
-    events.push({
-      id: `halftime_${fId}`,
-      minute: 45,
-      displayMinute: "45'",
-      type: "PERIOD_HALF",
-      teamSide: "NEUTRAL",
-      detail: `Entretiempo reglamentario (${htHome ?? homeScore} - ${htAway ?? awayScore})`
-    });
-  }
-  if (isFinished) {
-    events.push({
-      id: `fulltime_${fId}`,
-      minute: 90,
-      displayMinute: "90'",
-      type: "PERIOD_END",
-      teamSide: "NEUTRAL",
-      detail: `Final del encuentro (${homeScore} - ${awayScore})`
-    });
-  }
-  const progressFactor = Math.min(1, Math.max(0.15, currentMin / 90));
-  const existingStats = rawFix?.liveStats;
-  const homeCorners = existingStats?.home?.corners ?? Math.max(1, Math.round((4.8 + homeScore * 0.7) * progressFactor));
-  const awayCorners = existingStats?.away?.corners ?? Math.max(1, Math.round((4.1 + awayScore * 0.7) * progressFactor));
-  const finalHomeYellows = Math.max(homeYellows, existingStats?.home?.yellowCards ?? Math.floor(1.8 * progressFactor));
-  const finalAwayYellows = Math.max(awayYellows, existingStats?.away?.yellowCards ?? Math.floor(2.1 * progressFactor));
-  while (homeYellows < finalHomeYellows) {
-    homeYellows++;
-    const ycMin = Math.min(currentMin, Math.max(14, Math.round(homeYellows / (finalHomeYellows + 1) * currentMin)));
-    const player = resolveServerPlayerName(null, homeName, 4 + homeYellows, false);
-    events.push({
-      id: `reconciled_yc_home_${fId}_${homeYellows}`,
-      minute: ycMin,
-      displayMinute: `${ycMin}'`,
-      type: "YELLOW_CARD",
-      teamSide: "HOME",
-      teamName: homeName,
-      playerPrimary: player,
-      detail: `Tarjeta amarilla mostrada a ${player} (${homeName})`
-    });
-  }
-  while (awayYellows < finalAwayYellows) {
-    awayYellows++;
-    const ycMin = Math.min(currentMin, Math.max(18, Math.round(awayYellows / (finalAwayYellows + 1) * currentMin)));
-    const player = resolveServerPlayerName(null, awayName, 5 + awayYellows, false);
-    events.push({
-      id: `reconciled_yc_away_${fId}_${awayYellows}`,
-      minute: ycMin,
-      displayMinute: `${ycMin}'`,
-      type: "YELLOW_CARD",
-      teamSide: "AWAY",
-      teamName: awayName,
-      playerPrimary: player,
-      detail: `Tarjeta amarilla mostrada a ${player} (${awayName})`
-    });
-  }
-  const liveStats = {
-    home: {
-      corners: homeCorners,
-      yellowCards: finalHomeYellows,
-      redCards: Math.max(homeReds, existingStats?.home?.redCards ?? 0),
-      shots: existingStats?.home?.shots ?? Math.max(homeScore + 2, Math.round(12.5 * progressFactor)),
-      shotsOnTarget: existingStats?.home?.shotsOnTarget ?? Math.max(homeScore, Math.round(4.6 * progressFactor)),
-      possessionPct: existingStats?.home?.possessionPct ?? 52,
-      foulsCommitted: existingStats?.home?.foulsCommitted ?? Math.round(11 * progressFactor)
-    },
-    away: {
-      corners: awayCorners,
-      yellowCards: finalAwayYellows,
-      redCards: Math.max(awayReds, existingStats?.away?.redCards ?? 0),
-      shots: existingStats?.away?.shots ?? Math.max(awayScore + 1, Math.round(10.5 * progressFactor)),
-      shotsOnTarget: existingStats?.away?.shotsOnTarget ?? Math.max(awayScore, Math.round(3.8 * progressFactor)),
-      possessionPct: existingStats?.away?.possessionPct ?? 48,
-      foulsCommitted: existingStats?.away?.foulsCommitted ?? Math.round(12 * progressFactor)
-    },
-    updatedAt: Date.now()
-  };
-  const liveEvents = reconcileCornerEvents(events, homeCorners, awayCorners, homeName, awayName, currentMin);
-  return { liveStats, liveEvents };
-}
-async function fetchApiFootballLiveAll() {
-  const cached = getCacheItem("api_football_live_all_v2");
-  return cached?.data || [];
 }
 function mapEspnPosition(posAbbr) {
   const p = (posAbbr || "").toUpperCase();
@@ -3045,6 +2863,9 @@ async function fetchEspnSoccerFixtures(targetDate, clientTz = "America/Bogota") 
     if (!res.ok) return [];
     const data = await res.json();
     const events = Array.isArray(data?.events) ? data.events : [];
+    const espnLeagues = new Map(
+      (Array.isArray(data?.leagues) ? data.leagues : []).map((league) => [String(league?.id || ""), league])
+    );
     const mapped = [];
     const now = Date.now();
     for (const ev of events) {
@@ -3081,6 +2902,7 @@ async function fetchEspnSoccerFixtures(targetDate, clientTz = "America/Bogota") 
       const espnLeagueId = rawUid.match(/~l:(\d+)/)?.[1] || "0";
       const rawCountry = String(comp?.venue?.address?.country || "Internacional");
       const catalogEntry = ESPN_LEAGUE_CATALOG[espnLeagueId];
+      const espnLeague = espnLeagues.get(espnLeagueId);
       const countryTranslated = COUNTRY_TRANSLATION_MAP[rawCountry];
       const clockParsed = parseEspnMatchStatusAndClock(ev);
       const isLive = clockParsed.isLive;
@@ -3089,8 +2911,10 @@ async function fetchEspnSoccerFixtures(targetDate, clientTz = "America/Bogota") 
       const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || "Visitante");
       const espnEventId = String(ev.id || "");
       const slug = String(ev?.season?.slug || "Jornada Regular").replace(/-/g, " ");
-      const rawLeagueName = String(ev?.league?.name || comp?.league?.name || comp?.name || "");
-      const internationalLeague = resolveEspnInternationalLeague(`${rawLeagueName} ${slug} ${rawUid}`);
+      const rawLeagueName = String(
+        espnLeague?.displayName || espnLeague?.name || ev?.league?.displayName || ev?.league?.name || comp?.league?.displayName || comp?.league?.name || comp?.notes?.[0]?.headline || ev?.season?.displayName || ev?.season?.name || espnLeague?.slug || slug
+      );
+      const internationalLeague = resolveEspnInternationalLeague(`${rawLeagueName} ${espnLeague?.slug || ""} ${slug} ${rawUid}`);
       const isNatTeamMatch = !catalogEntry && isServerNationalTeamSub17PlusMatch(slug, rawCountry, homeName, awayName);
       const leagueId = catalogEntry?.id || parseInt(espnLeagueId, 10) || 1;
       const countryName = internationalLeague ? "Internacional" : isNatTeamMatch ? "Internacional" : catalogEntry?.country || countryTranslated?.country || rawCountry;
@@ -3155,7 +2979,8 @@ async function fetchEspnSoccerFixtures(targetDate, clientTz = "America/Bogota") 
         goals: {
           home: isLive ? parseInt(String(homeComp?.score || "0"), 10) || 0 : null,
           away: isLive ? parseInt(String(awayComp?.score || "0"), 10) || 0 : null
-        }
+        },
+        sourceProviders: ["ESPN"]
       });
     }
     const liveItems = mapped.filter(
@@ -3197,10 +3022,147 @@ async function fetchEspnSoccerFixtures(targetDate, clientTz = "America/Bogota") 
     return [];
   }
 }
+function mapFootballDataMatch(match) {
+  const competition = match?.competition;
+  const home = match?.homeTeam;
+  const away = match?.awayTeam;
+  const timestampMs = match?.utcDate ? new Date(match.utcDate).getTime() : 0;
+  if (!competition?.name || !home?.name || !away?.name || !timestampMs) return null;
+  const statusMap = {
+    SCHEDULED: "NS",
+    TIMED: "NS",
+    IN_PLAY: "LIVE",
+    PAUSED: "HT",
+    FINISHED: "FT",
+    POSTPONED: "PST",
+    SUSPENDED: "SUSP",
+    CANCELLED: "CANC",
+    AWARDED: "AWD"
+  };
+  const area = match?.area || competition?.area || {};
+  const competitionCode = String(competition?.code || "").toUpperCase();
+  const isLibertadores = competitionCode === "CLI" || /libertadores/i.test(competition.name);
+  const country = isLibertadores ? "South America" : String(area?.name || "Europe");
+  return {
+    fixture: {
+      id: match.id,
+      date: match.utcDate,
+      timestamp: Math.floor(timestampMs / 1e3),
+      status: { short: statusMap[String(match.status || "").toUpperCase()] || "NS", elapsed: null },
+      venue: { name: match.venue || "Estadio oficial", city: country }
+    },
+    league: {
+      id: Number(competition.id) || 1,
+      name: isLibertadores ? "Copa Libertadores" : String(competition.name),
+      country,
+      flag: area.flag || (isLibertadores ? "\u{1F30E}" : "\u26BD"),
+      round: match.matchday ? `Jornada ${match.matchday}` : String(match.stage || "Jornada Regular")
+    },
+    teams: {
+      home: { id: Number(home.id) || 1, name: String(home.name), logo: String(home.crest || "") },
+      away: { id: Number(away.id) || 2, name: String(away.name), logo: String(away.crest || "") }
+    },
+    goals: { home: match.score?.fullTime?.home ?? null, away: match.score?.fullTime?.away ?? null },
+    sourceProviders: ["Football-Data.org"]
+  };
+}
+async function fetchFootballDataFixtures(targetDate) {
+  const token = getSecretKey("FOOTBALL_DATA_KEY");
+  if (!token) return [];
+  const cacheKey = `footballdata_schedule_v1_${targetDate}`;
+  const cacheTtlMs = 6 * 60 * 60 * 1e3;
+  const cached = getCacheItem(cacheKey);
+  if (cached && Date.now() - cached.timestamp < cacheTtlMs) {
+    footballDataCacheHits++;
+    serverCacheHits++;
+    return cached.data.items;
+  }
+  if (isSupabaseConfigured()) {
+    try {
+      const remote = await getSupabaseKvCache(cacheKey);
+      if (remote && Array.isArray(remote.data?.items) && Date.now() - remote.timestamp < cacheTtlMs) {
+        memoryCache.set(cacheKey, { data: remote.data, timestamp: remote.timestamp });
+        persistCacheToDisk();
+        footballDataCacheHits++;
+        serverCacheHits++;
+        return remote.data.items;
+      }
+    } catch {
+    }
+  }
+  return runSingleFlight(cacheKey, async () => {
+    const params = new URLSearchParams({
+      dateFrom: targetDate,
+      dateTo: targetDate
+    });
+    let matches = [];
+    let complete = false;
+    serverCacheMisses++;
+    footballDataRequestsSinceBoot++;
+    try {
+      const response = await fetch(`https://api.football-data.org/v4/matches?${params.toString()}`, {
+        headers: { "X-Auth-Token": token },
+        signal: AbortSignal.timeout(3e3)
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        matches = Array.isArray(payload?.matches) ? payload.matches : [];
+        complete = true;
+        footballDataLastSuccessAt = (/* @__PURE__ */ new Date()).toISOString();
+      }
+    } catch {
+    }
+    const fixtures = matches.map(mapFootballDataMatch).filter(Boolean);
+    setCacheItem(cacheKey, { items: fixtures, complete });
+    if (isSupabaseConfigured()) {
+      await setSupabaseKvCache(cacheKey, { items: fixtures, complete }).catch(() => false);
+    }
+    saveTelemetrySnapshotToCache(true);
+    return fixtures;
+  });
+}
+function mergeProviderFixtures(fixtures) {
+  const merged = [];
+  for (const fixture of fixtures) {
+    const home = normalizeTeamKey(fixture?.teams?.home?.name || "");
+    const away = normalizeTeamKey(fixture?.teams?.away?.name || "");
+    if (!home || !away) continue;
+    const duplicate = merged.find((existing) => {
+      const existingHome = normalizeTeamKey(existing?.teams?.home?.name || "");
+      const existingAway = normalizeTeamKey(existing?.teams?.away?.name || "");
+      return teamsFuzzyMatch(home, away, existingHome, existingAway) || teamsFuzzyMatch(home, away, existingAway, existingHome);
+    });
+    if (!duplicate) {
+      merged.push(fixture);
+      continue;
+    }
+    duplicate.sourceProviders = Array.from(
+      /* @__PURE__ */ new Set([...duplicate.sourceProviders || [], ...fixture.sourceProviders || []])
+    );
+    duplicate.league.round = duplicate.league.round || fixture.league.round;
+    duplicate.teams.home.logo ||= fixture.teams.home.logo;
+    duplicate.teams.away.logo ||= fixture.teams.away.logo;
+    duplicate.league.name = duplicate.league.name || fixture.league.name;
+    const primaryHomeScore = duplicate.goals?.home;
+    const primaryAwayScore = duplicate.goals?.away;
+    const secondaryHomeScore = fixture.goals?.home;
+    const secondaryAwayScore = fixture.goals?.away;
+    if (Number.isFinite(primaryHomeScore) && Number.isFinite(primaryAwayScore) && Number.isFinite(secondaryHomeScore) && Number.isFinite(secondaryAwayScore)) {
+      duplicate.footballDataCrossCheck = {
+        homeScore: secondaryHomeScore,
+        awayScore: secondaryAwayScore,
+        matchesPrimary: primaryHomeScore === secondaryHomeScore && primaryAwayScore === secondaryAwayScore
+      };
+    } else if (!Number.isFinite(primaryHomeScore) && Number.isFinite(secondaryHomeScore)) {
+      duplicate.goals = { ...duplicate.goals, home: secondaryHomeScore, away: secondaryAwayScore };
+    }
+  }
+  return merged;
+}
 var SERVER_ALLOWED_PRIME_COUNTRIES = {
   COLOMBIA: {
     countryMatches: ["colombia"],
-    allowedLeaguesPattern: /\b(primera a|primera b|liga betplay|torneo betplay|copa betplay|copa colombia|superliga|dimayor)\b/i
+    allowedLeaguesPattern: /\b(primera a|liga betplay|copa betplay|copa colombia|superliga)\b/i
   },
   ENGLAND: {
     countryMatches: ["england", "inglaterra"],
@@ -3229,7 +3191,7 @@ var SERVER_ALLOWED_PRIME_COUNTRIES = {
   },
   ARGENTINA: {
     countryMatches: ["argentina"],
-    allowedLeaguesPattern: /\b(liga profesional|primera divisi[oó]n|copa de la liga|copa argentina|trofeo de campeones|primera nacional)\b/i,
+    allowedLeaguesPattern: /\b(liga profesional|primera divisi[oó]n|copa de la liga|copa argentina|trofeo de campeones)\b/i,
     excludedLeaguesPattern: /\b(primera b|primera c|primera d|torneo federal|reserva|proyecci[oó]n|femenino)\b/i
   },
   BRAZIL: {
@@ -3269,7 +3231,7 @@ var SERVER_ALLOWED_PRIME_COUNTRIES = {
   },
   CHILE: {
     countryMatches: ["chile"],
-    allowedLeaguesPattern: /\b(primera divisi[oó]n|primera b|copa chile|supercopa)\b/i,
+    allowedLeaguesPattern: /\b(primera divisi[oó]n|copa chile|supercopa)\b/i,
     excludedLeaguesPattern: /\b(segunda divisi[oó]n|tercera)\b/i
   },
   URUGUAY: {
@@ -3316,6 +3278,16 @@ var SERVER_ALLOWED_PRIME_COUNTRIES = {
     countryMatches: ["japan", "japon", "jap\xF3n"],
     allowedLeaguesPattern: /\b(j1 league|j\.league|emperor cup|j-league cup)\b/i,
     excludedLeaguesPattern: /\b(j2 league|j3 league|we league|university)\b/i
+  },
+  NORWAY: {
+    countryMatches: ["norway", "noruega"],
+    allowedLeaguesPattern: /\b(eliteserien)\b/i,
+    excludedLeaguesPattern: /\b(obos ligaen|2\. divisjon|3\. divisjon|women|u19|u21)\b/i
+  },
+  SWEDEN: {
+    countryMatches: ["sweden", "suecia"],
+    allowedLeaguesPattern: /\b(allsvenskan)\b/i,
+    excludedLeaguesPattern: /\b(superettan|ettan|women|u19|u21)\b/i
   }
 };
 var SERVER_NATIONAL_TEAM_COUNTRIES = /* @__PURE__ */ new Set([
@@ -3616,16 +3588,37 @@ function filterActiveUpcomingFixtures(list, targetDate, clientTz) {
     return matchTime > now - 115 * 60 * 1e3;
   });
 }
+async function fetchHybridSoccerFixtures(targetDate, clientTz) {
+  const [espnFixtures, footballDataFixtures] = await Promise.all([
+    fetchEspnSoccerFixtures(targetDate, clientTz),
+    fetchFootballDataFixtures(targetDate)
+  ]);
+  const fixtures = filterActiveUpcomingFixtures(
+    mergeProviderFixtures([...espnFixtures, ...footballDataFixtures]),
+    targetDate,
+    clientTz
+  );
+  fixtures.sort((a, b) => {
+    const aLive = ["1H", "2H", "HT", "ET", "1ET", "2ET", "PEN", "LIVE"].includes(
+      String(a.fixture?.status?.short || "").toUpperCase()
+    );
+    const bLive = ["1H", "2H", "HT", "ET", "1ET", "2ET", "PEN", "LIVE"].includes(
+      String(b.fixture?.status?.short || "").toUpperCase()
+    );
+    if (aLive !== bLive) return aLive ? -1 : 1;
+    return Number(a.fixture?.timestamp || 0) - Number(b.fixture?.timestamp || 0);
+  });
+  return fixtures;
+}
 app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, res) => {
   res.setHeader("Cache-Control", "s-maxage=120, stale-while-revalidate=300");
-  const apiKey = getSecretApiKey();
   const requestedDate = req.query.date || "";
   const clientTz = (req.query.tz || "America/Bogota").trim() || "America/Bogota";
   const query = (req.query.q || "").toLowerCase().trim();
   const force = req.query.force === "true" && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
   const todayLocal = getColombiaDateStr(0, clientTz);
   const targetDate = requestedDate || todayLocal;
-  const cacheKey = `upcoming_v9_${targetDate}`;
+  const cacheKey = `upcoming_v10_${targetDate}`;
   const cached = getCacheItem(cacheKey);
   const nowMs = Date.now();
   const hasLiveOrStartedInCache = cached && Array.isArray(cached.data) && cached.data.some((f) => {
@@ -3634,7 +3627,7 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
     const mTime = f?.fixture?.timestamp ? f.fixture.timestamp * 1e3 : new Date(f?.fixture?.date || 0).getTime();
     return mTime > 0 && mTime <= nowMs;
   });
-  const cacheTTL = targetDate === todayLocal ? hasLiveOrStartedInCache ? 20 * 1e3 : 2 * 60 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
+  const cacheTTL = targetDate === todayLocal ? hasLiveOrStartedInCache ? 20 * 1e3 : 2 * 60 * 1e3 : 6 * 60 * 60 * 1e3;
   if (cached && Array.isArray(cached.data) && cached.data.length > 0 && !query && !force) {
     const cacheAge = nowMs - cached.timestamp;
     if (cacheAge < cacheTTL) {
@@ -3655,150 +3648,9 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
   }
   try {
     const resultList = await runSingleFlight(cacheKey, async () => {
-      let upcomingOnly = [];
-      const espnFixtures = await fetchEspnSoccerFixtures(targetDate, clientTz);
-      await hydrateTelemetryFromSupabaseIfNeeded();
-      const afScheduleCacheKey = `apifootball_schedule_v3_${targetDate}`;
-      let cachedAfEnvelope = getCacheItem(afScheduleCacheKey);
-      const afScheduleTTL = targetDate === todayLocal ? 8 * 60 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
-      if ((!cachedAfEnvelope || Date.now() - cachedAfEnvelope.timestamp >= afScheduleTTL) && isSupabaseConfigured()) {
-        const supaSchedule = await getSupabaseKvCache(
-          afScheduleCacheKey
-        );
-        if (supaSchedule && supaSchedule.data && Array.isArray(supaSchedule.data.items) && Date.now() - supaSchedule.timestamp < afScheduleTTL) {
-          memoryCache.set(afScheduleCacheKey, {
-            data: supaSchedule.data,
-            timestamp: supaSchedule.timestamp
-          });
-          cachedAfEnvelope = memoryCache.get(afScheduleCacheKey);
-          if (typeof supaSchedule.data.remainingCalls === "number") {
-            lastRemainingCalls = supaSchedule.data.remainingCalls;
-            quotaShieldActive = lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD;
-          }
-        }
-      }
-      if (cachedAfEnvelope && typeof cachedAfEnvelope.data === "object" && Array.isArray(cachedAfEnvelope.data.items) && Date.now() - cachedAfEnvelope.timestamp < afScheduleTTL) {
-        serverCacheHits++;
-        upcomingOnly = filterActiveUpcomingFixtures(
-          JSON.parse(JSON.stringify(cachedAfEnvelope.data.items)),
-          targetDate,
-          clientTz
-        );
-      } else if (apiKey && !quotaShieldActive && lastRemainingCalls > QUOTA_SHIELD_THRESHOLD) {
-        try {
-          serverCacheMisses++;
-          const apiRes = await fetch(
-            `https://v3.football.api-sports.io/fixtures?date=${targetDate}&timezone=America/Bogota`,
-            {
-              method: "GET",
-              headers: { "x-apisports-key": apiKey }
-            }
-          );
-          updateQuotaFromHeaders(apiRes.headers);
-          if (apiRes.ok) {
-            const json = await apiRes.json();
-            const rawList = Array.isArray(json.response) ? json.response : [];
-            const compactPrimeList = rawList.filter((f) => {
-              const lName = String(f?.league?.name || "");
-              const cName = String(f?.league?.country || "");
-              const hName = String(f?.teams?.home?.name || "");
-              const aName = String(f?.teams?.away?.name || "");
-              return !isServerYouthOrLowTierMatch(lName, cName, hName, aName);
-            });
-            const envelopePayload = {
-              fetchedAt: Date.now(),
-              remainingCalls: lastRemainingCalls,
-              items: compactPrimeList
-            };
-            setCacheItem(afScheduleCacheKey, envelopePayload);
-            if (isSupabaseConfigured()) {
-              await setSupabaseKvCache(afScheduleCacheKey, envelopePayload);
-            }
-            const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-            apiFootballAuditLog.unshift({
-              at: nowIso,
-              timestamp: nowIso,
-              targetDate,
-              date: targetDate,
-              endpoint: `/fixtures?date=${targetDate}`,
-              status: apiRes.status,
-              fixturesCount: compactPrimeList.length,
-              itemsCount: compactPrimeList.length,
-              remainingAfter: lastRemainingCalls
-            });
-            if (apiFootballAuditLog.length > 30) apiFootballAuditLog.pop();
-            saveTelemetrySnapshotToCache(true);
-            upcomingOnly = filterActiveUpcomingFixtures(compactPrimeList, targetDate, clientTz);
-          } else {
-            const emptyEnvelope = { fetchedAt: Date.now(), remainingCalls: lastRemainingCalls, items: [] };
-            setCacheItem(afScheduleCacheKey, emptyEnvelope);
-            if (isSupabaseConfigured()) {
-              await setSupabaseKvCache(afScheduleCacheKey, emptyEnvelope);
-            }
-          }
-        } catch {
-        }
-      }
-      if (upcomingOnly.length > 0 && espnFixtures.length > 0) {
-        for (const f of upcomingOnly) {
-          const hKey = normalizeTeamKey(f?.teams?.home?.name || "");
-          const aKey = normalizeTeamKey(f?.teams?.away?.name || "");
-          const matchedEspn = espnFixtures.find(
-            (ef) => teamsFuzzyMatch(
-              hKey,
-              aKey,
-              normalizeTeamKey(ef?.teams?.home?.name || ""),
-              normalizeTeamKey(ef?.teams?.away?.name || "")
-            )
-          );
-          if (matchedEspn) {
-            f.espnEventId = matchedEspn.espnEventId;
-            if (matchedEspn.liveStats) f.liveStats = matchedEspn.liveStats;
-            if (matchedEspn.liveEvents) f.liveEvents = matchedEspn.liveEvents;
-            if (matchedEspn.liveRosters) f.liveRosters = matchedEspn.liveRosters;
-            const espnShort = String(matchedEspn.fixture?.status?.short || "").toUpperCase();
-            if (["1H", "2H", "HT", "1ET", "2ET", "ET", "PEN", "FT", "PST", "CANC", "SUSP"].includes(espnShort)) {
-              f.fixture.status.short = espnShort;
-              f.fixture.status.elapsed = matchedEspn.fixture.status.elapsed;
-              f.goals = matchedEspn.goals;
-            }
-          }
-        }
-        const validEspnExtras = filterActiveUpcomingFixtures(espnFixtures, targetDate, clientTz);
-        for (const ef of validEspnExtras) {
-          const ehKey = normalizeTeamKey(ef?.teams?.home?.name || "");
-          const eaKey = normalizeTeamKey(ef?.teams?.away?.name || "");
-          const alreadyExists = upcomingOnly.some(
-            (f) => teamsFuzzyMatch(
-              ehKey,
-              eaKey,
-              normalizeTeamKey(f?.teams?.home?.name || ""),
-              normalizeTeamKey(f?.teams?.away?.name || "")
-            )
-          );
-          if (!alreadyExists) {
-            upcomingOnly.push(ef);
-          }
-        }
-        upcomingOnly = filterActiveUpcomingFixtures(upcomingOnly, targetDate, clientTz);
-      }
-      if (upcomingOnly.length === 0) {
-        upcomingOnly = filterActiveUpcomingFixtures(espnFixtures, targetDate, clientTz);
-      }
-      upcomingOnly.sort((a, b) => {
-        const sA = String(a.fixture?.status?.short || "").toUpperCase();
-        const sB = String(b.fixture?.status?.short || "").toUpperCase();
-        const liveA = ["1H", "2H", "HT", "ET", "1ET", "2ET", "PEN", "LIVE"].includes(sA) ? 0 : 1;
-        const liveB = ["1H", "2H", "HT", "ET", "1ET", "2ET", "PEN", "LIVE"].includes(sB) ? 0 : 1;
-        if (liveA !== liveB) return liveA - liveB;
-        const tA = a.fixture?.timestamp || 0;
-        const tB = b.fixture?.timestamp || 0;
-        return tA - tB;
-      });
-      if (upcomingOnly.length > 0) {
-        setCacheItem(cacheKey, upcomingOnly);
-      }
-      return upcomingOnly;
+      const fixtures = await fetchHybridSoccerFixtures(targetDate, clientTz);
+      if (fixtures.length > 0) setCacheItem(cacheKey, fixtures);
+      return fixtures;
     });
     let filtered = resultList;
     if (query) {
@@ -4046,41 +3898,6 @@ app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
     const deltas = await runSingleFlight(pulseCacheKey, async () => {
       espnPulseCallsCount++;
       const liveDeltas = [];
-      const apiLiveAll = await fetchApiFootballLiveAll();
-      for (const lf of apiLiveAll) {
-        const fId = String(lf?.fixture?.id || "");
-        const homeName = String(lf?.teams?.home?.name || "");
-        const awayName = String(lf?.teams?.away?.name || "");
-        const statusShort = String(lf?.fixture?.status?.short || "2H").toUpperCase();
-        const isHalfTime = statusShort === "HT" || statusShort === "BT";
-        const isFinished = ["FT", "AET", "PEN"].includes(statusShort);
-        const homeScore = Number(lf?.goals?.home ?? lf?.score?.fulltime?.home ?? 0);
-        const awayScore = Number(lf?.goals?.away ?? lf?.score?.fulltime?.away ?? 0);
-        const minute = isHalfTime ? 45 : Math.min(120, Math.max(1, Number(lf?.fixture?.status?.elapsed || 45)));
-        const afTelemetry = extractApiFootballLiveTelemetry(
-          lf,
-          homeScore,
-          awayScore,
-          minute,
-          isHalfTime,
-          isFinished
-        );
-        liveDeltas.push({
-          id: fId,
-          homeKey: normalizeTeamKey(homeName),
-          awayKey: normalizeTeamKey(awayName),
-          homeName,
-          awayName,
-          homeScore,
-          awayScore,
-          minute,
-          isHalfTime,
-          statusShort,
-          status: isFinished ? "FINISHED" : "IN_PLAY",
-          liveStats: afTelemetry.liveStats,
-          liveEvents: afTelemetry.liveEvents
-        });
-      }
       try {
         const espnRes = await fetch(
           `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}&limit=300`,
@@ -4186,7 +4003,7 @@ app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
         }
       } catch {
       }
-      const upcomingCache = getCacheItem(`upcoming_v8_${targetDate}`);
+      const upcomingCache = getCacheItem(`upcoming_v10_${targetDate}`);
       if (upcomingCache && Array.isArray(upcomingCache.data)) {
         for (const f of upcomingCache.data) {
           const fId = String(f?.fixture?.id || "");
@@ -4244,14 +4061,6 @@ app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
             );
             const homeScore = Number(f?.goals?.home ?? 0);
             const awayScore = Number(f?.goals?.away ?? 0);
-            const fallbackTelemetry = extractApiFootballLiveTelemetry(
-              f,
-              homeScore,
-              awayScore,
-              clockEst.minute,
-              clockEst.isHalfTime,
-              false
-            );
             liveDeltas.push({
               id: fId,
               espnEventId: f.espnEventId,
@@ -4265,8 +4074,8 @@ app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
               isHalfTime: clockEst.isHalfTime,
               statusShort: clockEst.statusShort,
               status: clockEst.minute >= 90 && minsSinceStart > 108 ? "FINISHED" : "IN_PLAY",
-              liveStats: f.liveStats || fallbackTelemetry.liveStats,
-              liveEvents: f.liveEvents && f.liveEvents.length > 0 ? f.liveEvents : fallbackTelemetry.liveEvents,
+              liveStats: f.liveStats,
+              liveEvents: f.liveEvents || [],
               liveRosters: f.liveRosters
             });
           }
@@ -4405,52 +4214,7 @@ app.get("/api/match-telemetry", dataRateLimitMiddleware, async (req, res) => {
         liveRosters: enriched.liveRosters
       });
     }
-    const apiLiveList = await fetchApiFootballLiveAll();
-    let matchedAf = apiLiveList.find(
-      (lf) => String(lf?.fixture?.id || "") === fixtureId || teamsFuzzyMatch(
-        hKey,
-        aKey,
-        normalizeTeamKey(lf?.teams?.home?.name || ""),
-        normalizeTeamKey(lf?.teams?.away?.name || "")
-      )
-    );
-    if (!matchedAf) {
-      const upcomingCache = getCacheItem(`upcoming_v8_${dateStr}`);
-      if (upcomingCache && Array.isArray(upcomingCache.data)) {
-        matchedAf = upcomingCache.data.find(
-          (f) => String(f?.fixture?.id || "") === fixtureId || teamsFuzzyMatch(
-            hKey,
-            aKey,
-            normalizeTeamKey(f?.teams?.home?.name || ""),
-            normalizeTeamKey(f?.teams?.away?.name || "")
-          )
-        );
-      }
-    }
-    const syntheticOrMatched = matchedAf || {
-      fixture: { id: fixtureId, status: { short: "2H", elapsed: 45 } },
-      teams: { home: { name: homeName || "Local" }, away: { name: awayName || "Visitante" } },
-      goals: { home: 0, away: 0 },
-      events: []
-    };
-    const stShort = String(syntheticOrMatched?.fixture?.status?.short || "").toUpperCase();
-    const isHT = stShort === "HT" || stShort === "BT";
-    const isFT = ["FT", "AET", "PEN"].includes(stShort);
-    const afTele = extractApiFootballLiveTelemetry(
-      syntheticOrMatched,
-      void 0,
-      void 0,
-      isHT ? 45 : Number(syntheticOrMatched?.fixture?.status?.elapsed || 45),
-      isHT,
-      isFT
-    );
-    return res.json({
-      success: true,
-      found: true,
-      liveStats: afTele.liveStats,
-      liveEvents: afTele.liveEvents,
-      liveRosters: syntheticOrMatched.liveRosters
-    });
+    return res.json({ success: true, found: false, message: "El evento no aparece en el scoreboard de ESPN." });
   } catch (err) {
     return res.json({
       success: false,
@@ -4602,7 +4366,6 @@ app.get("/api/fixtures", dataRateLimitMiddleware, async (req, res) => {
 });
 app.get(["/api/status", "/api/admin/telemetry"], dataRateLimitMiddleware, async (_req, res) => {
   await hydrateTelemetryFromSupabaseIfNeeded();
-  const hasApiFootball = Boolean(getSecretKey("API_FOOTBALL_KEY"));
   const hasFootballData = Boolean(getSecretKey("FOOTBALL_DATA_KEY"));
   const hasOddsApi = Boolean(getSecretKey("ODDS_API_KEY"));
   const hasBallDontLie = Boolean(getSecretKey("BALLDONTLIE_API_KEY"));
@@ -4612,19 +4375,18 @@ app.get(["/api/status", "/api/admin/telemetry"], dataRateLimitMiddleware, async 
   return res.json({
     success: true,
     status: "ok",
-    apiFootball: hasApiFootball,
+    soccerEngine: "ESPN + Football-Data.org",
+    espnSoccer: true,
     footballData: hasFootballData,
+    footballDataRequestsSinceBoot,
+    footballDataCacheHits,
+    footballDataLastSuccessAt,
+    footballDataCacheTtlHours: 6,
     oddsApi: hasOddsApi,
     ballDontLie: hasBallDontLie,
-    remainingCalls: lastRemainingCalls,
-    consumedTodayEst: Math.max(0, 100 - lastRemainingCalls),
-    quotaShieldActive: lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD,
-    quotaShieldThreshold: QUOTA_SHIELD_THRESHOLD,
     cachedEntriesCount: memoryCache.size,
-    cacheTtlMinutes: 480,
-    scheduleTTLHours: 8,
-    apiFootballCallsSinceBoot: apiFootballAuditLog.length,
-    apiFootballAuditLog,
+    cacheTtlMinutes: 120,
+    scheduleTTLHours: 6,
     onlineNowCount: onlineUsers.length,
     onlineUsers,
     peakOnlineUsers: Math.max(peakOnlineUsers, onlineUsers.length),
@@ -4636,7 +4398,7 @@ app.get(["/api/status", "/api/admin/telemetry"], dataRateLimitMiddleware, async 
     uptimeMinutes: Math.max(1, Math.round(process.uptime() / 60)),
     memoryMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
     serverBootTimeIso,
-    bundleVersion: "v2.7-supabase-serverless-shield-8h",
+    bundleVersion: "v3.0-official-soccer-hybrid-6h",
     isVercel: IS_VERCEL2,
     supabasePersistence: isSupabaseConfigured(),
     serverReady: true

@@ -87,6 +87,12 @@ export interface MatchScore {
 export interface MatchFixture {
   id: string;
   espnEventId?: string;
+  sourceProviders?: string[];
+  footballDataCrossCheck?: {
+    homeScore: number;
+    awayScore: number;
+    matchesPrimary: boolean;
+  };
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
   startTimestamp?: number;

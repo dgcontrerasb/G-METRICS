@@ -504,6 +504,8 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
   return {
     id: fixtureId,
     espnEventId: raw.espnEventId ? String(raw.espnEventId) : undefined,
+    sourceProviders: Array.isArray(raw.sourceProviders) ? raw.sourceProviders.map(String) : undefined,
+    footballDataCrossCheck: raw.footballDataCrossCheck || undefined,
     date: matchDate,
     time: kickoff,
     startTimestamp: matchTimestampMs > 0 ? matchTimestampMs : undefined,
@@ -659,8 +661,8 @@ export async function saveSecretServerApiKey(key: string): Promise<{ success: bo
   }
 }
 
-const UPCOMING_CACHE_PREFIX = 'futbolstats_upcoming_v14_';
-const UPCOMING_CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas para partidos futuros programados
+const UPCOMING_CACHE_PREFIX = 'futbolstats_upcoming_v15_';
+const UPCOMING_CACHE_TTL_MS = 5 * 60 * 1000;
 const UPCOMING_LIVE_CACHE_TTL_MS = 20 * 1000; // 20 segundos cuando hay partidos en vivo o por iniciar
 
 export function sanitizeFixturePlayers(fix: MatchFixture): MatchFixture {
@@ -817,7 +819,7 @@ export function saveLocalUpcomingCache(dateStr: string, fixtures: MatchFixture[]
   }
 }
 
-const SESSION_CACHE_PREFIX = 'sportstats_session_fixtures_v3_';
+const SESSION_CACHE_PREFIX = 'sportstats_session_fixtures_v4_';
 const SESSION_CACHE_TTL_MS = 20 * 1000; // 20 segundos para mantener tiempo real en vivo
 
 function getSessionFixturesCache(dateStr: string): MatchFixture[] | null {
