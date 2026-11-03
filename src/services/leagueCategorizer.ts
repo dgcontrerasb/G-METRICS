@@ -800,16 +800,20 @@ export function groupFixturesByCompetition(fixtures: MatchFixture[]): Competitio
     leagueEntry.matchCount += 1;
   }
 
-  // Sort groups:
-  // 1. International first (priority 0)
-  // 2. High priority countries (Colombia, England, Spain, etc.)
-  // 3. By total match count descending
-  // 4. Other competitions at the end
+  // Keep the international parent first, then primary and secondary countries alphabetically.
   const sortedGroups = Array.from(groupsMap.values()).sort((a, b) => {
-    if (a.priority !== b.priority) {
-      return a.priority - b.priority;
-    }
-    return b.totalMatches - a.totalMatches;
+    if (a.category === 'INTERNATIONAL' && b.category !== 'INTERNATIONAL') return -1;
+    if (b.category === 'INTERNATIONAL' && a.category !== 'INTERNATIONAL') return 1;
+    if (a.category === 'OTHER' && b.category !== 'OTHER') return 1;
+    if (b.category === 'OTHER' && a.category !== 'OTHER') return -1;
+
+    const getCountryTier = (group: CompetitionGroup) => {
+      const catalogKey = group.key.startsWith('COUNTRY_') ? group.key : `COUNTRY_${group.key}`;
+      return STATIC_SOCCER_CATALOG.find((item) => item.key === catalogKey)?.tier === 'PRIMARY' ? 0 : 1;
+    };
+    const tierDifference = getCountryTier(a) - getCountryTier(b);
+    if (tierDifference !== 0) return tierDifference;
+    return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' });
   });
 
   // Sort leagues inside each group by match count

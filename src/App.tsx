@@ -1487,7 +1487,23 @@ export default function App() {
 
   // Group displayed fixtures into collapsible competition blocks
   const groupedFilteredFixtures = useMemo(() => {
-    return groupFixturesByCompetition(displayFixtures);
+    const groups = groupFixturesByCompetition(displayFixtures);
+    const internationalGroups = groups.filter((group) => group.category === 'INTERNATIONAL');
+    if (internationalGroups.length === 0) return groups;
+
+    const internationalFixtures = internationalGroups.flatMap((group) => group.fixtures);
+    const internationalParent = {
+      ...internationalGroups[0],
+      key: 'INTL',
+      name: 'Torneos internacionales',
+      displayName: '🏆 Torneos internacionales',
+      flag: '🏆',
+      totalMatches: internationalFixtures.length,
+      leagues: internationalGroups.flatMap((group) => group.leagues),
+      fixtures: internationalFixtures
+    };
+
+    return [internationalParent, ...groups.filter((group) => group.category !== 'INTERNATIONAL')];
   }, [displayFixtures]);
 
   const handleToggleGroupCollapse = useCallback((groupKey: string) => {

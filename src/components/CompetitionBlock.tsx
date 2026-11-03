@@ -5,6 +5,7 @@ import { FriendlyPredictionCard } from './FriendlyPredictionCard';
 import { CompactMatchRow } from './CompactMatchRow';
 import { CountryFlag } from './CountryFlag';
 import { ChevronDown, ChevronUp, CheckSquare, Square } from 'lucide-react';
+import { identifyCompetitionCategory } from '../services/leagueCategorizer';
 
 interface CompetitionBlockProps {
   group: CompetitionGroup;
@@ -45,6 +46,7 @@ export const CompetitionBlock: React.FC<CompetitionBlockProps> = ({
   onToggleCardExpand,
   onOpenDetailModal
 }) => {
+  const [expandedInternationalGroups, setExpandedInternationalGroups] = React.useState<Set<string>>(new Set());
   const groupFixtureIds = group.fixtures.map((f) => f.id);
   const selectedInGroupCount = groupFixtureIds.filter((id) => selectedFixtureIds.has(id)).length;
   const allSelectedInGroup = groupFixtureIds.length > 0 && selectedInGroupCount === groupFixtureIds.length;
@@ -62,6 +64,67 @@ export const CompetitionBlock: React.FC<CompetitionBlockProps> = ({
       : group.leagues.length === 1
       ? group.leagues[0].name
       : group.name;
+
+  const internationalSubgroups = React.useMemo(() => {
+    if (group.category !== 'INTERNATIONAL') return [];
+    const subgroups = new Map<string, { key: string; name: string; flag: string; fixtures: MatchFixture[] }>();
+
+    group.fixtures.forEach((fixture) => {
+      const category = identifyCompetitionCategory(
+        fixture.league?.name || '',
+        fixture.league?.country,
+        fixture.homeTeam?.name,
+        fixture.awayTeam?.name
+      );
+      const subgroup = subgroups.get(category.key) || {
+        key: category.key,
+        name: category.name,
+        flag: category.flag,
+        fixtures: []
+      };
+      subgroup.fixtures.push(fixture);
+      subgroups.set(category.key, subgroup);
+    });
+
+    return Array.from(subgroups.values());
+  }, [group.category, group.fixtures]);
+
+  const renderFixture = (fixture: MatchFixture) => {
+    const analysis = analysesMap[fixture.id];
+    if (!analysis) return null;
+    return densityView === 'COMPACT' ? (
+      <CompactMatchRow
+        key={fixture.id}
+        fixture={fixture}
+        analysis={analysis}
+        isSelected={selectedFixtureIds.has(fixture.id)}
+        onToggleSelect={onToggleSelectFixture}
+        isFavorite={favoriteFixtureIds?.has(fixture.id)}
+        onToggleFavorite={onToggleFavoriteFixture}
+        onOpenSimulator={onOpenSimulator}
+        isExpanded={expandedCardIds.has(fixture.id)}
+        onToggleExpand={() => onToggleCardExpand(fixture.id)}
+        onOpenDetail={onOpenDetailModal}
+        viewMode={viewMode}
+        isRecentlyUpdated={recentlyUpdatedIds?.has(fixture.id)}
+      />
+    ) : (
+      <FriendlyPredictionCard
+        key={fixture.id}
+        fixture={fixture}
+        analysis={analysis}
+        isSelected={selectedFixtureIds.has(fixture.id)}
+        onToggleSelect={onToggleSelectFixture}
+        onOpenSimulator={onOpenSimulator}
+        isExpanded={expandedCardIds.has(fixture.id)}
+        onToggleExpand={() => onToggleCardExpand(fixture.id)}
+        onOpenDetail={onOpenDetailModal}
+        viewMode={viewMode}
+        mobileLightweight={isLightweightMode}
+        isRecentlyUpdated={recentlyUpdatedIds?.has(fixture.id)}
+      />
+    );
+  };
 
   return (
     <div className="border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs bg-white/95 backdrop-blur-md transition-all">
@@ -97,7 +160,7 @@ export const CompetitionBlock: React.FC<CompetitionBlockProps> = ({
             </div>
 
             {/* Sub-leagues list ONLY if multiple leagues in the group */}
-            {group.leagues.length > 1 && (
+            {group.category !== 'INTERNATIONAL' && group.leagues.length > 1 && (
               <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 font-sans">
                 {group.leagues.slice(0, 3).map((l, idx) => (
                   <span key={String(l.id || idx)} className="inline-flex items-center gap-1">
@@ -157,42 +220,39 @@ export const CompetitionBlock: React.FC<CompetitionBlockProps> = ({
       {/* Fixtures Container (Collapsible) */}
       {!isGroupCollapsed && (
         <div className={`p-2.5 sm:p-3.5 bg-slate-50/50 ${densityView === 'COMPACT' ? 'space-y-2' : 'space-y-3'}`}>
-          {group.fixtures.map((fixture) => {
-            const analysis = analysesMap[fixture.id];
-            if (!analysis) return null;
-            return densityView === 'COMPACT' ? (
-              <CompactMatchRow
-                key={fixture.id}
-                fixture={fixture}
-                analysis={analysis}
-                isSelected={selectedFixtureIds.has(fixture.id)}
-                onToggleSelect={onToggleSelectFixture}
-                isFavorite={favoriteFixtureIds?.has(fixture.id)}
-                onToggleFavorite={onToggleFavoriteFixture}
-                onOpenSimulator={onOpenSimulator}
-                isExpanded={expandedCardIds.has(fixture.id)}
-                onToggleExpand={() => onToggleCardExpand(fixture.id)}
-                onOpenDetail={onOpenDetailModal}
-                viewMode={viewMode}
-                isRecentlyUpdated={recentlyUpdatedIds?.has(fixture.id)}
-              />
-            ) : (
-              <FriendlyPredictionCard
-                key={fixture.id}
-                fixture={fixture}
-                analysis={analysis}
-                isSelected={selectedFixtureIds.has(fixture.id)}
-                onToggleSelect={onToggleSelectFixture}
-                onOpenSimulator={onOpenSimulator}
-                isExpanded={expandedCardIds.has(fixture.id)}
-                onToggleExpand={() => onToggleCardExpand(fixture.id)}
-                onOpenDetail={onOpenDetailModal}
-                viewMode={viewMode}
-                mobileLightweight={isLightweightMode}
-                isRecentlyUpdated={recentlyUpdatedIds?.has(fixture.id)}
-              />
-            );
-          })}
+          {group.category === 'INTERNATIONAL'
+            ? internationalSubgroups.map((subgroup) => {
+                const isExpanded = expandedInternationalGroups.has(subgroup.key);
+                return (
+                  <section key={subgroup.key} className="border-b border-slate-200/80 last:border-b-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExpandedInternationalGroups((previous) => {
+                          const next = new Set(previous);
+                          if (next.has(subgroup.key)) next.delete(subgroup.key);
+                          else next.add(subgroup.key);
+                          return next;
+                        });
+                      }}
+                      aria-expanded={isExpanded}
+                      className="w-full min-h-10 px-2 py-2 flex items-center justify-between gap-3 text-left text-xs font-semibold text-slate-800 hover:bg-white/70 cursor-pointer"
+                    >
+                      <span className="truncate">{subgroup.flag} {subgroup.name}</span>
+                      <span className="shrink-0 flex items-center gap-2 text-slate-500 font-mono tabular-nums">
+                        {subgroup.fixtures.length}
+                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      </span>
+                    </button>
+                    {isExpanded && (
+                      <div className={`pb-2 ${densityView === 'COMPACT' ? 'space-y-2' : 'space-y-3'}`}>
+                        {subgroup.fixtures.map(renderFixture)}
+                      </div>
+                    )}
+                  </section>
+                );
+              })
+            : group.fixtures.map(renderFixture)}
         </div>
       )}
     </div>

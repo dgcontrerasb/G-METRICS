@@ -181,16 +181,28 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
     const staticNormalizedKeys = new Set(
       STATIC_SOCCER_CATALOG.map((item) => normalizeCatalogKey(item.key))
     );
-    return availableCompetitionGroups.filter((g) => !staticNormalizedKeys.has(normalizeCatalogKey(g.key)));
+    return availableCompetitionGroups.filter(
+      (g) => g.category !== 'INTERNATIONAL' && !staticNormalizedKeys.has(normalizeCatalogKey(g.key))
+    );
   }, [availableCompetitionGroups, normalizeCatalogKey]);
 
   const primarySoccerCatalog = React.useMemo(
-    () => STATIC_SOCCER_CATALOG.filter((item) => item.tier === 'PRIMARY'),
+    () =>
+      STATIC_SOCCER_CATALOG.filter((item) => item.tier === 'PRIMARY' && !item.key.startsWith('INTL_')).sort(
+        (a, b) => {
+          if (a.key === 'GROUP_INTL') return -1;
+          if (b.key === 'GROUP_INTL') return 1;
+          return a.displayName.localeCompare(b.displayName, 'es', { sensitivity: 'base' });
+        }
+      ),
     []
   );
 
   const secondarySoccerCatalog = React.useMemo(
-    () => STATIC_SOCCER_CATALOG.filter((item) => item.tier === 'SECONDARY'),
+    () =>
+      STATIC_SOCCER_CATALOG.filter((item) => item.tier === 'SECONDARY').sort((a, b) =>
+        a.displayName.localeCompare(b.displayName, 'es', { sensitivity: 'base' })
+      ),
     []
   );
 
@@ -1000,7 +1012,34 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                             )}
                           </div>
                         </button>
-                        {isExpanded && dynamicGroup && renderInlineSoccerMatches(dynamicGroup.fixtures)}
+                        {isExpanded && dynamicGroup && item.key === 'GROUP_INTL' ? (
+                          <div className="mt-1 mb-1.5 ml-2 pl-2 border-l-2 border-amber-300 space-y-0.5">
+                            {availableCompetitionGroups
+                              .filter((group) => group.category === 'INTERNATIONAL')
+                              .map((tournament) => {
+                                const isTournamentSelected = selectedLeague === tournament.key && mainTab === 'ALL_LEAGUES';
+                                return (
+                                  <button
+                                    key={tournament.key}
+                                    type="button"
+                                    onClick={() => handleSelectLeagueAndView(tournament.key, tournament.totalMatches)}
+                                    className={`w-full min-h-[30px] px-2 py-1 rounded-md flex items-center justify-between gap-2 text-[10.5px] text-left cursor-pointer ${
+                                      isTournamentSelected
+                                        ? 'bg-amber-100 text-amber-900 font-semibold'
+                                        : 'text-slate-700 hover:bg-amber-50'
+                                    }`}
+                                  >
+                                    <span className="truncate">{tournament.flag} {tournament.name}</span>
+                                    <span className="shrink-0 font-mono tabular-nums text-slate-500">
+                                      {tournament.totalMatches}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                          </div>
+                        ) : isExpanded && dynamicGroup ? (
+                          renderInlineSoccerMatches(dynamicGroup.fixtures)
+                        ) : null}
                       </div>
                     );
                   })}
