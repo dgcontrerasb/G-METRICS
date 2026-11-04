@@ -28,6 +28,7 @@ export interface SoccerPitch2DProps {
   stadiumName: string;
   stadiumCity?: string;
   refereeName?: string;
+  isConfirmed?: boolean;
   onSelectPlayer: (player: SoccerPlayerInfo, teamName: string) => void;
 }
 
@@ -65,6 +66,7 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
   awayFormation,
   stadiumName,
   refereeName,
+  isConfirmed = true,
   onSelectPlayer
 }) => {
   const isPenaltyShootout =
@@ -707,7 +709,7 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
           {slideMode === 'PENALTIES'
             ? `Tanda de Penales: ${homePenGoals} - ${awayPenGoals}`
             : slideMode === 'LINEUPS'
-            ? 'Toca un jugador para Props'
+            ? (isConfirmed ? 'Toca un jugador para Props' : 'Alineación pendiente de confirmación oficial')
             : 'Reloj sincronizado en vivo'}
         </span>
       </div>
@@ -1103,6 +1105,23 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
           {/* MODE 2: 11 vs 11 TACTICAL LINEUPS ON HORIZONTAL PITCH (1-Tap Props)       */}
           {/* ========================================================================= */}
           {slideMode === 'LINEUPS' && (
+            !isConfirmed ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-3 text-center z-20 bg-slate-950/75 backdrop-blur-[2px]">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 mb-1.5 shadow-lg">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-300 text-[10px] font-mono font-bold uppercase tracking-wider mb-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  Alineación Oficial Pendiente
+                </div>
+                <h4 className="text-white font-bold text-xs sm:text-sm max-w-xs leading-snug">
+                  La formación táctica y los 11 titulares se mostrarán minutos antes del partido
+                </h4>
+                <p className="text-slate-300 text-[10px] max-w-sm mt-1 leading-relaxed">
+                  Las alineaciones oficiales se confirmarán aproximadamente entre 45 y 60 minutos antes del inicio cuando los clubes entreguen las planillas oficiales.
+                </p>
+              </div>
+            ) : (
             <>
               {/* Home Team (Left Half) */}
               {homeStarters.slice(0, 11).map((player, idx) => {
@@ -1158,6 +1177,7 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
                 );
               })}
             </>
+            )
           )}
 
           {/* ========================================================================= */}
@@ -1363,6 +1383,13 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
 
       {/* 4. COMPACT COLLAPSIBLE BENCHES FOOTER */}
       <div className="px-2.5 pb-2 pt-1 bg-slate-900 space-y-1.5">
+        {!isConfirmed ? (
+          <div className="py-2 px-3 rounded-lg bg-slate-950/70 border border-slate-800/80 text-center text-[10px] font-mono text-slate-400 flex items-center justify-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            <span>Bancos de suplentes y bajas pendientes de confirmación oficial</span>
+          </div>
+        ) : (
+          <>
         <div className="grid grid-cols-2 gap-1.5">
           <button
             type="button"
@@ -1448,6 +1475,8 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
               ))}
             </div>
           </div>
+        )}
+          </>
         )}
 
         <div className="flex items-center justify-between text-[8.5px] text-slate-400 px-1 font-mono">

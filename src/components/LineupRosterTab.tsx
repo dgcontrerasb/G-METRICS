@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { DetailMatchPayload } from './MatchDetailModal';
 import { getSoccerLineupData, getNBALineupData, SoccerPlayerInfo } from '../services/lineupService';
-import { UserCheck, BarChart2, LayoutGrid, List } from 'lucide-react';
+import { UserCheck, BarChart2, LayoutGrid, List, Users } from 'lucide-react';
 import { useParlay } from '../context/ParlayContext';
 import { PlayerStatsModal, PlayerModalPayload } from './PlayerStatsModal';
 import { BasketballCourt25D, BasketballStarterPlayer, BasketballBenchPlayer } from './BasketballCourt25D';
@@ -103,6 +103,7 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
             stadiumName={soccerData.stadiumName}
             stadiumCity={soccerData.stadiumCity}
             refereeName={soccerData.refereeName}
+            isConfirmed={isConfirmed}
             onSelectPlayer={handleOpenPlayerFromSoccerPitch}
           />
         )}
@@ -171,7 +172,7 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
                 ) : null}
                 <span className="font-semibold text-slate-900 text-xs">{currentTeamName}</span>
                 <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-mono font-semibold text-[10px] border border-emerald-200">
-                  Esquema {currentFormation}
+                  {isConfirmed ? `Esquema ${currentFormation}` : 'Esquema Pendiente'}
                 </span>
               </div>
               <div className="text-[11px] font-mono text-slate-500">
@@ -179,22 +180,24 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
               </div>
             </div>
 
-        {!isConfirmed && (
-          <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2 shadow-2xs">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
-              <div>
-                <span className="font-bold text-[11px] block">Alineación Oficial Pendiente de Confirmación</span>
-                <span className="text-[9.5px] text-amber-800 leading-tight block">
-                  Plantilla preliminar del club. Los 11 titulares se confirman de 45 a 60 min antes del pitido inicial.
-                </span>
-              </div>
+        {!isConfirmed ? (
+          <div className="p-6 rounded-2xl bg-amber-50/80 border border-amber-200/90 text-center flex flex-col items-center justify-center space-y-2.5 shadow-2xs">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-800">
+              <Users className="w-5 h-5" />
             </div>
-            <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-amber-200/80 text-amber-950 uppercase shrink-0">
-              Probable
-            </span>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[10px] font-bold uppercase">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              Alineación Oficial Pendiente
+            </div>
+            <div className="text-slate-900 font-bold text-xs sm:text-sm">
+              Formación y nómina titular de {currentTeamName}
+            </div>
+            <p className="text-slate-600 text-[11px] max-w-sm leading-relaxed">
+              La alineación oficial y los 11 titulares se mostrarán minutos antes del partido (~45 a 60 min antes del pitido inicial) cuando los clubes entreguen las planillas oficiales.
+            </p>
           </div>
-        )}
+        ) : (
+          <>
 
         {/* 11 Titulares (Starting XI) Grid */}
         <div className="space-y-2">
@@ -367,6 +370,8 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
             })}
           </div>
         </div>
+          </>
+        )}
           </div>
         )}
 
@@ -515,6 +520,7 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
           leagueName={payload.fixture.league?.name || 'NBA · Temporada Regular'}
           matchDateLabel={payload.fixture.date}
           matchTimeLabel={payload.fixture.time}
+          isConfirmed={isNBAConfirmed}
           onSelectPlayer={handleOpenPlayerFromCourt}
         />
       )}
@@ -588,22 +594,24 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
             </div>
           </div>
 
-          {!isNBAConfirmed && (
-            <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2 shadow-2xs">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
-                <div>
-                  <span className="font-bold text-[11px] block">Alineación Oficial Pendiente de Confirmación</span>
-                  <span className="text-[9.5px] text-amber-800 leading-tight block">
-                    Quinteto probable. Los 5 iniciales definitivos se confirman unos 30 a 45 minutos antes del salto entre dos.
-                  </span>
-                </div>
+          {!isNBAConfirmed ? (
+            <div className="p-6 rounded-2xl bg-amber-50/80 border border-amber-200/90 text-center flex flex-col items-center justify-center space-y-2.5 shadow-2xs">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-800">
+                <Users className="w-5 h-5" />
               </div>
-              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-amber-200/80 text-amber-950 uppercase shrink-0">
-                Pre-Partido
-              </span>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[10px] font-bold uppercase">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                Quinteto Oficial Pendiente
+              </div>
+              <div className="text-slate-900 font-bold text-xs sm:text-sm">
+                Quinteto titular y rotación de {currentTeamName}
+              </div>
+              <p className="text-slate-600 text-[11px] max-w-sm leading-relaxed">
+                Los 5 jugadores iniciales y la rotación oficial se mostrarán minutos antes del partido (~30 a 45 min antes del inicio) una vez confirmados por la franquicia.
+              </p>
             </div>
-          )}
+          ) : (
+            <>
 
           {/* Starters List */}
           <div className="space-y-2">
@@ -738,6 +746,8 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
               })}
             </div>
           </div>
+            </>
+          )}
         </div>
       )}
 

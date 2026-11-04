@@ -1004,7 +1004,7 @@ export function getSoccerLineupData(fixture: MatchFixture): SoccerLineupData {
       stadiumName: fixture.venue?.name || `Estadio Municipal de ${fixture.homeTeam.name.split(' ')[0]}`,
       stadiumCity: fixture.venue?.city || fixture.homeTeam.name.split(' ')[0],
       refereeName: fixture.referee?.name || 'Árbitro Principal Oficial',
-      status: (fixture.status === 'IN_PLAY' || fixture.status === 'FINISHED') ? 'CONFIRMED' : 'PROBABLE'
+      status: (fixture.status === 'IN_PLAY' || fixture.status === 'FINISHED' || Boolean(fixture.liveRosters && fixture.liveRosters.homeStarters?.length >= 7 && fixture.liveRosters.awayStarters?.length >= 7)) ? 'CONFIRMED' : 'PROBABLE'
     };
   }
 
