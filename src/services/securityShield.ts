@@ -190,10 +190,15 @@ export function parseCookies(req: Request): Record<string, string> {
   return list;
 }
 
-export function setSecureSessionCookie(res: Response, token: string): void {
-  const isProd = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+export function setSecureSessionCookie(res: Response, token: string, req?: Request): void {
+  const isHttps = Boolean(
+    req?.secure ||
+    req?.headers?.['x-forwarded-proto'] === 'https' ||
+    (process.env.VERCEL && process.env.NODE_ENV === 'production' && !req?.headers?.host?.includes('localhost'))
+  );
+  const isLocalhost = Boolean(req?.headers?.host?.includes('localhost') || req?.headers?.host?.includes('127.0.0.1'));
+  const secureFlag = isHttps && !isLocalhost ? '; Secure' : '';
   const maxAgeSec = 30 * 24 * 60 * 60; // 30 días
-  const secureFlag = isProd ? '; Secure' : '';
   res.setHeader(
     'Set-Cookie',
     `gmetrics_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secureFlag}`

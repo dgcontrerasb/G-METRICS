@@ -221,6 +221,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
         localStorage.setItem('sportstats_client_name', data.user.displayName || data.user.username);
 
         if (data.sessionToken) {
+          localStorage.setItem('sportstats_session_jwt', data.sessionToken);
           sessionStorage.setItem('sportstats_session_jwt', data.sessionToken);
         }
 
@@ -451,6 +452,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({ onUnlock, on
         localStorage.setItem('sportstats_client_name', data.user.displayName || data.user.username);
 
         if (data.sessionToken) {
+          localStorage.setItem('sportstats_session_jwt', data.sessionToken);
           sessionStorage.setItem('sportstats_session_jwt', data.sessionToken);
         }
 

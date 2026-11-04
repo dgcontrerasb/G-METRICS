@@ -120,6 +120,8 @@ export default function App() {
         }
         clearActiveLicense();
         fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+        localStorage.removeItem('sportstats_session_jwt');
+        sessionStorage.removeItem('sportstats_session_jwt');
         localStorage.removeItem('sportstats_admin_remember');
         localStorage.removeItem('sportstats_admin_saved_pin');
         localStorage.removeItem('sportstats_auth_user');

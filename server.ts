@@ -4029,6 +4029,9 @@ app.post('/api/auth/login', async (req, res) => {
       await recordAuthFailure(req);
     } else if (result.success) {
       clearAuthFailures(req);
+      if (result.sessionToken) {
+        setSecureSessionCookie(res, result.sessionToken, req);
+      }
       recordOnlinePresence({
         username: String(username || '').toLowerCase(),
         displayName: result.user?.displayName || String(username || ''),
@@ -4121,7 +4124,7 @@ app.get('/api/auth/session', async (req, res) => {
       expiresAt: latestExpiresAt,
       ttlDays: 30
     });
-    setSecureSessionCookie(res, refreshedJwt);
+    setSecureSessionCookie(res, refreshedJwt, req);
   }
 
   return res.json({
@@ -4155,8 +4158,22 @@ app.get('/api/auth/config', (req, res) => {
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { email, displayName, deviceId, deviceName, fingerprint, accessToken, providerToken } = req.body || {};
-    const result = await loginOrRegisterGoogleUser(email, displayName, deviceId, deviceName, fingerprint, accessToken, providerToken);
+    const clientIp = getClientIp(req);
+    const subnetHash = calculateSubnetHash(clientIp);
+    const result = await loginOrRegisterGoogleUser(
+      email,
+      displayName,
+      deviceId,
+      deviceName,
+      fingerprint,
+      accessToken,
+      providerToken,
+      subnetHash
+    );
     if (result.success && result.user) {
+      if (result.sessionToken) {
+        setSecureSessionCookie(res, result.sessionToken, req);
+      }
       recordOnlinePresence({
         username: String(result.user.username || result.user.email || '').toLowerCase(),
         displayName: result.user.displayName || String(result.user.email || ''),
@@ -4174,6 +4191,20 @@ app.post('/api/user/redeem-code', async (req, res) => {
   try {
     const { code, userIdentifier } = req.body || {};
     const result = await redeemActivationCode(code, userIdentifier);
+    if (result.success && result.user) {
+      const cleanDev = sanitizeText(String(result.user.boundDeviceId || req.headers['x-device-id'] || ''), 48).toUpperCase();
+      const updatedJwt = createSessionJwt({
+        userId: result.user.id || 'client',
+        username: result.user.username || 'user',
+        role: result.user.role || 'client',
+        deviceId: cleanDev,
+        isVip: true,
+        expiresAt: result.user.expiresAt,
+        ttlDays: 30
+      });
+      setSecureSessionCookie(res, updatedJwt, req);
+      result.sessionToken = updatedJwt;
+    }
     return res.json(result);
   } catch {
     return res.status(500).json({ success: false, message: 'Error al canjear código' });

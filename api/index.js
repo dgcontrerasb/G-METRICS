@@ -131,10 +131,13 @@ function parseCookies(req) {
   });
   return list;
 }
-function setSecureSessionCookie(res, token) {
-  const isProd = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+function setSecureSessionCookie(res, token, req) {
+  const isHttps = Boolean(
+    req?.secure || req?.headers?.["x-forwarded-proto"] === "https" || process.env.VERCEL && process.env.NODE_ENV === "production" && !req?.headers?.host?.includes("localhost")
+  );
+  const isLocalhost = Boolean(req?.headers?.host?.includes("localhost") || req?.headers?.host?.includes("127.0.0.1"));
+  const secureFlag = isHttps && !isLocalhost ? "; Secure" : "";
   const maxAgeSec = 30 * 24 * 60 * 60;
-  const secureFlag = isProd ? "; Secure" : "";
   res.setHeader(
     "Set-Cookie",
     `gmetrics_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secureFlag}`
@@ -154,6 +157,12 @@ function extractSessionFromRequest(req) {
   const token = cookieToken || bearerToken;
   if (!token) return null;
   return verifySessionJwt(token);
+}
+function calculateSubnetHash(rawIp) {
+  const clean = (rawIp || "127.0.0.1").split(",")[0].trim();
+  const parts = clean.split(".");
+  const subnet = parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.0` : clean;
+  return crypto.createHash("sha256").update(`${subnet}::GMETRICS_FRAUD_SALT_2026_V1`).digest("hex").slice(0, 32);
 }
 var DANGEROUS_KEYS = /* @__PURE__ */ new Set(["__proto__", "constructor", "prototype"]);
 function sanitizeText(input, maxLength = 120) {
@@ -5407,6 +5416,9 @@ app.post("/api/auth/login", async (req, res) => {
       await recordAuthFailure(req);
     } else if (result.success) {
       clearAuthFailures(req);
+      if (result.sessionToken) {
+        setSecureSessionCookie(res, result.sessionToken, req);
+      }
       recordOnlinePresence({
         username: String(username || "").toLowerCase(),
         displayName: result.user?.displayName || String(username || ""),
@@ -5484,7 +5496,7 @@ app.get("/api/auth/session", async (req, res) => {
       expiresAt: latestExpiresAt,
       ttlDays: 30
     });
-    setSecureSessionCookie(res, refreshedJwt);
+    setSecureSessionCookie(res, refreshedJwt, req);
   }
   return res.json({
     success: true,
@@ -5514,8 +5526,22 @@ app.get("/api/auth/config", (req, res) => {
 app.post("/api/auth/google", async (req, res) => {
   try {
     const { email, displayName, deviceId, deviceName, fingerprint, accessToken, providerToken } = req.body || {};
-    const result = await loginOrRegisterGoogleUser(email, displayName, deviceId, deviceName, fingerprint, accessToken, providerToken);
+    const clientIp = getClientIp(req);
+    const subnetHash = calculateSubnetHash(clientIp);
+    const result = await loginOrRegisterGoogleUser(
+      email,
+      displayName,
+      deviceId,
+      deviceName,
+      fingerprint,
+      accessToken,
+      providerToken,
+      subnetHash
+    );
     if (result.success && result.user) {
+      if (result.sessionToken) {
+        setSecureSessionCookie(res, result.sessionToken, req);
+      }
       recordOnlinePresence({
         username: String(result.user.username || result.user.email || "").toLowerCase(),
         displayName: result.user.displayName || String(result.user.email || ""),
@@ -5532,6 +5558,20 @@ app.post("/api/user/redeem-code", async (req, res) => {
   try {
     const { code, userIdentifier } = req.body || {};
     const result = await redeemActivationCode(code, userIdentifier);
+    if (result.success && result.user) {
+      const cleanDev = sanitizeText(String(result.user.boundDeviceId || req.headers["x-device-id"] || ""), 48).toUpperCase();
+      const updatedJwt = createSessionJwt({
+        userId: result.user.id || "client",
+        username: result.user.username || "user",
+        role: result.user.role || "client",
+        deviceId: cleanDev,
+        isVip: true,
+        expiresAt: result.user.expiresAt,
+        ttlDays: 30
+      });
+      setSecureSessionCookie(res, updatedJwt, req);
+      result.sessionToken = updatedJwt;
+    }
     return res.json(result);
   } catch {
     return res.status(500).json({ success: false, message: "Error al canjear c\xF3digo" });
