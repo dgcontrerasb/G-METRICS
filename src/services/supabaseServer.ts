@@ -211,7 +211,7 @@ export async function setSupabaseKvCache<T = unknown>(cacheId: string, payload: 
 
     // Autolimpieza automática: cuando se guarda un calendario de fecha, borra cachés de hace más de 3 días
     // Así la tabla nunca acumula basura y ocupa menos de 150 KB (0.03% del plan Free de 500 MB)
-    if (cacheId.startsWith('apifootball_schedule_')) {
+    if (cacheId.includes('_schedule_') || cacheId.startsWith('espn_schedule_')) {
       const threeDaysAgoIso = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
       client
         .from('sportstats_config')

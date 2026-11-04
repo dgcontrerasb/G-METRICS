@@ -375,7 +375,7 @@ export function getColombiaDateString(offsetDays = 0): string {
   }
 }
 
-// Convert raw API-Football / ESPN hybrid response item into normalized MatchFixture in local timezone
+// Convert raw ESPN / Football-Data hybrid response item into normalized MatchFixture in local timezone
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture {
   const fixtureId = String(raw.fixture?.id || Math.random());
@@ -630,35 +630,6 @@ function sortFixturesByPriority(list: MatchFixture[]): MatchFixture[] {
     if (diff !== 0) return diff;
     return a.time.localeCompare(b.time);
   });
-}
-
-export async function checkSecretServerStatus(): Promise<{ hasKey: boolean; source: string }> {
-  try {
-    const res = await fetch('/api/status');
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch {
-    // server not running full-stack
-  }
-  return { hasKey: false, source: 'none' };
-}
-
-export async function saveSecretServerApiKey(key: string): Promise<{ success: boolean; message: string }> {
-  try {
-    const res = await fetch('/api/set-secret-key', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key })
-    });
-    if (res.ok) {
-      return await res.json();
-    }
-    return { success: false, message: `Error HTTP ${res.status}` };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { success: false, message: msg };
-  }
 }
 
 const UPCOMING_CACHE_PREFIX = 'futbolstats_upcoming_v15_';
@@ -971,11 +942,6 @@ export async function fetchCompletedAuditBundle(): Promise<{
   } catch {
     return { soccerFixtures: [], nbaEvents: [] };
   }
-}
-
-export async function fetchCompletedAuditFixtures(): Promise<MatchFixture[]> {
-  const bundle = await fetchCompletedAuditBundle();
-  return bundle.soccerFixtures;
 }
 
 export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures: MatchFixture[]; meta: CacheMetadata }> {

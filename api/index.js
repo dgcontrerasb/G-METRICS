@@ -468,7 +468,7 @@ async function setSupabaseKvCache(cacheId, payload, timestamp = Date.now()) {
       color_theme: "kv-cache",
       updated_at: new Date(timestamp).toISOString()
     });
-    if (cacheId.startsWith("apifootball_schedule_")) {
+    if (cacheId.includes("_schedule_") || cacheId.startsWith("espn_schedule_")) {
       const threeDaysAgoIso = new Date(Date.now() - 3 * 24 * 60 * 60 * 1e3).toISOString();
       client.from("sportstats_config").delete().eq("color_theme", "kv-cache").neq("id", "__server_telemetry_v1__").neq("id", "__deleted_users_v1__").lt("updated_at", threeDaysAgoIso).then(
         () => {
@@ -1815,7 +1815,7 @@ app.use(securityHeadersMiddleware);
 app.use(idempotencyMiddleware);
 var IS_VERCEL2 = Boolean(process.env.VERCEL || process.env.VERCEL_ENV || process.env.NOW_REGION);
 var CACHE_DIR = IS_VERCEL2 ? path2.resolve("/tmp", ".cache") : path2.resolve(process.cwd(), ".cache");
-var CACHE_FILE = path2.resolve(CACHE_DIR, "api_football_cache.json");
+var CACHE_FILE = path2.resolve(CACHE_DIR, "sportstats_cache.json");
 if (IS_VERCEL2) {
   app.use((req, _res, next) => {
     if (req.url && !req.url.startsWith("/api")) {
@@ -1835,10 +1835,6 @@ app.get("/api/health", (_req, res) => {
 });
 var memoryCache = /* @__PURE__ */ new Map();
 var inFlightRequests = /* @__PURE__ */ new Map();
-var lastRemainingCalls = 100;
-var quotaShieldActive = false;
-var QUOTA_SHIELD_THRESHOLD = 15;
-var apiFootballAuditLog = [];
 var activeOnlineSessions = /* @__PURE__ */ new Map();
 var ONLINE_WINDOW_MS = 3 * 60 * 1e3;
 var peakOnlineUsers = 1;
@@ -1871,13 +1867,6 @@ async function hydrateTelemetryFromSupabaseIfNeeded() {
         peakOnlineUsers = d.peakOnlineUsers;
         if (d.peakOnlineAt) peakOnlineAt = d.peakOnlineAt;
       }
-      if (typeof d.lastRemainingCalls === "number" && lastRemainingCalls === 100) {
-        lastRemainingCalls = d.lastRemainingCalls;
-        quotaShieldActive = lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD;
-      }
-      if (Array.isArray(d.apiFootballAuditLog) && apiFootballAuditLog.length === 0) {
-        apiFootballAuditLog.push(...d.apiFootballAuditLog.slice(0, 30));
-      }
       if (typeof d.serverCacheHits === "number" && serverCacheHits < d.serverCacheHits) {
         serverCacheHits = d.serverCacheHits;
       }
@@ -1904,8 +1893,6 @@ function saveTelemetrySnapshotToCache(syncToSupabase = false) {
   const snapshot = {
     peakOnlineUsers,
     peakOnlineAt,
-    lastRemainingCalls,
-    apiFootballAuditLog,
     serverCacheHits,
     serverCacheMisses,
     espnPulseCallsCount,
@@ -1973,13 +1960,6 @@ function initDiskCache() {
         if (typeof savedTele.peakOnlineUsers === "number" && savedTele.peakOnlineUsers > peakOnlineUsers) {
           peakOnlineUsers = savedTele.peakOnlineUsers;
           if (savedTele.peakOnlineAt) peakOnlineAt = savedTele.peakOnlineAt;
-        }
-        if (typeof savedTele.lastRemainingCalls === "number") {
-          lastRemainingCalls = savedTele.lastRemainingCalls;
-          quotaShieldActive = lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD;
-        }
-        if (Array.isArray(savedTele.apiFootballAuditLog)) {
-          apiFootballAuditLog.splice(0, apiFootballAuditLog.length, ...savedTele.apiFootballAuditLog.slice(0, 30));
         }
         if (typeof savedTele.serverCacheHits === "number") serverCacheHits = savedTele.serverCacheHits;
         if (typeof savedTele.serverCacheMisses === "number") serverCacheMisses = savedTele.serverCacheMisses;
@@ -3637,8 +3617,6 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
         return res.json({
           success: true,
           source: "persistent_disk_cache",
-          remainingCalls: lastRemainingCalls,
-          quotaShieldActive,
           cachedAt: cached.timestamp,
           count: activeList.length,
           fixtures: activeList
@@ -3664,8 +3642,6 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
     return res.json({
       success: true,
       source: "hybrid_official_coalesced",
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
       count: filtered.length,
       fixtures: filtered
     });
@@ -3675,8 +3651,6 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
       return res.json({
         success: true,
         source: "fallback_disk_cache",
-        remainingCalls: lastRemainingCalls,
-        quotaShieldActive,
         fixtures: cached.data
       });
     }
@@ -3889,8 +3863,6 @@ app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
       success: true,
       source: "hybrid_memory_pulse",
       timestamp: cachedPulse.timestamp,
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
       deltas: cachedPulse.data
     });
   }
@@ -4088,8 +4060,6 @@ app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
       success: true,
       source: "hybrid_live_pulse",
       timestamp: Date.now(),
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
       deltas
     });
   } catch (err) {
@@ -4331,19 +4301,7 @@ app.get("/api/fixtures", dataRateLimitMiddleware, async (req, res) => {
     return res.status(200).json({
       success: true,
       source: "persistent_disk_cache",
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
       fixtures: sharedUpcoming.data
-    });
-  }
-  const afEnvelope = getCacheItem(`apifootball_schedule_v2_${date}`);
-  if (afEnvelope && Array.isArray(afEnvelope.data?.items) && afEnvelope.data.items.length > 0) {
-    return res.status(200).json({
-      success: true,
-      source: "persistent_disk_cache",
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
-      fixtures: afEnvelope.data.items
     });
   }
   try {
@@ -4351,8 +4309,6 @@ app.get("/api/fixtures", dataRateLimitMiddleware, async (req, res) => {
     return res.status(200).json({
       success: true,
       source: "espn_official_coalesced",
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
       fixtures: espnFallback
     });
   } catch (err) {
@@ -4674,17 +4630,6 @@ app.post("/api/set-secret-key", async (req, res) => {
   try {
     const envPath = path2.resolve(process.cwd(), ".env");
     let envContent = fs2.existsSync(envPath) ? fs2.readFileSync(envPath, "utf8") : "";
-    if (key && typeof key === "string" && key.trim()) {
-      const clean = sanitizeText(key.trim(), 128);
-      process.env.API_FOOTBALL_KEY = clean;
-      if (envContent.includes("API_FOOTBALL_KEY=")) {
-        envContent = envContent.replace(/API_FOOTBALL_KEY=.*/g, `API_FOOTBALL_KEY="${clean}"`);
-      } else {
-        envContent += `
-API_FOOTBALL_KEY="${clean}"
-`;
-      }
-    }
     if (footballDataKey && typeof footballDataKey === "string" && footballDataKey.trim()) {
       const clean = sanitizeText(footballDataKey.trim(), 128);
       process.env.FOOTBALL_DATA_KEY = clean;

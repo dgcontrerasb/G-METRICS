@@ -69,7 +69,7 @@ app.use(idempotencyMiddleware);
 // Server-side persistent disk cache + In-Flight request deduplication (Single-Flight coalescing)
 const IS_VERCEL = Boolean(process.env.VERCEL || process.env.VERCEL_ENV || process.env.NOW_REGION);
 const CACHE_DIR = IS_VERCEL ? path.resolve('/tmp', '.cache') : path.resolve(process.cwd(), '.cache');
-const CACHE_FILE = path.resolve(CACHE_DIR, 'api_football_cache.json');
+const CACHE_FILE = path.resolve(CACHE_DIR, 'sportstats_cache.json');
 
 // Normalize incoming path ONLY for Vercel serverless function (never in local dev mode)
 if (IS_VERCEL) {
@@ -99,22 +99,6 @@ interface CacheRecord<T = unknown> {
 
 const memoryCache = new Map<string, CacheRecord>();
 const inFlightRequests = new Map<string, Promise<unknown>>();
-
-// Quota Shield State (API-Football has 100 free requests/day)
-let lastRemainingCalls = 100;
-let quotaShieldActive = false;
-const QUOTA_SHIELD_THRESHOLD = 15;
-const apiFootballAuditLog: Array<{
-  at: string;
-  timestamp: string;
-  targetDate: string;
-  date: string;
-  endpoint: string;
-  status: number;
-  fixturesCount: number;
-  itemsCount: number;
-  remainingAfter: number;
-}> = [];
 
 // Real-Time Online Presence & Telemetry State
 export interface OnlineSessionEntry {
@@ -160,13 +144,6 @@ async function hydrateTelemetryFromSupabaseIfNeeded(): Promise<void> {
         peakOnlineUsers = d.peakOnlineUsers;
         if (d.peakOnlineAt) peakOnlineAt = d.peakOnlineAt;
       }
-      if (typeof d.lastRemainingCalls === 'number' && lastRemainingCalls === 100) {
-        lastRemainingCalls = d.lastRemainingCalls;
-        quotaShieldActive = lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD;
-      }
-      if (Array.isArray(d.apiFootballAuditLog) && apiFootballAuditLog.length === 0) {
-        apiFootballAuditLog.push(...d.apiFootballAuditLog.slice(0, 30));
-      }
       if (typeof d.serverCacheHits === 'number' && serverCacheHits < d.serverCacheHits) {
         serverCacheHits = d.serverCacheHits;
       }
@@ -195,8 +172,6 @@ function saveTelemetrySnapshotToCache(syncToSupabase = false): void {
   const snapshot = {
     peakOnlineUsers,
     peakOnlineAt,
-    lastRemainingCalls,
-    apiFootballAuditLog,
     serverCacheHits,
     serverCacheMisses,
     espnPulseCallsCount,
@@ -277,13 +252,6 @@ function initDiskCache(): void {
           peakOnlineUsers = savedTele.peakOnlineUsers;
           if (savedTele.peakOnlineAt) peakOnlineAt = savedTele.peakOnlineAt;
         }
-        if (typeof savedTele.lastRemainingCalls === 'number') {
-          lastRemainingCalls = savedTele.lastRemainingCalls;
-          quotaShieldActive = lastRemainingCalls <= QUOTA_SHIELD_THRESHOLD;
-        }
-        if (Array.isArray(savedTele.apiFootballAuditLog)) {
-          apiFootballAuditLog.splice(0, apiFootballAuditLog.length, ...savedTele.apiFootballAuditLog.slice(0, 30));
-        }
         if (typeof savedTele.serverCacheHits === 'number') serverCacheHits = savedTele.serverCacheHits;
         if (typeof savedTele.serverCacheMisses === 'number') serverCacheMisses = savedTele.serverCacheMisses;
         if (typeof savedTele.espnPulseCallsCount === 'number') espnPulseCallsCount = savedTele.espnPulseCallsCount;
@@ -339,17 +307,6 @@ function setCacheItem<T = unknown>(key: string, data: T): void {
   }
   memoryCache.set(key, { data, timestamp: Date.now() });
   persistCacheToDisk();
-}
-
-function updateQuotaFromHeaders(headers: Headers): void {
-  const rem = headers.get('x-ratelimit-requests-remaining');
-  if (rem) {
-    const val = parseInt(rem, 10);
-    if (!isNaN(val)) {
-      lastRemainingCalls = val;
-      quotaShieldActive = val <= QUOTA_SHIELD_THRESHOLD;
-    }
-  }
 }
 
 async function runSingleFlight<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -880,259 +837,6 @@ function extractEspnScoreboardTelemetry(
     elapsedMin || 45
   );
 
-  return { liveStats, liveEvents };
-}
-
-function extractApiFootballLiveTelemetry(
-  rawFix: any,
-  overrideHomeScore?: number,
-  overrideAwayScore?: number,
-  overrideMinute?: number,
-  isHalfTime?: boolean,
-  isFinished?: boolean
-): { liveStats: any; liveEvents: any[] } {
-  const homeName = String(rawFix?.teams?.home?.name || 'Local');
-  const awayName = String(rawFix?.teams?.away?.name || 'Visitante');
-  const homeId = rawFix?.teams?.home?.id;
-  const awayId = rawFix?.teams?.away?.id;
-
-  const homeScore = overrideHomeScore ?? Number(rawFix?.goals?.home ?? rawFix?.score?.fulltime?.home ?? 0);
-  const awayScore = overrideAwayScore ?? Number(rawFix?.goals?.away ?? rawFix?.score?.fulltime?.away ?? 0);
-  const currentMin = overrideMinute ?? Number(rawFix?.fixture?.status?.elapsed || 45);
-  const fId = String(rawFix?.fixture?.id || 'match');
-
-  const rawEvents = Array.isArray(rawFix?.events) ? rawFix.events : [];
-  const events: any[] = [
-    {
-      id: `kickoff_${fId}`,
-      minute: 1,
-      displayMinute: "1'",
-      type: 'PERIOD_START',
-      teamSide: 'NEUTRAL',
-      detail: 'Inicio del primer tiempo'
-    }
-  ];
-
-  let homeGoalsRecorded = 0;
-  let awayGoalsRecorded = 0;
-  let homeYellows = 0;
-  let awayYellows = 0;
-  let homeReds = 0;
-  let awayReds = 0;
-
-  rawEvents.forEach((ev: any, idx: number) => {
-    const evTeamId = ev?.team?.id;
-    const evTeamName = String(ev?.team?.name || '');
-    const side: 'HOME' | 'AWAY' =
-      (homeId && evTeamId === homeId) || singleTeamFuzzyMatch(normalizeTeamKey(evTeamName), normalizeTeamKey(homeName))
-        ? 'HOME'
-        : (awayId && evTeamId === awayId) || singleTeamFuzzyMatch(normalizeTeamKey(evTeamName), normalizeTeamKey(awayName))
-        ? 'AWAY'
-        : 'HOME';
-    const teamLabel = side === 'HOME' ? homeName : awayName;
-    const min = Math.min(120, Math.max(1, Number(ev?.time?.elapsed || 30)));
-    const extra = ev?.time?.extra ? `+${ev.time.extra}` : '';
-    const displayMinute = `${min}${extra}'`;
-
-    const rawPlayer = ev?.player?.name;
-    const rawAssist = ev?.assist?.name;
-    const playerPrimary = resolveServerPlayerName(rawPlayer, teamLabel, 9 - (idx % 4), false);
-    const playerSecondary = rawAssist ? resolveServerPlayerName(rawAssist, teamLabel, 7, false) : undefined;
-
-    const evType = String(ev?.type || '').toLowerCase();
-    const evDetail = String(ev?.detail || '').toLowerCase();
-
-    if (evType === 'goal' && !evDetail.includes('missed')) {
-      if (side === 'HOME') homeGoalsRecorded++;
-      else awayGoalsRecorded++;
-      const isPen = evDetail.includes('penalty');
-      const isOG = evDetail.includes('own goal');
-      events.push({
-        id: `af_goal_${fId}_${idx}_${min}`,
-        minute: min,
-        displayMinute,
-        type: 'GOAL',
-        teamSide: side,
-        teamName: teamLabel,
-        playerPrimary,
-        playerSecondary,
-        detail: isPen
-          ? `Gol de penal convertido por ${playerPrimary}`
-          : isOG
-          ? `Gol en propia puerta (${playerPrimary})`
-          : playerSecondary
-          ? `Gol de ${playerPrimary} · Asistencia de ${playerSecondary}`
-          : `Anotación oficial de ${playerPrimary} para ${teamLabel}`
-      });
-    } else if (evType === 'card') {
-      if (evDetail.includes('red')) {
-        if (side === 'HOME') homeReds++;
-        else awayReds++;
-        events.push({
-          id: `af_rc_${fId}_${idx}_${min}`,
-          minute: min,
-          displayMinute,
-          type: 'RED_CARD',
-          teamSide: side,
-          teamName: teamLabel,
-          playerPrimary,
-          detail: `Tarjeta roja / expulsión para ${playerPrimary}`
-        });
-      } else {
-        if (side === 'HOME') homeYellows++;
-        else awayYellows++;
-        events.push({
-          id: `af_yc_${fId}_${idx}_${min}`,
-          minute: min,
-          displayMinute,
-          type: 'YELLOW_CARD',
-          teamSide: side,
-          teamName: teamLabel,
-          playerPrimary,
-          detail: `Amonestación con tarjeta amarilla para ${playerPrimary}`
-        });
-      }
-    } else if (evType === 'subst') {
-      const subIn = resolveServerPlayerName(rawAssist || rawPlayer, teamLabel, 12 + (idx % 5), true);
-      const subOut = resolveServerPlayerName(rawPlayer, teamLabel, 6 + (idx % 5), false);
-      events.push({
-        id: `af_sub_${fId}_${idx}_${min}`,
-        minute: min,
-        displayMinute,
-        type: 'SUBSTITUTION',
-        teamSide: side,
-        teamName: teamLabel,
-        playerPrimary: subIn,
-        playerSecondary: subOut,
-        detail: `Sustitución en ${teamLabel}: ingresa ${subIn} por ${subOut}`
-      });
-    }
-  });
-
-  const htHome = rawFix?.score?.halftime?.home;
-  const htAway = rawFix?.score?.halftime?.away;
-  const missingHomeGoals = Math.max(0, homeScore - homeGoalsRecorded);
-  const missingAwayGoals = Math.max(0, awayScore - awayGoalsRecorded);
-
-  for (let i = 0; i < missingHomeGoals; i++) {
-    const inFirstHalf = typeof htHome === 'number' && i < htHome;
-    const goalMin = inFirstHalf
-      ? Math.min(44, Math.max(8, Math.round(((i + 1) / (missingHomeGoals + 1)) * Math.min(44, currentMin))))
-      : Math.min(currentMin, Math.max(12, Math.round(((i + 1) / (missingHomeGoals + 1)) * currentMin)));
-    const scorer = resolveServerPlayerName(null, homeName, 9 - (i % 3), false);
-    events.push({
-      id: `reconciled_goal_home_${fId}_${i}`,
-      minute: goalMin,
-      displayMinute: `${goalMin}'`,
-      type: 'GOAL',
-      teamSide: 'HOME',
-      teamName: homeName,
-      playerPrimary: scorer,
-      detail: `Anotación oficial de ${scorer} para ${homeName}`
-    });
-  }
-
-  for (let i = 0; i < missingAwayGoals; i++) {
-    const inFirstHalf = typeof htAway === 'number' && i < htAway;
-    const goalMin = inFirstHalf
-      ? Math.min(44, Math.max(11, Math.round(((i + 1) / (missingAwayGoals + 1)) * Math.min(44, currentMin))))
-      : Math.min(currentMin, Math.max(16, Math.round(((i + 1) / (missingAwayGoals + 1)) * currentMin)));
-    const scorer = resolveServerPlayerName(null, awayName, 10 - (i % 3), false);
-    events.push({
-      id: `reconciled_goal_away_${fId}_${i}`,
-      minute: goalMin,
-      displayMinute: `${goalMin}'`,
-      type: 'GOAL',
-      teamSide: 'AWAY',
-      teamName: awayName,
-      playerPrimary: scorer,
-      detail: `Anotación oficial de ${scorer} para ${awayName}`
-    });
-  }
-
-  if (isHalfTime || currentMin >= 45 || isFinished) {
-    events.push({
-      id: `halftime_${fId}`,
-      minute: 45,
-      displayMinute: "45'",
-      type: 'PERIOD_HALF',
-      teamSide: 'NEUTRAL',
-      detail: `Entretiempo reglamentario (${htHome ?? homeScore} - ${htAway ?? awayScore})`
-    });
-  }
-
-  if (isFinished) {
-    events.push({
-      id: `fulltime_${fId}`,
-      minute: 90,
-      displayMinute: "90'",
-      type: 'PERIOD_END',
-      teamSide: 'NEUTRAL',
-      detail: `Final del encuentro (${homeScore} - ${awayScore})`
-    });
-  }
-
-  const progressFactor = Math.min(1, Math.max(0.15, currentMin / 90));
-  const existingStats = rawFix?.liveStats;
-  const homeCorners = existingStats?.home?.corners ?? Math.max(1, Math.round((4.8 + (homeScore * 0.7)) * progressFactor));
-  const awayCorners = existingStats?.away?.corners ?? Math.max(1, Math.round((4.1 + (awayScore * 0.7)) * progressFactor));
-  const finalHomeYellows = Math.max(homeYellows, existingStats?.home?.yellowCards ?? Math.floor(1.8 * progressFactor));
-  const finalAwayYellows = Math.max(awayYellows, existingStats?.away?.yellowCards ?? Math.floor(2.1 * progressFactor));
-
-  while (homeYellows < finalHomeYellows) {
-    homeYellows++;
-    const ycMin = Math.min(currentMin, Math.max(14, Math.round((homeYellows / (finalHomeYellows + 1)) * currentMin)));
-    const player = resolveServerPlayerName(null, homeName, 4 + homeYellows, false);
-    events.push({
-      id: `reconciled_yc_home_${fId}_${homeYellows}`,
-      minute: ycMin,
-      displayMinute: `${ycMin}'`,
-      type: 'YELLOW_CARD',
-      teamSide: 'HOME',
-      teamName: homeName,
-      playerPrimary: player,
-      detail: `Tarjeta amarilla mostrada a ${player} (${homeName})`
-    });
-  }
-  while (awayYellows < finalAwayYellows) {
-    awayYellows++;
-    const ycMin = Math.min(currentMin, Math.max(18, Math.round((awayYellows / (finalAwayYellows + 1)) * currentMin)));
-    const player = resolveServerPlayerName(null, awayName, 5 + awayYellows, false);
-    events.push({
-      id: `reconciled_yc_away_${fId}_${awayYellows}`,
-      minute: ycMin,
-      displayMinute: `${ycMin}'`,
-      type: 'YELLOW_CARD',
-      teamSide: 'AWAY',
-      teamName: awayName,
-      playerPrimary: player,
-      detail: `Tarjeta amarilla mostrada a ${player} (${awayName})`
-    });
-  }
-
-  const liveStats = {
-    home: {
-      corners: homeCorners,
-      yellowCards: finalHomeYellows,
-      redCards: Math.max(homeReds, existingStats?.home?.redCards ?? 0),
-      shots: existingStats?.home?.shots ?? Math.max(homeScore + 2, Math.round(12.5 * progressFactor)),
-      shotsOnTarget: existingStats?.home?.shotsOnTarget ?? Math.max(homeScore, Math.round(4.6 * progressFactor)),
-      possessionPct: existingStats?.home?.possessionPct ?? 52,
-      foulsCommitted: existingStats?.home?.foulsCommitted ?? Math.round(11 * progressFactor)
-    },
-    away: {
-      corners: awayCorners,
-      yellowCards: finalAwayYellows,
-      redCards: Math.max(awayReds, existingStats?.away?.redCards ?? 0),
-      shots: existingStats?.away?.shots ?? Math.max(awayScore + 1, Math.round(10.5 * progressFactor)),
-      shotsOnTarget: existingStats?.away?.shotsOnTarget ?? Math.max(awayScore, Math.round(3.8 * progressFactor)),
-      possessionPct: existingStats?.away?.possessionPct ?? 48,
-      foulsCommitted: existingStats?.away?.foulsCommitted ?? Math.round(12 * progressFactor)
-    },
-    updatedAt: Date.now()
-  };
-
-  const liveEvents = reconcileCornerEvents(events, homeCorners, awayCorners, homeName, awayName, currentMin);
   return { liveStats, liveEvents };
 }
 
@@ -2352,8 +2056,6 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
         return res.json({
           success: true,
           source: 'persistent_disk_cache',
-          remainingCalls: lastRemainingCalls,
-          quotaShieldActive,
           cachedAt: cached.timestamp,
           count: activeList.length,
           fixtures: activeList
@@ -2383,8 +2085,6 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
     return res.json({
       success: true,
       source: 'hybrid_official_coalesced',
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
       count: filtered.length,
       fixtures: filtered
     });
@@ -2394,8 +2094,6 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
       return res.json({
         success: true,
         source: 'fallback_disk_cache',
-        remainingCalls: lastRemainingCalls,
-        quotaShieldActive,
         fixtures: cached.data
       });
     }
@@ -2629,7 +2327,7 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
   }
 });
 
-// 0.25 Hybrid Live Pulse Endpoint (15s poll con 0% gasto de API-Football)
+// 0.25 Hybrid Live Pulse Endpoint (15s poll con feed oficial de ESPN)
 app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
   res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=30');
   const requestedDate = (req.query.date as string) || '';
@@ -2647,8 +2345,6 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
       success: true,
       source: 'hybrid_memory_pulse',
       timestamp: cachedPulse.timestamp,
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
       deltas: cachedPulse.data
     });
   }
@@ -2891,8 +2587,6 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
       success: true,
       source: 'hybrid_live_pulse',
       timestamp: Date.now(),
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
       deltas
     });
   } catch (err: unknown) {
@@ -2990,7 +2684,7 @@ app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
         }
       }
     } catch {
-      // continue to API-Football fallback
+      // continuar con telemetría de respaldo
     }
 
     if (resolvedEspnId) {
@@ -3165,7 +2859,7 @@ app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
-// 1. Secret Proxy Endpoint: GET /api/fixtures (Unificado a caché compartida, 0 llamadas adicionales a API-Football)
+// 1. Secret Proxy Endpoint: GET /api/fixtures (Unificado a caché compartida, motor híbrido ESPN + Football-Data.org)
 app.get('/api/fixtures', dataRateLimitMiddleware, async (req, res) => {
   const date = (req.query.date as string) || getColombiaDateStr(0);
   const sharedUpcoming = getCacheItem<any[]>(`upcoming_v8_${date}`);
@@ -3173,20 +2867,7 @@ app.get('/api/fixtures', dataRateLimitMiddleware, async (req, res) => {
     return res.status(200).json({
       success: true,
       source: 'persistent_disk_cache',
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
       fixtures: sharedUpcoming.data
-    });
-  }
-
-  const afEnvelope = getCacheItem<{ fetchedAt: number; items: any[] }>(`apifootball_schedule_v2_${date}`);
-  if (afEnvelope && Array.isArray(afEnvelope.data?.items) && afEnvelope.data.items.length > 0) {
-    return res.status(200).json({
-      success: true,
-      source: 'persistent_disk_cache',
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
-      fixtures: afEnvelope.data.items
     });
   }
 
@@ -3195,8 +2876,6 @@ app.get('/api/fixtures', dataRateLimitMiddleware, async (req, res) => {
     return res.status(200).json({
       success: true,
       source: 'espn_official_coalesced',
-      remainingCalls: lastRemainingCalls,
-      quotaShieldActive,
       fixtures: espnFallback
     });
   } catch (err: unknown) {
@@ -3582,16 +3261,6 @@ app.post('/api/set-secret-key', async (req, res) => {
   try {
     const envPath = path.resolve(process.cwd(), '.env');
     let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
-
-    if (key && typeof key === 'string' && key.trim()) {
-      const clean = sanitizeText(key.trim(), 128);
-      process.env.API_FOOTBALL_KEY = clean;
-      if (envContent.includes('API_FOOTBALL_KEY=')) {
-        envContent = envContent.replace(/API_FOOTBALL_KEY=.*/g, `API_FOOTBALL_KEY="${clean}"`);
-      } else {
-        envContent += `\nAPI_FOOTBALL_KEY="${clean}"\n`;
-      }
-    }
 
     if (footballDataKey && typeof footballDataKey === 'string' && footballDataKey.trim()) {
       const clean = sanitizeText(footballDataKey.trim(), 128);

@@ -54,7 +54,7 @@ Diseñada bajo una interfaz financiera de alta fidelidad (**Cyber-Fintech Dark**
 | **Frontend** | React 19, TypeScript, Tailwind CSS v4, Lucide Icons, Motion, jsPDF |
 | **Backend / API** | Node.js, Express, ESBuild (empaquetado a Serverless Bundle) |
 | **Persistencia & Caché** | Supabase (PostgreSQL) + Caché de memoria en runtime |
-| **Fuentes de Datos Deportivos** | API-Football (v3), The Odds API, Football-Data.org, ESPN Core API |
+| **Fuentes de Datos Deportivos** | ESPN Core API (v2), Football-Data.org (v4), The Odds API |
 | **Despliegue** | Vercel (Frontend Estático + Serverless Function `/api/index.js`) |
 | **Móvil / PWA** | Web App Manifest, Service Worker y soporte para instalación de pantalla de inicio |
 
@@ -98,7 +98,6 @@ Para ejecutar el proyecto tanto en desarrollo local como en producción (Vercel)
 
 | Variable | Requerida | Propósito |
 | :--- | :---: | :--- |
-| `API_FOOTBALL_KEY` | **Sí** | Llave de API-Sports para calendario, estadísticas en vivo, H2H y clasificaciones. |
 | `ODDS_API_KEY` | **Sí** | Llave de The Odds API para cuotas de mercado y marcadores en tiempo real. |
 | `FOOTBALL_DATA_KEY` | **Sí** | Llave de Football-Data.org para cobertura y respaldo de ligas europeas. |
 | `SUPABASE_URL` | **Sí** | URL del proyecto Supabase para base de datos y sincronización de caché. |
