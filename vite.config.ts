@@ -12,6 +12,7 @@ export default defineConfig(() => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: [
+          'push-worker.js',
           'icon-512.png',
           'icon-maskable-512.png',
           'custom-logo.png',
@@ -52,6 +53,7 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          importScripts: ['/push-worker.js'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,woff,woff2}'],
           runtimeCaching: [

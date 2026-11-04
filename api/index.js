@@ -5,6 +5,7 @@ import path2 from "path";
 import fs2 from "fs";
 import crypto3 from "node:crypto";
 import { fileURLToPath } from "url";
+import webpush from "web-push";
 
 // src/services/supabaseServer.ts
 import { createClient } from "@supabase/supabase-js";
@@ -1414,6 +1415,22 @@ CREATE TABLE IF NOT EXISTS sportstats_config (
 ALTER TABLE sportstats_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sportstats_config ENABLE ROW LEVEL SECURITY;
 
+CREATE TABLE IF NOT EXISTS sportstats_push_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  endpoint TEXT UNIQUE NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  match_ids JSONB DEFAULT '[]'::jsonb,
+  user_id TEXT,
+  device_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_endpoint ON sportstats_push_subscriptions(endpoint);
+CREATE INDEX IF NOT EXISTS idx_push_updated ON sportstats_push_subscriptions(updated_at);
+ALTER TABLE sportstats_push_subscriptions ENABLE ROW LEVEL SECURITY;
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_users' AND policyname = 'Allow server full access users') THEN
@@ -1421,6 +1438,9 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_config' AND policyname = 'Allow server full access config') THEN
     CREATE POLICY "Allow server full access config" ON sportstats_config FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_push_subscriptions' AND policyname = 'Allow server full access push') THEN
+    CREATE POLICY "Allow server full access push" ON sportstats_push_subscriptions FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 `;
@@ -1813,7 +1833,14 @@ async function redeemActivationCode(code, userIdentifier) {
     return {
       success: true,
       message: `\xA1C\xF3digo canjeado con \xE9xito! Se activaron ${daysToAdd} d\xEDas en tu Plan VIP.`,
-      newExpiresAt
+      newExpiresAt,
+      user: {
+        id: userData.id,
+        username: userData.username,
+        role: userData.role || "client",
+        boundDeviceId: userData.bound_device_id,
+        expiresAt: newExpiresAt
+      }
     };
   } catch (err) {
     console.error("[Redeem Code Error]:", err);
@@ -1898,6 +1925,79 @@ async function adminListActivationCodes() {
     return [];
   }
 }
+var memoryPushSubscriptions = /* @__PURE__ */ new Map();
+async function upsertPushSubscription(sub) {
+  if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+    return false;
+  }
+  memoryPushSubscriptions.set(sub.endpoint, sub);
+  const client = getSupabaseClient();
+  if (!client) return true;
+  try {
+    const { error } = await client.from("sportstats_push_subscriptions").upsert(
+      {
+        endpoint: sub.endpoint,
+        p256dh: sub.keys.p256dh,
+        auth: sub.keys.auth,
+        match_ids: sub.matchIds || [],
+        user_id: sub.userId || null,
+        device_id: sub.deviceId || null,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      { onConflict: "endpoint" }
+    );
+    return !error;
+  } catch {
+    return true;
+  }
+}
+async function removePushSubscription(endpoint) {
+  if (!endpoint) return false;
+  memoryPushSubscriptions.delete(endpoint);
+  const client = getSupabaseClient();
+  if (!client) return true;
+  try {
+    const { error } = await client.from("sportstats_push_subscriptions").delete().eq("endpoint", endpoint);
+    return !error;
+  } catch {
+    return true;
+  }
+}
+async function getActivePushSubscriptions(matchId) {
+  const result = [];
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const { data, error } = await client.from("sportstats_push_subscriptions").select("*").limit(1e3);
+      if (!error && Array.isArray(data)) {
+        for (const row of data) {
+          const matchIds = Array.isArray(row.match_ids) ? row.match_ids : [];
+          if (!matchId || matchIds.length === 0 || matchIds.includes(matchId)) {
+            result.push({
+              endpoint: row.endpoint,
+              keys: {
+                p256dh: row.p256dh,
+                auth: row.auth
+              },
+              matchIds,
+              userId: row.user_id,
+              deviceId: row.device_id
+            });
+          }
+        }
+      }
+    } catch {
+    }
+  }
+  for (const [endpoint, sub] of memoryPushSubscriptions.entries()) {
+    if (!result.some((r) => r.endpoint === endpoint)) {
+      if (!matchId || !sub.matchIds || sub.matchIds.length === 0 || sub.matchIds.includes(matchId)) {
+        result.push(sub);
+      }
+    }
+  }
+  return result;
+}
 
 // src/services/resilientFetch.ts
 async function fetchWithStrictTimeout(url, options = {}) {
@@ -1934,6 +2034,26 @@ async function fetchWithStrictTimeout(url, options = {}) {
 
 // server.ts
 dotenv.config();
+var vapidPublicKey = process.env.VAPID_PUBLIC_KEY?.trim() || "";
+var vapidPrivateKey = process.env.VAPID_PRIVATE_KEY?.trim() || "";
+var VAPID_SUBJECT = process.env.VAPID_SUBJECT?.trim() || "mailto:soporte@g-metrics.com";
+if (!vapidPublicKey || !vapidPrivateKey) {
+  try {
+    const generated = webpush.generateVAPIDKeys();
+    vapidPublicKey = vapidPublicKey || generated.publicKey;
+    vapidPrivateKey = vapidPrivateKey || generated.privateKey;
+  } catch (err) {
+    console.error("[Web-Push] Error generando llaves VAPID temporales:", err);
+  }
+}
+try {
+  if (vapidPublicKey && vapidPrivateKey) {
+    webpush.setVapidDetails(VAPID_SUBJECT, vapidPublicKey, vapidPrivateKey);
+    console.log("[Web-Push] Llaves VAPID configuradas para notificaciones en segundo plano.");
+  }
+} catch (vapidErr) {
+  console.error("[Web-Push] Error configurando VAPID:", vapidErr);
+}
 process.on("uncaughtException", (err) => {
   console.error("[Process uncaughtException Protected]:", err);
 });
@@ -5563,7 +5683,7 @@ app.post("/api/user/redeem-code", async (req, res) => {
       const updatedJwt = createSessionJwt({
         userId: result.user.id || "client",
         username: result.user.username || "user",
-        role: result.user.role || "client",
+        role: result.user.role === "admin" ? "admin" : "client",
         deviceId: cleanDev,
         isVip: true,
         expiresAt: result.user.expiresAt,
@@ -6003,6 +6123,101 @@ app.delete("/api/admin/feedback", async (req, res) => {
     return res.json({ success: true, items: updatedList });
   } catch {
     return res.status(500).json({ success: false, error: "Error al eliminar calificaci\xF3n" });
+  }
+});
+app.get("/api/push/vapid-public-key", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+  res.json({
+    publicKey: vapidPublicKey,
+    status: "ok"
+  });
+});
+app.post("/api/push/subscribe", async (req, res) => {
+  try {
+    const { subscription, matchIds, deviceId } = req.body || {};
+    if (!subscription || !subscription.endpoint || !subscription.keys || !subscription.keys.p256dh || !subscription.keys.auth) {
+      return res.status(400).json({ error: "Suscripci\xF3n Web Push inv\xE1lida o incompleta" });
+    }
+    const session = req.userSession;
+    await upsertPushSubscription({
+      endpoint: String(subscription.endpoint),
+      keys: {
+        p256dh: String(subscription.keys.p256dh),
+        auth: String(subscription.keys.auth)
+      },
+      matchIds: Array.isArray(matchIds) ? matchIds.map(String) : [],
+      userId: session?.userId || void 0,
+      deviceId: typeof deviceId === "string" ? deviceId : void 0,
+      updatedAt: Date.now()
+    });
+    res.json({ success: true, message: "Dispositivo suscrito a notificaciones Push exitosamente." });
+  } catch (err) {
+    console.error("[Push Subscribe Error]:", err);
+    res.status(500).json({ error: "Error registrando suscripci\xF3n push" });
+  }
+});
+app.post("/api/push/send-alert", dataRateLimitMiddleware, async (req, res) => {
+  try {
+    const { matchId, title, body, icon, badge, url, tag } = req.body || {};
+    if (!title) {
+      return res.status(400).json({ error: "T\xEDtulo de alerta requerido" });
+    }
+    const subscribers = await getActivePushSubscriptions(matchId ? String(matchId) : void 0);
+    if (!subscribers || subscribers.length === 0) {
+      return res.json({ success: true, delivered: 0, total: 0, message: "No hay suscriptores registrados para este partido" });
+    }
+    const payload = JSON.stringify({
+      title: sanitizeText(String(title), 80),
+      body: sanitizeText(String(body || "\xA1Evento de partido en vivo!"), 160),
+      icon: icon || "/icon-512.png",
+      badge: badge || "/icon.png",
+      data: {
+        url: url || "/",
+        matchId: matchId ? String(matchId) : null,
+        timestamp: Date.now()
+      },
+      tag: tag || `gmetrics-${matchId || "match-alert"}`
+    });
+    let delivered = 0;
+    let failed = 0;
+    let cleaned = 0;
+    await Promise.allSettled(
+      subscribers.map(async (sub) => {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: {
+                p256dh: sub.keys.p256dh,
+                auth: sub.keys.auth
+              }
+            },
+            payload,
+            {
+              TTL: 60,
+              urgency: "high"
+            }
+          );
+          delivered++;
+        } catch (err) {
+          failed++;
+          if (err?.statusCode === 410 || err?.statusCode === 404) {
+            cleaned++;
+            await removePushSubscription(sub.endpoint);
+          }
+        }
+      })
+    );
+    res.json({
+      success: true,
+      delivered,
+      failed,
+      cleaned,
+      total: subscribers.length
+    });
+  } catch (err) {
+    console.error("[Push Send Alert Error]:", err);
+    res.status(500).json({ error: "Error enviando notificaciones push" });
   }
 });
 app.use(express.static(path2.resolve(__dirname, "public"), {

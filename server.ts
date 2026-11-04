@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'url';
+import webpush from 'web-push';
 import {
   isSupabaseConfigured,
   getSupabaseClient,
@@ -26,7 +27,10 @@ import {
   redeemActivationCode,
   claimFeedbackBonus,
   adminGenerateActivationCode,
-  adminListActivationCodes
+  adminListActivationCodes,
+  upsertPushSubscription,
+  removePushSubscription,
+  getActivePushSubscriptions
 } from './src/services/supabaseServer';
 import { fetchWithStrictTimeout } from './src/services/resilientFetch';
 import {
@@ -50,6 +54,30 @@ import {
 } from './src/services/securityShield';
 
 dotenv.config();
+
+// Web Push VAPID Configuration ($0 USD/mes - Background Push Notifications)
+let vapidPublicKey = process.env.VAPID_PUBLIC_KEY?.trim() || '';
+let vapidPrivateKey = process.env.VAPID_PRIVATE_KEY?.trim() || '';
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT?.trim() || 'mailto:soporte@g-metrics.com';
+
+if (!vapidPublicKey || !vapidPrivateKey) {
+  try {
+    const generated = webpush.generateVAPIDKeys();
+    vapidPublicKey = vapidPublicKey || generated.publicKey;
+    vapidPrivateKey = vapidPrivateKey || generated.privateKey;
+  } catch (err) {
+    console.error('[Web-Push] Error generando llaves VAPID temporales:', err);
+  }
+}
+
+try {
+  if (vapidPublicKey && vapidPrivateKey) {
+    webpush.setVapidDetails(VAPID_SUBJECT, vapidPublicKey, vapidPrivateKey);
+    console.log('[Web-Push] Llaves VAPID configuradas para notificaciones en segundo plano.');
+  }
+} catch (vapidErr) {
+  console.error('[Web-Push] Error configurando VAPID:', vapidErr);
+}
 
 // Anticaída de proceso Node.js ante excepciones no capturadas o rechazos de promesas
 process.on('uncaughtException', (err) => {
@@ -4196,7 +4224,7 @@ app.post('/api/user/redeem-code', async (req, res) => {
       const updatedJwt = createSessionJwt({
         userId: result.user.id || 'client',
         username: result.user.username || 'user',
-        role: result.user.role || 'client',
+        role: (result.user.role === 'admin' ? 'admin' : 'client') as 'admin' | 'client',
         deviceId: cleanDev,
         isVip: true,
         expiresAt: result.user.expiresAt,
@@ -4765,6 +4793,115 @@ app.delete('/api/admin/feedback', async (req, res) => {
     return res.json({ success: true, items: updatedList });
   } catch {
     return res.status(500).json({ success: false, error: 'Error al eliminar calificación' });
+  }
+});
+
+// =========================================================================
+// ENDPOINTS WEB-PUSH ($0 USD/MES - NOTIFICACIONES BACKGROUND APNs & FCM)
+// =========================================================================
+
+app.get('/api/push/vapid-public-key', (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+  res.json({
+    publicKey: vapidPublicKey,
+    status: 'ok',
+  });
+});
+
+app.post('/api/push/subscribe', async (req, res) => {
+  try {
+    const { subscription, matchIds, deviceId } = req.body || {};
+    if (!subscription || !subscription.endpoint || !subscription.keys || !subscription.keys.p256dh || !subscription.keys.auth) {
+      return res.status(400).json({ error: 'Suscripción Web Push inválida o incompleta' });
+    }
+
+    const session = (req as any).userSession;
+    await upsertPushSubscription({
+      endpoint: String(subscription.endpoint),
+      keys: {
+        p256dh: String(subscription.keys.p256dh),
+        auth: String(subscription.keys.auth),
+      },
+      matchIds: Array.isArray(matchIds) ? matchIds.map(String) : [],
+      userId: session?.userId || undefined,
+      deviceId: typeof deviceId === 'string' ? deviceId : undefined,
+      updatedAt: Date.now(),
+    });
+
+    res.json({ success: true, message: 'Dispositivo suscrito a notificaciones Push exitosamente.' });
+  } catch (err) {
+    console.error('[Push Subscribe Error]:', err);
+    res.status(500).json({ error: 'Error registrando suscripción push' });
+  }
+});
+
+app.post('/api/push/send-alert', dataRateLimitMiddleware, async (req, res) => {
+  try {
+    const { matchId, title, body, icon, badge, url, tag } = req.body || {};
+    if (!title) {
+      return res.status(400).json({ error: 'Título de alerta requerido' });
+    }
+
+    const subscribers = await getActivePushSubscriptions(matchId ? String(matchId) : undefined);
+    if (!subscribers || subscribers.length === 0) {
+      return res.json({ success: true, delivered: 0, total: 0, message: 'No hay suscriptores registrados para este partido' });
+    }
+
+    const payload = JSON.stringify({
+      title: sanitizeText(String(title), 80),
+      body: sanitizeText(String(body || '¡Evento de partido en vivo!'), 160),
+      icon: icon || '/icon-512.png',
+      badge: badge || '/icon.png',
+      data: {
+        url: url || '/',
+        matchId: matchId ? String(matchId) : null,
+        timestamp: Date.now(),
+      },
+      tag: tag || `gmetrics-${matchId || 'match-alert'}`,
+    });
+
+    let delivered = 0;
+    let failed = 0;
+    let cleaned = 0;
+
+    await Promise.allSettled(
+      subscribers.map(async (sub) => {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: {
+                p256dh: sub.keys.p256dh,
+                auth: sub.keys.auth,
+              },
+            },
+            payload,
+            {
+              TTL: 60,
+              urgency: 'high',
+            }
+          );
+          delivered++;
+        } catch (err: any) {
+          failed++;
+          if (err?.statusCode === 410 || err?.statusCode === 404) {
+            cleaned++;
+            await removePushSubscription(sub.endpoint);
+          }
+        }
+      })
+    );
+
+    res.json({
+      success: true,
+      delivered,
+      failed,
+      cleaned,
+      total: subscribers.length,
+    });
+  } catch (err) {
+    console.error('[Push Send Alert Error]:', err);
+    res.status(500).json({ error: 'Error enviando notificaciones push' });
   }
 });
 

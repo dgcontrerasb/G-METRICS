@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, X } from 'lucide-react';
 import { LiveGoalAlertItem } from '../../services/favoritesService';
 
@@ -25,8 +26,8 @@ export const LiveAlertsOverlay: React.FC<LiveAlertsOverlayProps> = ({
 
   if (liveGoalAlerts.length === 0) return null;
 
-  return (
-    <div className="fixed top-2.5 left-1/2 -translate-x-1/2 z-[120] w-[88%] max-w-[300px] space-y-1.5 pointer-events-none">
+  const content = (
+    <div className="fixed top-2.5 left-1/2 -translate-x-1/2 z-[99999] w-[88%] max-w-[300px] space-y-1.5 pointer-events-none">
       {liveGoalAlerts.map((alert) => {
         const isSoccer = alert.sport === 'SOCCER';
         const scorerName =
@@ -95,4 +96,10 @@ export const LiveAlertsOverlay: React.FC<LiveAlertsOverlayProps> = ({
       })}
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(content, document.body);
+  }
+
+  return content;
 };

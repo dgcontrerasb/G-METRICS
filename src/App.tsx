@@ -52,6 +52,7 @@ import {
   triggerNativeSystemNotification,
   LiveGoalAlertItem
 } from './services/favoritesService';
+import { registerBackgroundPushSubscription } from './services/pushNotificationService';
 import { getBrowserSupabase } from './services/supabaseBrowser';
 
 export default function App() {
@@ -191,6 +192,7 @@ export default function App() {
         next.add(fixtureId);
         // Request browser notification permission when user adds a favorite match
         requestBrowserNotificationPermission().catch(() => {});
+        registerBackgroundPushSubscription(fixtureId, next).catch(() => {});
       }
       saveStoredFavoriteIds(next);
       return next;

@@ -1389,6 +1389,22 @@ CREATE TABLE IF NOT EXISTS sportstats_config (
 ALTER TABLE sportstats_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sportstats_config ENABLE ROW LEVEL SECURITY;
 
+CREATE TABLE IF NOT EXISTS sportstats_push_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  endpoint TEXT UNIQUE NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  match_ids JSONB DEFAULT '[]'::jsonb,
+  user_id TEXT,
+  device_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_endpoint ON sportstats_push_subscriptions(endpoint);
+CREATE INDEX IF NOT EXISTS idx_push_updated ON sportstats_push_subscriptions(updated_at);
+ALTER TABLE sportstats_push_subscriptions ENABLE ROW LEVEL SECURITY;
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_users' AND policyname = 'Allow server full access users') THEN
@@ -1396,6 +1412,9 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_config' AND policyname = 'Allow server full access config') THEN
     CREATE POLICY "Allow server full access config" ON sportstats_config FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_push_subscriptions' AND policyname = 'Allow server full access push') THEN
+    CREATE POLICY "Allow server full access push" ON sportstats_push_subscriptions FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 `;
@@ -1843,7 +1862,19 @@ export async function loginOrRegisterGoogleUser(
 export async function redeemActivationCode(
   code: string,
   userIdentifier: string
-): Promise<{ success: boolean; message: string; newExpiresAt?: number }> {
+): Promise<{
+  success: boolean;
+  message: string;
+  newExpiresAt?: number;
+  user?: {
+    id: string;
+    username: string;
+    role: string;
+    boundDeviceId?: string;
+    expiresAt?: number;
+  };
+  sessionToken?: string;
+}> {
   const cleanCode = String(code || '').trim().toUpperCase();
   const cleanUser = String(userIdentifier || '').trim();
 
@@ -1935,7 +1966,14 @@ export async function redeemActivationCode(
     return {
       success: true,
       message: `¡Código canjeado con éxito! Se activaron ${daysToAdd} días en tu Plan VIP.`,
-      newExpiresAt
+      newExpiresAt,
+      user: {
+        id: userData.id,
+        username: userData.username,
+        role: userData.role || 'client',
+        boundDeviceId: userData.bound_device_id,
+        expiresAt: newExpiresAt
+      }
     };
   } catch (err) {
     console.error('[Redeem Code Error]:', err);
@@ -2047,4 +2085,115 @@ export async function adminListActivationCodes(): Promise<any[]> {
   } catch {
     return [];
   }
+}
+
+// =========================================================================
+// GESTIÓN DE SUSCRIPCIONES WEB PUSH ($0 USD/MES - APNs & FCM Background)
+// =========================================================================
+
+export interface PushSubscriptionData {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+  matchIds?: string[];
+  userId?: string;
+  deviceId?: string;
+  updatedAt?: number;
+}
+
+const memoryPushSubscriptions = new Map<string, PushSubscriptionData>();
+
+export async function upsertPushSubscription(sub: PushSubscriptionData): Promise<boolean> {
+  if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+    return false;
+  }
+  memoryPushSubscriptions.set(sub.endpoint, sub);
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+
+  try {
+    const { error } = await client.from('sportstats_push_subscriptions').upsert(
+      {
+        endpoint: sub.endpoint,
+        p256dh: sub.keys.p256dh,
+        auth: sub.keys.auth,
+        match_ids: sub.matchIds || [],
+        user_id: sub.userId || null,
+        device_id: sub.deviceId || null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'endpoint' }
+    );
+    return !error;
+  } catch {
+    return true; // memory fallback succeeds
+  }
+}
+
+export async function removePushSubscription(endpoint: string): Promise<boolean> {
+  if (!endpoint) return false;
+  memoryPushSubscriptions.delete(endpoint);
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+
+  try {
+    const { error } = await client
+      .from('sportstats_push_subscriptions')
+      .delete()
+      .eq('endpoint', endpoint);
+    return !error;
+  } catch {
+    return true;
+  }
+}
+
+export async function getActivePushSubscriptions(matchId?: string): Promise<PushSubscriptionData[]> {
+  const result: PushSubscriptionData[] = [];
+  const client = getSupabaseClient();
+
+  if (client) {
+    try {
+      const { data, error } = await client
+        .from('sportstats_push_subscriptions')
+        .select('*')
+        .limit(1000);
+
+      if (!error && Array.isArray(data)) {
+        for (const row of data) {
+          const matchIds: string[] = Array.isArray(row.match_ids)
+            ? row.match_ids
+            : [];
+          if (!matchId || matchIds.length === 0 || matchIds.includes(matchId)) {
+            result.push({
+              endpoint: row.endpoint,
+              keys: {
+                p256dh: row.p256dh,
+                auth: row.auth,
+              },
+              matchIds,
+              userId: row.user_id,
+              deviceId: row.device_id,
+            });
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Combinar con la memoria en vivo para evitar perder eventos por eventual consistencia
+  for (const [endpoint, sub] of memoryPushSubscriptions.entries()) {
+    if (!result.some((r) => r.endpoint === endpoint)) {
+      if (!matchId || !sub.matchIds || sub.matchIds.length === 0 || sub.matchIds.includes(matchId)) {
+        result.push(sub);
+      }
+    }
+  }
+
+  return result;
 }
