@@ -290,88 +290,133 @@ export default function App() {
   // Progressive batch rendering count (default 5 matches so initial screen has zero scroll fatigue)
   const [visibleMatchLimit, setVisibleMatchLimit] = useState<number>(5);
 
-  // Periodic License Validation (Check revocation on server & expiration)
+  // Silent Background Revalidation (Capa 5 Sesión - Sincronización en vivo de días)
+  const revalidateSession = useCallback(async () => {
+    try {
+      const sessionRes = await fetch('/api/auth/session', { credentials: 'include' });
+      if (sessionRes.ok) {
+        const sessionData = await sessionRes.json();
+        if (sessionData?.authenticated && sessionData?.user) {
+          const isVip = Boolean(sessionData.isVip);
+          const exp = sessionData.user.expiresAt;
+          const expFormatted = exp
+            ? new Date(exp).toLocaleDateString('es-ES')
+            : 'Permanente (Vitalicio)';
+          const daysRemaining = exp
+            ? Math.max(0, Math.ceil((exp - Date.now()) / (24 * 60 * 60 * 1000)))
+            : null;
+
+          setIsAppUnlocked(true);
+          setActiveLicenseInfo({
+            isValid: true,
+            status: isVip ? 'ACTIVE' : 'EXPIRED',
+            message: isVip ? 'Sesión autorizada por el servidor' : 'Tu periodo de prueba ha vencido',
+            isPermanent: sessionData.user.role === 'admin' || exp === null,
+            isExpired: !isVip,
+            expiryTimestamp: exp ?? null,
+            expiryDateFormatted: expFormatted,
+            daysRemaining,
+            targetDeviceId: sessionData.user.deviceId || '',
+            planLabel: isVip ? 'Pase Activo (VIP)' : 'Plan Vencido',
+            clientName: sessionData.user.username || ''
+          });
+
+          // Sincronizar inmediatamente localStorage para componentes legacy
+          try {
+            const rawUser = localStorage.getItem('sportstats_auth_user');
+            if (rawUser) {
+              const u = JSON.parse(rawUser);
+              u.expiresAt = exp;
+              u.isPro = isVip;
+              u.role = sessionData.user.role;
+              localStorage.setItem('sportstats_auth_user', JSON.stringify(u));
+            }
+          } catch {
+            // ignore
+          }
+          return;
+        } else if (sessionData && !sessionData.authenticated) {
+          setIsAppUnlocked(false);
+          setActiveLicenseInfo(null);
+          return;
+        }
+      }
+    } catch {
+      // Fallback para modo offline
+    }
+
+    const active = getActiveStoredLicense();
+    const devId = getOrCreateDeviceId();
+    if (!active) {
+      setIsAppUnlocked(false);
+      setActiveLicenseInfo(null);
+      return;
+    }
+
+    // Validación offline criptográfica
+    const localCheck = verifyLicenseToken(active.key, devId);
+    if (!localCheck.isValid) {
+      clearActiveLicense();
+      setIsAppUnlocked(false);
+      setActiveLicenseInfo(null);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/license/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: active.key, deviceId: devId })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.isValid) {
+          clearActiveLicense();
+          setIsAppUnlocked(false);
+          setActiveLicenseInfo(null);
+          return;
+        }
+      }
+    } catch {
+      // Offline: trust local check
+    }
+
+    setIsAppUnlocked(true);
+    setActiveLicenseInfo(localCheck);
+  }, []);
+
+  // Efecto de ciclo de vida: Revalidar sesión al montar, al cambiar de pestaña o cada 5 minutos
   useEffect(() => {
-    const checkLicenseStatus = async () => {
-      // 1. Verificación autoritativa de sesión en Servidor vía Cookie HttpOnly (Capa 5 / Capa 6 Zero-Trust)
-      try {
-        const sessionRes = await fetch('/api/auth/session', { credentials: 'include' });
-        if (sessionRes.ok) {
-          const sessionData = await sessionRes.json();
-          if (sessionData?.authenticated && sessionData?.user) {
-            const isVip = Boolean(sessionData.isVip);
-            const exp = sessionData.user.expiresAt;
-            const expFormatted = exp
-              ? new Date(exp).toLocaleDateString('es-ES')
-              : 'Permanente (Vitalicio)';
-            const daysRemaining = exp
-              ? Math.max(0, Math.ceil((exp - Date.now()) / (24 * 60 * 60 * 1000)))
-              : null;
+    revalidateSession();
 
-            setIsAppUnlocked(true);
-            setActiveLicenseInfo({
-              isValid: true,
-              status: isVip ? 'ACTIVE' : 'EXPIRED',
-              message: isVip ? 'Sesión autorizada por el servidor' : 'Tu periodo de prueba ha vencido',
-              isPermanent: sessionData.user.role === 'admin' || exp === null,
-              isExpired: !isVip,
-              expiryTimestamp: exp ?? null,
-              expiryDateFormatted: expFormatted,
-              daysRemaining,
-              targetDeviceId: sessionData.user.deviceId || '',
-              planLabel: isVip ? 'Pase Activo (VIP)' : 'Plan Vencido',
-              clientName: sessionData.user.username || ''
-            });
-            return;
-          }
-        }
-      } catch {
-        // Fallback para modo offline
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        revalidateSession();
       }
-
-      const active = getActiveStoredLicense();
-      const devId = getOrCreateDeviceId();
-      if (!active) {
-        setIsAppUnlocked(false);
-        setActiveLicenseInfo(null);
-        return;
-      }
-
-      // 1. Instant offline cryptographic check
-      const localCheck = verifyLicenseToken(active.key, devId);
-      if (!localCheck.isValid) {
-        clearActiveLicense();
-        setIsAppUnlocked(false);
-        setActiveLicenseInfo(null);
-        return;
-      }
-
-      // 2. Server check to ensure key has not been revoked
-      try {
-        const res = await fetch('/api/license/validate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: active.key, deviceId: devId })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (!data.isValid) {
-            clearActiveLicense();
-            setIsAppUnlocked(false);
-            setActiveLicenseInfo(null);
-            return;
-          }
-        }
-      } catch {
-        // Offline: trust cryptographic verification
-      }
-
-      setIsAppUnlocked(true);
-      setActiveLicenseInfo(localCheck);
     };
 
-    checkLicenseStatus();
-  }, []);
+    const handleWindowFocus = () => {
+      revalidateSession();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('revalidate-session', revalidateSession);
+
+    // Intervalo de revalidación silenciosa cada 5 minutos
+    const intervalTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        revalidateSession();
+      }
+    }, 5 * 60 * 1000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('revalidate-session', revalidateSession);
+      clearInterval(intervalTimer);
+    };
+  }, [revalidateSession]);
 
   // Silent Heartbeat Ping (presencia en tiempo real)
   useEffect(() => {
@@ -2152,9 +2197,7 @@ export default function App() {
             activeTab={mobileActiveTab}
             onTabChange={(tab) => {
               setMobileActiveTab(tab);
-              if (tab === 'ADMIN') {
-                setIsAdminModalOpen(true);
-              } else if (tab === 'FILTERS') {
+              if (tab === 'FILTERS') {
                 setIsMobileDrawerOpen(true);
               } else if (tab === 'PROBABILITY') {
                 handleSelectMainTab('TOP_PICKS');
@@ -2165,11 +2208,6 @@ export default function App() {
               }
             }}
             liveMatchesCount={fixtures.filter((f) => f.status === 'IN_PLAY').length}
-            isAdmin={
-              localStorage.getItem('sportstats_admin_remember') === 'true' ||
-              Boolean(activeLicenseInfo?.clientName && activeLicenseInfo.clientName.toLowerCase().includes('propietario'))
-            }
-            onOpenAdmin={() => setIsAdminModalOpen(true)}
             onOpenHistory={() => setIsSavedSlipsOpen(true)}
             onOpenDrawer={() => setIsMobileDrawerOpen(true)}
           />

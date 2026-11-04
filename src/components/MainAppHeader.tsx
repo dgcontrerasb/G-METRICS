@@ -192,20 +192,8 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
     <header className="sticky top-0 z-30 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/90 shadow-2xs transition-colors duration-200">
       {/* Fila 1: Cabecera Principal Compacta */}
       <div className="max-w-6xl mx-auto px-3 sm:px-6 py-1.5 sm:py-2 flex items-center justify-between gap-2 sm:gap-4">
-        {/* Left Zone: Mobile Menu Trigger + Brand */}
+        {/* Left Zone: Brand */}
         <div className="flex items-center gap-2 shrink-0">
-          {onOpenMobileDrawer && (
-            <button
-              type="button"
-              onClick={onOpenMobileDrawer}
-              className="lg:hidden h-8 w-8 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-800 border border-slate-200/90 flex items-center justify-center transition-colors cursor-pointer"
-              aria-label="Abrir menú de navegación y ligas"
-              title="Abrir menú de ligas y deportes"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-          )}
-
           <div
             className="flex items-center select-none"
             title="G METRICS · La Ciencia Detrás de la Victoria"

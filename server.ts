@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'url';
 import {
   isSupabaseConfigured,
+  getSupabaseClient,
   upsertSupabaseAdminConfig,
   upsertSupabaseLicense,
   updateSupabaseLicenseStatus,
@@ -4052,7 +4053,7 @@ app.post('/api/auth/register-request', dataRateLimitMiddleware, async (req, res)
 });
 
 
-app.get('/api/auth/session', (req, res) => {
+app.get('/api/auth/session', async (req, res) => {
   const session = extractSessionFromRequest(req);
   if (!session) {
     return res.json({
@@ -4062,20 +4063,78 @@ app.get('/api/auth/session', (req, res) => {
       user: null
     });
   }
+
+  let latestExpiresAt = session.expiresAt;
+  let latestRole = session.role;
+  let latestUsername = session.username;
+  let isSuspended = false;
+
+  // Consulta autoritativa en vivo a Supabase si no es el admin propietario
+  if (isSupabaseConfigured() && session.sub && session.sub !== 'admin-owner') {
+    try {
+      const client = getSupabaseClient();
+      if (client) {
+        const { data: dbUser } = await client
+          .from('sportstats_users')
+          .select('expires_at, role, status, username')
+          .eq('id', session.sub)
+          .maybeSingle();
+
+        if (dbUser) {
+          if (dbUser.status === 'suspended' || dbUser.status === 'deleted') {
+            isSuspended = true;
+          } else {
+            latestExpiresAt = dbUser.expires_at ? Number(dbUser.expires_at) : null;
+            latestRole = dbUser.role || session.role;
+            if (dbUser.username) latestUsername = dbUser.username;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[Session Sync Warning]: Fallback a claims de JWT por error de BD:', err);
+    }
+  }
+
+  if (isSuspended) {
+    clearSecureSessionCookie(res);
+    return res.json({
+      success: true,
+      authenticated: false,
+      isVip: false,
+      user: null,
+      message: 'Cuenta suspendida o eliminada'
+    });
+  }
+
   const isVip = Boolean(
-    session.role === 'admin' || session.isVip || (session.expiresAt ? session.expiresAt > Date.now() : false)
+    latestRole === 'admin' || (latestExpiresAt ? latestExpiresAt > Date.now() : true)
   );
+
+  // Si los datos de suscripción cambiaron en Supabase, re-emitir la Cookie con el JWT actualizado
+  if (latestExpiresAt !== session.expiresAt || latestRole !== session.role) {
+    const refreshedJwt = createSessionJwt({
+      userId: session.sub,
+      username: latestUsername,
+      role: latestRole,
+      deviceId: session.deviceId,
+      isVip,
+      expiresAt: latestExpiresAt,
+      ttlDays: 30
+    });
+    setSecureSessionCookie(res, refreshedJwt);
+  }
+
   return res.json({
     success: true,
     authenticated: true,
     isVip,
     user: {
       id: session.sub,
-      username: session.username,
-      role: session.role,
+      username: latestUsername,
+      role: latestRole,
       deviceId: session.deviceId,
       isVip,
-      expiresAt: session.expiresAt ?? null
+      expiresAt: latestExpiresAt ?? null
     }
   });
 });
