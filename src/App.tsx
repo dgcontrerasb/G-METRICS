@@ -119,6 +119,7 @@ export default function App() {
           await supabase.auth.signOut().catch(() => {});
         }
         clearActiveLicense();
+        fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
         localStorage.removeItem('sportstats_admin_remember');
         localStorage.removeItem('sportstats_admin_saved_pin');
         localStorage.removeItem('sportstats_auth_user');
@@ -292,6 +293,42 @@ export default function App() {
   // Periodic License Validation (Check revocation on server & expiration)
   useEffect(() => {
     const checkLicenseStatus = async () => {
+      // 1. Verificación autoritativa de sesión en Servidor vía Cookie HttpOnly (Capa 5 / Capa 6 Zero-Trust)
+      try {
+        const sessionRes = await fetch('/api/auth/session', { credentials: 'include' });
+        if (sessionRes.ok) {
+          const sessionData = await sessionRes.json();
+          if (sessionData?.authenticated && sessionData?.user) {
+            const isVip = Boolean(sessionData.isVip);
+            const exp = sessionData.user.expiresAt;
+            const expFormatted = exp
+              ? new Date(exp).toLocaleDateString('es-ES')
+              : 'Permanente (Vitalicio)';
+            const daysRemaining = exp
+              ? Math.max(0, Math.ceil((exp - Date.now()) / (24 * 60 * 60 * 1000)))
+              : null;
+
+            setIsAppUnlocked(true);
+            setActiveLicenseInfo({
+              isValid: true,
+              status: isVip ? 'ACTIVE' : 'EXPIRED',
+              message: isVip ? 'Sesión autorizada por el servidor' : 'Tu periodo de prueba ha vencido',
+              isPermanent: sessionData.user.role === 'admin' || exp === null,
+              isExpired: !isVip,
+              expiryTimestamp: exp ?? null,
+              expiryDateFormatted: expFormatted,
+              daysRemaining,
+              targetDeviceId: sessionData.user.deviceId || '',
+              planLabel: isVip ? 'Pase Activo (VIP)' : 'Plan Vencido',
+              clientName: sessionData.user.username || ''
+            });
+            return;
+          }
+        }
+      } catch {
+        // Fallback para modo offline
+      }
+
       const active = getActiveStoredLicense();
       const devId = getOrCreateDeviceId();
       if (!active) {

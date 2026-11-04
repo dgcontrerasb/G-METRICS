@@ -84,6 +84,8 @@ export interface SessionTokenPayload {
   deviceId: string;
   iat: number;
   exp: number;
+  isVip?: boolean;
+  expiresAt?: number | null;
 }
 
 function base64UrlEncode(input: string | Buffer): string {
@@ -108,10 +110,16 @@ export function createSessionJwt(params: {
   role: 'admin' | 'client';
   deviceId: string;
   ttlDays?: number;
+  isVip?: boolean;
+  expiresAt?: number | null;
 }): string {
   const nowSec = Math.floor(Date.now() / 1000);
   const ttlSec = (params.ttlDays ?? 30) * 24 * 60 * 60;
   const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const isVipComputed = params.isVip !== undefined
+    ? params.isVip
+    : (params.role === 'admin' || (params.expiresAt ? params.expiresAt > Date.now() : true));
+
   const payloadObj: SessionTokenPayload = {
     sub: params.userId,
     username: params.username,
@@ -119,6 +127,8 @@ export function createSessionJwt(params: {
     deviceId: String(params.deviceId || '').trim().toUpperCase(),
     iat: nowSec,
     exp: nowSec + ttlSec,
+    isVip: isVipComputed,
+    expiresAt: params.expiresAt ?? null,
   };
   const payload = base64UrlEncode(JSON.stringify(payloadObj));
   const signingInput = `${header}.${payload}`;
@@ -161,6 +171,67 @@ export function verifySessionJwt(token: string, expectedDeviceId?: string): Sess
 }
 
 // ============================================================================
+
+// ============================================================================
+// 2B. COOKIES HTTPONLY Y EXTRACCIÓN DE SESIÓN (CAPA 5 - SESIÓN OWASP)
+// ============================================================================
+
+export function parseCookies(req: Request): Record<string, string> {
+  const list: Record<string, string> = {};
+  const rc = req.headers?.cookie;
+  if (!rc) return list;
+  rc.split(';').forEach((cookie) => {
+    const parts = cookie.split('=');
+    const key = parts.shift()?.trim();
+    if (key) {
+      list[key] = decodeURIComponent(parts.join('='));
+    }
+  });
+  return list;
+}
+
+export function setSecureSessionCookie(res: Response, token: string): void {
+  const isProd = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+  const maxAgeSec = 30 * 24 * 60 * 60; // 30 días
+  const secureFlag = isProd ? '; Secure' : '';
+  res.setHeader(
+    'Set-Cookie',
+    `gmetrics_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secureFlag}`
+  );
+}
+
+export function clearSecureSessionCookie(res: Response): void {
+  res.setHeader(
+    'Set-Cookie',
+    'gmetrics_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT'
+  );
+}
+
+export function extractSessionFromRequest(req: Request): SessionTokenPayload | null {
+  const cookies = parseCookies(req);
+  const cookieToken = cookies['gmetrics_session'];
+  const authHeader = req.headers.authorization;
+  const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+  const token = cookieToken || bearerToken;
+  if (!token) return null;
+  return verifySessionJwt(token);
+}
+
+// ============================================================================
+// 2C. HASH DE SUBRED IP (/24) PARA DETECCIÓN ANTIFRAUDE EN REGISTROS
+// ============================================================================
+
+export function calculateSubnetHash(rawIp: string): string {
+  const clean = (rawIp || '127.0.0.1').split(',')[0].trim();
+  const parts = clean.split('.');
+  const subnet = parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.0` : clean;
+  return crypto
+    .createHash('sha256')
+    .update(`${subnet}::GMETRICS_FRAUD_SALT_2026_V1`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
 // 3. SANITIZACIÓN ESTRICTA ANTI-XSS / ANTI-SQLi / PROTOTYPE POLLUTION
 // ============================================================================
 
@@ -441,6 +512,7 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
 
   if (origin && isAllowedOrigin(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Vary', 'Origin');
   } else if (!origin) {
     res.setHeader('Access-Control-Allow-Origin', '*');

@@ -27,8 +27,15 @@ import {
   adminGenerateActivationCode,
   adminListActivationCodes
 } from './src/services/supabaseServer';
+import { fetchWithStrictTimeout } from './src/services/resilientFetch';
 import {
   securityHeadersMiddleware,
+  parseCookies,
+  setSecureSessionCookie,
+  clearSecureSessionCookie,
+  extractSessionFromRequest,
+  calculateSubnetHash,
+  getClientIp,
   dataRateLimitMiddleware,
   idempotencyMiddleware,
   checkAuthLockout,
@@ -64,6 +71,18 @@ app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
 // Global Helmet-grade security headers, CORS validation & payload sanitization
 app.use(securityHeadersMiddleware);
+// Middleware Zero-Trust: Valida sesión criptográficamente desde Cookie HttpOnly o Header Bearer (0 lecturas BD)
+function zeroTrustSessionMiddleware(req: express.Request, _res: express.Response, next: express.NextFunction): void {
+  const session = extractSessionFromRequest(req);
+  (req as any).userSession = session;
+  (req as any).isVipUser = Boolean(
+    session && (session.role === 'admin' || session.isVip || (session.expiresAt ? session.expiresAt > Date.now() : false))
+  );
+  next();
+}
+
+app.use(zeroTrustSessionMiddleware);
+
 app.use(idempotencyMiddleware);
 
 // Server-side persistent disk cache + In-Flight request deduplication (Single-Flight coalescing)
@@ -1302,12 +1321,13 @@ async function fetchEspnMatchSummaryTelemetry(
 async function fetchEspnSoccerFixtures(targetDate: string, clientTz = 'America/Bogota'): Promise<any[]> {
   const espnDateStr = targetDate.replace(/-/g, '');
   try {
-    const res = await fetch(
+    const res = await fetchWithStrictTimeout(
       `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}&limit=300`,
       {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0'
-        }
+        },
+        timeoutMs: 4500
       }
     );
     if (!res.ok) return [];
@@ -1598,9 +1618,12 @@ async function fetchFootballDataFixtures(targetDate: string): Promise<any[]> {
     serverCacheMisses++;
     footballDataRequestsSinceBoot++;
     try {
-      const response = await fetch(`https://api.football-data.org/v4/matches?${params.toString()}`, {
-        headers: { 'X-Auth-Token': token },
-        signal: AbortSignal.timeout(3000)
+      const response = await fetchWithStrictTimeout(`https://api.football-data.org/v4/matches?${params.toString()}`, {
+        headers: {
+          'X-Auth-Token': token,
+          'User-Agent': 'SportStatsPro/3.0 (Zero-Cost Analytics Engine)'
+        },
+        timeoutMs: 4500
       });
       if (response.ok) {
         const payload = await response.json();
@@ -2012,7 +2035,7 @@ async function fetchHybridSoccerFixtures(targetDate: string, clientTz: string): 
 
 // 0. Upcoming & Matches Endpoint: BLINDADO PARA ALTA CONCURRENCIA ($0 Free Tier)
 app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, res) => {
-  res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
+  res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
   const requestedDate = (req.query.date as string) || '';
   const clientTz = ((req.query.tz as string) || 'America/Bogota').trim() || 'America/Bogota';
   const query = ((req.query.q as string) || '').toLowerCase().trim();
@@ -2329,7 +2352,7 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
 
 // 0.25 Hybrid Live Pulse Endpoint (15s poll con feed oficial de ESPN)
 app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
-  res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=30');
+  res.setHeader('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=30');
   const requestedDate = (req.query.date as string) || '';
   const force = req.query.force === 'true' && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
   const todayColombia = getColombiaDateStr(0);
@@ -2372,12 +2395,13 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
 
       // ESPN is the sole soccer source for live scores and telemetry.
       try {
-        const espnRes = await fetch(
+        const espnRes = await fetchWithStrictTimeout(
           `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}&limit=300`,
           {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0'
-            }
+            },
+            timeoutMs: 4500
           }
         );
 
@@ -2601,6 +2625,7 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
 
 // 0.35 Deep Match Telemetry Endpoint
 app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
   const fixtureId = String(req.query.id || '').trim();
   const espnIdParam = String(req.query.espnId || req.query.eventId || '').trim();
   const dateStr = String(req.query.date || getColombiaDateStr(0)).trim();
@@ -2629,14 +2654,15 @@ app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
     const aKey = normalizeTeamKey(awayName);
 
     try {
-      const sbRes = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}&limit=300`,
-        {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0'
-          }
-        }
-      );
+      const sbRes = await fetchWithStrictTimeout(
+            `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}&limit=300`,
+            {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0'
+              },
+              timeoutMs: 4500
+            }
+          );
 
       if (sbRes.ok) {
         const sbData = await sbRes.json();
@@ -2739,6 +2765,7 @@ app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
 
 // 0.5 NBA Live & Scheduled Scoreboard endpoint (ESPN 100% gratuito)
 app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
   const dateQuery = (req.query.date as string) || '';
   const force = req.query.force === 'true' && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
   const todayColombia = getColombiaDateStr(0);
@@ -2803,10 +2830,11 @@ app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
         endpoints.map(async (ep) => {
           let evs: any[] = [];
           try {
-            const apiRes = await fetch(ep.url, {
+            const apiRes = await fetchWithStrictTimeout(ep.url, {
               headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0'
-              }
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0'
+              },
+              timeoutMs: 4500
             });
             if (apiRes.ok) {
               const data = await apiRes.json();
@@ -2861,6 +2889,7 @@ app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
 
 // 1. Secret Proxy Endpoint: GET /api/fixtures (Unificado a caché compartida, motor híbrido ESPN + Football-Data.org)
 app.get('/api/fixtures', dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader('Cache-Control', 'public, s-maxage=120, stale-while-revalidate=300');
   const date = (req.query.date as string) || getColombiaDateStr(0);
   const sharedUpcoming = getCacheItem<any[]>(`upcoming_v8_${date}`);
   if (sharedUpcoming && Array.isArray(sharedUpcoming.data) && sharedUpcoming.data.length > 0) {
@@ -2933,7 +2962,21 @@ app.get(['/api/status', '/api/admin/telemetry'], dataRateLimitMiddleware, async 
 
 // 2b. The Odds API (Soporta Fútbol EPL y Baloncesto NBA oficial)
 app.get('/api/market-odds', dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader('Cache-Control', 'public, s-maxage=1800, stale-while-revalidate=3600');
   const sport = sanitizeText((req.query.sport as string) || 'soccer_epl', 32);
+  const isVip = Boolean((req as any).isVipUser);
+
+  // Zero-Trust Masking: Cuotas reales en tiempo real bloqueadas para cuentas sin suscripción VIP activa
+  if (!isVip) {
+    return res.json({
+      success: true,
+      isVip: false,
+      source: 'zero_trust_masked',
+      sport,
+      odds: [],
+      message: 'Las cuotas de mercado en tiempo real requieren suscripción VIP activa.'
+    });
+  }
   const oddsKey = getSecretKey('ODDS_API_KEY');
   const isNBA = sport.includes('nba') || sport.includes('basketball');
   const cacheKey = isNBA ? 'odds_nba_v1' : 'odds_soccer';
@@ -2956,7 +2999,7 @@ app.get('/api/market-odds', dataRateLimitMiddleware, async (req, res) => {
         ? `https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?apiKey=${oddsKey}&regions=us,eu&markets=h2h,spreads,totals`
         : `https://api.the-odds-api.com/v4/sports/soccer_epl/odds/?apiKey=${oddsKey}&regions=eu&markets=h2h`;
 
-      const apiRes = await fetch(targetUrl, { method: 'GET' });
+      const apiRes = await fetchWithStrictTimeout(targetUrl, { method: 'GET', timeoutMs: 4500 });
       if (!apiRes.ok) {
         if (cached) return cached.data;
         return [];
@@ -2979,6 +3022,7 @@ app.get('/api/market-odds', dataRateLimitMiddleware, async (req, res) => {
 
 // 2b-2. ESPN NBA Match Summary (Boxscore, Lesiones oficiales y PickCenter cuotas reales)
 app.get('/api/nba/summary', dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=180');
   const eventId = sanitizeText((req.query.eventId as string) || (req.query.id as string) || '', 32);
   if (!eventId) {
     return res.status(400).json({ success: false, error: 'Se requiere eventId de ESPN' });
@@ -2999,10 +3043,11 @@ app.get('/api/nba/summary', dataRateLimitMiddleware, async (req, res) => {
   try {
     const summary = await runSingleFlight(cacheKey, async () => {
       const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=${eventId}`;
-      const apiRes = await fetch(url, {
+      const apiRes = await fetchWithStrictTimeout(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0'
-        }
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0'
+        },
+        timeoutMs: 4500
       });
       if (!apiRes.ok) {
         if (cached) return cached.data;
@@ -3030,6 +3075,7 @@ app.get('/api/nba/summary', dataRateLimitMiddleware, async (req, res) => {
 
 // 2b-3. ESPN NBA Official Team Rosters (Plantillas oficiales de los 30 equipos con dorsales y posiciones)
 app.get('/api/nba/rosters', dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader('Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=86400');
   const teamIdParam = sanitizeText((req.query.teamId as string) || (req.query.teamIds as string) || '', 64);
   if (!teamIdParam) {
     return res.status(400).json({ success: false, error: 'Se requiere teamId o teamIds' });
@@ -3051,11 +3097,12 @@ app.get('/api/nba/rosters', dataRateLimitMiddleware, async (req, res) => {
 
         try {
           const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${tId}/roster`;
-          const apiRes = await fetch(url, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0'
-            }
-          });
+          const apiRes = await fetchWithStrictTimeout(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0'
+          },
+          timeoutMs: 4500
+        });
           if (apiRes.ok) {
             const data = await apiRes.json();
             setCacheItem(cacheKey, data);
@@ -3121,6 +3168,7 @@ app.get('/api/nba/bdl/*', dataRateLimitMiddleware, async (req, res) => {
 
 // 2c. Football-Data.org
 app.get('/api/standings', dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader('Cache-Control', 'public, s-maxage=21600, stale-while-revalidate=43200');
   const fdKey = getSecretKey('FOOTBALL_DATA_KEY');
   const league = sanitizeText((req.query.league as string) || 'PD', 10) || 'PD';
   const cacheKey = `standings_${league}`;
@@ -3136,9 +3184,12 @@ app.get('/api/standings', dataRateLimitMiddleware, async (req, res) => {
 
   try {
     const data = await runSingleFlight(cacheKey, async () => {
-      const apiRes = await fetch(`https://api.football-data.org/v4/competitions/${encodeURIComponent(league)}/standings`, {
-        method: 'GET',
-        headers: { 'X-Auth-Token': fdKey }
+      const apiRes = await fetchWithStrictTimeout(`https://api.football-data.org/v4/competitions/${encodeURIComponent(league)}/standings`, {
+        headers: {
+          'X-Auth-Token': fdKey,
+          'User-Agent': 'SportStatsPro/3.0 (Zero-Cost Analytics Engine)'
+        },
+        timeoutMs: 4500
       });
       if (!apiRes.ok) {
         if (cached) return cached.data;
@@ -3998,6 +4049,40 @@ app.post('/api/auth/register-request', dataRateLimitMiddleware, async (req, res)
   } catch {
     return res.status(500).json({ success: false, message: 'Error al procesar solicitud' });
   }
+});
+
+
+app.get('/api/auth/session', (req, res) => {
+  const session = extractSessionFromRequest(req);
+  if (!session) {
+    return res.json({
+      success: true,
+      authenticated: false,
+      isVip: false,
+      user: null
+    });
+  }
+  const isVip = Boolean(
+    session.role === 'admin' || session.isVip || (session.expiresAt ? session.expiresAt > Date.now() : false)
+  );
+  return res.json({
+    success: true,
+    authenticated: true,
+    isVip,
+    user: {
+      id: session.sub,
+      username: session.username,
+      role: session.role,
+      deviceId: session.deviceId,
+      isVip,
+      expiresAt: session.expiresAt ?? null
+    }
+  });
+});
+
+app.post('/api/auth/logout', (_req, res) => {
+  clearSecureSessionCookie(res);
+  return res.json({ success: true, message: 'Sesión cerrada exitosamente.' });
 });
 
 app.get('/api/auth/config', (req, res) => {

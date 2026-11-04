@@ -71,13 +71,16 @@ function createSessionJwt(params) {
   const nowSec = Math.floor(Date.now() / 1e3);
   const ttlSec = (params.ttlDays ?? 30) * 24 * 60 * 60;
   const header = base64UrlEncode(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const isVipComputed = params.isVip !== void 0 ? params.isVip : params.role === "admin" || (params.expiresAt ? params.expiresAt > Date.now() : true);
   const payloadObj = {
     sub: params.userId,
     username: params.username,
     role: params.role,
     deviceId: String(params.deviceId || "").trim().toUpperCase(),
     iat: nowSec,
-    exp: nowSec + ttlSec
+    exp: nowSec + ttlSec,
+    isVip: isVipComputed,
+    expiresAt: params.expiresAt ?? null
   };
   const payload = base64UrlEncode(JSON.stringify(payloadObj));
   const signingInput = `${header}.${payload}`;
@@ -114,6 +117,34 @@ function verifySessionJwt(token, expectedDeviceId) {
   } catch {
     return null;
   }
+}
+function parseCookies(req) {
+  const list = {};
+  const rc = req.headers?.cookie;
+  if (!rc) return list;
+  rc.split(";").forEach((cookie) => {
+    const parts = cookie.split("=");
+    const key = parts.shift()?.trim();
+    if (key) {
+      list[key] = decodeURIComponent(parts.join("="));
+    }
+  });
+  return list;
+}
+function clearSecureSessionCookie(res) {
+  res.setHeader(
+    "Set-Cookie",
+    "gmetrics_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+  );
+}
+function extractSessionFromRequest(req) {
+  const cookies = parseCookies(req);
+  const cookieToken = cookies["gmetrics_session"];
+  const authHeader = req.headers.authorization;
+  const bearerToken = authHeader && authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+  const token = cookieToken || bearerToken;
+  if (!token) return null;
+  return verifySessionJwt(token);
 }
 var DANGEROUS_KEYS = /* @__PURE__ */ new Set(["__proto__", "constructor", "prototype"]);
 function sanitizeText(input, maxLength = 120) {
@@ -302,6 +333,7 @@ function securityHeadersMiddleware(req, res, next) {
   const origin = req.headers.origin;
   if (origin && isAllowedOrigin(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Vary", "Origin");
   } else if (!origin) {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -1345,6 +1377,11 @@ CREATE TABLE IF NOT EXISTS sportstats_users (
 CREATE INDEX IF NOT EXISTS idx_users_username ON sportstats_users(username);
 CREATE INDEX IF NOT EXISTS idx_users_status ON sportstats_users(status);
 CREATE INDEX IF NOT EXISTS idx_users_device ON sportstats_users(bound_device_id);
+ALTER TABLE sportstats_users ADD COLUMN IF NOT EXISTS google_sub TEXT;
+ALTER TABLE sportstats_users ADD COLUMN IF NOT EXISTS ip_subnet_hash TEXT;
+CREATE INDEX IF NOT EXISTS idx_users_google_sub ON sportstats_users(google_sub);
+CREATE INDEX IF NOT EXISTS idx_users_subnet_hash ON sportstats_users(ip_subnet_hash);
+
 
 CREATE TABLE IF NOT EXISTS sportstats_config (
   id TEXT PRIMARY KEY DEFAULT 'main',
@@ -1380,7 +1417,8 @@ async function verifyOAuthIdentityToken(token, expectedEmail, client) {
       if (!authErr && authData?.user?.email) {
         const supEmail = authData.user.email.toLowerCase().trim();
         if (supEmail === cleanExpected) {
-          return { verified: true, email: supEmail };
+          const gSub = String(authData.user.id || authData.user.user_metadata?.sub || "");
+          return { verified: true, email: supEmail, googleSub: gSub };
         }
       }
     } catch {
@@ -1395,7 +1433,8 @@ async function verifyOAuthIdentityToken(token, expectedEmail, client) {
       if (googleData?.email && googleData.email_verified !== false) {
         const gEmail = String(googleData.email).toLowerCase().trim();
         if (gEmail === cleanExpected) {
-          return { verified: true, email: gEmail };
+          const gSub = String(googleData.sub || "");
+          return { verified: true, email: gEmail, googleSub: gSub };
         }
       }
     }
@@ -1414,14 +1453,15 @@ async function verifyOAuthIdentityToken(token, expectedEmail, client) {
       const isAuthRole = payload.aud === "authenticated" || payload.role === "authenticated";
       const jwtEmail = String(payload.email || payload.user_metadata?.email || "").toLowerCase().trim();
       if (isNotExpired && isSupabaseIssuer && isAuthRole && jwtEmail === cleanExpected) {
-        return { verified: true, email: jwtEmail };
+        const gSub = String(payload.sub || "");
+        return { verified: true, email: jwtEmail, googleSub: gSub };
       }
     }
   } catch {
   }
   return { verified: false, error: "No se pudo certificar la autenticidad del token con ning\xFAn proveedor" };
 }
-async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, deviceName, deviceFingerprint, accessToken, providerToken) {
+async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, deviceName, deviceFingerprint, accessToken, providerToken, clientSubnetHash) {
   const email = String(rawEmail || "").toLowerCase().trim();
   if (!email || !email.includes("@")) {
     return {
@@ -1440,8 +1480,14 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
   }
   const client = getSupabaseClient();
   const isLocalOrDev = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
+  let check = { verified: true, email };
+  try {
+    const inspected = await verifyOAuthIdentityToken(tokenToVerify, email, client);
+    if (inspected.googleSub) check.googleSub = inspected.googleSub;
+  } catch {
+  }
   if (!isLocalOrDev) {
-    let check = await verifyOAuthIdentityToken(tokenToVerify, email, client);
+    check = await verifyOAuthIdentityToken(tokenToVerify, email, client);
     if (!check.verified && providerToken && providerToken !== tokenToVerify) {
       check = await verifyOAuthIdentityToken(providerToken, email, client);
     }
@@ -1501,7 +1547,20 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
     };
   }
   try {
-    const { data: existingUser } = await client.from("sportstats_users").select("*").ilike("email", email).maybeSingle();
+    let existingUser = null;
+    try {
+      if (check.googleSub) {
+        const { data: userBySub } = await client.from("sportstats_users").select("*").eq("google_sub", check.googleSub).maybeSingle();
+        if (userBySub) existingUser = userBySub;
+      }
+      if (!existingUser) {
+        const { data: userByEmail } = await client.from("sportstats_users").select("*").ilike("email", email).maybeSingle();
+        if (userByEmail) existingUser = userByEmail;
+      }
+    } catch {
+      const { data: fallbackUser } = await client.from("sportstats_users").select("*").ilike("email", email).maybeSingle();
+      existingUser = fallbackUser;
+    }
     if (existingUser) {
       if (existingUser.status === "suspended") {
         return { success: false, code: "SUSPENDED", message: "Tu cuenta ha sido suspendida. Contacta al administrador." };
@@ -1566,10 +1625,22 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
     const isLocalOrDev2 = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
     const isAdminTestDevice = isLocalOrDev2 || cleanDevice.startsWith("DEV-");
     let hasUsedTrial = false;
-    if (!isAdminTestDevice && cleanDevice) {
-      const { data: deviceUser } = await client.from("sportstats_users").select("id, username").eq("bound_device_id", cleanDevice).limit(1).maybeSingle();
-      if (deviceUser) {
-        hasUsedTrial = true;
+    if (!isAdminTestDevice) {
+      if (cleanDevice) {
+        const { data: deviceUser } = await client.from("sportstats_users").select("id, username").eq("bound_device_id", cleanDevice).limit(1).maybeSingle();
+        if (deviceUser) {
+          hasUsedTrial = true;
+        }
+      }
+      if (!hasUsedTrial && clientSubnetHash) {
+        try {
+          const { data: subnetUsers } = await client.from("sportstats_users").select("id").eq("ip_subnet_hash", clientSubnetHash).limit(3);
+          if (Array.isArray(subnetUsers) && subnetUsers.length >= 2) {
+            console.warn(`[Antifraude Activado]: Red IP ${clientSubnetHash.slice(0, 10)}... super\xF3 el l\xEDmite de pruebas gratis.`);
+            hasUsedTrial = true;
+          }
+        } catch {
+        }
       }
     }
     const expiresAt = hasUsedTrial ? nowMs : nowMs + 3 * 24 * 60 * 60 * 1e3;
@@ -1596,9 +1667,23 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
       bound_device_name: friendlyDevName,
       auth_provider: "google",
       feedback_bonus_claimed: false,
-      device_fingerprint: deviceFingerprint || cleanDevice
+      device_fingerprint: deviceFingerprint || cleanDevice,
+      google_sub: check.googleSub || void 0,
+      ip_subnet_hash: clientSubnetHash || void 0
     };
-    const { data: insertedUser, error: insertError } = await client.from("sportstats_users").insert(newUserData).select().single();
+    let insertedUser = null;
+    let insertError = null;
+    const res = await client.from("sportstats_users").insert(newUserData).select().single();
+    if (res.error && (res.error.message?.includes("google_sub") || res.error.message?.includes("ip_subnet_hash"))) {
+      delete newUserData.google_sub;
+      delete newUserData.ip_subnet_hash;
+      const fallbackRes = await client.from("sportstats_users").insert(newUserData).select().single();
+      insertedUser = fallbackRes.data;
+      insertError = fallbackRes.error;
+    } else {
+      insertedUser = res.data;
+      insertError = res.error;
+    }
     if (insertError) {
       console.error("[Supabase Google Register Error]:", insertError.message);
       return {
@@ -1796,6 +1881,39 @@ async function adminListActivationCodes() {
   }
 }
 
+// src/services/resilientFetch.ts
+async function fetchWithStrictTimeout(url, options = {}) {
+  const { timeoutMs = 4500, headers, ...restOptions } = options;
+  const controller = new AbortController();
+  const timeoutTimer = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...restOptions,
+      headers: {
+        "Accept-Encoding": "gzip, deflate, br",
+        ...headers || {}
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutTimer);
+    return {
+      ok: response.ok,
+      status: response.status,
+      json: () => response.json(),
+      text: () => response.text()
+    };
+  } catch (err) {
+    clearTimeout(timeoutTimer);
+    if (err.name === "AbortError" || err.code === 20) {
+      console.warn(`[Upstream Timeout 4.5s]: Petici\xF3n a ${url.slice(0, 70)}... abortada para proteger Vercel Lambda.`);
+      throw new Error(`UPSTREAM_TIMEOUT: La API externa super\xF3 los ${timeoutMs}ms.`);
+    }
+    throw err;
+  }
+}
+
 // server.ts
 dotenv.config();
 process.on("uncaughtException", (err) => {
@@ -1812,6 +1930,15 @@ app.disable("x-powered-by");
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ limit: "25mb", extended: true }));
 app.use(securityHeadersMiddleware);
+function zeroTrustSessionMiddleware(req, _res, next) {
+  const session = extractSessionFromRequest(req);
+  req.userSession = session;
+  req.isVipUser = Boolean(
+    session && (session.role === "admin" || session.isVip || (session.expiresAt ? session.expiresAt > Date.now() : false))
+  );
+  next();
+}
+app.use(zeroTrustSessionMiddleware);
 app.use(idempotencyMiddleware);
 var IS_VERCEL2 = Boolean(process.env.VERCEL || process.env.VERCEL_ENV || process.env.NOW_REGION);
 var CACHE_DIR = IS_VERCEL2 ? path2.resolve("/tmp", ".cache") : path2.resolve(process.cwd(), ".cache");
@@ -2832,12 +2959,13 @@ async function fetchEspnMatchSummaryTelemetry(espnEventId, homeName, awayName, e
 async function fetchEspnSoccerFixtures(targetDate, clientTz = "America/Bogota") {
   const espnDateStr = targetDate.replace(/-/g, "");
   try {
-    const res = await fetch(
+    const res = await fetchWithStrictTimeout(
       `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}&limit=300`,
       {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
-        }
+        },
+        timeoutMs: 4500
       }
     );
     if (!res.ok) return [];
@@ -3080,9 +3208,12 @@ async function fetchFootballDataFixtures(targetDate) {
     serverCacheMisses++;
     footballDataRequestsSinceBoot++;
     try {
-      const response = await fetch(`https://api.football-data.org/v4/matches?${params.toString()}`, {
-        headers: { "X-Auth-Token": token },
-        signal: AbortSignal.timeout(3e3)
+      const response = await fetchWithStrictTimeout(`https://api.football-data.org/v4/matches?${params.toString()}`, {
+        headers: {
+          "X-Auth-Token": token,
+          "User-Agent": "SportStatsPro/3.0 (Zero-Cost Analytics Engine)"
+        },
+        timeoutMs: 4500
       });
       if (response.ok) {
         const payload = await response.json();
@@ -3591,7 +3722,7 @@ async function fetchHybridSoccerFixtures(targetDate, clientTz) {
   return fixtures;
 }
 app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, res) => {
-  res.setHeader("Cache-Control", "s-maxage=120, stale-while-revalidate=300");
+  res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=120");
   const requestedDate = req.query.date || "";
   const clientTz = (req.query.tz || "America/Bogota").trim() || "America/Bogota";
   const query = (req.query.q || "").toLowerCase().trim();
@@ -3849,7 +3980,7 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
   }
 });
 app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
-  res.setHeader("Cache-Control", "s-maxage=15, stale-while-revalidate=30");
+  res.setHeader("Cache-Control", "public, s-maxage=15, stale-while-revalidate=30");
   const requestedDate = req.query.date || "";
   const force = req.query.force === "true" && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
   const todayColombia = getColombiaDateStr(0);
@@ -3871,12 +4002,13 @@ app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
       espnPulseCallsCount++;
       const liveDeltas = [];
       try {
-        const espnRes = await fetch(
+        const espnRes = await fetchWithStrictTimeout(
           `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}&limit=300`,
           {
             headers: {
               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
-            }
+            },
+            timeoutMs: 4500
           }
         );
         if (espnRes.ok) {
@@ -4072,6 +4204,7 @@ app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
   }
 });
 app.get("/api/match-telemetry", dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
   const fixtureId = String(req.query.id || "").trim();
   const espnIdParam = String(req.query.espnId || req.query.eventId || "").trim();
   const dateStr = String(req.query.date || getColombiaDateStr(0)).trim();
@@ -4097,12 +4230,13 @@ app.get("/api/match-telemetry", dataRateLimitMiddleware, async (req, res) => {
     const hKey = normalizeTeamKey(homeName);
     const aKey = normalizeTeamKey(awayName);
     try {
-      const sbRes = await fetch(
+      const sbRes = await fetchWithStrictTimeout(
         `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDateStr}&limit=300`,
         {
           headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
-          }
+          },
+          timeoutMs: 4500
         }
       );
       if (sbRes.ok) {
@@ -4193,6 +4327,7 @@ app.get("/api/match-telemetry", dataRateLimitMiddleware, async (req, res) => {
   }
 });
 app.get("/api/nba/scoreboard", dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=120");
   const dateQuery = req.query.date || "";
   const force = req.query.force === "true" && isValidAdminPin(extractAdminCredential(req), getAdminConfig());
   const todayColombia = getColombiaDateStr(0);
@@ -4244,10 +4379,11 @@ app.get("/api/nba/scoreboard", dataRateLimitMiddleware, async (req, res) => {
         endpoints.map(async (ep) => {
           let evs = [];
           try {
-            const apiRes = await fetch(ep.url, {
+            const apiRes = await fetchWithStrictTimeout(ep.url, {
               headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0"
-              }
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
+              },
+              timeoutMs: 4500
             });
             if (apiRes.ok) {
               const data = await apiRes.json();
@@ -4295,6 +4431,7 @@ app.get("/api/nba/scoreboard", dataRateLimitMiddleware, async (req, res) => {
   }
 });
 app.get("/api/fixtures", dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader("Cache-Control", "public, s-maxage=120, stale-while-revalidate=300");
   const date = req.query.date || getColombiaDateStr(0);
   const sharedUpcoming = getCacheItem(`upcoming_v8_${date}`);
   if (sharedUpcoming && Array.isArray(sharedUpcoming.data) && sharedUpcoming.data.length > 0) {
@@ -4361,7 +4498,19 @@ app.get(["/api/status", "/api/admin/telemetry"], dataRateLimitMiddleware, async 
   });
 });
 app.get("/api/market-odds", dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=3600");
   const sport = sanitizeText(req.query.sport || "soccer_epl", 32);
+  const isVip = Boolean(req.isVipUser);
+  if (!isVip) {
+    return res.json({
+      success: true,
+      isVip: false,
+      source: "zero_trust_masked",
+      sport,
+      odds: [],
+      message: "Las cuotas de mercado en tiempo real requieren suscripci\xF3n VIP activa."
+    });
+  }
   const oddsKey = getSecretKey("ODDS_API_KEY");
   const isNBA = sport.includes("nba") || sport.includes("basketball");
   const cacheKey = isNBA ? "odds_nba_v1" : "odds_soccer";
@@ -4376,7 +4525,7 @@ app.get("/api/market-odds", dataRateLimitMiddleware, async (req, res) => {
   try {
     const data = await runSingleFlight(cacheKey, async () => {
       const targetUrl = isNBA ? `https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?apiKey=${oddsKey}&regions=us,eu&markets=h2h,spreads,totals` : `https://api.the-odds-api.com/v4/sports/soccer_epl/odds/?apiKey=${oddsKey}&regions=eu&markets=h2h`;
-      const apiRes = await fetch(targetUrl, { method: "GET" });
+      const apiRes = await fetchWithStrictTimeout(targetUrl, { method: "GET", timeoutMs: 4500 });
       if (!apiRes.ok) {
         if (cached) return cached.data;
         return [];
@@ -4397,6 +4546,7 @@ app.get("/api/market-odds", dataRateLimitMiddleware, async (req, res) => {
   }
 });
 app.get("/api/nba/summary", dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=180");
   const eventId = sanitizeText(req.query.eventId || req.query.id || "", 32);
   if (!eventId) {
     return res.status(400).json({ success: false, error: "Se requiere eventId de ESPN" });
@@ -4412,10 +4562,11 @@ app.get("/api/nba/summary", dataRateLimitMiddleware, async (req, res) => {
   try {
     const summary = await runSingleFlight(cacheKey, async () => {
       const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=${eventId}`;
-      const apiRes = await fetch(url, {
+      const apiRes = await fetchWithStrictTimeout(url, {
         headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0"
-        }
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
+        },
+        timeoutMs: 4500
       });
       if (!apiRes.ok) {
         if (cached) return cached.data;
@@ -4439,6 +4590,7 @@ app.get("/api/nba/summary", dataRateLimitMiddleware, async (req, res) => {
   }
 });
 app.get("/api/nba/rosters", dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader("Cache-Control", "public, s-maxage=86400, stale-while-revalidate=86400");
   const teamIdParam = sanitizeText(req.query.teamId || req.query.teamIds || "", 64);
   if (!teamIdParam) {
     return res.status(400).json({ success: false, error: "Se requiere teamId o teamIds" });
@@ -4456,10 +4608,11 @@ app.get("/api/nba/rosters", dataRateLimitMiddleware, async (req, res) => {
         }
         try {
           const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${tId}/roster`;
-          const apiRes = await fetch(url, {
+          const apiRes = await fetchWithStrictTimeout(url, {
             headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0"
-            }
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0"
+            },
+            timeoutMs: 4500
           });
           if (apiRes.ok) {
             const data = await apiRes.json();
@@ -4518,6 +4671,7 @@ app.get("/api/nba/bdl/*", dataRateLimitMiddleware, async (req, res) => {
   }
 });
 app.get("/api/standings", dataRateLimitMiddleware, async (req, res) => {
+  res.setHeader("Cache-Control", "public, s-maxage=21600, stale-while-revalidate=43200");
   const fdKey = getSecretKey("FOOTBALL_DATA_KEY");
   const league = sanitizeText(req.query.league || "PD", 10) || "PD";
   const cacheKey = `standings_${league}`;
@@ -4530,9 +4684,12 @@ app.get("/api/standings", dataRateLimitMiddleware, async (req, res) => {
   }
   try {
     const data = await runSingleFlight(cacheKey, async () => {
-      const apiRes = await fetch(`https://api.football-data.org/v4/competitions/${encodeURIComponent(league)}/standings`, {
-        method: "GET",
-        headers: { "X-Auth-Token": fdKey }
+      const apiRes = await fetchWithStrictTimeout(`https://api.football-data.org/v4/competitions/${encodeURIComponent(league)}/standings`, {
+        headers: {
+          "X-Auth-Token": fdKey,
+          "User-Agent": "SportStatsPro/3.0 (Zero-Cost Analytics Engine)"
+        },
+        timeoutMs: 4500
       });
       if (!apiRes.ok) {
         if (cached) return cached.data;
@@ -5261,6 +5418,37 @@ app.post("/api/auth/register-request", dataRateLimitMiddleware, async (req, res)
   } catch {
     return res.status(500).json({ success: false, message: "Error al procesar solicitud" });
   }
+});
+app.get("/api/auth/session", (req, res) => {
+  const session = extractSessionFromRequest(req);
+  if (!session) {
+    return res.json({
+      success: true,
+      authenticated: false,
+      isVip: false,
+      user: null
+    });
+  }
+  const isVip = Boolean(
+    session.role === "admin" || session.isVip || (session.expiresAt ? session.expiresAt > Date.now() : false)
+  );
+  return res.json({
+    success: true,
+    authenticated: true,
+    isVip,
+    user: {
+      id: session.sub,
+      username: session.username,
+      role: session.role,
+      deviceId: session.deviceId,
+      isVip,
+      expiresAt: session.expiresAt ?? null
+    }
+  });
+});
+app.post("/api/auth/logout", (_req, res) => {
+  clearSecureSessionCookie(res);
+  return res.json({ success: true, message: "Sesi\xF3n cerrada exitosamente." });
 });
 app.get("/api/auth/config", (req, res) => {
   return res.json({

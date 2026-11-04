@@ -872,9 +872,9 @@ export async function fetchUpcomingFixtures(
   // 2. Consultar proxy seguro del servidor (/api/matches) con caché compartida de alto rendimiento (CERO llamadas directas forzadas desde cliente)
   try {
     const matchUrl = `/api/matches?date=${encodeURIComponent(targetDate)}&tz=${encodeURIComponent(userTz)}`;
-    let res = await fetch(matchUrl);
+    let res = await fetch(matchUrl, { credentials: 'include' });
     if (!res.ok) {
-      res = await fetch(`/api/upcoming?date=${encodeURIComponent(targetDate)}&tz=${encodeURIComponent(userTz)}`);
+      res = await fetch(`/api/upcoming?date=${encodeURIComponent(targetDate)}&tz=${encodeURIComponent(userTz)}`, { credentials: 'include' });
     }
     if (res.ok) {
       const json = await res.json();
@@ -927,7 +927,7 @@ export async function fetchCompletedAuditBundle(): Promise<{
   nbaEvents: any[];
 }> {
   try {
-    const res = await fetch('/api/audit-finished');
+    const res = await fetch('/api/audit-finished', { credentials: 'include' });
     if (!res.ok) return { soccerFixtures: [], nbaEvents: [] };
     const json = await res.json();
     const todayStr = getColombiaDateString(0);
@@ -989,9 +989,9 @@ export async function fetchFixturesForDate(dateStr: string): Promise<{ fixtures:
 
   // 2. Consulta exclusivamente al proxy del servidor (/api/matches o /api/fixtures) — CERO fuga de cuota directa
   try {
-    let serverProxyRes = await fetch(`/api/matches?date=${encodeURIComponent(dateStr)}`);
+    let serverProxyRes = await fetch(`/api/matches?date=${encodeURIComponent(dateStr)}`, { credentials: 'include' });
     if (!serverProxyRes.ok) {
-      serverProxyRes = await fetch(`/api/fixtures?date=${encodeURIComponent(dateStr)}`);
+      serverProxyRes = await fetch(`/api/fixtures?date=${encodeURIComponent(dateStr)}`, { credentials: 'include' });
     }
 
     if (serverProxyRes.ok) {
@@ -1106,7 +1106,7 @@ export async function syncLivePulseFixtures(
   }
 
   try {
-    const res = await fetch(`/api/live-pulse?date=${encodeURIComponent(dateStr)}`);
+    const res = await fetch(`/api/live-pulse?date=${encodeURIComponent(dateStr)}`, { credentials: 'include' });
     if (!res.ok) {
       return { updatedFixtures: currentFixtures, changedIds: [], scoreChangedIds: [], liveCount: 0, syncedAt: Date.now() };
     }
@@ -1290,7 +1290,7 @@ export async function fetchMatchLiveTelemetry(fixture: MatchFixture): Promise<{
       params.set('espnId', fixture.espnEventId);
       params.set('eventId', fixture.espnEventId);
     }
-    const res = await fetch(`/api/match-telemetry?${params.toString()}`);
+    const res = await fetch(`/api/match-telemetry?${params.toString()}`, { credentials: 'include' });
     if (!res.ok) return null;
     const json = await res.json();
     if (json.success && (json.found || json.liveStats || json.liveEvents || json.liveRosters)) {

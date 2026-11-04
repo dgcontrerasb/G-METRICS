@@ -9,27 +9,19 @@ interface ProGateProps {
   className?: string;
 }
 
+/**
+ * ProGate — Blindaje Zero-Trust en Capa 6 (Presentación)
+ * Si el usuario no es VIP certificado por el servidor, los componentes sensibles
+ * NO se montan en el DOM (eliminando la posibilidad de inspección / des-blur en DevTools).
+ */
 export const ProGate: React.FC<ProGateProps> = ({
-  isPro,
+  isPro = false,
   onOpenVipModal,
   featureName = 'Contenido VIP',
   children,
   className = ''
 }) => {
-  const userIsPro = isPro !== undefined ? isPro : (() => {
-    try {
-      const raw = localStorage.getItem('sportstats_auth_user');
-      if (!raw) return false;
-      const u = JSON.parse(raw);
-      if (u.role === 'admin') return true;
-      if (u.expiresAt === null) return true;
-      return Boolean(u.expiresAt && Number(u.expiresAt) > Date.now());
-    } catch {
-      return false;
-    }
-  })();
-
-  if (userIsPro) {
+  if (isPro) {
     return <>{children}</>;
   }
 
@@ -42,36 +34,29 @@ export const ProGate: React.FC<ProGateProps> = ({
   };
 
   return (
-    <div className={`relative overflow-hidden rounded-2xl group ${className}`}>
-      {/* Contenido censurado con desenfoque suave y sin interacción */}
-      <div className="filter blur-md select-none pointer-events-none opacity-30 transition-all duration-300">
-        {children}
-      </div>
-
-      {/* Capa de bloqueo y botón de activación */}
-      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-4 bg-slate-900/20 backdrop-blur-[3px] text-center">
-        <div className="bg-white/95 border border-slate-200/90 shadow-xl rounded-2xl p-5 max-w-xs w-full flex flex-col items-center">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shadow-2xs mb-2">
-            <Lock className="w-5 h-5 stroke-[2.5]" />
-          </div>
-          
-          <h4 className="text-slate-900 font-extrabold text-sm tracking-tight mb-1">
-            {featureName} Bloqueado
-          </h4>
-          
-          <p className="text-slate-500 text-xs max-w-xs mb-3 leading-relaxed">
-            Disponible en tu prueba gratuita de 3 días o activando tu Plan VIP ($9.900 COP / mes).
-          </p>
-
-          <button
-            type="button"
-            onClick={handleOpen}
-            className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs active:scale-95 transition-all cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Desbloquear Acceso VIP
-          </button>
+    <div className={`relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-slate-900/60 p-6 text-center ${className}`}>
+      {/* Capa de bloqueo y botón de activación - Cero filtración en DOM */}
+      <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
+        <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/10 mb-3">
+          <Lock className="w-6 h-6 stroke-[2.2]" />
         </div>
+        
+        <h4 className="text-white font-extrabold text-sm tracking-tight mb-1">
+          {featureName} Exclusivo VIP
+        </h4>
+        
+        <p className="text-slate-400 text-xs mb-4 leading-relaxed">
+          Los análisis matemáticos avanzados y cuotas de valor se desbloquean en tu prueba gratuita o activando tu Plan VIP ($0 sobrecostos).
+        </p>
+
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
+        >
+          <Sparkles className="w-4 h-4" />
+          Desbloquear Acceso VIP
+        </button>
       </div>
     </div>
   );

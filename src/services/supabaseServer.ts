@@ -1370,6 +1370,11 @@ CREATE TABLE IF NOT EXISTS sportstats_users (
 CREATE INDEX IF NOT EXISTS idx_users_username ON sportstats_users(username);
 CREATE INDEX IF NOT EXISTS idx_users_status ON sportstats_users(status);
 CREATE INDEX IF NOT EXISTS idx_users_device ON sportstats_users(bound_device_id);
+ALTER TABLE sportstats_users ADD COLUMN IF NOT EXISTS google_sub TEXT;
+ALTER TABLE sportstats_users ADD COLUMN IF NOT EXISTS ip_subnet_hash TEXT;
+CREATE INDEX IF NOT EXISTS idx_users_google_sub ON sportstats_users(google_sub);
+CREATE INDEX IF NOT EXISTS idx_users_subnet_hash ON sportstats_users(ip_subnet_hash);
+
 
 CREATE TABLE IF NOT EXISTS sportstats_config (
   id TEXT PRIMARY KEY DEFAULT 'main',
@@ -1410,7 +1415,7 @@ export async function verifyOAuthIdentityToken(
   token: string,
   expectedEmail: string,
   client?: SupabaseClient | null
-): Promise<{ verified: boolean; email?: string; error?: string }> {
+): Promise<{ verified: boolean; email?: string; googleSub?: string; error?: string }> {
   const cleanExpected = expectedEmail.toLowerCase().trim();
   if (!token || typeof token !== 'string') {
     return { verified: false, error: 'Token no proporcionado' };
@@ -1423,7 +1428,8 @@ export async function verifyOAuthIdentityToken(
       if (!authErr && authData?.user?.email) {
         const supEmail = authData.user.email.toLowerCase().trim();
         if (supEmail === cleanExpected) {
-          return { verified: true, email: supEmail };
+          const gSub = String(authData.user.id || authData.user.user_metadata?.sub || '');
+          return { verified: true, email: supEmail, googleSub: gSub };
         }
       }
     } catch {
@@ -1441,7 +1447,8 @@ export async function verifyOAuthIdentityToken(
       if (googleData?.email && googleData.email_verified !== false) {
         const gEmail = String(googleData.email).toLowerCase().trim();
         if (gEmail === cleanExpected) {
-          return { verified: true, email: gEmail };
+          const gSub = String(googleData.sub || '');
+          return { verified: true, email: gEmail, googleSub: gSub };
         }
       }
     }
@@ -1465,7 +1472,8 @@ export async function verifyOAuthIdentityToken(
       const jwtEmail = String(payload.email || payload.user_metadata?.email || '').toLowerCase().trim();
 
       if (isNotExpired && isSupabaseIssuer && isAuthRole && jwtEmail === cleanExpected) {
-        return { verified: true, email: jwtEmail };
+        const gSub = String(payload.sub || '');
+        return { verified: true, email: jwtEmail, googleSub: gSub };
       }
     }
   } catch {
@@ -1482,7 +1490,8 @@ export async function loginOrRegisterGoogleUser(
   deviceName?: string,
   deviceFingerprint?: string,
   accessToken?: string,
-  providerToken?: string
+  providerToken?: string,
+  clientSubnetHash?: string
 ): Promise<LoginResult> {
   const email = String(rawEmail || '').toLowerCase().trim();
   if (!email || !email.includes('@')) {
@@ -1504,10 +1513,16 @@ export async function loginOrRegisterGoogleUser(
 
   const client = getSupabaseClient();
   const isLocalOrDev = process.env.NODE_ENV !== 'production' || !process.env.VERCEL;
+  let check: { verified: boolean; email?: string; googleSub?: string; error?: string } = { verified: true, email };
+
+  try {
+    const inspected = await verifyOAuthIdentityToken(tokenToVerify, email, client);
+    if (inspected.googleSub) check.googleSub = inspected.googleSub;
+  } catch {}
 
   // Validación criptográfica estricta multi-capa en producción
   if (!isLocalOrDev) {
-    let check = await verifyOAuthIdentityToken(tokenToVerify, email, client);
+    check = await verifyOAuthIdentityToken(tokenToVerify, email, client);
     if (!check.verified && providerToken && providerToken !== tokenToVerify) {
       check = await verifyOAuthIdentityToken(providerToken, email, client);
     }
@@ -1577,12 +1592,33 @@ export async function loginOrRegisterGoogleUser(
   }
 
   try {
-    // 1. Buscar si ya existe por email
-    const { data: existingUser } = await client
-      .from('sportstats_users')
-      .select('*')
-      .ilike('email', email)
-      .maybeSingle();
+    // 1. Buscar si ya existe por email O identificador inmutable google_sub
+    let existingUser: any = null;
+    try {
+      if (check.googleSub) {
+        const { data: userBySub } = await client
+          .from('sportstats_users')
+          .select('*')
+          .eq('google_sub', check.googleSub)
+          .maybeSingle();
+        if (userBySub) existingUser = userBySub;
+      }
+      if (!existingUser) {
+        const { data: userByEmail } = await client
+          .from('sportstats_users')
+          .select('*')
+          .ilike('email', email)
+          .maybeSingle();
+        if (userByEmail) existingUser = userByEmail;
+      }
+    } catch {
+      const { data: fallbackUser } = await client
+        .from('sportstats_users')
+        .select('*')
+        .ilike('email', email)
+        .maybeSingle();
+      existingUser = fallbackUser;
+    }
 
     if (existingUser) {
       if (existingUser.status === 'suspended') {
@@ -1658,16 +1694,37 @@ export async function loginOrRegisterGoogleUser(
     const isAdminTestDevice = isLocalOrDev || cleanDevice.startsWith('DEV-');
     let hasUsedTrial = false;
 
-    if (!isAdminTestDevice && cleanDevice) {
-      const { data: deviceUser } = await client
-        .from('sportstats_users')
-        .select('id, username')
-        .eq('bound_device_id', cleanDevice)
-        .limit(1)
-        .maybeSingle();
+    if (!isAdminTestDevice) {
+      // A. Verificación por ID de dispositivo
+      if (cleanDevice) {
+        const { data: deviceUser } = await client
+          .from('sportstats_users')
+          .select('id, username')
+          .eq('bound_device_id', cleanDevice)
+          .limit(1)
+          .maybeSingle();
 
-      if (deviceUser) {
-        hasUsedTrial = true;
+        if (deviceUser) {
+          hasUsedTrial = true;
+        }
+      }
+
+      // B. Verificación heurística por subred IP (/24) para evitar multicuentas
+      if (!hasUsedTrial && clientSubnetHash) {
+        try {
+          const { data: subnetUsers } = await client
+            .from('sportstats_users')
+            .select('id')
+            .eq('ip_subnet_hash', clientSubnetHash)
+            .limit(3);
+
+          if (Array.isArray(subnetUsers) && subnetUsers.length >= 2) {
+            console.warn(`[Antifraude Activado]: Red IP ${clientSubnetHash.slice(0, 10)}... superó el límite de pruebas gratis.`);
+            hasUsedTrial = true;
+          }
+        } catch {
+          // Columna aún no presente en BD remota
+        }
       }
     }
 
@@ -1683,7 +1740,7 @@ export async function loginOrRegisterGoogleUser(
       generatedUsername = `user${Math.floor(100 + Math.random() * 900)}`;
     }
 
-    const newUserData = {
+    const newUserData: Record<string, any> = {
       username: generatedUsername,
       email,
       display_name: rawDisplayName || email.split('@')[0],
@@ -1698,14 +1755,34 @@ export async function loginOrRegisterGoogleUser(
       bound_device_name: friendlyDevName,
       auth_provider: 'google',
       feedback_bonus_claimed: false,
-      device_fingerprint: deviceFingerprint || cleanDevice
+      device_fingerprint: deviceFingerprint || cleanDevice,
+      google_sub: check.googleSub || undefined,
+      ip_subnet_hash: clientSubnetHash || undefined
     };
 
-    const { data: insertedUser, error: insertError } = await client
+    let insertedUser: any = null;
+    let insertError: any = null;
+
+    const res = await client
       .from('sportstats_users')
       .insert(newUserData)
       .select()
       .single();
+
+    if (res.error && (res.error.message?.includes('google_sub') || res.error.message?.includes('ip_subnet_hash'))) {
+      delete newUserData.google_sub;
+      delete newUserData.ip_subnet_hash;
+      const fallbackRes = await client
+        .from('sportstats_users')
+        .insert(newUserData)
+        .select()
+        .single();
+      insertedUser = fallbackRes.data;
+      insertError = fallbackRes.error;
+    } else {
+      insertedUser = res.data;
+      insertError = res.error;
+    }
 
     if (insertError) {
       console.error('[Supabase Google Register Error]:', insertError.message);
