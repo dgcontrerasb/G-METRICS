@@ -219,6 +219,7 @@ export async function setSupabaseKvCache<T = unknown>(cacheId: string, payload: 
         .eq('color_theme', 'kv-cache')
         .neq('id', '__server_telemetry_v1__')
         .neq('id', '__deleted_users_v1__')
+        .neq('id', '__admin_user_feedback_v1__')
         .lt('updated_at', threeDaysAgoIso)
         .then(
           () => {},
@@ -1405,6 +1406,19 @@ CREATE INDEX IF NOT EXISTS idx_push_endpoint ON sportstats_push_subscriptions(en
 CREATE INDEX IF NOT EXISTS idx_push_updated ON sportstats_push_subscriptions(updated_at);
 ALTER TABLE sportstats_push_subscriptions ENABLE ROW LEVEL SECURITY;
 
+CREATE TABLE IF NOT EXISTS sportstats_feedback (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  display_name TEXT,
+  rating INTEGER NOT NULL,
+  category TEXT DEFAULT 'General',
+  comment TEXT,
+  created_at BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON sportstats_feedback(created_at DESC);
+ALTER TABLE sportstats_feedback ENABLE ROW LEVEL SECURITY;
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_users' AND policyname = 'Allow server full access users') THEN
@@ -1415,6 +1429,9 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_push_subscriptions' AND policyname = 'Allow server full access push') THEN
     CREATE POLICY "Allow server full access push" ON sportstats_push_subscriptions FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_feedback' AND policyname = 'Allow server full access feedback') THEN
+    CREATE POLICY "Allow server full access feedback" ON sportstats_feedback FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 `;
@@ -2196,4 +2213,46 @@ export async function getActivePushSubscriptions(matchId?: string): Promise<Push
   }
 
   return result;
+}
+
+// =========================================================================
+// BUZÓN DE FEEDBACK PERMANENTE EN SUPABASE ($0 USD/MES · INMUNE A PURGAS)
+// =========================================================================
+
+export async function savePermanentFeedbackList(items: any[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const serialized = JSON.stringify({ timestamp: Date.now(), data: items });
+    const { error } = await client.from('sportstats_config').upsert({
+      id: '__admin_user_feedback_v1__',
+      admin_pin: 'FEEDBACK_PERMANENT_LOCK',
+      admin_whatsapp: String(items.length),
+      support_name: 'User Reviews Feedback',
+      custom_logo_url: serialized,
+      color_theme: 'permanent-feedback', // Inmune por diseño: los limpiadores solo tocan 'kv-cache'
+      updated_at: new Date().toISOString(),
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function loadPermanentFeedbackList(): Promise<any[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client
+      .from('sportstats_config')
+      .select('custom_logo_url')
+      .eq('id', '__admin_user_feedback_v1__')
+      .maybeSingle();
+    if (error || !data || !data.custom_logo_url) return null;
+    const parsed = JSON.parse(data.custom_logo_url);
+    if (parsed && Array.isArray(parsed.data)) {
+      return parsed.data;
+    }
+  } catch {}
+  return null;
 }

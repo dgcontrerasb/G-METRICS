@@ -2280,6 +2280,7 @@ export default function App() {
         isSavedSlipsOpen={isSavedSlipsOpen}
         onCloseSavedSlipsModal={() => setIsSavedSlipsOpen(false)}
         onOpenSavedSlipsModal={() => setIsSavedSlipsOpen(true)}
+        isPro={Boolean(activeLicenseInfo?.isValid && !activeLicenseInfo?.isExpired)}
       />
 
       {/* Animación fluida de Inicio y Cierre de Sesión (Pantalla Completa Blanca Minimalista) */}

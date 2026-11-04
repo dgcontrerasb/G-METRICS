@@ -224,7 +224,15 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
 
     const totalTargetShots = shotsAndPlayers.homeShotsOnTarget + shotsAndPlayers.awayShotsOnTarget;
 
-    if (starCandidate.star.expectedShotsOnTarget >= 0.9) {
+    const hasConfirmedStarters = Boolean(
+      (fixture.liveRosters &&
+        fixture.liveRosters.homeStarters.length >= 7 &&
+        fixture.liveRosters.awayStarters.length >= 7) ||
+      fixture.status === 'IN_PLAY' ||
+      fixture.status === 'FINISHED'
+    );
+
+    if (hasConfirmedStarters && starCandidate.star.expectedShotsOnTarget >= 0.9) {
       const safeStarName = resolveTeamStarPlayerName(
         starCandidate.team,
         starCandidate.star.name,
@@ -239,7 +247,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
         icon: '🎯',
         badge: {
           label: 'Rematador Estrella',
-          className: 'bg-sky-50 text-sky-800 border-sky-200'
+          className: hasConfirmedStarters ? 'bg-sky-50 text-sky-800 border-sky-200' : 'bg-amber-50 text-amber-800 border-amber-200'
         },
         selectionTitle: `${safeStarName} (+0.5 Remates a Puerta)`,
         probability: estimatedProb,
@@ -260,13 +268,15 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
         category: 'Disparos al Arco',
         icon: '🎯',
         badge: {
-          label: 'Volumen Total',
-          className: 'bg-sky-50 text-sky-800 border-sky-200'
+          label: hasConfirmedStarters ? 'Volumen Total' : 'Esperando Titulares',
+          className: hasConfirmedStarters ? 'bg-sky-50 text-sky-800 border-sky-200' : 'bg-amber-50 text-amber-800 border-amber-200'
         },
         selectionTitle: `${targetLine} (Totales)`,
         probability: lineProb,
         fairOdd: Number((100 / lineProb).toFixed(2)),
-        rationale: `Proyección acumulada de ${totalTargetShots} remates directos a portería entre ambos clubes (${shotsAndPlayers.homeShotsOnTarget} ${fixture.homeTeam.shortName} y ${shotsAndPlayers.awayShotsOnTarget} ${fixture.awayTeam.shortName}).`,
+        rationale: hasConfirmedStarters
+          ? `Proyección acumulada de ${totalTargetShots} remates directos a portería entre ambos clubes (${shotsAndPlayers.homeShotsOnTarget} ${fixture.homeTeam.shortName} y ${shotsAndPlayers.awayShotsOnTarget} ${fixture.awayTeam.shortName}).`
+          : 'Pronóstico colectivo de disparos pre-partido. Las selecciones de rematadores individuales se activarán en cuanto los clubes confirmen sus 11 titulares oficiales (~45-60 min antes del pitido inicial).',
         metrics: [
           { label: 'Local Remates', value: `${shotsAndPlayers.homeShotsOnTarget}` },
           { label: 'Visita Remates', value: `${shotsAndPlayers.awayShotsOnTarget}` },

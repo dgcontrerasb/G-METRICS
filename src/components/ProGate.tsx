@@ -1,5 +1,31 @@
 import React from 'react';
 import { Lock, Sparkles } from 'lucide-react';
+import { verifyLicenseToken } from '../services/licenseService';
+
+export function checkIsProClient(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem('sportstats_auth_user');
+    if (raw) {
+      const u = JSON.parse(raw);
+      if (u.role === 'admin' || u.isPro === true) return true;
+      if (u.expiresAt && Number(u.expiresAt) > Date.now()) return true;
+    }
+  } catch {}
+  try {
+    const rawLic = localStorage.getItem('futbolstats_active_license');
+    if (rawLic) {
+      const lic = JSON.parse(rawLic);
+      if (lic?.cachedResult?.isValid && !lic?.cachedResult?.isExpired) return true;
+      if (lic?.key) {
+        const devId = localStorage.getItem('futbolstats_device_id') || '';
+        const check = verifyLicenseToken(lic.key, devId);
+        if (check.isValid && !check.isExpired) return true;
+      }
+    }
+  } catch {}
+  return false;
+}
 
 interface ProGateProps {
   isPro?: boolean;
@@ -15,13 +41,15 @@ interface ProGateProps {
  * NO se montan en el DOM (eliminando la posibilidad de inspección / des-blur en DevTools).
  */
 export const ProGate: React.FC<ProGateProps> = ({
-  isPro = false,
+  isPro,
   onOpenVipModal,
   featureName = 'Contenido VIP',
   children,
   className = ''
 }) => {
-  if (isPro) {
+  const effectiveIsPro = isPro !== undefined ? isPro : checkIsProClient();
+
+  if (effectiveIsPro) {
     return <>{children}</>;
   }
 

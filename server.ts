@@ -30,7 +30,9 @@ import {
   adminListActivationCodes,
   upsertPushSubscription,
   removePushSubscription,
-  getActivePushSubscriptions
+  getActivePushSubscriptions,
+  savePermanentFeedbackList,
+  loadPermanentFeedbackList
 } from './src/services/supabaseServer';
 import { fetchWithStrictTimeout } from './src/services/resilientFetch';
 import {
@@ -4705,9 +4707,9 @@ async function loadUserFeedbackList(): Promise<UserFeedbackItem[]> {
     return normalizeFeedbackList(cached.data);
   }
   if (isSupabaseConfigured()) {
-    const remote = await getSupabaseKvCache(ADMIN_USER_FEEDBACK_CACHE_KEY);
-    if (remote && Array.isArray(remote.data)) {
-      const normalized = normalizeFeedbackList(remote.data);
+    const remote = await loadPermanentFeedbackList();
+    if (remote && Array.isArray(remote)) {
+      const normalized = normalizeFeedbackList(remote);
       setCacheItem(ADMIN_USER_FEEDBACK_CACHE_KEY, normalized);
       return normalized;
     }
@@ -4739,7 +4741,7 @@ app.post('/api/feedback', dataRateLimitMiddleware, async (req, res) => {
 
     setCacheItem(ADMIN_USER_FEEDBACK_CACHE_KEY, updatedList);
     if (isSupabaseConfigured()) {
-      await setSupabaseKvCache(ADMIN_USER_FEEDBACK_CACHE_KEY, updatedList);
+      await savePermanentFeedbackList(updatedList);
     }
 
     return res.json({ success: true, item: newItem });
@@ -4787,7 +4789,7 @@ app.delete('/api/admin/feedback', async (req, res) => {
 
     setCacheItem(ADMIN_USER_FEEDBACK_CACHE_KEY, updatedList);
     if (isSupabaseConfigured()) {
-      await setSupabaseKvCache(ADMIN_USER_FEEDBACK_CACHE_KEY, updatedList);
+      await savePermanentFeedbackList(updatedList);
     }
 
     return res.json({ success: true, items: updatedList });

@@ -34,6 +34,7 @@ interface MatchDetailModalProps {
   isSelected?: boolean;
   onToggleSelect?: (fixtureId: string) => void;
   onOpenSimulator?: (fixture: MatchFixture) => void;
+  isPro?: boolean;
 }
 
 type TabSoccer = 'TIMELINE' | 'LIVE_MARKETS' | 'PICKS' | 'GOALS_CORNERS' | 'REFEREE' | 'LINEUPS';
@@ -45,7 +46,8 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
   onClose,
   isSelected = false,
   onToggleSelect,
-  onOpenSimulator
+  onOpenSimulator,
+  isPro
 }) => {
   const [activeTabSoccer, setActiveTabSoccer] = useState<TabSoccer>('PICKS');
   const [activeTabNBA, setActiveTabNBA] = useState<TabNBA>('PICKS');
@@ -275,6 +277,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
               tab={activeTabSoccer}
               fixture={effectiveSoccerFixture || payload.fixture}
               analysis={payload.analysis}
+              isPro={isPro}
               onOpenSimulator={onOpenSimulator}
             />
           ) : (
@@ -282,6 +285,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = React.memo(({
               tab={activeTabNBA}
               fixture={payload.fixture}
               analysis={payload.analysis}
+              isPro={isPro}
             />
           )}
         </div>
@@ -524,6 +528,7 @@ const SoccerHeader: React.FC<{
 const NBAHeader: React.FC<{
   fixture: NBAMatchFixture;
   analysis: NBAAnalysis;
+  isPro?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (id: string) => void;
   onClose: () => void;
@@ -751,7 +756,8 @@ const SoccerTabContent: React.FC<{
   fixture: MatchFixture;
   analysis: MatchAnalysis;
   onOpenSimulator?: (fixture: MatchFixture) => void;
-}> = ({ tab, fixture, analysis }) => {
+  isPro?: boolean;
+}> = ({ tab, fixture, analysis, isPro }) => {
   const { dixonColes, goalsMarket, cornersMarket, refereeCards } = analysis;
 
   if (tab === 'LINEUPS') {
@@ -822,7 +828,7 @@ const SoccerTabContent: React.FC<{
       </div>
     );
 
-    return tab === 'PICKS' ? <ProGate featureName="Picks Algorítmicos">{soccerPicksView}</ProGate> : soccerPicksView;
+    return tab === 'PICKS' ? <ProGate isPro={isPro} featureName="Picks Algorítmicos">{soccerPicksView}</ProGate> : soccerPicksView;
   }
 
   if (tab === 'GOALS_CORNERS') {
@@ -903,7 +909,8 @@ const NBATabContent: React.FC<{
   tab: TabNBA;
   fixture: NBAMatchFixture;
   analysis: NBAAnalysis;
-}> = ({ tab, fixture, analysis }) => {
+  isPro?: boolean;
+}> = ({ tab, fixture, analysis, isPro }) => {
   const [selectedPlayerModal, setSelectedPlayerModal] = useState<PlayerModalPayload | null>(null);
   const didacticAdvice = getNBADidacticAdvice(fixture, analysis);
   const favTeam = analysis.pHomeWin >= analysis.pAwayWin ? fixture.homeTeam : fixture.awayTeam;
@@ -927,7 +934,7 @@ const NBATabContent: React.FC<{
     const teamMisses = evaluatedMarkets.length - teamHits;
 
     return (
-      <ProGate featureName="Picks NBA +EV">
+      <ProGate isPro={isPro} featureName="Picks NBA +EV">
         <div className="space-y-3.5 text-left">
         {/* 1. Tarjeta Principal de Recomendación Pre-Partido */}
         <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50/90 via-white to-amber-50/70 border border-amber-200/90 shadow-2xs text-center">

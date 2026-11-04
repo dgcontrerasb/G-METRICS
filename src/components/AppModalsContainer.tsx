@@ -39,6 +39,7 @@ export interface AppModalsContainerProps {
   isSavedSlipsOpen: boolean;
   onCloseSavedSlipsModal: () => void;
   onOpenSavedSlipsModal: () => void;
+  isPro?: boolean;
 }
 
 export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
@@ -68,7 +69,8 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
   guideInitialTab,
   isSavedSlipsOpen,
   onCloseSavedSlipsModal,
-  onOpenSavedSlipsModal
+  onOpenSavedSlipsModal,
+  isPro
 }) => {
   return (
     <Suspense fallback={null}>
@@ -101,6 +103,7 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
           isSelected={detailModalPayload ? selectedFixtureIds.has(detailModalPayload.fixture.id) : false}
           onToggleSelect={onToggleSelect}
           onOpenSimulator={onOpenSimulator}
+          isPro={isPro}
         />
       )}
 

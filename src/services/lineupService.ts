@@ -1004,7 +1004,7 @@ export function getSoccerLineupData(fixture: MatchFixture): SoccerLineupData {
       stadiumName: fixture.venue?.name || `Estadio Municipal de ${fixture.homeTeam.name.split(' ')[0]}`,
       stadiumCity: fixture.venue?.city || fixture.homeTeam.name.split(' ')[0],
       refereeName: fixture.referee?.name || 'Árbitro Principal Oficial',
-      status: 'CONFIRMED'
+      status: (fixture.status === 'IN_PLAY' || fixture.status === 'FINISHED') ? 'CONFIRMED' : 'PROBABLE'
     };
   }
 
@@ -1097,7 +1097,7 @@ export function getSoccerLineupData(fixture: MatchFixture): SoccerLineupData {
     stadiumName: fixture.venue?.name || `Estadio Municipal de ${fixture.homeTeam.name.split(' ')[0]}`,
     stadiumCity: fixture.venue?.city || fixture.homeTeam.name.split(' ')[0],
     refereeName: fixture.referee?.name || 'Árbitro Principal Oficial',
-    status: 'CONFIRMED'
+    status: (fixture.status === 'IN_PLAY' || fixture.status === 'FINISHED') ? 'CONFIRMED' : 'PROBABLE'
   };
 }
 
@@ -1125,11 +1125,11 @@ export function getNBALineupData(fixture: NBAMatchFixture): NBALineupData {
         rpg: kp.seasonRpg,
         threePm: kp.season3pm
       })) : [
-        { id: 'hp1', name: 'Stephen Curry', number: 30, position: 'PG', ppg: 23.0, apg: 6.5, rpg: 5.2, threePm: 4.2 },
-        { id: 'hp2', name: 'Brandin Podziemski', number: 2, position: 'SG', ppg: 10.5, apg: 3.8, rpg: 4.6, threePm: 1.4 },
-        { id: 'hp3', name: 'Andrew Wiggins', number: 22, position: 'SF', ppg: 17.2, apg: 2.4, rpg: 4.5, threePm: 2.2 },
-        { id: 'hp4', name: 'Jonathan Kuminga', number: 0, position: 'PF', ppg: 16.5, apg: 2.1, rpg: 5.0, threePm: 1.1 },
-        { id: 'hp5', name: 'Draymond Green', number: 23, position: 'C', ppg: 8.8, apg: 5.8, rpg: 5.6, threePm: 1.4 }
+        { id: 'hp1', name: `Base Titular (${hShort})`, number: 1, position: 'PG', ppg: 16.0, apg: 5.5, rpg: 3.2, threePm: 1.8 },
+        { id: 'hp2', name: `Escolta Titular (${hShort})`, number: 2, position: 'SG', ppg: 15.5, apg: 3.2, rpg: 3.6, threePm: 2.1 },
+        { id: 'hp3', name: `Alero Titular (${hShort})`, number: 3, position: 'SF', ppg: 14.2, apg: 2.4, rpg: 4.8, threePm: 1.5 },
+        { id: 'hp4', name: `Ala-Pívot Titular (${hShort})`, number: 4, position: 'PF', ppg: 13.5, apg: 1.9, rpg: 6.5, threePm: 0.9 },
+        { id: 'hp5', name: `Pívot Titular (${hShort})`, number: 5, position: 'C', ppg: 12.8, apg: 1.8, rpg: 8.6, threePm: 0.2 }
       ]);
 
   const awayStarters: NBAPlayerRosterInfo[] = awayRoster
@@ -1144,11 +1144,11 @@ export function getNBALineupData(fixture: NBAMatchFixture): NBALineupData {
         rpg: kp.seasonRpg,
         threePm: kp.season3pm
       })) : [
-        { id: 'ap1', name: 'Luka Doncic', number: 77, position: 'PG', ppg: 28.8, apg: 8.2, rpg: 8.4, threePm: 3.4 },
-        { id: 'ap2', name: 'Kyrie Irving', number: 11, position: 'SG', ppg: 24.5, apg: 5.2, rpg: 4.6, threePm: 3.0 },
-        { id: 'ap3', name: 'Klay Thompson', number: 31, position: 'SF', ppg: 14.2, apg: 1.9, rpg: 3.5, threePm: 3.1 },
-        { id: 'ap4', name: 'P.J. Washington', number: 25, position: 'PF', ppg: 11.8, apg: 1.8, rpg: 7.2, threePm: 1.5 },
-        { id: 'ap5', name: 'Dereck Lively II', number: 2, position: 'C', ppg: 9.2, apg: 2.4, rpg: 8.0, threePm: 0.0 }
+        { id: 'ap1', name: `Base Titular (${aShort})`, number: 1, position: 'PG', ppg: 16.0, apg: 5.5, rpg: 3.2, threePm: 1.8 },
+        { id: 'ap2', name: `Escolta Titular (${aShort})`, number: 2, position: 'SG', ppg: 15.5, apg: 3.2, rpg: 3.6, threePm: 2.1 },
+        { id: 'ap3', name: `Alero Titular (${aShort})`, number: 3, position: 'SF', ppg: 14.2, apg: 2.4, rpg: 4.8, threePm: 1.5 },
+        { id: 'ap4', name: `Ala-Pívot Titular (${aShort})`, number: 4, position: 'PF', ppg: 13.5, apg: 1.9, rpg: 6.5, threePm: 0.9 },
+        { id: 'ap5', name: `Pívot Titular (${aShort})`, number: 5, position: 'C', ppg: 12.8, apg: 1.8, rpg: 8.6, threePm: 0.2 }
       ]);
 
   const homeBench: NBAPlayerRosterInfo[] = homeRoster
@@ -1204,6 +1204,6 @@ export function getNBALineupData(fixture: NBAMatchFixture): NBALineupData {
     awayCoach: awayRoster?.coach || 'Entrenador Principal',
     arenaName: fixture.arena?.name || `Arena de ${fixture.homeTeam.name}`,
     arenaCity: fixture.arena?.city || fixture.homeTeam.name,
-    status: 'CONFIRMED'
+    status: (fixture.status === 'IN_PLAY' || fixture.status === 'FINISHED') ? 'CONFIRMED' : 'PROBABLE'
   };
 }

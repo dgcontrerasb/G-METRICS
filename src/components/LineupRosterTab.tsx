@@ -24,6 +24,7 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
     const awayTeam = payload.fixture.awayTeam;
 
     const isMatchStarted = payload.fixture.status === 'IN_PLAY' || payload.fixture.status === 'FINISHED';
+    const isConfirmed = soccerData.status === 'CONFIRMED';
 
     const currentTeamName = selectedTeam === 'HOME' ? homeTeam.name : awayTeam.name;
     const currentLogo = selectedTeam === 'HOME' ? homeTeam.logo : awayTeam.logo;
@@ -178,14 +179,31 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
               </div>
             </div>
 
+        {!isConfirmed && (
+          <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2 shadow-2xs">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+              <div>
+                <span className="font-bold text-[11px] block">Alineación Oficial Pendiente de Confirmación</span>
+                <span className="text-[9.5px] text-amber-800 leading-tight block">
+                  Plantilla preliminar del club. Los 11 titulares se confirman de 45 a 60 min antes del pitido inicial.
+                </span>
+              </div>
+            </div>
+            <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-amber-200/80 text-amber-950 uppercase shrink-0">
+              Probable
+            </span>
+          </div>
+        )}
+
         {/* 11 Titulares (Starting XI) Grid */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 px-1">
             <span className="flex items-center gap-1">
               <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Alineación Confirmada (11 Titulares)</span>
+              <span>{isConfirmed ? 'Alineación Confirmada (11 Titulares)' : 'Plantilla Preliminar (Titulares Pendientes)'}</span>
             </span>
-            <span className="text-emerald-700 font-semibold text-[10px]">OFICIAL</span>
+            <span className={`font-semibold text-[10px] ${isConfirmed ? 'text-emerald-700' : 'text-amber-700'}`}>{isConfirmed ? 'OFICIAL' : 'PENDIENTE'}</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -369,6 +387,7 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
   const isNBALive = payload.fixture.status === 'IN_PLAY';
   const isNBAFinished = payload.fixture.status === 'FINISHED';
   const isNBAMatchStarted = isNBALive || isNBAFinished;
+  const isNBAConfirmed = nbaData.status === 'CONFIRMED';
 
   const currentTeamName = selectedTeam === 'HOME' ? homeTeam.name : awayTeam.name;
   const currentLogo = selectedTeam === 'HOME' ? homeTeam.logo : awayTeam.logo;
@@ -569,14 +588,31 @@ export const LineupRosterTab: React.FC<LineupRosterTabProps> = ({ payload }) => 
             </div>
           </div>
 
+          {!isNBAConfirmed && (
+            <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                <div>
+                  <span className="font-bold text-[11px] block">Alineación Oficial Pendiente de Confirmación</span>
+                  <span className="text-[9.5px] text-amber-800 leading-tight block">
+                    Quinteto probable. Los 5 iniciales definitivos se confirman unos 30 a 45 minutos antes del salto entre dos.
+                  </span>
+                </div>
+              </div>
+              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-amber-200/80 text-amber-950 uppercase shrink-0">
+                Pre-Partido
+              </span>
+            </div>
+          )}
+
           {/* Starters List */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 px-1">
               <span className="flex items-center gap-1">
                 <UserCheck className="w-3.5 h-3.5 text-amber-600" />
-                <span>Quinteto Inicial Titular</span>
+                <span>{isNBAConfirmed ? 'Quinteto Inicial Titular' : 'Quinteto Probable (Alineación Pendiente)'}</span>
               </span>
-              <span className="text-amber-700 font-semibold text-[10px]">OFICIAL</span>
+              <span className={`font-semibold text-[10px] ${isNBAConfirmed ? 'text-emerald-700' : 'text-amber-700'}`}>{isNBAConfirmed ? 'OFICIAL' : 'PENDIENTE'}</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
