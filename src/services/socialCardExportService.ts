@@ -7,15 +7,11 @@ export type ExportMediaFormat = 'PNG' | 'PDF';
 
 /**
  * Servicio de Exportación Visual de Alto Impacto para Redes Sociales (Facebook / IG)
- * Estilo White Luxury High-End
- * - Fondo blanco limpio con detalles dorados y esmeralda
- * - Cápsula y números 100% centrados vertical y horizontalmente
- * - Con logotipo oficial y marca de agua antirrobo
- * - Sin mención a casas de apuestas ni fórmulas matemáticas
+ * Estilo Editorial White Luxury (Sin cápsulas innecesarias, tipografía pura y números limpios sin círculos)
  */
 export class SocialCardExportService {
   /**
-   * Exporta un Parlay a Imagen PNG o PDF (Fondo Blanco Limpio)
+   * Exporta un Parlay a Imagen PNG o PDF (Fondo Blanco Limpio, Sin Cápsulas)
    */
   public static async exportParlay(slip: SmartParlaySlip, format: ExportMediaFormat = 'PNG'): Promise<void> {
     const profileTitle =
@@ -43,22 +39,24 @@ export class SocialCardExportService {
     const legsHtml = slip.legs
       .map(
         (leg, idx) => `
-        <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 16px; padding: 14px 18px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 14px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
-          <div style="min-width: 0; flex: 1;">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
-              <div style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background-color: #FEF3C7; border: 1.2px solid #F59E0B; color: #B45309; font-size: 12px; font-weight: 800; font-family: monospace; line-height: 1; text-align: center; flex-shrink: 0;">${idx + 1}</div>
-              <span style="color: #0F172A; font-size: 15px; font-weight: 800; word-break: break-word;">${leg.matchName}</span>
-            </div>
-            <div style="padding-left: 34px; font-size: 14px; font-weight: 700; color: #B45309;">
-              ${leg.label}
-            </div>
-            <div style="padding-left: 34px; font-size: 11px; color: #64748B; margin-top: 2px;">
-              ${leg.leagueName}
+        <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+          <div style="min-width: 0; flex: 1; display: flex; align-items: flex-start; gap: 12px;">
+            <span style="font-family: monospace; font-size: 18px; font-weight: 900; color: #B45309; min-width: 22px; text-align: center; line-height: 1.25; flex-shrink: 0;">${idx + 1}</span>
+            <div style="min-width: 0; flex: 1;">
+              <div style="color: #0F172A; font-size: 15.5px; font-weight: 800; line-height: 1.3; word-break: break-word;">
+                ${leg.matchName}
+              </div>
+              <div style="font-size: 14.5px; font-weight: 700; color: #B45309; margin-top: 3px;">
+                ${leg.label}
+              </div>
+              <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">
+                ${leg.leagueName} · ${leg.category}
+              </div>
             </div>
           </div>
           <div style="text-align: right; flex-shrink: 0;">
-            <div style="font-family: monospace; font-size: 19px; font-weight: 900; color: #0F172A;">@${leg.odds.toFixed(2)}</div>
-            <div style="font-family: monospace; font-size: 11px; font-weight: 700; color: #059669; margin-top: 2px;">${Math.round(leg.impliedProb * 100)}% Prob.</div>
+            <div style="font-family: monospace; font-size: 20px; font-weight: 900; color: #0F172A;">@${leg.odds.toFixed(2)}</div>
+            <div style="font-family: monospace; font-size: 11px; font-weight: 700; color: #059669; margin-top: 3px;">${Math.round(leg.impliedProb * 100)}% Prob.</div>
           </div>
         </div>
       `
@@ -71,18 +69,18 @@ export class SocialCardExportService {
         <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 440px; height: 220px; background-image: url('${GMETRICS_GOLD_LOGO_DATA_URI}'); background-repeat: no-repeat; background-position: center; background-size: contain; opacity: 0.045; pointer-events: none; z-index: 0;"></div>
 
         <div style="position: relative; z-index: 2;">
-          <!-- Cabecera Oficial -->
-          <div style="text-align: center; border-bottom: 1px solid #E2E8F0; padding-bottom: 18px; margin-bottom: 20px;">
-            <img src="${GMETRICS_GOLD_LOGO_DATA_URI}" alt="G METRICS" style="height: 58px; margin: 0 auto 12px auto; display: block;" />
-            <div style="display: inline-flex; align-items: center; justify-content: center; text-align: center; padding: 6px 22px; border-radius: 9999px; background: #FEF3C7; border: 1.5px solid #F59E0B; color: #92400E; font-size: 11.5px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; line-height: 1;">
-              ★ ${profileTitle} ★
+          <!-- Cabecera Oficial (Sin Cápsulas, Texto Puro y Centrado) -->
+          <div style="text-align: center; border-bottom: 1px solid #E2E8F0; padding-bottom: 16px; margin-bottom: 18px;">
+            <img src="${GMETRICS_GOLD_LOGO_DATA_URI}" alt="G METRICS" style="height: 58px; margin: 0 auto 8px auto; display: block;" />
+            <div style="font-size: 16px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #B45309; text-align: center; margin-top: 6px;">
+              ${profileTitle}
             </div>
           </div>
 
-          <!-- Metadata -->
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-size: 12px; color: #475569; font-family: monospace; padding: 0 4px;">
+          <!-- Metadata (Texto Limpio, Sin Cápsula) -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-size: 12px; font-family: monospace; padding: 0 4px;">
             <span style="font-weight: 700; color: #0F172A;">📅 FECHA: ${slip.date}</span>
-            <span style="background-color: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; padding: 3px 12px; border-radius: 6px; font-weight: 800; font-size: 10.5px;">SELECCIÓN EXCLUSIVA</span>
+            <span style="font-weight: 800; color: #059669; letter-spacing: 0.5px;">SELECCIÓN EXCLUSIVA</span>
           </div>
 
           <!-- Lista de Selecciones -->
@@ -90,21 +88,21 @@ export class SocialCardExportService {
             ${legsHtml}
           </div>
 
-          <!-- Caja de Cuota Total Gigante -->
-          <div style="background: linear-gradient(135deg, #FEF3C7 0%, #FFFBEB 100%); border: 1.8px solid #F59E0B; border-radius: 18px; padding: 18px; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);">
-            <div style="font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #92400E; margin-bottom: 4px;">
+          <!-- Caja de Cuota Total Combinada (Líneas Editoriales Limpias) -->
+          <div style="border-top: 1.5px solid #E2E8F0; border-bottom: 1.5px solid #E2E8F0; padding: 20px 0; text-align: center; margin: 20px 0;">
+            <div style="font-size: 11px; font-weight: 800; letter-spacing: 2.5px; text-transform: uppercase; color: #64748B; margin-bottom: 4px;">
               CUOTA TOTAL COMBINADA
             </div>
-            <div style="font-family: monospace; font-size: 42px; font-weight: 900; color: #B45309; line-height: 1;">
+            <div style="font-family: monospace; font-size: 46px; font-weight: 900; color: #B45309; line-height: 1;">
               @${slip.totalOdds.toFixed(2)}
             </div>
-            <div style="font-size: 12px; color: #475569; margin-top: 8px;">
+            <div style="font-size: 12px; color: #64748B; margin-top: 8px;">
               Gestión de Banca Sugerida: <strong style="color: #0F172A;">1 Unidad (Stake Plano)</strong>
             </div>
           </div>
 
           <!-- Footer Legal y Marca -->
-          <div style="border-top: 1px solid #E2E8F0; padding-top: 14px; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #64748B; font-family: monospace;">
+          <div style="padding-top: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #64748B; font-family: monospace;">
             <span>G METRICS · PRONÓSTICOS VIP</span>
             <span style="color: #B45309; font-weight: 800;">@GMETRICS_OFICIAL</span>
             <span>+18 AÑOS · JUEGA CON RESPONSABILIDAD</span>
@@ -149,7 +147,8 @@ export class SocialCardExportService {
   /**
    * Exporta la Lámina Consolidada de Apuestas Individuales del Día en UNA SOLA Imagen o PDF (Fondo Blanco Limpio)
    * - Todas acomodadas perfectamente sin sobremontar
-   * - Cápsula y números 100% centrados
+   * - Sin cápsulas ni píldoras en textos
+   * - Números limpios y bien centrados en columna sin círculos
    * - Sin textos cortados ni abreviaciones ilegibles
    * - Sin mencionar casas de apuestas ni fórmulas
    */
@@ -178,23 +177,24 @@ export class SocialCardExportService {
     const singlesHtml = singles
       .map(
         (item, idx) => `
-        <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 16px; padding: 14px 18px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
-          <div style="min-width: 0; flex: 1;">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
-              <div style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background-color: #FEF3C7; border: 1.2px solid #F59E0B; color: #B45309; font-size: 12px; font-weight: 800; font-family: monospace; line-height: 1; text-align: center; flex-shrink: 0;">${idx + 1}</div>
-              <span style="color: #0F172A; font-size: 15.5px; font-weight: 800; word-break: break-word;">${item.matchTitle}</span>
-              <span style="font-size: 11.5px; color: #64748B;">(${item.leagueName})</span>
-            </div>
-            <div style="padding-left: 34px; font-size: 14.5px; font-weight: 700; color: #B45309;">
-              ${item.selectionLabel}
-            </div>
-            <div style="padding-left: 34px; font-size: 11.5px; color: #64748B; margin-top: 2px;">
-              Mercado: <span style="color: #334155; font-weight: 600;">${item.categoryLabel}</span>
+        <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+          <div style="min-width: 0; flex: 1; display: flex; align-items: flex-start; gap: 12px;">
+            <span style="font-family: monospace; font-size: 18px; font-weight: 900; color: #B45309; min-width: 22px; text-align: center; line-height: 1.25; flex-shrink: 0;">${idx + 1}</span>
+            <div style="min-width: 0; flex: 1;">
+              <div style="color: #0F172A; font-size: 15.5px; font-weight: 800; line-height: 1.3; word-break: break-word;">
+                ${item.matchTitle} <span style="font-size: 11.5px; color: #64748B; font-weight: 600;">(${item.leagueName})</span>
+              </div>
+              <div style="font-size: 14.5px; font-weight: 700; color: #B45309; margin-top: 3px;">
+                ${item.selectionLabel}
+              </div>
+              <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">
+                Mercado: <span style="color: #334155; font-weight: 600;">${item.categoryLabel}</span>
+              </div>
             </div>
           </div>
           <div style="text-align: right; flex-shrink: 0;">
             <div style="font-family: monospace; font-size: 21px; font-weight: 900; color: #0F172A;">@${item.estimatedBookieOdd.toFixed(2)}</div>
-            <div style="font-family: monospace; font-size: 11px; font-weight: 700; color: #059669; margin-top: 2px;">${item.probability}% Probabilidad</div>
+            <div style="font-family: monospace; font-size: 11px; font-weight: 700; color: #059669; margin-top: 3px;">${item.probability}% Probabilidad</div>
             <div style="font-size: 10.5px; color: #64748B; margin-top: 2px;">Stake: ${item.recommendedKellyStakePct}%</div>
           </div>
         </div>
@@ -208,18 +208,18 @@ export class SocialCardExportService {
         <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 500px; height: 260px; background-image: url('${GMETRICS_GOLD_LOGO_DATA_URI}'); background-repeat: no-repeat; background-position: center; background-size: contain; opacity: 0.045; pointer-events: none; z-index: 0;"></div>
 
         <div style="position: relative; z-index: 2;">
-          <!-- Cabecera Oficial -->
-          <div style="text-align: center; border-bottom: 1px solid #E2E8F0; padding-bottom: 18px; margin-bottom: 20px;">
-            <img src="${GMETRICS_GOLD_LOGO_DATA_URI}" alt="G METRICS" style="height: 58px; margin: 0 auto 12px auto; display: block;" />
-            <div style="display: inline-flex; align-items: center; justify-content: center; text-align: center; padding: 6px 24px; border-radius: 9999px; background: #FEF3C7; border: 1.5px solid #F59E0B; color: #92400E; font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; line-height: 1;">
-              ★ SELECCIONES INDIVIDUALES DEL DÍA ★
+          <!-- Cabecera Oficial (Sin Cápsulas, Texto Puro Centrado) -->
+          <div style="text-align: center; border-bottom: 1px solid #E2E8F0; padding-bottom: 16px; margin-bottom: 18px;">
+            <img src="${GMETRICS_GOLD_LOGO_DATA_URI}" alt="G METRICS" style="height: 58px; margin: 0 auto 8px auto; display: block;" />
+            <div style="font-size: 16px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #B45309; text-align: center; margin-top: 6px;">
+              SELECCIONES INDIVIDUALES DEL DÍA
             </div>
           </div>
 
-          <!-- Metadata -->
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-size: 12px; color: #475569; font-family: monospace; padding: 0 4px;">
+          <!-- Metadata (Texto Limpio, Sin Cápsulas) -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-size: 12px; font-family: monospace; padding: 0 4px;">
             <span style="font-weight: 700; color: #0F172A;">📅 JORNADA: ${dateStr}</span>
-            <span style="background-color: #FEF3C7; color: #92400E; border: 1px solid #F59E0B; padding: 3px 12px; border-radius: 6px; font-weight: 800; font-size: 10.5px;">TOP ${singles.length} PRONÓSTICOS</span>
+            <span style="font-weight: 800; color: #64748B; letter-spacing: 0.5px;">TOP ${singles.length} PRONÓSTICOS</span>
           </div>
 
           <!-- Lista de Apuestas Sencillas Consolidada -->
