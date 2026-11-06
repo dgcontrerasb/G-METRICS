@@ -689,6 +689,50 @@ export interface GMetricsSingleBetSuggestion {
   qualityScore?: number;
 }
 
+// =========================================================================
+// SISTEMA CUANTITATIVO DE APUESTAS Y PARLAYS INTELIGENTES (COLOMBIAN BOOKS)
+// =========================================================================
+
+export enum BetMarketCategory {
+  ONE_X_TWO = '1X2',
+  '1X2' = '1X2',
+  DOUBLE_CHANCE = 'DOUBLE_CHANCE',
+  TOTAL_GOALS = 'TOTAL_GOALS',
+  BTTS = 'BTTS',
+  TOTAL_CORNERS_MATCH = 'TOTAL_CORNERS_MATCH',
+  DRAW_NO_BET = 'DRAW_NO_BET'
+}
+
+export type BetMarketCategoryType =
+  | '1X2'
+  | 'DOUBLE_CHANCE'
+  | 'TOTAL_GOALS'
+  | 'BTTS'
+  | 'TOTAL_CORNERS_MATCH'
+  | 'DRAW_NO_BET';
+
+export interface BettingMarketSuggestion {
+  fixtureId: string;
+  matchName: string;
+  leagueName: string;
+  category: BetMarketCategory | BetMarketCategoryType;
+  label: string; // ej: "Ambos Marcan: Sí", "Local o Empate"
+  odds: number; // cuota decimal, ej: 1.65
+  impliedProb: number; // probabilidad calculada del modelo (0 - 1)
+  expectedValue: number; // EV calculado (+EV)
+  availableInColombianBooks: boolean;
+}
+
+export interface SmartParlaySlip {
+  id: string;
+  date: string;
+  profile: 'CONSERVATIVE' | 'BALANCED' | 'HIGH_ODDS';
+  legs: BettingMarketSuggestion[];
+  totalOdds: number;
+  status: 'PENDING' | 'WON' | 'LOST' | 'VOID';
+  evaluationDate?: string;
+}
+
 
 
 

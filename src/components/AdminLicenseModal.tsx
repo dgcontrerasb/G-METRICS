@@ -674,8 +674,8 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
               <h2 className="text-xs sm:text-base font-bold text-slate-900 flex items-center gap-2 truncate">
                 <span>Panel de Administración · G METRICS</span>
               </h2>
-              <p className="text-[10px] sm:text-xs text-slate-500 truncate">
-                Gestión de cuentas, monitor de cuota API, auditoría +EV y seguridad.
+              <p className="text-[10px] sm:text-xs text-slate-500 font-mono truncate">
+                Sesión Propietario · Modo Privado
               </p>
             </div>
           </div>

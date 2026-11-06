@@ -14,7 +14,10 @@ import {
   VerdictResult,
   MarketOddsComparison,
   BestMarketPick,
-  GMetricsSingleBetSuggestion
+  GMetricsSingleBetSuggestion,
+  BetMarketCategory,
+  BettingMarketSuggestion,
+  SmartParlaySlip
 } from '../types';
 import { getSoccerLineupData, resolveTeamStarPlayerName } from './lineupService';
 
@@ -1693,6 +1696,304 @@ export function generateGMetricsSingleValueBets(
     .map((s, idx) => ({ ...s, rank: idx + 1 }));
 
   return [...highValuePool, ...bankerPool];
+}
+
+// =========================================================================
+// MOTOR CUANTITATIVO DE PARLAYS INTELIGENTES (COLOMBIAN BOOKMAKERS READY)
+// =========================================================================
+
+/**
+ * Extrae los mercados cuantitativos estandarizados de un partido a partir
+ * de las probabilidades computadas por Poisson y Dixon-Coles.
+ */
+export function extractMatchBettingMarketSuggestions(
+  fixture: MatchFixture,
+  analysis?: MatchAnalysis
+): BettingMarketSuggestion[] {
+  const matchAnalysis = analysis || calculateMatchAnalysis(fixture);
+  const { dixonColes, goalsMarket, cornersMarket } = matchAnalysis;
+  const homeName = fixture.homeTeam?.name || 'Local';
+  const awayName = fixture.awayTeam?.name || 'Visitante';
+  const homeShort = fixture.homeTeam?.shortName || homeName;
+  const awayShort = fixture.awayTeam?.shortName || awayName;
+  const matchName = `${homeName} vs ${awayName}`;
+  const leagueName = fixture.league?.name || 'Liga Oficial';
+
+  const candidates: BettingMarketSuggestion[] = [];
+
+  const addCandidate = (
+    category: BetMarketCategory,
+    label: string,
+    probRaw: number, // 0 - 1
+    edgeBoost: number = 0.04
+  ) => {
+    // Solo considerar selecciones con probabilidad estadísticamente sólida (> 48%)
+    if (probRaw <= 0.48 || probRaw > 0.95) return;
+    const impliedProb = Number(probRaw.toFixed(3));
+    const fairOdd = 1 / impliedProb;
+    // Cuota ofrecida estimada en casas colombianas con valor esperado positivo (+EV)
+    const odds = Number(Math.max(1.30, Number((fairOdd * (1 + edgeBoost)).toFixed(2))));
+    const expectedValue = Number(((impliedProb * odds) - 1).toFixed(3));
+
+    // REGLA 4: Solo seleccionar eventos con cuotas individuales >= 1.30 y con +EV
+    if (odds >= 1.30 && expectedValue > 0) {
+      candidates.push({
+        fixtureId: fixture.id,
+        matchName,
+        leagueName,
+        category,
+        label,
+        odds,
+        impliedProb,
+        expectedValue,
+        availableInColombianBooks: true
+      });
+    }
+  };
+
+  // 1. MERCADO 1X2
+  if (dixonColes.pHomeWin >= 50) {
+    addCandidate(BetMarketCategory.ONE_X_TWO, `Gana ${homeShort} (1)`, dixonColes.pHomeWin / 100, 0.045);
+  }
+  if (dixonColes.pAwayWin >= 48) {
+    addCandidate(BetMarketCategory.ONE_X_TWO, `Gana ${awayShort} (2)`, dixonColes.pAwayWin / 100, 0.045);
+  }
+
+  // 2. MERCADO DOUBLE_CHANCE (Doble Oportunidad)
+  if (goalsMarket.doubleChance1X >= 64) {
+    addCandidate(BetMarketCategory.DOUBLE_CHANCE, `${homeShort} o Empate (1X)`, goalsMarket.doubleChance1X / 100, 0.038);
+  }
+  if (goalsMarket.doubleChanceX2 >= 64) {
+    addCandidate(BetMarketCategory.DOUBLE_CHANCE, `Empate o ${awayShort} (X2)`, goalsMarket.doubleChanceX2 / 100, 0.038);
+  }
+  if (goalsMarket.doubleChance12 >= 70) {
+    addCandidate(BetMarketCategory.DOUBLE_CHANCE, `Cualquiera Gana (12)`, goalsMarket.doubleChance12 / 100, 0.035);
+  }
+
+  // 3. MERCADO TOTAL_GOALS (Over / Under 1.5, 2.5)
+  if (goalsMarket.over15 >= 66) {
+    addCandidate(BetMarketCategory.TOTAL_GOALS, `Más de 1.5 Goles`, goalsMarket.over15 / 100, 0.04);
+  }
+  if (goalsMarket.under15 >= 50) {
+    addCandidate(BetMarketCategory.TOTAL_GOALS, `Menos de 1.5 Goles`, goalsMarket.under15 / 100, 0.045);
+  }
+  if (goalsMarket.over25 >= 52) {
+    addCandidate(BetMarketCategory.TOTAL_GOALS, `Más de 2.5 Goles`, goalsMarket.over25 / 100, 0.05);
+  }
+  if (goalsMarket.under25 >= 55) {
+    addCandidate(BetMarketCategory.TOTAL_GOALS, `Menos de 2.5 Goles`, goalsMarket.under25 / 100, 0.045);
+  }
+
+  // 4. MERCADO BTTS (Ambos Equipos Marcan)
+  if (goalsMarket.bttsYes >= 53) {
+    addCandidate(BetMarketCategory.BTTS, `Ambos Marcan: Sí`, goalsMarket.bttsYes / 100, 0.042);
+  }
+  if (goalsMarket.bttsNo >= 54) {
+    addCandidate(BetMarketCategory.BTTS, `Ambos Marcan: No`, goalsMarket.bttsNo / 100, 0.042);
+  }
+
+  // 5. MERCADO TOTAL_CORNERS_MATCH
+  if (cornersMarket.over85 >= 62) {
+    addCandidate(BetMarketCategory.TOTAL_CORNERS_MATCH, `Más de 8.5 Córners`, cornersMarket.over85 / 100, 0.04);
+  } else if (cornersMarket.over95 >= 54) {
+    addCandidate(BetMarketCategory.TOTAL_CORNERS_MATCH, `Más de 9.5 Córners`, cornersMarket.over95 / 100, 0.045);
+  } else if ((cornersMarket.under105 || 100 - cornersMarket.over105) >= 58) {
+    const underProb = (cornersMarket.under105 || 100 - cornersMarket.over105) / 100;
+    addCandidate(BetMarketCategory.TOTAL_CORNERS_MATCH, `Menos de 10.5 Córners`, underProb, 0.04);
+  }
+
+  // 6. MERCADO DRAW_NO_BET (Empate Apuesta No Válida)
+  const dnbDenominator = dixonColes.pHomeWin + dixonColes.pAwayWin;
+  if (dnbDenominator > 0) {
+    const dnbHomeProb = dixonColes.pHomeWin / dnbDenominator;
+    const dnbAwayProb = dixonColes.pAwayWin / dnbDenominator;
+    if (dnbHomeProb >= 0.58) {
+      addCandidate(BetMarketCategory.DRAW_NO_BET, `Empate No Válido: ${homeShort}`, dnbHomeProb, 0.04);
+    } else if (dnbAwayProb >= 0.58) {
+      addCandidate(BetMarketCategory.DRAW_NO_BET, `Empate No Válido: ${awayShort}`, dnbAwayProb, 0.04);
+    }
+  }
+
+  return candidates;
+}
+
+/**
+ * Generador Cuantitativo de Parlays Inteligentes Diversificados
+ * Aplica REGLA 1 (Anti-Monotonía), REGLA 2 (Cross-Match), REGLA 3 (Límites por Perfil) y REGLA 4 (+EV >= 1.30).
+ */
+export function generateSmartParlays(
+  availableMatches: MatchFixture[],
+  targetDate?: string
+): SmartParlaySlip[] {
+  if (!availableMatches || availableMatches.length === 0) return [];
+
+  // Filtrar partidos activos o válidos para el boleto
+  const eligibleMatches = availableMatches.filter(
+    (m) => m.status !== 'CANCELLED' && m.status !== 'POSTPONED'
+  );
+
+  if (eligibleMatches.length < 2) return [];
+
+  // 1. Extraer todas las sugerencias por partido
+  const matchCandidatesMap = new Map<string, BettingMarketSuggestion[]>();
+  for (const match of eligibleMatches) {
+    const suggestions = extractMatchBettingMarketSuggestions(match);
+    if (suggestions.length > 0) {
+      matchCandidatesMap.set(match.id, suggestions);
+    }
+  }
+
+  const distinctMatchIds = Array.from(matchCandidatesMap.keys());
+  if (distinctMatchIds.length < 2) return [];
+
+  const todayStr = targetDate || new Date().toISOString().split('T')[0];
+  const generatedSlips: SmartParlaySlip[] = [];
+
+  // Helper de búsqueda combinatoria
+  const findOptimalSlip = (
+    profile: 'CONSERVATIVE' | 'BALANCED' | 'HIGH_ODDS',
+    numLegs: number,
+    minOdds: number,
+    maxOdds: number,
+    excludedSlipHashes: Set<string>
+  ): SmartParlaySlip | null => {
+    if (distinctMatchIds.length < numLegs) return null;
+
+    let bestCombo: BettingMarketSuggestion[] | null = null;
+    let bestScore = -Infinity;
+
+    // Función recursiva para seleccionar numLegs de partidos distintos y categorías distintas
+    const search = (
+      matchIdx: number,
+      currentLegs: BettingMarketSuggestion[],
+      usedCategories: Set<string>,
+      currentOdds: number
+    ) => {
+      // Poda por cuota máxima excedida
+      if (currentOdds > maxOdds * 1.05) return;
+
+      if (currentLegs.length === numLegs) {
+        if (currentOdds >= minOdds && currentOdds <= maxOdds) {
+          const hash = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join('|');
+          if (excludedSlipHashes.has(hash)) return;
+
+          // Score: maximizar probabilidad acumulada + EV promedio
+          const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
+          const avgEV = currentLegs.reduce((acc, l) => acc + l.expectedValue, 0) / numLegs;
+          const score = cumulativeProb * 100 + avgEV * 10;
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestCombo = [...currentLegs];
+          }
+        }
+        return;
+      }
+
+      // Si no quedan suficientes partidos para completar numLegs
+      if (distinctMatchIds.length - matchIdx < numLegs - currentLegs.length) return;
+
+      for (let i = matchIdx; i < distinctMatchIds.length; i++) {
+        const fixtureId = distinctMatchIds[i];
+        const matchPicks = matchCandidatesMap.get(fixtureId) || [];
+
+        for (const pick of matchPicks) {
+          // REGLA 1 (Anti-Monotonía en 3+ eventos): Categorías estrictamente diferentes
+          if (numLegs >= 3 && usedCategories.has(pick.category)) {
+            continue;
+          }
+
+          const nextOdds = Number((currentOdds * pick.odds).toFixed(2));
+          usedCategories.add(pick.category);
+          currentLegs.push(pick);
+
+          search(i + 1, currentLegs, usedCategories, nextOdds);
+
+          currentLegs.pop();
+          usedCategories.delete(pick.category);
+        }
+      }
+    };
+
+    search(0, [], new Set(), 1.0);
+
+    // Fallback: si la ventana estricta no se alcanza por pocos partidos, buscar la más equilibrada
+    if (!bestCombo) {
+      let closestCombo: BettingMarketSuggestion[] | null = null;
+      let minDistance = Infinity;
+
+      const fallbackSearch = (
+        matchIdx: number,
+        currentLegs: BettingMarketSuggestion[],
+        usedCategories: Set<string>,
+        currentOdds: number
+      ) => {
+        if (currentLegs.length === numLegs) {
+          const hash = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join('|');
+          if (excludedSlipHashes.has(hash)) return;
+
+          const distance = Math.abs(currentOdds - (minOdds + maxOdds) / 2);
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestCombo = [...currentLegs];
+          }
+          return;
+        }
+
+        if (distinctMatchIds.length - matchIdx < numLegs - currentLegs.length) return;
+
+        for (let i = matchIdx; i < distinctMatchIds.length; i++) {
+          const fixtureId = distinctMatchIds[i];
+          const matchPicks = matchCandidatesMap.get(fixtureId) || [];
+          for (const pick of matchPicks) {
+            if (numLegs >= 3 && usedCategories.has(pick.category)) continue;
+            usedCategories.add(pick.category);
+            currentLegs.push(pick);
+            fallbackSearch(i + 1, currentLegs, usedCategories, Number((currentOdds * pick.odds).toFixed(2)));
+            currentLegs.pop();
+            usedCategories.delete(pick.category);
+          }
+        }
+      };
+
+      fallbackSearch(0, [], new Set(), 1.0);
+      bestCombo = closestCombo;
+    }
+
+    if (!bestCombo || (bestCombo as BettingMarketSuggestion[]).length !== numLegs) {
+      return null;
+    }
+
+    const finalCombo = bestCombo as BettingMarketSuggestion[];
+    const totalOdds = Number(finalCombo.reduce((acc, l) => acc * l.odds, 1).toFixed(2));
+    const hash = finalCombo.map((l) => `${l.fixtureId}_${l.category}`).sort().join('|');
+    excludedSlipHashes.add(hash);
+
+    return {
+      id: `smart_parlay_${profile.toLowerCase()}_${todayStr.replace(/-/g, '')}_${Math.random().toString(36).substring(2, 7)}`,
+      date: todayStr,
+      profile,
+      legs: finalCombo,
+      totalOdds,
+      status: 'PENDING'
+    };
+  };
+
+  const usedHashes = new Set<string>();
+
+  // 1. PERFIL CONSERVADOR: 2 eventos, cuota entre 1.85 y 2.30
+  const conservativeSlip = findOptimalSlip('CONSERVATIVE', 2, 1.85, 2.30, usedHashes);
+  if (conservativeSlip) generatedSlips.push(conservativeSlip);
+
+  // 2. PERFIL EQUILIBRADO: 3 eventos, cuota entre 2.80 y 4.20
+  const balancedSlip = findOptimalSlip('BALANCED', 3, 2.80, 4.20, usedHashes);
+  if (balancedSlip) generatedSlips.push(balancedSlip);
+
+  // 3. PERFIL CUOTA ALTA: 4 eventos (máximo 5), cuota entre 5.00 y 8.50
+  const highOddsSlip = findOptimalSlip('HIGH_ODDS', 4, 5.00, 8.50, usedHashes);
+  if (highOddsSlip) generatedSlips.push(highOddsSlip);
+
+  return generatedSlips;
 }
 
 

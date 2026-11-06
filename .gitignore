@@ -4,6 +4,7 @@ node_modules/
 # Archivos de compilación, caché y despliegue
 build/
 dist/
+dev-dist/
 coverage/
 .cache/
 .vercel/

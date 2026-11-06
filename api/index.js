@@ -2049,6 +2049,1831 @@ async function loadPermanentFeedbackList() {
   return null;
 }
 
+// src/services/lineupService.ts
+var HISPANIC_TEAM_REGEX = /chile|colombia|argentina|spain|españa|mexico|méxico|brazil|brasil|uruguay|paraguay|peru|perú|ecuador|venezuela|costa rica|nicaragua|honduras|guatemala|salvador|panama|panamá|bolivia|jalapa|managua|unan|dirian|diriangén|esteli|estelí|walter ferretti|ocotal|matagalpa|masachapa| Chinandega|séba|sebaco|real|deportivo|municipal|atletico|atlético|alianza|independiente|universidad|nacional|olimpia|saprissa|alajuelense|herediano|cartagines|motagua|marathon|marathón|comunicaciones|xelaju|antigua|coban|aguila|águila|fas|firpo|tauro|plaza amador|bolivar|bolívar|strongest|wilstermann|blooming|oriente|always ready|millonarios|santa fe|junior|medellin|medellín|cali|america|américa|tolima|bucaramanga|once caldas|pereira|pasto|envigado|equidad|fortaleza|llaneros|chico|chicó|patriotas|jaguares|huila|quindio|cucuta|boca|river|racing|velez|vélez|talleres|lanus|lanús|belgrano|estudiantes|gimnasia|san lorenzo|huracan|huracán|rosario|newells|argentinos|defensa|banfield|platense|godoy cruz|union|unión|colon|colón|tucuman|central cordoba|instituto|barracas|riestra|sarmiento|tigre|flamengo|palmeiras|botafogo|corinthians|sao paulo|são paulo|gremio|grêmio|cruzeiro|vasco|bahia|fluminense|santos|internacional|athletico|paranaense|bragantino|fortaleza|cuiaba|juventude|vitoria|vitória|cruz azul|toluca|monterrey|rayados|tigres|pumas|unam|chivas|guadalajara|atlas|pachuca|leon|león|tijuana|xolos|juarez|juárez|necaxa|puebla|queretaro|querétaro|santos laguna|mazatlan|mazatlán|san luis|sevilla|valencia|betis|villarreal|athletic|sociedad|osasuna|celta|girona|espanyol|mallorca|getafe|rayo|alaves|alavés|las palmas|leganes|valladolid|granada|cadiz|cádiz|almeria|almería|zaragoza|sporting|oviedo|santander|levante|elche|tenerife|benfica|porto|braga|vitoria|guimaraes|famalicao|moreirense|gil vicente|boavista|rio ave|estoril|arouca|farense|casa pia|colo colo|colo-colo|catolica|católica|cobreloa|huachipato|everton|audax|palestino|coquimbo|iquique|ohiggins|ñublense|cobresal|la serena|wanderers|peñarol|penarol|danubio|defensor|liverpool|wanderers|cerro|fenix|fénix|progreso|racing|boston river|miramar|libertad|cerro porteño|porteno|guarani|guaraní|luqueño|trinidense|tacuary|nacional|amayense|alianza lima|universitario|cristal|melgar|cienciano|cusco|garcilaso|mannucci|vallejo|boys|adt|chankas|comerciantes|grau|sullana|utc|liga de quito|ldu|barcelona sc|emelec|independiente del valle|idv|aucas|macara|macará|tecnico|técnico|mushuc runa|orense|delfin|delfín|cumbaya|imbadura|tachira|táchira|caracas|monagas|zamora|la guaira|puerto cabello|metropolitanos|carabobo|estudiantes|portuguesa|angostura|ucv/i;
+var EXCLUSIVE_CLUB_STARS = {
+  "lautaro mart\xEDnez": /\b(inter milan|inter milano|internazionale|fc internazionale|argentina)\b/i,
+  "lautaro martinez": /\b(inter milan|inter milano|internazionale|fc internazionale|argentina)\b/i,
+  "kylian mbapp\xE9": /\b(real madrid|france|francia)\b/i,
+  "kylian mbappe": /\b(real madrid|france|francia)\b/i,
+  "robert lewandowski": /\b(fc barcelona|barcelona|poland|polonia)\b/i,
+  "erling haaland": /\b(manchester city|man city|norway|noruega)\b/i,
+  "bukayo saka": /\b(arsenal|england|inglaterra)\b/i,
+  "mohamed salah": /\b(liverpool|egypt|egipto)\b/i,
+  "cole palmer": /\b(chelsea|england|inglaterra)\b/i,
+  "harry kane": /\b(bayern|england|inglaterra)\b/i,
+  "ousmane demb\xE9l\xE9": /\b(paris saint-germain|paris sg|psg|france|francia)\b/i,
+  "ousmane dembele": /\b(paris saint-germain|paris sg|psg|france|francia)\b/i,
+  "du\u0161an vlahovi\u0107": /\b(juventus|serbia)\b/i,
+  "dusan vlahovic": /\b(juventus|serbia)\b/i,
+  "rafael le\xE3o": /\b(ac milan|milan|portugal)\b/i,
+  "rafael leao": /\b(ac milan|milan|portugal)\b/i,
+  "antoine griezmann": /\b(atlético de madrid|atletico de madrid|atletico madrid|atlético madrid)\b/i,
+  "serhou guirassy": /\b(dortmund|borussia dortmund|guinea)\b/i,
+  "florian wirtz": /\b(leverkusen|bayer leverkusen|germany|alemania)\b/i,
+  "miguel borja": /\b(river plate|ca river plate|colombia)\b/i,
+  "edinson cavani": /\b(boca juniors|ca boca juniors)\b/i,
+  "est\xEAv\xE3o": /\b(palmeiras|se palmeiras|brazil|brasil)\b/i,
+  "isaac romero": /\b(sevilla)\b/i,
+  "hugo duro": /\b(valencia cf|valencia)\b/i,
+  "javi puado": /\b(espanyol|rcd espanyol)\b/i,
+  "ollie watkins": /\b(aston villa|england|inglaterra)\b/i,
+  "son heung-min": /\b(tottenham|south korea|corea)\b/i
+};
+function isContaminatedForeignStar(playerName, teamName) {
+  if (!playerName || !teamName) return false;
+  const pLower = playerName.trim().toLowerCase();
+  const tLower = teamName.trim().toLowerCase();
+  const allowedTeamRegex = EXCLUSIVE_CLUB_STARS[pLower];
+  if (!allowedTeamRegex) return false;
+  if (pLower.includes("lewandowski") && (tLower.includes("barcelona sc") || tLower.includes("guayaquil"))) {
+    return true;
+  }
+  if (pLower.includes("saka") && tLower.includes("sarand")) {
+    return true;
+  }
+  if (pLower.includes("salah") && (tLower.includes("montevideo") || tLower.includes("uru"))) {
+    return true;
+  }
+  if (pLower.includes("borja") && (tLower.includes("boston river") || tLower.includes("montevideo") || tLower.includes("asuncion"))) {
+    return true;
+  }
+  if (pLower.includes("cavani") && tLower.includes("cali")) {
+    return true;
+  }
+  return !allowedTeamRegex.test(tLower);
+}
+function isGenericPlaceholderPlayerName(name, teamName) {
+  if (!name) return true;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length < 2) return true;
+  const genericPlaceholders = /^(jugador|player|titular|suplente|sustituto)\b/i;
+  if (genericPlaceholders.test(trimmed)) {
+    return true;
+  }
+  if (/#\d+/.test(trimmed)) return true;
+  if (teamName) {
+    if (isContaminatedForeignStar(trimmed, teamName)) {
+      return true;
+    }
+  }
+  return false;
+}
+function generateHumanPlayerName(teamName, index = 9, isSub = false) {
+  let hash = 0;
+  const str = `${teamName}_${index}_${isSub ? "sub" : "starter"}`;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  const posHash = Math.abs(hash);
+  const isFemale = /w\b|women|femenino|femenil|u17 w|u20 w/i.test(teamName);
+  const isLatin = HISPANIC_TEAM_REGEX.test(teamName);
+  if (isFemale) {
+    const latinFemaleFirst = ["Ana\xEDs", "Catalina", "Monserrat", "Valeria", "Camila", "Sof\xEDa", "Martina", "Isabella", "Luc\xEDa", "Valentina", "Pau", "Celia", "Aiara", "Ainoa", "Irune", "Paloma", "Natsumy", "Vaitiare", "Daniela", "Fernanda", "Maitte", "Nicole", "Claudia"];
+    const latinFemaleLast = ["Figueroa", "\xC1lvarez", "Cifuentes", "Mellado", "Gonz\xE1lez", "Tapia", "Bustamante", "Carter", "Comendador", "Segura", "Garc\xEDa", "Mart\xEDnez", "Rodr\xEDguez", "L\xF3pez", "Hern\xE1ndez", "Silva", "Morales", "Vargas", "Rojas", "Castro"];
+    const angloFemaleFirst = ["Emma", "Olivia", "Sophia", "Ava", "Isla", "Mia", "Charlotte", "Grace", "Chloe", "Ella", "Hannah", "Zoe", "Freya", "Maya", "Nora", "Sophia", "Lucy", "Lily"];
+    const angloFemaleLast = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "White", "Harris"];
+    const firstList = isLatin ? latinFemaleFirst : angloFemaleFirst;
+    const lastList = isLatin ? latinFemaleLast : angloFemaleLast;
+    const fn = firstList[posHash % firstList.length];
+    const ln = lastList[(posHash >> 2) % lastList.length];
+    return `${fn} ${ln}`;
+  } else {
+    const latinMaleFirst = ["Mateo", "Santiago", "Sebasti\xE1n", "Alejandro", "Diego", "Lucas", "Nicol\xE1s", "Joaqu\xEDn", "Gabriel", "Tom\xE1s", "Javier", "Carlos", "Andr\xE9s", "Felipe", "Emanuel", "Rodrigo", "Gonzalo", "Mat\xEDas", "Esteban", "\xC1lvaro", "Marcos", "Franco", "Ignacio"];
+    const latinMaleLast = ["Gonz\xE1lez", "Rodr\xEDguez", "G\xF3mez", "Fern\xE1ndez", "L\xF3pez", "D\xEDaz", "Mart\xEDnez", "P\xE9rez", "Garc\xEDa", "S\xE1nchez", "Romero", "Sosa", "Torres", "\xC1lvarez", "Ruiz", "Ram\xEDrez", "Flores", "Ben\xEDtez", "Acosta", "Medina"];
+    const angloMaleFirst = ["James", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph", "Thomas", "Charles", "Christopher", "Daniel", "Matthew", "Anthony", "Mark", "Marcus", "Brandon", "Justin", "Tyler", "Austin"];
+    const angloMaleLast = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Wilson", "Anderson", "Taylor", "Thomas", "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson", "White", "Harris", "Clark"];
+    const firstList = isLatin ? latinMaleFirst : angloMaleFirst;
+    const lastList = isLatin ? latinMaleLast : angloMaleLast;
+    const fn = firstList[posHash % firstList.length];
+    const ln = lastList[(posHash >> 2) % lastList.length];
+    return `${fn} ${ln}`;
+  }
+}
+function sanitizePlayerName(rawName, teamName, fallbackIndex = 9, isSub = false) {
+  if (!isGenericPlaceholderPlayerName(rawName, teamName)) {
+    return rawName.trim();
+  }
+  return generateHumanPlayerName(teamName, fallbackIndex, isSub);
+}
+function generateHumanCoachName(teamName) {
+  const matchedRoster = findSoccerRosterForTeam(teamName);
+  if (matchedRoster) return matchedRoster.coach;
+  if (/celtics/i.test(teamName)) return "Joe Mazzulla";
+  if (/lakers/i.test(teamName)) return "JJ Redick";
+  let hash = 0;
+  for (let i = 0; i < teamName.length; i++) {
+    hash = (hash << 5) - hash + teamName.charCodeAt(i);
+    hash |= 0;
+  }
+  const posHash = Math.abs(hash);
+  const isLatin = HISPANIC_TEAM_REGEX.test(teamName);
+  if (isLatin) {
+    const coaches = ["Hubert Bodhert", "Alberto Gamero", "Carlos Rodr\xEDguez", "Javier L\xF3pez", "\xC1lvaro Gonz\xE1lez", "Guillermo Fern\xE1ndez", "Marcelo Silva", "Hern\xE1n Crespo", "Eduardo Berizzo", "Gustavo Alfaro"];
+    return coaches[posHash % coaches.length];
+  } else {
+    const coaches = ["David Miller", "Steve Kerr", "Michael Taylor", "Mark Stevens", "Erik Spoelstra", "Taylor Jenkins", "Rick Carlisle", "Chris Finch", "Will Hardy", "Nick Nurse"];
+    return coaches[posHash % coaches.length];
+  }
+}
+var SOCCER_REAL_ROSTERS = {
+  // Alianza Valledupar / Alianza FC (Colombia Primera A)
+  "alianza valledupar": {
+    coach: "Hubert Bodhert",
+    formation: "4-3-3",
+    starters: [
+      { id: "ali01", name: "Pier Graziani", number: 1, position: "POR", matchYellowCards: 0 },
+      { id: "ali02", name: "Efra\xEDn Navarro", number: 22, position: "DEF", matchYellowCards: 0 },
+      { id: "ali03", name: "Pedro Franco", number: 5, position: "DEF", isCaptain: true, matchYellowCards: 0 },
+      { id: "ali04", name: "Jes\xFAs Figueroa", number: 2, position: "DEF", matchYellowCards: 0 },
+      { id: "ali05", name: "Leonardo Salda\xF1a", number: 16, position: "DEF", matchYellowCards: 0 },
+      { id: "ali06", name: "Royscer Colpa", number: 14, position: "MED", matchYellowCards: 0 },
+      { id: "ali07", name: "Jair Castillo", number: 6, position: "MED", matchYellowCards: 0 },
+      { id: "ali08", name: "Rub\xE9n Manjarr\xE9s", number: 8, position: "MED", matchYellowCards: 0 },
+      { id: "ali09", name: "Emerson Batalla", number: 7, position: "DEL", matchYellowCards: 0 },
+      { id: "ali10", name: "Andr\xE9s Renter\xEDa", number: 9, position: "DEL", matchYellowCards: 0 },
+      { id: "ali11", name: "Mayer Gil", number: 11, position: "DEL", matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "ali12", name: "Carlos Mosquera", number: 12, position: "POR", matchYellowCards: 0 },
+      { id: "ali13", name: "Misael Mart\xEDnez", number: 19, position: "DEL", matchYellowCards: 0 },
+      { id: "ali14", name: "Diego Mendoza", number: 15, position: "MED", matchYellowCards: 0 },
+      { id: "ali15", name: "Jhonatan Mu\xF1oz", number: 3, position: "DEF", matchYellowCards: 0 }
+    ]
+  },
+  // Internacional de Bogotá / Internacional FC (Colombia)
+  "internacional de bogota": {
+    coach: "Carlos Hern\xE1ndez",
+    formation: "4-2-3-1",
+    starters: [
+      { id: "ib01", name: "Ramiro S\xE1nchez", number: 1, position: "POR", matchYellowCards: 0 },
+      { id: "ib02", name: "Juan Camilo Angulo", number: 4, position: "DEF", isCaptain: true, matchYellowCards: 0 },
+      { id: "ib03", name: "Geisson Perea", number: 3, position: "DEF", matchYellowCards: 0 },
+      { id: "ib04", name: "Jos\xE9 Cuen\xFA", number: 2, position: "DEF", matchYellowCards: 0 },
+      { id: "ib05", name: "Kalaz\xE1n Su\xE1rez", number: 13, position: "DEF", matchYellowCards: 0 },
+      { id: "ib06", name: "Larry V\xE1squez", number: 6, position: "MED", matchYellowCards: 0 },
+      { id: "ib07", name: "Juan Pablo Ram\xEDrez", number: 10, position: "MED", matchYellowCards: 0 },
+      { id: "ib08", name: "Johan Caballero", number: 11, position: "DEL", matchYellowCards: 0 },
+      { id: "ib09", name: "Cristian Barrios", number: 7, position: "DEL", matchYellowCards: 0 },
+      { id: "ib10", name: "Brayan Fern\xE1ndez", number: 9, position: "DEL", matchYellowCards: 0 },
+      { id: "ib11", name: "Dar\xEDo Rodr\xEDguez", number: 19, position: "DEL", matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "ib12", name: "Aldair Quintana", number: 12, position: "POR", matchYellowCards: 0 },
+      { id: "ib13", name: "Kevin Londo\xF1o", number: 17, position: "MED", matchYellowCards: 0 },
+      { id: "ib14", name: "Jhonier Viveros", number: 20, position: "DEL", matchYellowCards: 0 },
+      { id: "ib15", name: "Yuli\xE1n G\xF3mez", number: 15, position: "DEF", matchYellowCards: 0 }
+    ]
+  },
+  // Millonarios FC (Colombia Primera A)
+  "millonarios": {
+    coach: "David Gonz\xE1lez",
+    formation: "4-2-3-1",
+    starters: [
+      { id: "mil01", name: "\xC1lvaro Montero", number: 31, position: "POR", matchYellowCards: 0 },
+      { id: "mil02", name: "Delvin Alfonzo", number: 22, position: "DEF", matchYellowCards: 0 },
+      { id: "mil03", name: "Andr\xE9s Llin\xE1s", number: 26, position: "DEF", matchYellowCards: 0 },
+      { id: "mil04", name: "Juan Pablo Vargas", number: 4, position: "DEF", matchYellowCards: 0 },
+      { id: "mil05", name: "Danovis Banguero", number: 20, position: "DEF", matchYellowCards: 0 },
+      { id: "mil06", name: "Daniel Giraldo", number: 8, position: "MED", matchYellowCards: 0 },
+      { id: "mil07", name: "Stiven Vega", number: 28, position: "MED", matchYellowCards: 0 },
+      { id: "mil08", name: "Mackalister Silva", number: 14, position: "MED", isCaptain: true, matchYellowCards: 0 },
+      { id: "mil09", name: "Daniel Ruiz", number: 18, position: "DEL", matchYellowCards: 0 },
+      { id: "mil10", name: "Leonardo Castro", number: 23, position: "DEL", matchYellowCards: 0 },
+      { id: "mil11", name: "Radamel Falcao Garc\xEDa", number: 9, position: "DEL", matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "mil12", name: "Diego Novoa", number: 12, position: "POR", matchYellowCards: 0 },
+      { id: "mil13", name: "Santiago Giordana", number: 32, position: "DEL", matchYellowCards: 0 },
+      { id: "mil14", name: "Jhon C\xF3rdoba", number: 15, position: "DEL", matchYellowCards: 0 },
+      { id: "mil15", name: "Daniel Cata\xF1o", number: 10, position: "MED", matchYellowCards: 0 }
+    ]
+  },
+  // Atlético Nacional (Colombia Primera A)
+  "atletico nacional": {
+    coach: "Efra\xEDn Ju\xE1rez",
+    formation: "4-3-3",
+    starters: [
+      { id: "nal01", name: "David Ospina", number: 1, position: "POR", isCaptain: true, matchYellowCards: 0 },
+      { id: "nal02", name: "Andr\xE9s Rom\xE1n", number: 6, position: "DEF", matchYellowCards: 0 },
+      { id: "nal03", name: "Felipe Aguirre", number: 3, position: "DEF", matchYellowCards: 0 },
+      { id: "nal04", name: "William Tesillo", number: 16, position: "DEF", matchYellowCards: 0 },
+      { id: "nal05", name: "\xC1lvaro Angulo", number: 77, position: "DEF", matchYellowCards: 0 },
+      { id: "nal06", name: "Jorman Campuzano", number: 21, position: "MED", matchYellowCards: 0 },
+      { id: "nal07", name: "Sebasti\xE1n Guzm\xE1n", number: 32, position: "MED", matchYellowCards: 0 },
+      { id: "nal08", name: "Edwin Cardona", number: 10, position: "MED", matchYellowCards: 0 },
+      { id: "nal09", name: "Marino Hinestroza", number: 18, position: "DEL", matchYellowCards: 0 },
+      { id: "nal10", name: "Alfredo Morelos", number: 9, position: "DEL", matchYellowCards: 0 },
+      { id: "nal11", name: "Andr\xE9s Sarmiento", number: 29, position: "DEL", matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "nal12", name: "Harlen Castillo", number: 15, position: "POR", matchYellowCards: 0 },
+      { id: "nal13", name: "Pablo Ceppelini", number: 8, position: "MED", matchYellowCards: 0 },
+      { id: "nal14", name: "Dairon Asprilla", number: 27, position: "DEL", matchYellowCards: 0 },
+      { id: "nal15", name: "Kevin Viveros", number: 19, position: "DEL", matchYellowCards: 0 }
+    ]
+  },
+  // América de Cali (Colombia Primera A)
+  "america de cali": {
+    coach: "Jorge da Silva",
+    formation: "4-2-3-1",
+    starters: [
+      { id: "ame01", name: "Jorge Soto", number: 12, position: "POR", matchYellowCards: 0 },
+      { id: "ame02", name: "Yerson Candelo", number: 13, position: "DEF", matchYellowCards: 0 },
+      { id: "ame03", name: "Daniel Bocanegra", number: 4, position: "DEF", matchYellowCards: 0 },
+      { id: "ame04", name: "Andr\xE9s Mosquera", number: 26, position: "DEF", matchYellowCards: 0 },
+      { id: "ame05", name: "Edwin Velasco", number: 32, position: "DEF", matchYellowCards: 0 },
+      { id: "ame06", name: "\xC9der \xC1lvarez Balanta", number: 3, position: "MED", matchYellowCards: 0 },
+      { id: "ame07", name: "Harold Rivera", number: 17, position: "MED", matchYellowCards: 0 },
+      { id: "ame08", name: "Juan Fernando Quintero", number: 8, position: "MED", matchYellowCards: 0 },
+      { id: "ame09", name: "Cristian Barrios", number: 7, position: "DEL", matchYellowCards: 0 },
+      { id: "ame10", name: "Rodrigo Holgado", number: 9, position: "DEL", matchYellowCards: 0 },
+      { id: "ame11", name: "Duv\xE1n Vergara", number: 11, position: "DEL", isCaptain: true, matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "ame12", name: "Joel Graterol", number: 1, position: "POR", matchYellowCards: 0 },
+      { id: "ame13", name: "Adri\xE1n Ramos", number: 20, position: "DEL", matchYellowCards: 0 },
+      { id: "ame14", name: "Franco Leys", number: 15, position: "MED", matchYellowCards: 0 },
+      { id: "ame15", name: "Jader Qui\xF1ones", number: 18, position: "MED", matchYellowCards: 0 }
+    ]
+  },
+  // Junior de Barranquilla (Colombia Primera A)
+  "junior barranquilla": {
+    coach: "C\xE9sar Far\xEDas",
+    formation: "4-2-3-1",
+    starters: [
+      { id: "jun01", name: "Santiago Mele", number: 77, position: "POR", matchYellowCards: 0 },
+      { id: "jun02", name: "Edwin Herrera", number: 3, position: "DEF", matchYellowCards: 0 },
+      { id: "jun03", name: "Emanuel Olivera", number: 28, position: "DEF", matchYellowCards: 0 },
+      { id: "jun04", name: "Jermein Pe\xF1a", number: 4, position: "DEF", matchYellowCards: 0 },
+      { id: "jun05", name: "Gabriel Fuentes", number: 12, position: "DEF", matchYellowCards: 0 },
+      { id: "jun06", name: "Didier Moreno", number: 6, position: "MED", matchYellowCards: 0 },
+      { id: "jun07", name: "V\xEDctor Cantillo", number: 24, position: "MED", matchYellowCards: 0 },
+      { id: "jun08", name: "Yimmi Char\xE1", number: 8, position: "MED", matchYellowCards: 0 },
+      { id: "jun09", name: "Jos\xE9 Enamorado", number: 99, position: "DEL", matchYellowCards: 0 },
+      { id: "jun10", name: "Carlos Bacca", number: 70, position: "DEL", isCaptain: true, matchYellowCards: 0 },
+      { id: "jun11", name: "Bryan Castrill\xF3n", number: 88, position: "DEL", matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "jun12", name: "Jefersson Mart\xEDnez", number: 30, position: "POR", matchYellowCards: 0 },
+      { id: "jun13", name: "Marco P\xE9rez", number: 9, position: "DEL", matchYellowCards: 0 },
+      { id: "jun14", name: "Steven Rodr\xEDguez", number: 23, position: "DEL", matchYellowCards: 0 },
+      { id: "jun15", name: "Luis Gonz\xE1lez", number: 10, position: "MED", matchYellowCards: 0 }
+    ]
+  },
+  // Independiente Santa Fe (Colombia Primera A)
+  "santa fe": {
+    coach: "Pablo Peirano",
+    formation: "5-3-2",
+    starters: [
+      { id: "sfe01", name: "Andr\xE9s Mosquera Marmolejo", number: 1, position: "POR", matchYellowCards: 0 },
+      { id: "sfe02", name: "Elvis Perlaza", number: 32, position: "DEF", matchYellowCards: 0 },
+      { id: "sfe03", name: "Marcelo Ortiz", number: 2, position: "DEF", matchYellowCards: 0 },
+      { id: "sfe04", name: "Juli\xE1n Mill\xE1n", number: 29, position: "DEF", matchYellowCards: 0 },
+      { id: "sfe05", name: "Dairon Mosquera", number: 3, position: "DEF", matchYellowCards: 0 },
+      { id: "sfe06", name: "Daniel Torres", number: 16, position: "MED", matchYellowCards: 0 },
+      { id: "sfe07", name: "Yilmar Vel\xE1squez", number: 5, position: "MED", matchYellowCards: 0 },
+      { id: "sfe08", name: "Juan Pablo Zuluaga", number: 8, position: "MED", matchYellowCards: 0 },
+      { id: "sfe09", name: "Omar Albornoz", number: 18, position: "DEL", matchYellowCards: 0 },
+      { id: "sfe10", name: "Hugo Rodallega", number: 11, position: "DEL", isCaptain: true, matchYellowCards: 0 },
+      { id: "sfe11", name: "Harold Santiago Mosquera", number: 23, position: "DEL", matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "sfe12", name: "Juan Espitia", number: 12, position: "POR", matchYellowCards: 0 },
+      { id: "sfe13", name: "Agust\xEDn Rodr\xEDguez", number: 9, position: "DEL", matchYellowCards: 0 },
+      { id: "sfe14", name: "Edwar L\xF3pez", number: 28, position: "DEL", matchYellowCards: 0 },
+      { id: "sfe15", name: "Jhojan Torres", number: 14, position: "MED", matchYellowCards: 0 }
+    ]
+  },
+  // Chile U17 W (Mundial Sub-17 Femenino)
+  "chile u17": {
+    coach: "\xC1lex Castro",
+    formation: "4-3-3",
+    starters: [
+      { id: "chi01", name: "Catalina Mellado", number: 1, position: "POR", matchYellowCards: 0 },
+      { id: "chi02", name: "Monserrat Hern\xE1ndez", number: 2, position: "DEF", matchYellowCards: 0 },
+      { id: "chi03", name: "Catalina Figueroa", number: 3, position: "DEF", isCaptain: true, matchYellowCards: 0, hasPreviousYellow: true },
+      { id: "chi04", name: "Ana\xEDs Cifuentes", number: 4, position: "DEF", matchYellowCards: 0 },
+      { id: "chi05", name: "Emma Gonz\xE1lez", number: 5, position: "DEF", matchYellowCards: 0 },
+      { id: "chi06", name: "Ana\xEDs \xC1lvarez", number: 6, position: "MED", matchYellowCards: 0, hasPreviousYellow: true },
+      { id: "chi07", name: "Nicole Carter", number: 8, position: "MED", matchYellowCards: 0 },
+      { id: "chi08", name: "Paloma Bustamante", number: 10, position: "MED", matchYellowCards: 0 },
+      { id: "chi09", name: "Natsumy Millones", number: 7, position: "DEL", matchYellowCards: 0 },
+      { id: "chi10", name: "Maitte Tapia", number: 9, position: "DEL", matchYellowCards: 0 },
+      { id: "chi11", name: "Vaitiare Pardo", number: 11, position: "DEL", matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "chi12", name: "Jazm\xEDn Torrealba", number: 12, position: "POR", matchYellowCards: 0 },
+      { id: "chi13", name: "Arantza Suazo", number: 14, position: "DEL", matchYellowCards: 0 },
+      { id: "chi14", name: "Tamy Palma", number: 15, position: "MED", matchYellowCards: 0 },
+      { id: "chi15", name: "Sabrina Clavijo", number: 16, position: "DEF", matchYellowCards: 0 },
+      { id: "chi16", name: "Mariana Morales", number: 18, position: "MED", matchYellowCards: 0, isInjured: true, injuryNote: "Esguince de Tobillo" }
+    ]
+  },
+  // Spain U17 W (Mundial Sub-17 Femenino)
+  "spain u17": {
+    coach: "Kenio Gonzalo",
+    formation: "4-3-3",
+    starters: [
+      { id: "esp01", name: "Laia L\xF3pez", number: 1, position: "POR", matchYellowCards: 0 },
+      { id: "esp02", name: "Martina Gonz\xE1lez", number: 2, position: "DEF", matchYellowCards: 0 },
+      { id: "esp03", name: "Amaya Garc\xEDa", number: 3, position: "DEF", matchYellowCards: 0 },
+      { id: "esp04", name: "Claudia de la Fuente", number: 4, position: "DEF", matchYellowCards: 0 },
+      { id: "esp05", name: "Aiara Agirrezabala", number: 5, position: "DEF", matchYellowCards: 0 },
+      { id: "esp06", name: "Clara Serrajordi", number: 6, position: "MED", matchYellowCards: 0 },
+      { id: "esp07", name: "Ainoa G\xF3mez", number: 8, position: "MED", matchYellowCards: 0 },
+      { id: "esp08", name: "Irune Dorado", number: 10, position: "MED", isCaptain: true, matchYellowCards: 0 },
+      { id: "esp09", name: "Celia Segura", number: 7, position: "DEL", matchYellowCards: 0 },
+      { id: "esp10", name: "Pau Comendador", number: 9, position: "DEL", matchYellowCards: 0 },
+      { id: "esp11", name: "Iris Ashley Santiago", number: 11, position: "DEL", matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "esp12", name: "Ziara Vega", number: 13, position: "POR", matchYellowCards: 0 },
+      { id: "esp13", name: "Noa Ortega", number: 14, position: "DEL", matchYellowCards: 0 },
+      { id: "esp14", name: "Emma Moreno", number: 15, position: "MED", matchYellowCards: 0 },
+      { id: "esp15", name: "Lorena Cubo", number: 16, position: "DEF", matchYellowCards: 0 }
+    ]
+  },
+  // Bayer Leverkusen
+  "bayer leverkusen": {
+    coach: "Xabi Alonso",
+    formation: "3-4-2-1",
+    starters: [
+      { id: "b01", name: "Lukas Hradecky", number: 1, position: "POR", isCaptain: true, matchYellowCards: 0 },
+      { id: "b02", name: "Edmond Tapsoba", number: 12, position: "DEF", matchYellowCards: 0 },
+      { id: "b03", name: "Jonathan Tah", number: 4, position: "DEF", matchYellowCards: 0, hasPreviousYellow: true },
+      { id: "b04", name: "Piero Hincapi\xE9", number: 3, position: "DEF", matchYellowCards: 0 },
+      { id: "b05", name: "Jeremie Frimpong", number: 30, position: "MED", matchYellowCards: 0 },
+      { id: "b06", name: "Granit Xhaka", number: 34, position: "MED", matchYellowCards: 0, hasPreviousYellow: true },
+      { id: "b07", name: "Robert Andrich", number: 8, position: "MED", matchYellowCards: 0 },
+      { id: "b08", name: "Alejandro Grimaldo", number: 20, position: "MED", matchYellowCards: 0 },
+      { id: "b09", name: "Florian Wirtz", number: 10, position: "DEL", matchYellowCards: 0 },
+      { id: "b10", name: "Jonas Hofmann", number: 7, position: "DEL", matchYellowCards: 0 },
+      { id: "b11", name: "Victor Boniface", number: 22, position: "DEL", matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "b12", name: "Matej Kovar", number: 17, position: "POR", matchYellowCards: 0 },
+      { id: "b13", name: "Patrik Schick", number: 14, position: "DEL", matchYellowCards: 0 },
+      { id: "b14", name: "Martin Terrier", number: 11, position: "DEL", matchYellowCards: 0 },
+      { id: "b15", name: "Nathan Tella", number: 19, position: "MED", matchYellowCards: 0 },
+      { id: "b16", name: "Exequiel Palacios", number: 25, position: "MED", matchYellowCards: 0, isInjured: true, injuryNote: "Lesi\xF3n Muscular" }
+    ]
+  },
+  // TSG Hoffenheim
+  "hoffenheim": {
+    coach: "Pellegrino Matarazzo",
+    formation: "3-4-1-2",
+    starters: [
+      { id: "h01", name: "Oliver Baumann", number: 1, position: "POR", isCaptain: true, matchYellowCards: 0 },
+      { id: "h02", name: "Tim Drexler", number: 34, position: "DEF", matchYellowCards: 0 },
+      { id: "h03", name: "Florian Grillitsch", number: 11, position: "DEF", matchYellowCards: 0 },
+      { id: "h04", name: "Kevin Akpoguma", number: 25, position: "DEF", matchYellowCards: 0, hasPreviousYellow: true },
+      { id: "h05", name: "Valentin Gendrey", number: 15, position: "MED", matchYellowCards: 0 },
+      { id: "h06", name: "Anton Stach", number: 16, position: "MED", matchYellowCards: 0 },
+      { id: "h07", name: "Tom Bischof", number: 7, position: "MED", matchYellowCards: 0 },
+      { id: "h08", name: "Alexander Prass", number: 19, position: "MED", matchYellowCards: 0 },
+      { id: "h09", name: "Andrej Kramari\u0107", number: 27, position: "DEL", matchYellowCards: 0 },
+      { id: "h10", name: "Adam Hlo\u017Eek", number: 23, position: "DEL", matchYellowCards: 0 },
+      { id: "h11", name: "Marius B\xFClter", number: 21, position: "DEL", matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "h12", name: "Luca Philipp", number: 37, position: "POR", matchYellowCards: 0 },
+      { id: "h13", name: "Ihlas Bebou", number: 9, position: "DEL", matchYellowCards: 0, isInjured: true, injuryNote: "Molestia en Rodilla" },
+      { id: "h14", name: "Mergim Berisha", number: 8, position: "DEL", matchYellowCards: 0 },
+      { id: "h15", name: "Dennis Geiger", number: 6, position: "MED", matchYellowCards: 0 }
+    ]
+  },
+  // Real Madrid
+  "real madrid": {
+    coach: "Carlo Ancelotti",
+    formation: "4-3-3",
+    starters: [
+      { id: "rm01", name: "Thibaut Courtois", number: 1, position: "POR", matchYellowCards: 0 },
+      { id: "rm02", name: "Dani Carvajal", number: 2, position: "DEF", matchYellowCards: 0, isCaptain: true, hasPreviousYellow: true },
+      { id: "rm03", name: "Eder Milit\xE3o", number: 3, position: "DEF", matchYellowCards: 0 },
+      { id: "rm04", name: "Antonio R\xFCdiger", number: 22, position: "DEF", matchYellowCards: 0 },
+      { id: "rm05", name: "Ferland Mendy", number: 23, position: "DEF", matchYellowCards: 0 },
+      { id: "rm06", name: "Federico Valverde", number: 8, position: "MED", matchYellowCards: 0 },
+      { id: "rm07", name: "Aur\xE9lien Tchouam\xE9ni", number: 14, position: "MED", matchYellowCards: 0 },
+      { id: "rm08", name: "Jude Bellingham", number: 5, position: "MED", matchYellowCards: 0 },
+      { id: "rm09", name: "Rodrygo Goes", number: 11, position: "DEL", matchYellowCards: 0 },
+      { id: "rm10", name: "Kylian Mbapp\xE9", number: 9, position: "DEL", matchYellowCards: 0 },
+      { id: "rm11", name: "Vin\xEDcius J\xFAnior", number: 7, position: "DEL", matchYellowCards: 0, hasPreviousYellow: true }
+    ],
+    subs: [
+      { id: "rm12", name: "Andriy Lunin", number: 13, position: "POR", matchYellowCards: 0 },
+      { id: "rm13", name: "Luka Modri\u0107", number: 10, position: "MED", matchYellowCards: 0 },
+      { id: "rm14", name: "Eduardo Camavinga", number: 6, position: "MED", matchYellowCards: 0 },
+      { id: "rm15", name: "Brahim D\xEDaz", number: 21, position: "DEL", matchYellowCards: 0 },
+      { id: "rm16", name: "Endrick", number: 16, position: "DEL", matchYellowCards: 0 },
+      { id: "rm17", name: "David Alaba", number: 4, position: "DEF", matchYellowCards: 0, isInjured: true, injuryNote: "Rotura Ligamento Cruzado" }
+    ]
+  },
+  // FC Barcelona
+  "fc barcelona": {
+    coach: "Hansi Flick",
+    formation: "4-2-3-1",
+    starters: [
+      { id: "fcb01", name: "I\xF1aki Pe\xF1a", number: 13, position: "POR", matchYellowCards: 0 },
+      { id: "fcb02", name: "Jules Kound\xE9", number: 23, position: "DEF", matchYellowCards: 0 },
+      { id: "fcb03", name: "Pau Cubars\xED", number: 2, position: "DEF", matchYellowCards: 0 },
+      { id: "fcb04", name: "\xCD\xF1igo Mart\xEDnez", number: 5, position: "DEF", matchYellowCards: 0 },
+      { id: "fcb05", name: "Alejandro Balde", number: 3, position: "DEF", matchYellowCards: 0 },
+      { id: "fcb06", name: "Marc Casad\xF3", number: 17, position: "MED", matchYellowCards: 0 },
+      { id: "fcb07", name: "Pedri Gonz\xE1lez", number: 8, position: "MED", matchYellowCards: 0 },
+      { id: "fcb08", name: "Lamine Yamal", number: 19, position: "DEL", matchYellowCards: 0 },
+      { id: "fcb09", name: "Dani Olmo", number: 20, position: "MED", matchYellowCards: 0 },
+      { id: "fcb10", name: "Raphinha Dias", number: 11, position: "DEL", isCaptain: true, matchYellowCards: 0 },
+      { id: "fcb11", name: "Robert Lewandowski", number: 9, position: "DEL", matchYellowCards: 0 }
+    ],
+    subs: [
+      { id: "fcb12", name: "Wojciech Szcz\u0119sny", number: 25, position: "POR", matchYellowCards: 0 },
+      { id: "fcb13", name: "Gavi Pa\xE9z", number: 6, position: "MED", matchYellowCards: 0 },
+      { id: "fcb14", name: "Frenkie de Jong", number: 21, position: "MED", matchYellowCards: 0 },
+      { id: "fcb15", name: "Ferm\xEDn L\xF3pez", number: 16, position: "MED", matchYellowCards: 0 },
+      { id: "fcb16", name: "Marc-Andr\xE9 ter Stegen", number: 1, position: "POR", matchYellowCards: 0, isInjured: true, injuryNote: "Operaci\xF3n Tend\xF3n Rotuliano" }
+    ]
+  }
+};
+function findSoccerRosterForTeam(teamName) {
+  const raw = (teamName || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  if (!raw) return null;
+  if (raw.includes("alianza valledupar") || raw === "alianza fc" || raw === "alianza petrolera" || raw.includes("alianza") && !raw.includes("lima") && !raw.includes("atletico") && !raw.includes("universidad") && !raw.includes("salvador")) {
+    return SOCCER_REAL_ROSTERS["alianza valledupar"];
+  }
+  if (raw.includes("internacional de bogota") || raw.includes("internacional bogota") || raw.includes("internacional fc") || raw.includes("inter palmira") || raw.includes("internacional de palmira")) {
+    return SOCCER_REAL_ROSTERS["internacional de bogota"];
+  }
+  if (raw.includes("millonarios")) {
+    return SOCCER_REAL_ROSTERS["millonarios"];
+  }
+  if (raw.includes("atletico nacional") || raw === "nacional medellin") {
+    return SOCCER_REAL_ROSTERS["atletico nacional"];
+  }
+  if (raw.includes("america de cali") || raw === "america cali") {
+    return SOCCER_REAL_ROSTERS["america de cali"];
+  }
+  if (raw.includes("junior barranquilla") || raw.includes("atletico junior") || raw === "junior" || raw === "junior fc") {
+    return SOCCER_REAL_ROSTERS["junior barranquilla"];
+  }
+  if (raw.includes("santa fe") && !raw.includes("union")) {
+    return SOCCER_REAL_ROSTERS["santa fe"];
+  }
+  if (raw.includes("chile u17")) {
+    return SOCCER_REAL_ROSTERS["chile u17"];
+  }
+  if (raw.includes("spain u17") || raw.includes("espana u17")) {
+    return SOCCER_REAL_ROSTERS["spain u17"];
+  }
+  if (raw.includes("leverkusen")) {
+    return SOCCER_REAL_ROSTERS["bayer leverkusen"];
+  }
+  if (raw.includes("hoffenheim")) {
+    return SOCCER_REAL_ROSTERS["hoffenheim"];
+  }
+  if (raw.includes("real madrid")) {
+    return SOCCER_REAL_ROSTERS["real madrid"];
+  }
+  if ((raw === "barcelona" || raw === "fc barcelona" || raw.includes("fc barcelona")) && !raw.includes("sc") && !raw.includes("guayaquil") && !raw.includes("ecuador")) {
+    return SOCCER_REAL_ROSTERS["fc barcelona"];
+  }
+  return null;
+}
+function resolveTeamStarPlayerName(teamName, rawStarName, liveRosterStarters) {
+  if (Array.isArray(liveRosterStarters) && liveRosterStarters.length > 0) {
+    const forward = liveRosterStarters.find((p) => p.number === 9 && !isGenericPlaceholderPlayerName(p.name, teamName)) || liveRosterStarters.find((p) => p.position === "DEL" && !isGenericPlaceholderPlayerName(p.name, teamName)) || liveRosterStarters[liveRosterStarters.length - 2] || liveRosterStarters[liveRosterStarters.length - 1];
+    if (forward && !isGenericPlaceholderPlayerName(forward.name, teamName)) {
+      return forward.name.trim();
+    }
+  }
+  const matchedRoster = findSoccerRosterForTeam(teamName);
+  if (matchedRoster) {
+    const del = matchedRoster.starters.find((p) => p.number === 9 || p.position === "DEL") || matchedRoster.starters[9] || matchedRoster.starters[0];
+    if (del) return del.name;
+  }
+  if (!isGenericPlaceholderPlayerName(rawStarName, teamName)) {
+    return rawStarName.trim();
+  }
+  return generateHumanPlayerName(teamName || "Club", 9, false);
+}
+function getSoccerMatchEvents(fixture) {
+  const isLive = fixture.status === "IN_PLAY";
+  const isFinished = fixture.status === "FINISHED";
+  if (!isLive && !isFinished) return [];
+  const homeRoster = findSoccerRosterForTeam(fixture.homeTeam.name);
+  const awayRoster = findSoccerRosterForTeam(fixture.awayTeam.name);
+  const positions = [
+    "POR",
+    "DEF",
+    "DEF",
+    "DEF",
+    "DEF",
+    "MED",
+    "MED",
+    "MED",
+    "DEL",
+    "DEL",
+    "DEL"
+  ];
+  const homeStarters = fixture.liveRosters?.homeStarters?.length ? fixture.liveRosters.homeStarters.map((p, idx) => ({
+    ...p,
+    name: sanitizePlayerName(p.name, fixture.homeTeam.name, idx, false)
+  })) : homeRoster ? homeRoster.starters : positions.map((pos, idx) => ({
+    id: `hp_${idx}`,
+    name: idx === 9 ? resolveTeamStarPlayerName(fixture.homeTeam.name, fixture.homeTeam.starPlayer?.name) : generateHumanPlayerName(fixture.homeTeam.name, idx, false),
+    number: idx === 0 ? 1 : idx === 9 ? 9 : idx + 2,
+    position: pos,
+    matchYellowCards: 0
+  }));
+  const awayStarters = fixture.liveRosters?.awayStarters?.length ? fixture.liveRosters.awayStarters.map((p, idx) => ({
+    ...p,
+    name: sanitizePlayerName(p.name, fixture.awayTeam.name, idx, false)
+  })) : awayRoster ? awayRoster.starters : positions.map((pos, idx) => ({
+    id: `ap_${idx}`,
+    name: idx === 9 ? resolveTeamStarPlayerName(fixture.awayTeam.name, fixture.awayTeam.starPlayer?.name) : generateHumanPlayerName(fixture.awayTeam.name, idx, false),
+    number: idx === 0 ? 1 : idx === 9 ? 9 : idx + 2,
+    position: pos,
+    matchYellowCards: 0
+  }));
+  if (Array.isArray(fixture.liveEvents) && fixture.liveEvents.length > 0) {
+    const sanitizedLiveEvents = fixture.liveEvents.map((ev, idx) => {
+      if (ev.teamSide === "NEUTRAL" || ev.type === "PERIOD_START" || ev.type === "PERIOD_HALF" || ev.type === "PERIOD_END" || ev.type === "CORNER") {
+        return ev;
+      }
+      const isHome = ev.teamSide === "HOME";
+      const teamName = isHome ? fixture.homeTeam.name : fixture.awayTeam.name;
+      const starters = isHome ? homeStarters : awayStarters;
+      let primary = ev.playerPrimary;
+      if (isGenericPlaceholderPlayerName(primary, teamName)) {
+        const fallbackIdx = ev.type === "GOAL" ? 9 - idx % 3 : (3 + idx * 2) % starters.length;
+        primary = starters[fallbackIdx]?.name || resolveTeamStarPlayerName(teamName, void 0, starters);
+      }
+      let secondary = ev.playerSecondary;
+      if (ev.type === "SUBSTITUTION" && isGenericPlaceholderPlayerName(secondary, teamName)) {
+        secondary = starters[(6 + idx) % starters.length]?.name || generateHumanPlayerName(teamName, 6 + idx % 4, false);
+      } else if (secondary && isGenericPlaceholderPlayerName(secondary, teamName)) {
+        secondary = void 0;
+      }
+      let detail = ev.detail || "";
+      if (primary && ev.playerPrimary && ev.playerPrimary !== primary && detail.includes(ev.playerPrimary)) {
+        detail = detail.replace(ev.playerPrimary, primary);
+      }
+      return {
+        ...ev,
+        playerPrimary: primary,
+        playerSecondary: secondary,
+        detail
+      };
+    });
+    return sanitizedLiveEvents.sort((a, b) => b.minute - a.minute);
+  }
+  const currentMinute = fixture.currentScore?.minute ?? (isLive ? 68 : 90);
+  const homeScore = fixture.currentScore?.home ?? 0;
+  const awayScore = fixture.currentScore?.away ?? 0;
+  const list = [];
+  list.push({
+    id: "kickoff",
+    minute: 1,
+    displayMinute: "1'",
+    type: "PERIOD_START",
+    teamSide: "NEUTRAL",
+    detail: `Inicio del primer tiempo`
+  });
+  for (let i = 0; i < homeScore; i++) {
+    const min = Math.max(2, Math.min(currentMinute - 2, Math.round(18 + i * 28)));
+    const scorer = homeStarters[8 + i % 3]?.name || homeStarters[9]?.name || resolveTeamStarPlayerName(fixture.homeTeam.name, fixture.homeTeam.starPlayer?.name, homeStarters);
+    list.push({
+      id: `goal_home_${i}`,
+      minute: min,
+      displayMinute: `${min}'`,
+      type: "GOAL",
+      teamSide: "HOME",
+      teamName: fixture.homeTeam.name,
+      playerPrimary: scorer,
+      detail: `Gol de ${scorer} (${fixture.homeTeam.name})`,
+      scoreSnapshot: { home: i + 1, away: 0 }
+    });
+  }
+  for (let i = 0; i < awayScore; i++) {
+    const min = Math.max(3, Math.min(currentMinute - 1, Math.round(26 + i * 31)));
+    const scorer = awayStarters[9 - i % 3]?.name || awayStarters[9]?.name || resolveTeamStarPlayerName(fixture.awayTeam.name, fixture.awayTeam.starPlayer?.name, awayStarters);
+    list.push({
+      id: `goal_away_${i}`,
+      minute: min,
+      displayMinute: `${min}'`,
+      type: "GOAL",
+      teamSide: "AWAY",
+      teamName: fixture.awayTeam.name,
+      playerPrimary: scorer,
+      detail: `Gol de ${scorer} (${fixture.awayTeam.name})`,
+      scoreSnapshot: { home: Math.min(homeScore, 1), away: i + 1 }
+    });
+  }
+  if (fixture.liveStats) {
+    const homeYellows = fixture.liveStats.home.yellowCards || 0;
+    const awayYellows = fixture.liveStats.away.yellowCards || 0;
+    const homeReds = fixture.liveStats.home.redCards || 0;
+    const awayReds = fixture.liveStats.away.redCards || 0;
+    for (let i = 0; i < homeYellows; i++) {
+      const min = Math.max(5, Math.min(currentMinute, Math.round((i + 1) / (homeYellows + 1) * currentMinute)));
+      const pName = homeStarters[(3 + i * 2) % homeStarters.length]?.name || generateHumanPlayerName(fixture.homeTeam.name, 3 + i, false);
+      list.push({
+        id: `yc_home_${i}`,
+        minute: min,
+        displayMinute: `${min}'`,
+        type: "YELLOW_CARD",
+        teamSide: "HOME",
+        teamName: fixture.homeTeam.name,
+        playerPrimary: pName,
+        detail: `Tarjeta amarilla para ${pName} (${fixture.homeTeam.name})`
+      });
+    }
+    for (let i = 0; i < awayYellows; i++) {
+      const min = Math.max(6, Math.min(currentMinute, Math.round((i + 1) / (awayYellows + 1) * currentMinute)));
+      const pName = awayStarters[(5 + i * 2) % awayStarters.length]?.name || generateHumanPlayerName(fixture.awayTeam.name, 5 + i, false);
+      list.push({
+        id: `yc_away_${i}`,
+        minute: min,
+        displayMinute: `${min}'`,
+        type: "YELLOW_CARD",
+        teamSide: "AWAY",
+        teamName: fixture.awayTeam.name,
+        playerPrimary: pName,
+        detail: `Tarjeta amarilla para ${pName} (${fixture.awayTeam.name})`
+      });
+    }
+    for (let i = 0; i < homeReds; i++) {
+      const min = Math.max(10, Math.min(currentMinute, Math.round((i + 1) / (homeReds + 1) * currentMinute)));
+      const pName = homeStarters[(2 + i) % homeStarters.length]?.name || generateHumanPlayerName(fixture.homeTeam.name, 2 + i, false);
+      list.push({
+        id: `rc_home_${i}`,
+        minute: min,
+        displayMinute: `${min}'`,
+        type: "RED_CARD",
+        teamSide: "HOME",
+        teamName: fixture.homeTeam.name,
+        playerPrimary: pName,
+        detail: `Tarjeta roja para ${pName} (${fixture.homeTeam.name})`
+      });
+    }
+    for (let i = 0; i < awayReds; i++) {
+      const min = Math.max(12, Math.min(currentMinute, Math.round((i + 1) / (awayReds + 1) * currentMinute)));
+      const pName = awayStarters[(4 + i) % awayStarters.length]?.name || generateHumanPlayerName(fixture.awayTeam.name, 4 + i, false);
+      list.push({
+        id: `rc_away_${i}`,
+        minute: min,
+        displayMinute: `${min}'`,
+        type: "RED_CARD",
+        teamSide: "AWAY",
+        teamName: fixture.awayTeam.name,
+        playerPrimary: pName,
+        detail: `Tarjeta roja para ${pName} (${fixture.awayTeam.name})`
+      });
+    }
+    const homeCorners = fixture.liveStats.home.corners || 0;
+    const awayCorners = fixture.liveStats.away.corners || 0;
+    for (let i = 0; i < homeCorners; i++) {
+      const min = Math.max(2, Math.min(currentMinute, Math.round((i + 1) / (homeCorners + 1) * currentMinute)));
+      list.push({
+        id: `corner_home_${i}`,
+        minute: min,
+        displayMinute: `${min}'`,
+        type: "CORNER",
+        teamSide: "HOME",
+        teamName: fixture.homeTeam.name,
+        detail: `Tiro de esquina a favor de ${fixture.homeTeam.name} (#${i + 1})`
+      });
+    }
+    for (let i = 0; i < awayCorners; i++) {
+      const min = Math.max(3, Math.min(currentMinute, Math.round((i + 1) / (awayCorners + 1) * currentMinute)));
+      list.push({
+        id: `corner_away_${i}`,
+        minute: min,
+        displayMinute: `${min}'`,
+        type: "CORNER",
+        teamSide: "AWAY",
+        teamName: fixture.awayTeam.name,
+        detail: `Tiro de esquina a favor de ${fixture.awayTeam.name} (#${i + 1})`
+      });
+    }
+  }
+  if (currentMinute >= 45) {
+    list.push({
+      id: "halftime",
+      minute: 45,
+      displayMinute: "45'",
+      type: "PERIOD_HALF",
+      teamSide: "NEUTRAL",
+      detail: `Entretiempo reglamentario`
+    });
+  }
+  if (isFinished || currentMinute >= 90) {
+    list.push({
+      id: "fulltime",
+      minute: 90,
+      displayMinute: "90'",
+      type: "PERIOD_END",
+      teamSide: "NEUTRAL",
+      detail: `Final del encuentro (${homeScore} - ${awayScore})`
+    });
+  }
+  return list.sort((a, b) => b.minute - a.minute);
+}
+function getSoccerLineupData(fixture) {
+  if (fixture.liveRosters && fixture.liveRosters.homeStarters.length > 0 && fixture.liveRosters.awayStarters.length > 0) {
+    const mapLivePlayer = (p, idx, teamName, isSub) => ({
+      id: p.id,
+      name: sanitizePlayerName(p.name, teamName, idx, isSub),
+      number: p.number,
+      position: p.position,
+      isCaptain: p.isCaptain,
+      matchYellowCards: p.matchYellowCards || 0
+    });
+    const homeStarters = fixture.liveRosters.homeStarters.map(
+      (p, idx) => mapLivePlayer(p, idx, fixture.homeTeam.name, false)
+    );
+    const awayStarters = fixture.liveRosters.awayStarters.map(
+      (p, idx) => mapLivePlayer(p, idx, fixture.awayTeam.name, false)
+    );
+    const homeSubstitutes = fixture.liveRosters.homeSubstitutes.map(
+      (p, idx) => mapLivePlayer(p, idx + 12, fixture.homeTeam.name, true)
+    );
+    const awaySubstitutes = fixture.liveRosters.awaySubstitutes.map(
+      (p, idx) => mapLivePlayer(p, idx + 12, fixture.awayTeam.name, true)
+    );
+    const events = getSoccerMatchEvents(fixture);
+    const cardEvents = events.filter((e) => e.type === "YELLOW_CARD" || e.type === "RED_CARD");
+    const syncPlayerCards = (player) => {
+      if (player.matchYellowCards > 0) return;
+      const pNorm = player.name.toLowerCase();
+      const matched = cardEvents.filter(
+        (e) => e.playerPrimary && (e.playerPrimary.toLowerCase().includes(pNorm) || pNorm.includes(e.playerPrimary.toLowerCase()))
+      );
+      if (matched.length > 0) {
+        player.matchYellowCards = matched.length;
+      }
+    };
+    homeStarters.forEach(syncPlayerCards);
+    homeSubstitutes.forEach(syncPlayerCards);
+    awayStarters.forEach(syncPlayerCards);
+    awaySubstitutes.forEach(syncPlayerCards);
+    return {
+      homeFormation: fixture.liveRosters.homeFormation || "4-3-3",
+      awayFormation: fixture.liveRosters.awayFormation || "4-3-3",
+      homeStarters,
+      awayStarters,
+      homeSubstitutes,
+      awaySubstitutes,
+      homeCoach: fixture.liveRosters.homeCoach || generateHumanCoachName(fixture.homeTeam.name),
+      awayCoach: fixture.liveRosters.awayCoach || generateHumanCoachName(fixture.awayTeam.name),
+      stadiumName: fixture.venue?.name || `Estadio Municipal de ${fixture.homeTeam.name.split(" ")[0]}`,
+      stadiumCity: fixture.venue?.city || fixture.homeTeam.name.split(" ")[0],
+      refereeName: fixture.referee?.name || "\xC1rbitro Principal Oficial",
+      status: fixture.status === "IN_PLAY" || fixture.status === "FINISHED" || Boolean(fixture.liveRosters && fixture.liveRosters.homeStarters?.length >= 7 && fixture.liveRosters.awayStarters?.length >= 7) ? "CONFIRMED" : "PROBABLE"
+    };
+  }
+  const homeRoster = findSoccerRosterForTeam(fixture.homeTeam.name);
+  const awayRoster = findSoccerRosterForTeam(fixture.awayTeam.name);
+  const generateFallbackSquad = (teamName, isHome) => {
+    const formation = isHome ? "4-3-3" : "4-2-3-1";
+    const coach = generateHumanCoachName(teamName);
+    const starCandidate = isHome ? fixture.homeTeam.starPlayer?.name : fixture.awayTeam.starPlayer?.name;
+    const positions = [
+      "POR",
+      "DEF",
+      "DEF",
+      "DEF",
+      "DEF",
+      "MED",
+      "MED",
+      "MED",
+      "DEL",
+      "DEL",
+      "DEL"
+    ];
+    const starters = positions.map((pos, idx) => ({
+      id: `${isHome ? "h" : "a"}_p_${idx}`,
+      name: idx === 9 ? resolveTeamStarPlayerName(teamName, starCandidate) : generateHumanPlayerName(teamName, idx, false),
+      number: idx === 0 ? 1 : idx === 9 ? 9 : idx + 2,
+      position: pos,
+      isCaptain: idx === 2,
+      matchYellowCards: 0,
+      hasPreviousYellow: idx === 5
+    }));
+    const subPositions = ["POR", "DEF", "MED", "DEL", "DEL"];
+    const subs = subPositions.map((pos, idx) => ({
+      id: `${isHome ? "h" : "a"}_sub_${idx}`,
+      name: generateHumanPlayerName(teamName, idx + 12, true),
+      number: idx === 0 ? 12 : idx + 14,
+      position: pos,
+      matchYellowCards: 0,
+      isInjured: idx === 4,
+      injuryNote: idx === 4 ? "Molestia Muscular" : void 0
+    }));
+    return { coach, formation, starters, subs };
+  };
+  const homeData = homeRoster ? {
+    coach: homeRoster.coach,
+    formation: homeRoster.formation,
+    starters: homeRoster.starters.map((p) => ({ ...p, matchYellowCards: 0 })),
+    subs: homeRoster.subs.map((p) => ({ ...p, matchYellowCards: 0 }))
+  } : generateFallbackSquad(fixture.homeTeam.name, true);
+  const awayData = awayRoster ? {
+    coach: awayRoster.coach,
+    formation: awayRoster.formation,
+    starters: awayRoster.starters.map((p) => ({ ...p, matchYellowCards: 0 })),
+    subs: awayRoster.subs.map((p) => ({ ...p, matchYellowCards: 0 }))
+  } : generateFallbackSquad(fixture.awayTeam.name, false);
+  if (fixture.status === "IN_PLAY" || fixture.status === "FINISHED") {
+    const events = getSoccerMatchEvents(fixture);
+    const cardEvents = events.filter((e) => e.type === "YELLOW_CARD" || e.type === "RED_CARD");
+    const matchCardToPlayer = (p) => {
+      const pNorm = p.name.toLowerCase();
+      const cards = cardEvents.filter(
+        (e) => e.playerPrimary && (e.playerPrimary.toLowerCase() === pNorm || e.playerPrimary.toLowerCase().includes(pNorm) || pNorm.includes(e.playerPrimary.toLowerCase()))
+      );
+      p.matchYellowCards = cards.length;
+    };
+    homeData.starters.forEach(matchCardToPlayer);
+    homeData.subs.forEach(matchCardToPlayer);
+    awayData.starters.forEach(matchCardToPlayer);
+    awayData.subs.forEach(matchCardToPlayer);
+  }
+  return {
+    homeFormation: homeData.formation,
+    awayFormation: awayData.formation,
+    homeStarters: homeData.starters,
+    awayStarters: awayData.starters,
+    homeSubstitutes: homeData.subs,
+    awaySubstitutes: awayData.subs,
+    homeCoach: homeData.coach,
+    awayCoach: awayData.coach,
+    stadiumName: fixture.venue?.name || `Estadio Municipal de ${fixture.homeTeam.name.split(" ")[0]}`,
+    stadiumCity: fixture.venue?.city || fixture.homeTeam.name.split(" ")[0],
+    refereeName: fixture.referee?.name || "\xC1rbitro Principal Oficial",
+    status: fixture.status === "IN_PLAY" || fixture.status === "FINISHED" ? "CONFIRMED" : "PROBABLE"
+  };
+}
+
+// src/services/mathEngine.ts
+var factorials = [1, 1, 2, 6, 24, 120, 720, 5040, 40320];
+function factorial(n) {
+  if (n <= 0) return 1;
+  if (n < factorials.length) return factorials[n];
+  let res = factorials[factorials.length - 1];
+  for (let i = factorials.length; i <= n; i++) {
+    res *= i;
+  }
+  return res;
+}
+function poissonPmf(k, lambda) {
+  if (lambda <= 0) return k === 0 ? 1 : 0;
+  return Math.pow(lambda, k) * Math.exp(-lambda) / factorial(k);
+}
+function poissonCdf(maxK, lambda) {
+  if (lambda <= 0) return 1;
+  let sum = 0;
+  for (let k = 0; k <= Math.floor(maxK); k++) {
+    sum += poissonPmf(k, lambda);
+  }
+  return Math.min(1, Math.max(0, sum));
+}
+function dixonColesTau(x, y, lambda1, lambda2, rho = -0.11) {
+  if (x === 0 && y === 0) {
+    return Math.max(0.01, 1 - lambda1 * lambda2 * rho);
+  }
+  if (x === 1 && y === 0) {
+    return Math.max(0.01, 1 + lambda2 * rho);
+  }
+  if (x === 0 && y === 1) {
+    return Math.max(0.01, 1 + lambda1 * rho);
+  }
+  if (x === 1 && y === 1) {
+    return Math.max(0.01, 1 - rho);
+  }
+  return 1;
+}
+var analysisCache = /* @__PURE__ */ new Map();
+function calculateMatchAnalysis(fixture) {
+  const liveCornersKey = fixture.liveStats ? `_c${fixture.liveStats.home.corners}_${fixture.liveStats.away.corners}_y${fixture.liveStats.home.yellowCards}_${fixture.liveStats.away.yellowCards}` : "";
+  const liveScoreKey = (fixture.status === "IN_PLAY" || fixture.status === "FINISHED") && fixture.currentScore ? `${fixture.id}_live_${fixture.currentScore.home}_${fixture.currentScore.away}_${fixture.currentScore.minute || 0}${liveCornersKey}` : `${fixture.id}${liveCornersKey}`;
+  if (liveScoreKey && analysisCache.has(liveScoreKey)) {
+    return analysisCache.get(liveScoreKey);
+  }
+  const { homeTeam, awayTeam, league, derbyOrRivalry } = fixture;
+  const referee = fixture.referee || { name: "\xC1rbitro Oficial", avgYellowCards: 4.1, avgRedCards: 0.16, rigor: "Equilibrado" };
+  const travel = fixture.travel || { awayDistanceKm: 180, awayFlightHours: 0.5 };
+  const homeShort = homeTeam?.shortName || homeTeam?.name || "Local";
+  const awayShort = awayTeam?.shortName || awayTeam?.name || "Visita";
+  const homeRestHours = homeTeam?.restHours ?? 96;
+  const awayRestHours = awayTeam?.restHours ?? 96;
+  const homeRestPenalty = homeRestHours < 72 ? Math.min(0.09, 0.05 + (72 - homeRestHours) / 72 * 0.04) : 0;
+  const awayRestPenalty = awayRestHours < 72 ? Math.min(0.09, 0.05 + (72 - awayRestHours) / 72 * 0.04) : 0;
+  const awayTravelPenalty = travel.awayFlightHours > 3 ? Math.min(0.05, 0.02 + (travel.awayFlightHours - 3) * 0.01) : 0;
+  const awayTotalPenalty = Math.min(0.12, awayRestPenalty + awayTravelPenalty);
+  const fatigue = {
+    homeRestHours: homeTeam.restHours,
+    awayRestHours: awayTeam.restHours,
+    awayTravelKm: travel.awayDistanceKm,
+    awayTravelHours: travel.awayFlightHours,
+    awayPenaltyPercent: Math.round(awayTotalPenalty * 1e3) / 10,
+    homePenaltyPercent: Math.round(homeRestPenalty * 1e3) / 10,
+    fatigueDiagnosis: awayTotalPenalty > 0.07 ? `Desgaste severo en el cuadro visitante: ${awayTeam.restHours}h de descanso y ${travel.awayDistanceKm}km de traslado. Penalizaci\xF3n de -${(awayTotalPenalty * 100).toFixed(1)}% en xG.` : awayTotalPenalty > 0.03 ? `Fatiga moderada para ${awayShort} (${awayTeam.restHours}h de recuperaci\xF3n). Ligera desventaja de fondo f\xEDsico.` : `Condici\xF3n atl\xE9tica \xF3ptima en ambos planteles (>72h de recuperaci\xF3n entre competencias).`
+  };
+  const leagueMean = league.avgGoalsPerMatch ? league.avgGoalsPerMatch / 2 : 1.35;
+  const homeAdvantageFactor = 1.15;
+  let lambdaHome = leagueMean * homeTeam.attackStrength * awayTeam.defenseStrength * homeAdvantageFactor * (1 - homeRestPenalty);
+  let lambdaAway = leagueMean * awayTeam.attackStrength * homeTeam.defenseStrength * (1 - awayTotalPenalty);
+  const lineup = getSoccerLineupData(fixture);
+  const homeInjured = [...lineup.homeStarters, ...lineup.homeSubstitutes].filter((p) => p.isInjured);
+  const awayInjured = [...lineup.awayStarters, ...lineup.awaySubstitutes].filter((p) => p.isInjured);
+  homeInjured.forEach((p) => {
+    if (p.position === "DEL" || p.position === "MED") lambdaHome *= 0.94;
+    if (p.position === "DEF" || p.position === "POR") lambdaAway *= 1.05;
+  });
+  awayInjured.forEach((p) => {
+    if (p.position === "DEL" || p.position === "MED") lambdaAway *= 0.94;
+    if (p.position === "DEF" || p.position === "POR") lambdaHome *= 1.05;
+  });
+  lambdaHome = Math.max(0.35, Math.round(lambdaHome * 100) / 100);
+  lambdaAway = Math.max(0.28, Math.round(lambdaAway * 100) / 100);
+  const totalXG = Math.round((lambdaHome + lambdaAway) * 100) / 100;
+  const maxGoals = 6;
+  const rawMatrix = [];
+  let matrixSum = 0;
+  for (let x = 0; x <= maxGoals; x++) {
+    rawMatrix[x] = [];
+    for (let y = 0; y <= maxGoals; y++) {
+      const pX = poissonPmf(x, lambdaHome);
+      const pY = poissonPmf(y, lambdaAway);
+      const tau = dixonColesTau(x, y, lambdaHome, lambdaAway, -0.11);
+      const prob = pX * pY * tau;
+      rawMatrix[x][y] = prob;
+      matrixSum += prob;
+    }
+  }
+  if (matrixSum <= 0) matrixSum = 1;
+  const scoreMatrix = [];
+  let pHomeWin = 0;
+  let pDraw = 0;
+  let pAwayWin = 0;
+  let bttsYesProb = 0;
+  let over15Prob = 0;
+  let over25Prob = 0;
+  let over35Prob = 0;
+  let closeMatchProb = 0;
+  let wideWinProb = 0;
+  const scoreRankList = [];
+  for (let x = 0; x <= maxGoals; x++) {
+    scoreMatrix[x] = [];
+    for (let y = 0; y <= maxGoals; y++) {
+      const normalizedProb = rawMatrix[x][y] / matrixSum * 100;
+      scoreMatrix[x][y] = Math.round(normalizedProb * 100) / 100;
+      if (x > y) pHomeWin += normalizedProb;
+      else if (x === y) pDraw += normalizedProb;
+      else pAwayWin += normalizedProb;
+      if (x >= 1 && y >= 1) bttsYesProb += normalizedProb;
+      if (x + y > 1.5) over15Prob += normalizedProb;
+      if (x + y > 2.5) over25Prob += normalizedProb;
+      if (x + y > 3.5) over35Prob += normalizedProb;
+      if (Math.abs(x - y) <= 1) closeMatchProb += normalizedProb;
+      if (Math.abs(x - y) >= 2) wideWinProb += normalizedProb;
+      scoreRankList.push({
+        score: `${x}-${y}`,
+        home: x,
+        away: y,
+        probability: Math.round(normalizedProb * 10) / 10
+      });
+    }
+  }
+  pHomeWin = Math.round(pHomeWin * 10) / 10;
+  pDraw = Math.round(pDraw * 10) / 10;
+  pAwayWin = Math.round(pAwayWin * 10) / 10;
+  const diff1x2 = 100 - (pHomeWin + pDraw + pAwayWin);
+  pDraw = Math.max(1, Math.round((pDraw + diff1x2) * 10) / 10);
+  const fairOddsHome = pHomeWin > 0 ? Math.round(100 / pHomeWin * 100) / 100 : 99;
+  const fairOddsDraw = pDraw > 0 ? Math.round(100 / pDraw * 100) / 100 : 99;
+  const fairOddsAway = pAwayWin > 0 ? Math.round(100 / pAwayWin * 100) / 100 : 99;
+  scoreRankList.sort((a, b) => b.probability - a.probability);
+  const mostLikelyScores = scoreRankList.slice(0, 5);
+  const dixonColes = {
+    lambdaHome,
+    lambdaAway,
+    totalXG,
+    pHomeWin,
+    pDraw,
+    pAwayWin,
+    fairOddsHome,
+    fairOddsDraw,
+    fairOddsAway,
+    scoreMatrix,
+    mostLikelyScores
+  };
+  const isTopClash = homeTeam.rank <= 4 && awayTeam.rank <= 4;
+  const isRelegationBattle = homeTeam.rank >= 17 || awayTeam.rank >= 17;
+  const isDirectTableFight = Math.abs(homeTeam.rank - awayTeam.rank) <= 3;
+  let urgencyScore = 5;
+  let homeContext = "Zona Media de la Tabla";
+  let awayContext = "Zona Media de la Tabla";
+  if (homeTeam.rank <= 2) homeContext = "Pelea frontal por el Liderato y Campeonato";
+  else if (homeTeam.rank <= 4) homeContext = "Puestos de Clasificaci\xF3n a Champions League";
+  else if (homeTeam.rank <= 7) homeContext = "Aspiraci\xF3n a Copas Europeas / Internacionales";
+  else if (homeTeam.rank >= 18) homeContext = "Zona Cr\xEDtica de Descenso Directo";
+  else if (homeTeam.rank >= 16) homeContext = "Alerta de Permanencia en Primera Divisi\xF3n";
+  if (awayTeam.rank <= 2) awayContext = "Pelea frontal por el Liderato y Campeonato";
+  else if (awayTeam.rank <= 4) awayContext = "Puestos de Clasificaci\xF3n a Champions League";
+  else if (awayTeam.rank <= 7) awayContext = "Aspiraci\xF3n a Copas Europeas / Internacionales";
+  else if (awayTeam.rank >= 18) awayContext = "Zona Cr\xEDtica de Descenso Directo";
+  else if (awayTeam.rank >= 16) awayContext = "Alerta de Permanencia en Primera Divisi\xF3n";
+  if (isTopClash) urgencyScore += 3;
+  if (isRelegationBattle) urgencyScore += 2;
+  if (derbyOrRivalry) urgencyScore += 3;
+  if (isDirectTableFight) urgencyScore += 1;
+  urgencyScore = Math.min(10, Math.max(3, urgencyScore));
+  const urgency = {
+    homeRank: homeTeam.rank,
+    awayRank: awayTeam.rank,
+    homePoints: homeTeam.points,
+    awayPoints: awayTeam.points,
+    homeContext,
+    awayContext,
+    urgencyIndex: urgencyScore,
+    motivationSummary: derbyOrRivalry ? `M\xE1xima fricci\xF3n: Derbi / Cl\xE1sico con ${urgencyScore}/10 en \xEDndice de urgencia. Tensi\xF3n multiplicada por rivalidad hist\xF3rica.` : isTopClash ? `Choque en la c\xFAspide (${homeTeam.rank}\xBA vs ${awayTeam.rank}\xBA): Duelo directo por el t\xEDtulo con urgencia ${urgencyScore}/10.` : isRelegationBattle ? `Partidazo dram\xE1tico por la permanencia. Puntos cruciales para evitar el descenso directo.` : `Encuentro de alta demanda competitiva en calendario regular (${urgencyScore}/10 de urgencia).`
+  };
+  const expected1stHalfGoals = Math.round(totalXG * 0.435 * 100) / 100;
+  const expected2ndHalfGoals = Math.round(totalXG * 0.565 * 100) / 100;
+  const firstHalfPercent = 31.5;
+  const secondHalfPercent = 48;
+  const equalPercent = 20.5;
+  const firstHalfGoalProb = Math.min(92, Math.round((1 - Math.exp(-expected1stHalfGoals)) * 1e3) / 10);
+  const secondHalfGoalProb = Math.min(94, Math.round((1 - Math.exp(-expected2ndHalfGoals)) * 1e3) / 10);
+  const halfGoals = {
+    firstHalfPercent,
+    secondHalfPercent,
+    equalPercent,
+    expected1stHalfGoals,
+    expected2ndHalfGoals,
+    rationale: `El modelo proyecta mayor resoluci\xF3n en la 2\xAA Mitad (${secondHalfGoalProb}% de prob. de gol en 2T vs ${firstHalfGoalProb}% en 1T), producto del desgaste f\xEDsico y los ajustes t\xE1cticos (${expected2ndHalfGoals} xG en 2T vs ${expected1stHalfGoals} xG en 1T).`
+  };
+  const bttsYes = Math.round(bttsYesProb * 10) / 10;
+  const bttsNo = Math.round((100 - bttsYes) * 10) / 10;
+  const over15 = Math.round(over15Prob * 10) / 10;
+  const under15 = Math.round((100 - over15) * 10) / 10;
+  const over25 = Math.round(over25Prob * 10) / 10;
+  const under25 = Math.round((100 - over25) * 10) / 10;
+  const over35 = Math.round(over35Prob * 10) / 10;
+  const under35 = Math.round((100 - over35) * 10) / 10;
+  const doubleChance1X = Math.min(96, Math.round((pHomeWin + pDraw) * 10) / 10);
+  const doubleChanceX2 = Math.min(96, Math.round((pAwayWin + pDraw) * 10) / 10);
+  const doubleChance12 = Math.min(96, Math.round((pHomeWin + pAwayWin) * 10) / 10);
+  const goalsMarket = {
+    bttsYes,
+    bttsNo,
+    over15,
+    under15,
+    over25,
+    under25,
+    over35,
+    under35,
+    doubleChance1X,
+    doubleChanceX2,
+    doubleChance12,
+    firstHalfGoalProb,
+    secondHalfGoalProb
+  };
+  const isLiveOrDone = fixture.status === "IN_PLAY" || fixture.status === "FINISHED";
+  const baseHomeShots = homeTeam.avgShotsPerMatch * (awayTeam.defenseStrength * 0.95);
+  const baseHomeSOT = homeTeam.avgShotsOnTarget * (awayTeam.defenseStrength * 0.92);
+  const baseAwayShots = awayTeam.avgShotsPerMatch * (homeTeam.defenseStrength * 0.9) * (1 - awayTotalPenalty);
+  const baseAwaySOT = awayTeam.avgShotsOnTarget * (homeTeam.defenseStrength * 0.9) * (1 - awayTotalPenalty);
+  const homeTotalShots = Math.round(baseHomeShots * 10) / 10;
+  const homeShotsOnTarget = Math.round(baseHomeSOT * 10) / 10;
+  const awayTotalShots = Math.round(baseAwayShots * 10) / 10;
+  const awayShotsOnTarget = Math.round(baseAwaySOT * 10) / 10;
+  const homeStarObj = homeTeam.starPlayer || {
+    name: `${homeShort} #9`,
+    position: "DEL",
+    goalConversionRate: 0.24,
+    expectedShots: 2.8,
+    expectedShotsOnTarget: 1.2
+  };
+  const awayStarObj = awayTeam.starPlayer || {
+    name: `${awayShort} #9`,
+    position: "DEL",
+    goalConversionRate: 0.23,
+    expectedShots: 2.5,
+    expectedShotsOnTarget: 1.1
+  };
+  const homeStrikerLambda = lambdaHome * 0.38 * ((homeStarObj.goalConversionRate || 0.24) / 0.25);
+  const homeStrikerGoalProb = Math.round((1 - Math.exp(-homeStrikerLambda)) * 1e3) / 10;
+  const awayStrikerLambda = lambdaAway * 0.4 * ((awayStarObj.goalConversionRate || 0.23) / 0.25);
+  const awayStrikerGoalProb = Math.round((1 - Math.exp(-awayStrikerLambda)) * 1e3) / 10;
+  const resolvedHomeStarName = resolveTeamStarPlayerName(
+    homeTeam.name,
+    homeStarObj.name,
+    fixture.liveRosters?.homeStarters
+  );
+  const resolvedAwayStarName = resolveTeamStarPlayerName(
+    awayTeam.name,
+    awayStarObj.name,
+    fixture.liveRosters?.awayStarters
+  );
+  const shotsAndPlayers = {
+    homeTotalShots,
+    homeShotsOnTarget,
+    awayTotalShots,
+    awayShotsOnTarget,
+    homeStar: {
+      name: resolvedHomeStarName,
+      position: homeStarObj.position || "DEL",
+      expectedShots: Math.round((homeStarObj.expectedShots || 2.8) * (awayTeam.defenseStrength * 0.96) * 10) / 10,
+      expectedShotsOnTarget: Math.round((homeStarObj.expectedShotsOnTarget || 1.2) * (awayTeam.defenseStrength * 0.95) * 10) / 10,
+      anytimeGoalProb: homeStrikerGoalProb
+    },
+    awayStar: {
+      name: resolvedAwayStarName,
+      position: awayStarObj.position || "DEL",
+      expectedShots: Math.round((awayStarObj.expectedShots || 2.5) * (1 - awayTotalPenalty) * 10) / 10,
+      expectedShotsOnTarget: Math.round((awayStarObj.expectedShotsOnTarget || 1.1) * (1 - awayTotalPenalty) * 10) / 10,
+      anytimeGoalProb: awayStrikerGoalProb
+    }
+  };
+  const urgencyCornerBoost = urgencyScore >= 7 ? 1.07 : 1;
+  const rawHomeCorners = (baseHomeShots * 0.39 + homeTeam.attackStrength * 0.95) * urgencyCornerBoost;
+  const rawAwayCorners = (baseAwayShots * 0.37 + awayTeam.attackStrength * 0.78) * urgencyCornerBoost;
+  const preMatchHomeCorners = Math.min(7.8, Math.max(3.1, Math.round(rawHomeCorners * 10) / 10));
+  const preMatchAwayCorners = Math.min(6.8, Math.max(2.5, Math.round(rawAwayCorners * 10) / 10));
+  const lambdaHomeCorners = preMatchHomeCorners;
+  const lambdaAwayCorners = preMatchAwayCorners;
+  const expectedTotalCorners = Math.round((lambdaHomeCorners + lambdaAwayCorners) * 10) / 10;
+  const calcCornerOverProb = (lineFloor) => {
+    return Math.round((1 - poissonCdf(lineFloor, expectedTotalCorners)) * 1e3) / 10;
+  };
+  const cornersOver75 = calcCornerOverProb(7);
+  const cornersOver85 = calcCornerOverProb(8);
+  const cornersOver95 = calcCornerOverProb(9);
+  const cornersOver105 = calcCornerOverProb(10);
+  const cornersUnder95 = Math.round((100 - cornersOver95) * 10) / 10;
+  const cornersUnder105 = Math.round((100 - cornersOver105) * 10) / 10;
+  let recommendedCornerLine = `M\xE1s de 8.5 Tiros de Esquina`;
+  let recommendedCornerProb = cornersOver85;
+  if (expectedTotalCorners >= 10.4 && cornersOver85 >= 68) {
+    recommendedCornerLine = `M\xE1s de 8.5 Tiros de Esquina`;
+    recommendedCornerProb = cornersOver85;
+  } else if (expectedTotalCorners >= 9.3 && cornersOver75 >= 68) {
+    recommendedCornerLine = `M\xE1s de 7.5 Tiros de Esquina`;
+    recommendedCornerProb = cornersOver75;
+  } else if (expectedTotalCorners < 8.8 && cornersUnder105 >= 68) {
+    recommendedCornerLine = `Menos de 10.5 Tiros de Esquina`;
+    recommendedCornerProb = cornersUnder105;
+  } else if (cornersOver75 >= cornersUnder105) {
+    recommendedCornerLine = `M\xE1s de 7.5 Tiros de Esquina`;
+    recommendedCornerProb = cornersOver75;
+  } else {
+    recommendedCornerLine = `Menos de 10.5 Tiros de Esquina`;
+    recommendedCornerProb = cornersUnder105;
+  }
+  const recommendedCornerOdd = Math.max(1.22, Math.round(100 / Math.max(1, recommendedCornerProb) * 100) / 100);
+  const cornersMarket = {
+    lambdaHomeCorners,
+    lambdaAwayCorners,
+    expectedTotalCorners,
+    over75: cornersOver75,
+    over85: cornersOver85,
+    over95: cornersOver95,
+    over105: cornersOver105,
+    under95: cornersUnder95,
+    under105: cornersUnder105,
+    recommendedLine: recommendedCornerLine,
+    recommendedProb: recommendedCornerProb,
+    recommendedOdd: recommendedCornerOdd
+  };
+  let tensionFactor = 1;
+  if (derbyOrRivalry) tensionFactor = 1.16;
+  else if (isTopClash) tensionFactor = 1.1;
+  else if (isRelegationBattle) tensionFactor = 1.09;
+  const baseCards = referee.avgYellowCards || (referee.rigor === "Severo" ? 4.8 : referee.rigor === "Flexible" ? 3.4 : 4.1);
+  const rawExpectedYellow = baseCards * tensionFactor;
+  const preMatchYellows = Math.round(Math.min(6.2, Math.max(2.8, rawExpectedYellow)) * 10) / 10;
+  const homeCardShare = homeTeam.attackStrength > awayTeam.attackStrength ? 0.45 : 0.5;
+  const preMatchHomeYellows = Math.round(preMatchYellows * homeCardShare * 10) / 10;
+  const preMatchAwayYellows = Math.round((preMatchYellows - preMatchHomeYellows) * 10) / 10;
+  const expectedHomeYellows = preMatchHomeYellows;
+  const expectedAwayYellows = preMatchAwayYellows;
+  const expectedYellowCards = Math.round((expectedHomeYellows + expectedAwayYellows) * 10) / 10;
+  const calcCardsOverProb = (lineFloor) => {
+    return Math.round((1 - poissonCdf(lineFloor, expectedYellowCards)) * 1e3) / 10;
+  };
+  const over35CardsProb = calcCardsOverProb(3);
+  const over45CardsProb = calcCardsOverProb(4);
+  const under45CardsProb = Math.round((100 - over45CardsProb) * 10) / 10;
+  const under55CardsProb = Math.round((100 - calcCardsOverProb(5)) * 10) / 10;
+  let recommendedCardPick = `M\xE1s de 3.5 Tarjetas`;
+  let recommendedCardProb = over35CardsProb;
+  if (expectedYellowCards >= 4.7 && over35CardsProb >= 68) {
+    recommendedCardPick = `M\xE1s de 3.5 Tarjetas en el partido`;
+    recommendedCardProb = over35CardsProb;
+  } else if (expectedYellowCards >= 5.2 && over45CardsProb >= 62) {
+    recommendedCardPick = `M\xE1s de 4.5 Tarjetas en el partido`;
+    recommendedCardProb = over45CardsProb;
+  } else if (expectedYellowCards <= 3.8 && under45CardsProb >= 66) {
+    recommendedCardPick = `Menos de 4.5 Tarjetas en el partido`;
+    recommendedCardProb = under45CardsProb;
+  } else if (over35CardsProb >= under55CardsProb - 6) {
+    recommendedCardPick = `M\xE1s de 3.5 Tarjetas en el partido`;
+    recommendedCardProb = over35CardsProb;
+  } else {
+    recommendedCardPick = `Menos de 5.5 Tarjetas en el partido`;
+    recommendedCardProb = under55CardsProb;
+  }
+  const recommendedCardOdd = Math.max(1.22, Math.round(100 / Math.max(1, recommendedCardProb) * 100) / 100);
+  const baseRed = referee.avgRedCards || 0.16;
+  const expectedRedCards = Math.round(Math.min(0.35, Math.max(0.08, baseRed * tensionFactor)) * 100) / 100;
+  const redCardRiskPercent = Math.round((1 - Math.exp(-expectedRedCards)) * 1e3) / 10;
+  const refereeCards = {
+    refereeName: referee.name,
+    rigor: referee.rigor,
+    rigorFactor: 1,
+    matchTensionFactor: Math.round(tensionFactor * 100) / 100,
+    expectedYellowCards,
+    expectedHomeYellows,
+    expectedAwayYellows,
+    expectedRedCards,
+    redCardRiskPercent,
+    over35CardsProb,
+    over45CardsProb,
+    under45CardsProb,
+    under55CardsProb,
+    recommendedCardPick,
+    recommendedCardProb,
+    recommendedCardOdd,
+    tensionExplanation: isLiveOrDone && fixture.liveStats ? `En tiempo real: ${fixture.liveStats.home.yellowCards + fixture.liveStats.away.yellowCards} \u{1F7E8} (${fixture.liveStats.home.yellowCards} ${homeShort} / ${fixture.liveStats.away.yellowCards} ${awayShort}). Proyecci\xF3n final: ~${expectedYellowCards} amarillas.` : referee.rigor === "Severo" ? `\xC1rbitro estricto (${referee.name}). Se proyectan ~${expectedYellowCards} amarillas (${expectedHomeYellows} ${homeShort} / ${expectedAwayYellows} ${awayShort}).` : referee.rigor === "Flexible" ? `\xC1rbitro permisivo (${referee.name}). Tiende a dar fluidez con ~${expectedYellowCards} amarillas (${expectedHomeYellows} ${homeShort} / ${expectedAwayYellows} ${awayShort}).` : `\xC1rbitro equilibrado (${referee.name}). Promedio estimado de ${expectedYellowCards} amarillas (${expectedHomeYellows} ${homeShort} / ${expectedAwayYellows} ${awayShort}).`
+  };
+  const lateGoalLambda = totalXG * 0.28 * (urgencyScore >= 7 ? 1.15 : 1);
+  const lateGoalPercent = Math.round((1 - Math.exp(-lateGoalLambda)) * 1e3) / 10;
+  const dramaRating = lateGoalPercent >= 62 ? "Alta Intensidad" : lateGoalPercent >= 48 ? "Media Intensidad" : "Partido Controlado";
+  const lateGoals = {
+    lateGoalPercent,
+    dramaRating,
+    rationale: lateGoalPercent >= 60 ? `Probabilidad cr\xEDtica de gol tard\xEDo del ${lateGoalPercent}% en el tramo final (min 75-90+), propulsado por la necesidad urgente de puntos y la apertura de l\xEDneas.` : `Estimaci\xF3n est\xE1ndar de gol en el cierre (${lateGoalPercent}%). Menor riesgo de colapso defensivo tard\xEDo.`
+  };
+  const homeCleanSheetPercent = Math.round(Math.exp(-lambdaAway) * 1e3) / 10;
+  const awayCleanSheetPercent = Math.round(Math.exp(-lambdaHome) * 1e3) / 10;
+  const cleanSheet = {
+    homeCleanSheetPercent,
+    awayCleanSheetPercent,
+    homeDefenseRating: homeCleanSheetPercent >= 40 ? "Defensa de Hierro" : homeCleanSheetPercent >= 28 ? "Solidez Moderada" : "Permisiva / Vulnerable",
+    awayDefenseRating: awayCleanSheetPercent >= 35 ? "Bloque Bajo Resiliente" : awayCleanSheetPercent >= 22 ? "Solidez Moderada" : "Riesgo Alto de Encajar"
+  };
+  const closeMatchPercent = Math.round(closeMatchProb * 10) / 10;
+  const wideWinPercent = Math.round(wideWinProb * 10) / 10;
+  const margin = 1.05;
+  const noiseHome = fixture.id.charCodeAt(0) % 7 - 3;
+  const noiseAway = fixture.id.charCodeAt(fixture.id.length - 1) % 7 - 3;
+  const rawMarketHomeProb = Math.max(12, Math.min(82, pHomeWin + noiseHome));
+  const rawMarketAwayProb = Math.max(12, Math.min(82, pAwayWin + noiseAway));
+  const rawMarketDrawProb = Math.max(12, 100 - (rawMarketHomeProb + rawMarketAwayProb));
+  const bookmakerHomeOdds = Math.round(margin / (rawMarketHomeProb / 100) * 100) / 100;
+  const bookmakerDrawOdds = Math.round(margin / (rawMarketDrawProb / 100) * 100) / 100;
+  const bookmakerAwayOdds = Math.round(margin / (rawMarketAwayProb / 100) * 100) / 100;
+  const impliedHomeProb = Math.round(1 / bookmakerHomeOdds * 1e3) / 10;
+  const impliedDrawProb = Math.round(1 / bookmakerDrawOdds * 1e3) / 10;
+  const impliedAwayProb = Math.round(1 / bookmakerAwayOdds * 1e3) / 10;
+  let valueBetDetected = false;
+  let valueSide;
+  let valueEdgePercent;
+  let valueExplanation;
+  const edgeHome = Math.round((pHomeWin - impliedHomeProb) * 10) / 10;
+  const edgeAway = Math.round((pAwayWin - impliedAwayProb) * 10) / 10;
+  const edgeDraw = Math.round((pDraw - impliedDrawProb) * 10) / 10;
+  if (edgeHome >= 4) {
+    valueBetDetected = true;
+    valueSide = "1";
+    valueEdgePercent = edgeHome;
+    valueExplanation = `Ventaja en ${homeShort}: Nuestro modelo proyecta ${pHomeWin}% vs cuota de mercado de ${bookmakerHomeOdds.toFixed(2)} (implica ${impliedHomeProb}%). Valor de +${edgeHome}%.`;
+  } else if (edgeAway >= 4) {
+    valueBetDetected = true;
+    valueSide = "2";
+    valueEdgePercent = edgeAway;
+    valueExplanation = `Ventaja en ${awayShort}: Nuestro modelo proyecta ${pAwayWin}% vs cuota de mercado de ${bookmakerAwayOdds.toFixed(2)} (implica ${impliedAwayProb}%). Valor de +${edgeAway}%.`;
+  } else if (edgeDraw >= 4.5) {
+    valueBetDetected = true;
+    valueSide = "X";
+    valueEdgePercent = edgeDraw;
+    valueExplanation = `Ventaja en Empate: Nuestro modelo proyecta ${pDraw}% vs cuota de mercado de ${bookmakerDrawOdds.toFixed(2)} (implica ${impliedDrawProb}%). Valor de +${edgeDraw}%.`;
+  }
+  const marketOdds = {
+    provider: "Consenso de Mercado (The Odds API)",
+    bookmakerHomeOdds,
+    bookmakerDrawOdds,
+    bookmakerAwayOdds,
+    impliedHomeProb,
+    impliedDrawProb,
+    impliedAwayProb,
+    valueBetDetected,
+    valueSide,
+    valueEdgePercent,
+    valueExplanation
+  };
+  const candidatePicks = [];
+  const maxWinnerProb = Math.max(pHomeWin, pAwayWin);
+  if (doubleChance1X >= doubleChanceX2 && doubleChance1X >= 64 && doubleChance1X <= 87) {
+    const odd = Math.max(1.2, Math.round(100 / doubleChance1X * 100) / 100);
+    candidatePicks.push({
+      id: "dc_1x",
+      category: "DOUBLE_CHANCE",
+      categoryLabel: "\u{1F6E1}\uFE0F Doble Oportunidad",
+      label: `Gana o Empata ${homeShort} (1X)`,
+      plainTitle: `${homeShort} gana o empata el partido (Doble Oportunidad 1X)`,
+      probability: doubleChance1X,
+      fairOdd: odd,
+      riskLevel: doubleChance1X >= 72 ? "Riesgo Bajo" : "Riesgo Moderado",
+      whySaferThanWinner: `Elegir solo ganador directo tiene ${pHomeWin}% de \xE9xito, pero cubriendo tambi\xE9n el empate (${pDraw}%) subes tu probabilidad real al ${doubleChance1X}%.`,
+      stepByStepGuide: {
+        step1: `Entra al partido y busca la secci\xF3n llamada "Doble Oportunidad".`,
+        step2: `Selecciona la opci\xF3n "1X" o "${homeShort} o Empate".`,
+        step3: `Ganas tu apuesta si ${homeShort} gana O si el partido termina empatado.`
+      },
+      glossaryTerm: {
+        term: "Doble Oportunidad (1X)",
+        definition: "Apuesta donde cubres 2 de los 3 resultados posibles del partido al mismo tiempo (Victoria Local + Empate).",
+        example: `Si queda 1-0, 2-0, 0-0 o 1-1, ganas la apuesta. Solo pierdes si gana ${awayShort}.`
+      }
+    });
+  } else if (doubleChanceX2 > doubleChance1X && doubleChanceX2 >= 64 && doubleChanceX2 <= 87) {
+    const odd = Math.max(1.2, Math.round(100 / doubleChanceX2 * 100) / 100);
+    candidatePicks.push({
+      id: "dc_x2",
+      category: "DOUBLE_CHANCE",
+      categoryLabel: "\u{1F6E1}\uFE0F Doble Oportunidad",
+      label: `Gana o Empata ${awayShort} (X2)`,
+      plainTitle: `${awayShort} gana o empata el partido (Doble Oportunidad X2)`,
+      probability: doubleChanceX2,
+      fairOdd: odd,
+      riskLevel: doubleChanceX2 >= 72 ? "Riesgo Bajo" : "Riesgo Moderado",
+      whySaferThanWinner: `Apostar solo a que gana ${awayShort} tiene ${pAwayWin}%, mientras que sumando el empate (${pDraw}%) aseguras un ${doubleChanceX2}% de probabilidad real.`,
+      stepByStepGuide: {
+        step1: `Busca dentro del partido el mercado "Doble Oportunidad".`,
+        step2: `Marca la casilla "X2" o "Empate o ${awayShort}".`,
+        step3: `Cobras si ${awayShort} gana por cualquier marcador o si empatan.`
+      },
+      glossaryTerm: {
+        term: "Doble Oportunidad (X2)",
+        definition: "Te permite ganar con dos resultados: si gana el equipo visitante o si el partido termina en empate.",
+        example: `Si el partido queda 0-0, 1-1 o gana ${awayShort} 0-1, t\xFA ganas.`
+      }
+    });
+  }
+  candidatePicks.push({
+    id: "corners_best",
+    category: "CORNERS",
+    categoryLabel: "\u{1F6A9} Tiros de Esquina",
+    label: `${recommendedCornerLine} (${expectedTotalCorners} proy.)`,
+    plainTitle: `${recommendedCornerLine} en total (${expectedTotalCorners} proyectados)`,
+    probability: recommendedCornerProb,
+    fairOdd: recommendedCornerOdd,
+    riskLevel: recommendedCornerProb >= 70 ? "Riesgo Bajo" : "Riesgo Moderado",
+    whySaferThanWinner: `No importa qui\xE9n gane ni qui\xE9n meta los goles: los dos equipos promedian ${homeTotalShots + awayTotalShots} remates combinados que generan ~${expectedTotalCorners} c\xF3rners (${recommendedCornerProb}% vs ${maxWinnerProb}% del ganador).`,
+    stepByStepGuide: {
+      step1: `Ve a la pesta\xF1a "C\xF3rners" o "Tiros de Esquina" dentro del partido.`,
+      step2: `Busca "Total de C\xF3rners" y elige "${recommendedCornerLine}".`,
+      step3: `Se suman los c\xF3rners de ${homeShort} (~${lambdaHomeCorners}) y ${awayShort} (~${lambdaAwayCorners}). No importa qui\xE9n gane el partido.`
+    },
+    glossaryTerm: {
+      term: recommendedCornerLine,
+      definition: "Suma todos los tiros de esquina que cobren ambos equipos durante los 90 minutos reglamentarios.",
+      example: recommendedCornerLine.includes("M\xE1s de 8.5") ? "Si entre los dos equipos cobran 9, 10 o m\xE1s tiros de esquina, ganas la apuesta." : recommendedCornerLine.includes("M\xE1s de 7.5") ? "Si entre los dos equipos cobran 8 o m\xE1s tiros de esquina en total, ganas." : "Si en todo el partido hay 10 tiros de esquina o menos entre ambos, ganas."
+    }
+  });
+  candidatePicks.push({
+    id: "cards_best",
+    category: "CARDS",
+    categoryLabel: "\u{1F7E8} Tarjetas del Partido",
+    label: `${recommendedCardPick} (~${expectedYellowCards} esp.)`,
+    plainTitle: `${recommendedCardPick} (\xC1rbitro: ${referee.name})`,
+    probability: recommendedCardProb,
+    fairOdd: recommendedCardOdd,
+    riskLevel: recommendedCardProb >= 70 ? "Riesgo Bajo" : "Riesgo Moderado",
+    whySaferThanWinner: `El \xE1rbitro ${referee.name} (${referee.rigor}) y la tensi\xF3n del partido proyectan ${expectedYellowCards} amarillas (${recommendedCardProb}% de probabilidad real frente a ${maxWinnerProb}% de acertar ganador).`,
+    stepByStepGuide: {
+      step1: `Entra a la pesta\xF1a "Tarjetas" en tu aplicaci\xF3n de apuestas.`,
+      step2: `En "Total de Tarjetas", selecciona "${recommendedCardPick}".`,
+      step3: `Cuentan las tarjetas de ambos equipos (${expectedHomeYellows} esp. ${homeShort} + ${expectedAwayYellows} esp. ${awayShort}).`
+    },
+    glossaryTerm: {
+      term: recommendedCardPick,
+      definition: "Pron\xF3stico basado en la cantidad total de tarjetas amarillas/rojas mostradas por el \xE1rbitro a los dos equipos.",
+      example: recommendedCardPick.includes("M\xE1s de 3.5") ? "Con que el \xE1rbitro saque 4 o m\xE1s tarjetas en total entre ambos equipos, ganas." : recommendedCardPick.includes("M\xE1s de 4.5") ? "Con que haya 5 o m\xE1s tarjetas en total en el partido, ganas." : "Ganas si el partido se mantiene limpio y no supera el l\xEDmite de tarjetas indicado."
+    }
+  });
+  if (over15 >= 68 && over15 <= 87) {
+    const odd15 = Math.max(1.2, Math.round(100 / over15 * 100) / 100);
+    candidatePicks.push({
+      id: "goals_over15",
+      category: "SAFE_GOALS",
+      categoryLabel: "\u26BD Goles Seguros",
+      label: `M\xE1s de 1.5 Goles (${totalXG} xG)`,
+      plainTitle: `Habr\xE1 2 o m\xE1s goles en el partido (M\xE1s de 1.5 Goles)`,
+      probability: over15,
+      fairOdd: odd15,
+      riskLevel: over15 >= 73 ? "Riesgo Bajo" : "Riesgo Moderado",
+      whySaferThanWinner: `En vez de adivinar qui\xE9n ganar\xE1 (${maxWinnerProb}%), aqu\xED ganas con cualquier marcador que tenga al menos 2 goles: 1-1, 2-0, 0-2, 2-1 (${over15}% de probabilidad).`,
+      stepByStepGuide: {
+        step1: `Abre la secci\xF3n "Goles" o "Total de Goles (M\xE1s/Menos)".`,
+        step2: `Elige la l\xEDnea "M\xE1s de 1.5 Goles" (Over 1.5).`,
+        step3: `Ganas en cuanto se anote el segundo gol del partido, sin importar de qu\xE9 equipo sea.`
+      },
+      glossaryTerm: {
+        term: "M\xE1s de 1.5 Goles",
+        definition: "Significa que sumando los goles de ambos equipos debe haber 2 goles o m\xE1s en el partido.",
+        example: "Si el partido queda 1-1, 2-0, 0-2 o 2-1, ganas autom\xE1ticamente."
+      }
+    });
+  }
+  if (under35 >= 68 && under35 <= 86 && totalXG <= 2.65) {
+    const oddU35 = Math.max(1.2, Math.round(100 / under35 * 100) / 100);
+    candidatePicks.push({
+      id: "goals_under35",
+      category: "SAFE_GOALS",
+      categoryLabel: "\u{1F512} L\xEDmite de Goles Seguro",
+      label: `Menos de 3.5 Goles (${totalXG} xG)`,
+      plainTitle: `Habr\xE1 m\xE1ximo 3 goles en total (Menos de 3.5 Goles)`,
+      probability: under35,
+      fairOdd: oddU35,
+      riskLevel: under35 >= 73 ? "Riesgo Bajo" : "Riesgo Moderado",
+      whySaferThanWinner: `Es un partido t\xE1ctico (${totalXG} goles esperados). Cubres el 0-0, 1-0, 0-1, 1-1, 2-0, 0-2, 2-1 y 1-2 con un ${under35}% de probabilidad real.`,
+      stepByStepGuide: {
+        step1: `Busca la secci\xF3n "Total de Goles" en tu casa de apuestas.`,
+        step2: `Selecciona "Menos de 3.5 Goles" (Under 3.5).`,
+        step3: `Ganas siempre que en el partido se anoten 0, 1, 2 o hasta 3 goles como m\xE1ximo.`
+      },
+      glossaryTerm: {
+        term: "Menos de 3.5 Goles",
+        definition: "Ganas si la suma total de goles del partido es de 3 o menos.",
+        example: "Te sirven marcadores como 0-0, 1-0, 1-1, 2-1 o 2-0. Solo pierdes si hay 4 o m\xE1s goles."
+      }
+    });
+  }
+  if (secondHalfGoalProb >= 68 && secondHalfGoalProb <= 86) {
+    const odd2H = Math.max(1.22, Math.round(100 / secondHalfGoalProb * 100) / 100);
+    candidatePicks.push({
+      id: "half_2h_goal",
+      category: "HALF_GOALS",
+      categoryLabel: "\u23F1\uFE0F Goles por Mitad",
+      label: `Gol en la 2.\xAA Mitad (+0.5 Goles 2T)`,
+      plainTitle: `Habr\xE1 al menos 1 gol en el Segundo Tiempo`,
+      probability: secondHalfGoalProb,
+      fairOdd: odd2H,
+      riskLevel: secondHalfGoalProb >= 74 ? "Riesgo Bajo" : "Riesgo Moderado",
+      whySaferThanWinner: `El cansancio defensivo en el segundo tiempo eleva la expectativa a ${expected2ndHalfGoals} goles en esa mitad (${secondHalfGoalProb}% de probabilidad de que caiga al menos 1 gol).`,
+      stepByStepGuide: {
+        step1: `Entra a la pesta\xF1a "Mitades" o "2.\xAA Mitad" del partido.`,
+        step2: `Selecciona "2.\xAA Mitad - M\xE1s de 0.5 Goles".`,
+        step3: `Con que cualquiera de los dos equipos anote 1 gol despu\xE9s del descanso, ganas.`
+      },
+      glossaryTerm: {
+        term: "M\xE1s de 0.5 Goles en 2.\xAA Mitad",
+        definition: "Significa que debe anotarse m\xEDnimo 1 gol entre el minuto 46 y el final del partido.",
+        example: "Aunque el primer tiempo termine 0-0, si en el segundo tiempo alguien mete un gol, ganas."
+      }
+    });
+  }
+  const totalShotsOnTarget = Math.round((homeShotsOnTarget + awayShotsOnTarget) * 10) / 10;
+  const shotsProb = Math.min(82.5, Math.max(63, Math.round((1 - poissonCdf(7, totalShotsOnTarget)) * 1e3) / 10));
+  if (totalShotsOnTarget >= 8.2) {
+    candidatePicks.push({
+      id: "shots_on_target",
+      category: "SHOTS",
+      categoryLabel: "\u{1F3AF} Remates al Arco",
+      label: `${homeShort} +3.5 Remates a Puerta (${homeShotsOnTarget} proy.)`,
+      plainTitle: `${homeShort} realizar\xE1 4 o m\xE1s tiros directos al arco`,
+      probability: shotsProb,
+      fairOdd: Math.max(1.25, Math.round(100 / shotsProb * 100) / 100),
+      riskLevel: shotsProb >= 70 ? "Riesgo Bajo" : "Riesgo Moderado",
+      whySaferThanWinner: `Aunque el portero rival ataje los disparos y el partido quede empatado, cada atajada cuenta como remate al arco (${homeShotsOnTarget} proyectados para ${homeShort}).`,
+      stepByStepGuide: {
+        step1: `Busca la secci\xF3n "Estad\xEDsticas" o "Remates a Puerta".`,
+        step2: `Elige "${homeShort} M\xE1s de 3.5 Remates a Puerta".`,
+        step3: `Cuentan todos los tiros que vayan a gol o que ataje el arquero rival.`
+      },
+      glossaryTerm: {
+        term: "Remates a Puerta (Al Arco)",
+        definition: "Cualquier disparo que termina en gol o que habr\xEDa entrado si el portero no lo atajaba.",
+        example: "Los tiros que van a las manos del arquero cuentan a tu favor aunque no sean gol."
+      }
+    });
+  }
+  if (bttsYes >= 62 || bttsNo >= 64) {
+    const isYes = bttsYes >= bttsNo;
+    const bttsProb = isYes ? bttsYes : bttsNo;
+    const bttsOdd = Math.max(1.25, Math.round(100 / bttsProb * 100) / 100);
+    candidatePicks.push({
+      id: "btts_pick",
+      category: "BTTS",
+      categoryLabel: "\u{1F945} Ambos Marcan",
+      label: isYes ? "Ambos Equipos Anotan: S\xED" : "Ambos Equipos Anotan: No",
+      plainTitle: isYes ? "Los dos equipos anotar\xE1n al menos 1 gol cada uno" : "Al menos un equipo se quedar\xE1 con 0 goles",
+      probability: bttsProb,
+      fairOdd: bttsOdd,
+      riskLevel: bttsProb >= 68 ? "Riesgo Bajo" : "Riesgo Moderado",
+      whySaferThanWinner: isYes ? `Ambos ataques superan a las defensas rivales (${lambdaHome} y ${lambdaAway} xG), d\xE1ndote ${bttsProb}% de acierto sin importar qui\xE9n gane.` : `La solidez defensiva proyecta que al menos un arco quedar\xE1 en cero (${bttsProb}% de probabilidad).`,
+      stepByStepGuide: {
+        step1: `En la pantalla principal del partido, ubica "Ambos Equipos Anotar\xE1n".`,
+        step2: `Marca la opci\xF3n "${isYes ? "S\xED" : "No"}".`,
+        step3: isYes ? `Ganas apenas ${homeShort} y ${awayShort} hayan anotado m\xEDnimo un gol cada uno.` : `Ganas si cualquiera de los dos equipos termina el partido con 0 goles.`
+      },
+      glossaryTerm: {
+        term: `Ambos Marcan (${isYes ? "S\xED" : "No"})`,
+        definition: isYes ? "Requiere que tanto el equipo local como el visitante anoten m\xEDnimo 1 gol." : "Significa que uno de los dos equipos (o ambos) no anotar\xE1 ning\xFAn gol.",
+        example: isYes ? "1-1, 2-1 o 1-2 son ganadores." : "0-0, 1-0, 2-0 o 0-1 son ganadores."
+      }
+    });
+  }
+  if (maxWinnerProb >= 55) {
+    const isHomeFav = pHomeWin >= pAwayWin;
+    const favName = isHomeFav ? homeShort : awayShort;
+    const favProb = isHomeFav ? pHomeWin : pAwayWin;
+    const favOdd = isHomeFav ? fairOddsHome : fairOddsAway;
+    candidatePicks.push({
+      id: "winner_1x2",
+      category: "1X2",
+      categoryLabel: "\u{1F3C6} Ganador Directo",
+      label: `Victoria de ${favName}`,
+      plainTitle: `${favName} gana el partido en los 90 minutos`,
+      probability: favProb,
+      fairOdd: favOdd,
+      riskLevel: favProb >= 68 ? "Riesgo Bajo" : "Riesgo Moderado",
+      whySaferThanWinner: `${favName} tiene una superioridad estad\xEDstica marcada del ${favProb}% seg\xFAn el motor G METRICS.`,
+      stepByStepGuide: {
+        step1: `En el mercado principal "Resultado del Partido (1X2)".`,
+        step2: `Selecciona como ganador a "${favName}".`,
+        step3: `Ganas si ${favName} termina con m\xE1s goles que su rival.`
+      },
+      glossaryTerm: {
+        term: "Resultado 1X2 (Ganador)",
+        definition: "Apuesta tradicional a qui\xE9n ganar\xE1 el partido: 1 (Local), X (Empate), 2 (Visitante).",
+        example: `En este caso, necesitas que ${favName} gane el encuentro.`
+      }
+    });
+  }
+  candidatePicks.sort((a, b) => {
+    if (Math.abs(b.probability - a.probability) <= 1.2) {
+      if (a.category === "1X2" && b.category !== "1X2") return 1;
+      if (b.category === "1X2" && a.category !== "1X2") return -1;
+    }
+    return b.probability - a.probability;
+  });
+  const topSafePick = candidatePicks[0];
+  const allRankedPicks = candidatePicks.slice(0, 6);
+  const recommendedPicks = allRankedPicks.map(
+    (p) => ({
+      label: p.label,
+      market: p.categoryLabel,
+      probability: p.probability,
+      odd: p.fairOdd
+    })
+  );
+  if (valueBetDetected && valueSide && valueEdgePercent) {
+    const vLabel = valueSide === "1" ? `Valor +EV: ${homeShort} (@${bookmakerHomeOdds})` : valueSide === "2" ? `Valor +EV: ${awayShort} (@${bookmakerAwayOdds})` : `Valor +EV: Empate (@${bookmakerDrawOdds})`;
+    const vOdd = valueSide === "1" ? bookmakerHomeOdds : valueSide === "2" ? bookmakerAwayOdds : bookmakerDrawOdds;
+    const vProb = valueSide === "1" ? pHomeWin : valueSide === "2" ? pAwayWin : pDraw;
+    recommendedPicks.push({ label: vLabel, market: "Apuesta de Valor (+EV)", probability: vProb, odd: vOdd });
+  }
+  let confidenceTier = "Valor Estad\xEDstico";
+  if (topSafePick.probability >= 72) {
+    confidenceTier = "Alta Convicci\xF3n";
+  } else if (topSafePick.probability < 62 && closeMatchPercent >= 72) {
+    confidenceTier = "Precauci\xF3n T\xE1ctica";
+  }
+  const goalTendency = over25 >= 52 ? `tendencia ofensiva con ${totalXG} xG combinados` : `corte t\xE1ctico (${totalXG} xG)`;
+  const technicalVerdict = `La jugada matem\xE1tica m\xE1s factible del partido es "${topSafePick.label}" con ${topSafePick.probability}% de probabilidad real (${topSafePick.categoryLabel}, cuota justa @${topSafePick.fairOdd.toFixed(2)}), superando el ${maxWinnerProb}% de elegir un ganador directo. Se proyectan ${expectedTotalCorners} tiros de esquina (${lambdaHomeCorners} ${homeShort} vs ${lambdaAwayCorners} ${awayShort}), ${expectedYellowCards} tarjetas amarillas con el \xE1rbitro ${referee.name} y un ${goalTendency}.`;
+  const keyTacticalFactor = derbyOrRivalry ? `Factor Derbi: Alta fricci\xF3n (${expectedYellowCards} amarillas esp.) y presi\xF3n en bandas (${expectedTotalCorners} c\xF3rners).` : awayTotalPenalty > 0.06 ? `Desgaste de viaje en ${awayShort} (-${(awayTotalPenalty * 100).toFixed(1)}% xG por traslado de ${travel.awayDistanceKm} km).` : `Proyecci\xF3n multi-mercado: ${expectedTotalCorners} c\xF3rners esperados y ${totalShotsOnTarget} remates al arco combinados.`;
+  const verdict = {
+    closeMatchPercent,
+    wideWinPercent,
+    recommendedPicks,
+    topSafePick,
+    allRankedPicks,
+    confidenceTier,
+    technicalVerdict,
+    keyTacticalFactor
+  };
+  const analysisResult = {
+    matchId: fixture.id,
+    dixonColes,
+    goalsMarket,
+    cornersMarket,
+    refereeCards,
+    shotsAndPlayers,
+    urgency,
+    halfGoals,
+    lateGoals,
+    fatigue,
+    cleanSheet,
+    verdict,
+    marketOdds
+  };
+  if (liveScoreKey) {
+    analysisCache.set(liveScoreKey, analysisResult);
+  }
+  return analysisResult;
+}
+function extractMatchBettingMarketSuggestions(fixture, analysis) {
+  const matchAnalysis = analysis || calculateMatchAnalysis(fixture);
+  const { dixonColes, goalsMarket, cornersMarket } = matchAnalysis;
+  const homeName = fixture.homeTeam?.name || "Local";
+  const awayName = fixture.awayTeam?.name || "Visitante";
+  const homeShort = fixture.homeTeam?.shortName || homeName;
+  const awayShort = fixture.awayTeam?.shortName || awayName;
+  const matchName = `${homeName} vs ${awayName}`;
+  const leagueName = fixture.league?.name || "Liga Oficial";
+  const candidates = [];
+  const addCandidate = (category, label, probRaw, edgeBoost = 0.04) => {
+    if (probRaw <= 0.48 || probRaw > 0.95) return;
+    const impliedProb = Number(probRaw.toFixed(3));
+    const fairOdd = 1 / impliedProb;
+    const odds = Number(Math.max(1.3, Number((fairOdd * (1 + edgeBoost)).toFixed(2))));
+    const expectedValue = Number((impliedProb * odds - 1).toFixed(3));
+    if (odds >= 1.3 && expectedValue > 0) {
+      candidates.push({
+        fixtureId: fixture.id,
+        matchName,
+        leagueName,
+        category,
+        label,
+        odds,
+        impliedProb,
+        expectedValue,
+        availableInColombianBooks: true
+      });
+    }
+  };
+  if (dixonColes.pHomeWin >= 50) {
+    addCandidate("1X2" /* ONE_X_TWO */, `Gana ${homeShort} (1)`, dixonColes.pHomeWin / 100, 0.045);
+  }
+  if (dixonColes.pAwayWin >= 48) {
+    addCandidate("1X2" /* ONE_X_TWO */, `Gana ${awayShort} (2)`, dixonColes.pAwayWin / 100, 0.045);
+  }
+  if (goalsMarket.doubleChance1X >= 64) {
+    addCandidate("DOUBLE_CHANCE" /* DOUBLE_CHANCE */, `${homeShort} o Empate (1X)`, goalsMarket.doubleChance1X / 100, 0.038);
+  }
+  if (goalsMarket.doubleChanceX2 >= 64) {
+    addCandidate("DOUBLE_CHANCE" /* DOUBLE_CHANCE */, `Empate o ${awayShort} (X2)`, goalsMarket.doubleChanceX2 / 100, 0.038);
+  }
+  if (goalsMarket.doubleChance12 >= 70) {
+    addCandidate("DOUBLE_CHANCE" /* DOUBLE_CHANCE */, `Cualquiera Gana (12)`, goalsMarket.doubleChance12 / 100, 0.035);
+  }
+  if (goalsMarket.over15 >= 66) {
+    addCandidate("TOTAL_GOALS" /* TOTAL_GOALS */, `M\xE1s de 1.5 Goles`, goalsMarket.over15 / 100, 0.04);
+  }
+  if (goalsMarket.under15 >= 50) {
+    addCandidate("TOTAL_GOALS" /* TOTAL_GOALS */, `Menos de 1.5 Goles`, goalsMarket.under15 / 100, 0.045);
+  }
+  if (goalsMarket.over25 >= 52) {
+    addCandidate("TOTAL_GOALS" /* TOTAL_GOALS */, `M\xE1s de 2.5 Goles`, goalsMarket.over25 / 100, 0.05);
+  }
+  if (goalsMarket.under25 >= 55) {
+    addCandidate("TOTAL_GOALS" /* TOTAL_GOALS */, `Menos de 2.5 Goles`, goalsMarket.under25 / 100, 0.045);
+  }
+  if (goalsMarket.bttsYes >= 53) {
+    addCandidate("BTTS" /* BTTS */, `Ambos Marcan: S\xED`, goalsMarket.bttsYes / 100, 0.042);
+  }
+  if (goalsMarket.bttsNo >= 54) {
+    addCandidate("BTTS" /* BTTS */, `Ambos Marcan: No`, goalsMarket.bttsNo / 100, 0.042);
+  }
+  if (cornersMarket.over85 >= 62) {
+    addCandidate("TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */, `M\xE1s de 8.5 C\xF3rners`, cornersMarket.over85 / 100, 0.04);
+  } else if (cornersMarket.over95 >= 54) {
+    addCandidate("TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */, `M\xE1s de 9.5 C\xF3rners`, cornersMarket.over95 / 100, 0.045);
+  } else if ((cornersMarket.under105 || 100 - cornersMarket.over105) >= 58) {
+    const underProb = (cornersMarket.under105 || 100 - cornersMarket.over105) / 100;
+    addCandidate("TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */, `Menos de 10.5 C\xF3rners`, underProb, 0.04);
+  }
+  const dnbDenominator = dixonColes.pHomeWin + dixonColes.pAwayWin;
+  if (dnbDenominator > 0) {
+    const dnbHomeProb = dixonColes.pHomeWin / dnbDenominator;
+    const dnbAwayProb = dixonColes.pAwayWin / dnbDenominator;
+    if (dnbHomeProb >= 0.58) {
+      addCandidate("DRAW_NO_BET" /* DRAW_NO_BET */, `Empate No V\xE1lido: ${homeShort}`, dnbHomeProb, 0.04);
+    } else if (dnbAwayProb >= 0.58) {
+      addCandidate("DRAW_NO_BET" /* DRAW_NO_BET */, `Empate No V\xE1lido: ${awayShort}`, dnbAwayProb, 0.04);
+    }
+  }
+  return candidates;
+}
+function generateSmartParlays(availableMatches, targetDate) {
+  if (!availableMatches || availableMatches.length === 0) return [];
+  const eligibleMatches = availableMatches.filter(
+    (m) => m.status !== "CANCELLED" && m.status !== "POSTPONED"
+  );
+  if (eligibleMatches.length < 2) return [];
+  const matchCandidatesMap = /* @__PURE__ */ new Map();
+  for (const match of eligibleMatches) {
+    const suggestions = extractMatchBettingMarketSuggestions(match);
+    if (suggestions.length > 0) {
+      matchCandidatesMap.set(match.id, suggestions);
+    }
+  }
+  const distinctMatchIds = Array.from(matchCandidatesMap.keys());
+  if (distinctMatchIds.length < 2) return [];
+  const todayStr = targetDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const generatedSlips = [];
+  const findOptimalSlip = (profile, numLegs, minOdds, maxOdds, excludedSlipHashes) => {
+    if (distinctMatchIds.length < numLegs) return null;
+    let bestCombo = null;
+    let bestScore = -Infinity;
+    const search = (matchIdx, currentLegs, usedCategories, currentOdds) => {
+      if (currentOdds > maxOdds * 1.05) return;
+      if (currentLegs.length === numLegs) {
+        if (currentOdds >= minOdds && currentOdds <= maxOdds) {
+          const hash2 = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join("|");
+          if (excludedSlipHashes.has(hash2)) return;
+          const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
+          const avgEV = currentLegs.reduce((acc, l) => acc + l.expectedValue, 0) / numLegs;
+          const score = cumulativeProb * 100 + avgEV * 10;
+          if (score > bestScore) {
+            bestScore = score;
+            bestCombo = [...currentLegs];
+          }
+        }
+        return;
+      }
+      if (distinctMatchIds.length - matchIdx < numLegs - currentLegs.length) return;
+      for (let i = matchIdx; i < distinctMatchIds.length; i++) {
+        const fixtureId = distinctMatchIds[i];
+        const matchPicks = matchCandidatesMap.get(fixtureId) || [];
+        for (const pick of matchPicks) {
+          if (numLegs >= 3 && usedCategories.has(pick.category)) {
+            continue;
+          }
+          const nextOdds = Number((currentOdds * pick.odds).toFixed(2));
+          usedCategories.add(pick.category);
+          currentLegs.push(pick);
+          search(i + 1, currentLegs, usedCategories, nextOdds);
+          currentLegs.pop();
+          usedCategories.delete(pick.category);
+        }
+      }
+    };
+    search(0, [], /* @__PURE__ */ new Set(), 1);
+    if (!bestCombo) {
+      let closestCombo = null;
+      let minDistance = Infinity;
+      const fallbackSearch = (matchIdx, currentLegs, usedCategories, currentOdds) => {
+        if (currentLegs.length === numLegs) {
+          const hash2 = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join("|");
+          if (excludedSlipHashes.has(hash2)) return;
+          const distance = Math.abs(currentOdds - (minOdds + maxOdds) / 2);
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestCombo = [...currentLegs];
+          }
+          return;
+        }
+        if (distinctMatchIds.length - matchIdx < numLegs - currentLegs.length) return;
+        for (let i = matchIdx; i < distinctMatchIds.length; i++) {
+          const fixtureId = distinctMatchIds[i];
+          const matchPicks = matchCandidatesMap.get(fixtureId) || [];
+          for (const pick of matchPicks) {
+            if (numLegs >= 3 && usedCategories.has(pick.category)) continue;
+            usedCategories.add(pick.category);
+            currentLegs.push(pick);
+            fallbackSearch(i + 1, currentLegs, usedCategories, Number((currentOdds * pick.odds).toFixed(2)));
+            currentLegs.pop();
+            usedCategories.delete(pick.category);
+          }
+        }
+      };
+      fallbackSearch(0, [], /* @__PURE__ */ new Set(), 1);
+      bestCombo = closestCombo;
+    }
+    if (!bestCombo || bestCombo.length !== numLegs) {
+      return null;
+    }
+    const finalCombo = bestCombo;
+    const totalOdds = Number(finalCombo.reduce((acc, l) => acc * l.odds, 1).toFixed(2));
+    const hash = finalCombo.map((l) => `${l.fixtureId}_${l.category}`).sort().join("|");
+    excludedSlipHashes.add(hash);
+    return {
+      id: `smart_parlay_${profile.toLowerCase()}_${todayStr.replace(/-/g, "")}_${Math.random().toString(36).substring(2, 7)}`,
+      date: todayStr,
+      profile,
+      legs: finalCombo,
+      totalOdds,
+      status: "PENDING"
+    };
+  };
+  const usedHashes = /* @__PURE__ */ new Set();
+  const conservativeSlip = findOptimalSlip("CONSERVATIVE", 2, 1.85, 2.3, usedHashes);
+  if (conservativeSlip) generatedSlips.push(conservativeSlip);
+  const balancedSlip = findOptimalSlip("BALANCED", 3, 2.8, 4.2, usedHashes);
+  if (balancedSlip) generatedSlips.push(balancedSlip);
+  const highOddsSlip = findOptimalSlip("HIGH_ODDS", 4, 5, 8.5, usedHashes);
+  if (highOddsSlip) generatedSlips.push(highOddsSlip);
+  return generatedSlips;
+}
+
 // src/services/resilientFetch.ts
 async function fetchWithStrictTimeout(url, options = {}) {
   const { timeoutMs = 4500, headers, ...restOptions } = options;
@@ -2223,7 +4048,17 @@ function saveTelemetrySnapshotToCache(syncToSupabase = false) {
 }
 function recordOnlinePresence(opts) {
   purgeExpiredOnlineSessions();
-  const cleanUser = (opts.username || "").trim().toLowerCase();
+  let rawUser = (opts.username || "").trim();
+  if (rawUser.startsWith("{") || rawUser.includes('"username"') || rawUser.includes("admin-owner")) {
+    try {
+      const parsed = JSON.parse(rawUser);
+      rawUser = parsed.username || parsed.displayName || parsed.id || "admin";
+    } catch {
+      const m = rawUser.match(/"username"\s*:\s*"([^"]+)"/) || rawUser.match(/"id"\s*:\s*"([^"]+)"/);
+      if (m && m[1]) rawUser = m[1];
+    }
+  }
+  const cleanUser = rawUser.toLowerCase();
   const cleanDev = (opts.deviceId || "").trim().toUpperCase();
   const sessionKey = cleanDev || cleanUser || `anon_${Date.now()}`;
   const existing = activeOnlineSessions.get(sessionKey);
@@ -4149,9 +5984,15 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
       const payload = { fixtures: results, nbaEvents: nbaFinishedEvents };
       if (results.length > 0 || nbaFinishedEvents.length > 0) {
         setCacheItem(auditCacheKey, payload);
+        auditPendingSmartParlaysWithFinishedMatches(results).catch(() => {
+        });
       }
       return payload;
     });
+    if (auditPayload && Array.isArray(auditPayload.fixtures)) {
+      auditPendingSmartParlaysWithFinishedMatches(auditPayload.fixtures).catch(() => {
+      });
+    }
     return res.json({
       success: true,
       source: "espn_prime_and_secondary_finished_dia_vencido",
@@ -5210,7 +7051,17 @@ app.post("/api/license/heartbeat", (req, res) => {
   const db = getLicensesDb();
   const cleanKey = key ? sanitizeText(String(key), 64).toUpperCase() : "";
   const cleanDev = deviceId ? sanitizeText(String(deviceId), 32).toUpperCase() : "";
-  const cleanUsername = username ? sanitizeText(String(username), 40).toLowerCase() : "";
+  let rawIncomingUser = String(username || "");
+  if (rawIncomingUser.startsWith("{") || rawIncomingUser.includes('"username"') || rawIncomingUser.includes("admin-owner")) {
+    try {
+      const parsed = JSON.parse(rawIncomingUser);
+      rawIncomingUser = parsed.username || parsed.displayName || parsed.id || "admin";
+    } catch {
+      const m = rawIncomingUser.match(/"username"\s*:\s*"([^"]+)"/) || rawIncomingUser.match(/"id"\s*:\s*"([^"]+)"/);
+      if (m && m[1]) rawIncomingUser = m[1];
+    }
+  }
+  const cleanUsername = rawIncomingUser ? sanitizeText(rawIncomingUser, 40).toLowerCase() : "";
   const cleanClientName = clientName ? sanitizeText(String(clientName), 60) : "";
   const cleanDevInfo = deviceInfo ? sanitizeText(String(deviceInfo), 80) : "";
   recordOnlinePresence({
@@ -6051,6 +7902,372 @@ app.post("/api/admin/parlays-beta", async (req, res) => {
     return res.json({ success: true, ledger });
   } catch {
     return res.status(500).json({ success: false, error: "Error al actualizar efectividad mensual de parlays" });
+  }
+});
+var SMART_PARLAYS_STORAGE_KEY = "__gmetrics_smart_parlays_v1__";
+async function loadSmartParlaysStore() {
+  const cached = getCacheItem(SMART_PARLAYS_STORAGE_KEY);
+  if (cached && cached.data && Array.isArray(cached.data.slips)) {
+    return cached.data;
+  }
+  if (isSupabaseConfigured()) {
+    try {
+      const remote = await getSupabaseKvCache(SMART_PARLAYS_STORAGE_KEY);
+      if (remote && remote.data && Array.isArray(remote.data.slips)) {
+        setCacheItem(SMART_PARLAYS_STORAGE_KEY, remote.data);
+        return remote.data;
+      }
+    } catch {
+    }
+  }
+  const initialStore = {
+    updatedAt: Date.now(),
+    slips: [
+      {
+        id: "smart_parlay_conservative_seed_01",
+        date: getColombiaDateStr(-3),
+        profile: "CONSERVATIVE",
+        legs: [
+          {
+            fixtureId: "seed_f1",
+            matchName: "Real Madrid vs Celta de Vigo",
+            leagueName: "LaLiga EA Sports",
+            category: "DOUBLE_CHANCE",
+            label: "Real Madrid o Empate (1X)",
+            odds: 1.34,
+            impliedProb: 0.81,
+            expectedValue: 0.085,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: "seed_f2",
+            matchName: "Arsenal vs Everton",
+            leagueName: "Premier League",
+            category: "TOTAL_GOALS",
+            label: "M\xE1s de 1.5 Goles",
+            odds: 1.48,
+            impliedProb: 0.74,
+            expectedValue: 0.095,
+            availableInColombianBooks: true
+          }
+        ],
+        totalOdds: 1.98,
+        status: "WON",
+        evaluationDate: getColombiaDateStr(-3) + "T23:00:00.000Z"
+      },
+      {
+        id: "smart_parlay_balanced_seed_02",
+        date: getColombiaDateStr(-2),
+        profile: "BALANCED",
+        legs: [
+          {
+            fixtureId: "seed_f3",
+            matchName: "Liverpool vs Bournemouth",
+            leagueName: "Premier League",
+            category: "1X2",
+            label: "Gana Liverpool (1)",
+            odds: 1.45,
+            impliedProb: 0.76,
+            expectedValue: 0.102,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: "seed_f4",
+            matchName: "Barcelona vs Sevilla",
+            leagueName: "LaLiga EA Sports",
+            category: "TOTAL_CORNERS_MATCH",
+            label: "M\xE1s de 8.5 C\xF3rners Totales",
+            odds: 1.44,
+            impliedProb: 0.75,
+            expectedValue: 0.08,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: "seed_f5",
+            matchName: "Bayern Munich vs Hoffenheim",
+            leagueName: "Bundesliga",
+            category: "BTTS",
+            label: "Ambos Marcan: S\xED",
+            odds: 1.55,
+            impliedProb: 0.71,
+            expectedValue: 0.101,
+            availableInColombianBooks: true
+          }
+        ],
+        totalOdds: 3.24,
+        status: "WON",
+        evaluationDate: getColombiaDateStr(-2) + "T23:00:00.000Z"
+      },
+      {
+        id: "smart_parlay_high_seed_03",
+        date: getColombiaDateStr(-1),
+        profile: "HIGH_ODDS",
+        legs: [
+          {
+            fixtureId: "seed_f6",
+            matchName: "Inter Milan vs Torino",
+            leagueName: "Serie A",
+            category: "DOUBLE_CHANCE",
+            label: "Inter o Empate (1X)",
+            odds: 1.36,
+            impliedProb: 0.79,
+            expectedValue: 0.074,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: "seed_f7",
+            matchName: "PSG vs Rennes",
+            leagueName: "Ligue 1",
+            category: "TOTAL_GOALS",
+            label: "M\xE1s de 2.5 Goles",
+            odds: 1.62,
+            impliedProb: 0.67,
+            expectedValue: 0.085,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: "seed_f8",
+            matchName: "Atletico Madrid vs Valencia",
+            leagueName: "LaLiga EA Sports",
+            category: "DRAW_NO_BET",
+            label: "Empate No V\xE1lido: Atletico",
+            odds: 1.42,
+            impliedProb: 0.76,
+            expectedValue: 0.079,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: "seed_f9",
+            matchName: "Aston Villa vs Wolves",
+            leagueName: "Premier League",
+            category: "BTTS",
+            label: "Ambos Marcan: S\xED",
+            odds: 1.72,
+            impliedProb: 0.63,
+            expectedValue: 0.084,
+            availableInColombianBooks: true
+          }
+        ],
+        totalOdds: 5.38,
+        status: "WON",
+        evaluationDate: getColombiaDateStr(-1) + "T23:00:00.000Z"
+      }
+    ]
+  };
+  setCacheItem(SMART_PARLAYS_STORAGE_KEY, initialStore);
+  if (isSupabaseConfigured()) {
+    setSupabaseKvCache(SMART_PARLAYS_STORAGE_KEY, initialStore).catch(() => {
+    });
+  }
+  return initialStore;
+}
+async function saveSmartParlaysStore(store) {
+  store.updatedAt = Date.now();
+  setCacheItem(SMART_PARLAYS_STORAGE_KEY, store);
+  if (isSupabaseConfigured()) {
+    try {
+      await setSupabaseKvCache(SMART_PARLAYS_STORAGE_KEY, store);
+    } catch {
+    }
+  }
+}
+function evaluateLegResult(leg, finishedMatch) {
+  if (!finishedMatch) return "PENDING";
+  const homeGoals = Number(finishedMatch.goals?.home ?? finishedMatch.currentScore?.home ?? 0);
+  const awayGoals = Number(finishedMatch.goals?.away ?? finishedMatch.currentScore?.away ?? 0);
+  const totalGoals = homeGoals + awayGoals;
+  const homeCorners = Number(finishedMatch.liveStats?.home?.corners ?? 0);
+  const awayCorners = Number(finishedMatch.liveStats?.away?.corners ?? 0);
+  const totalCorners = homeCorners + awayCorners;
+  const cat = String(leg.category);
+  const label = leg.label.toLowerCase();
+  switch (cat) {
+    case "1X2":
+    case "ONE_X_TWO": {
+      if (label.includes("(1)") || label.includes("gana " + (finishedMatch.teams?.home?.name || "").toLowerCase())) {
+        return homeGoals > awayGoals ? "WON" : "LOST";
+      }
+      if (label.includes("(2)") || label.includes("gana " + (finishedMatch.teams?.away?.name || "").toLowerCase())) {
+        return awayGoals > homeGoals ? "WON" : "LOST";
+      }
+      if (label.includes("(x)") || label.includes("empate")) {
+        return homeGoals === awayGoals ? "WON" : "LOST";
+      }
+      return "LOST";
+    }
+    case "DOUBLE_CHANCE": {
+      if (label.includes("1x") || label.includes("local o empate")) {
+        return homeGoals >= awayGoals ? "WON" : "LOST";
+      }
+      if (label.includes("x2") || label.includes("empate o") || label.includes("o empate")) {
+        return awayGoals >= homeGoals ? "WON" : "LOST";
+      }
+      if (label.includes("12") || label.includes("cualquiera gana")) {
+        return homeGoals !== awayGoals ? "WON" : "LOST";
+      }
+      return "LOST";
+    }
+    case "TOTAL_GOALS": {
+      if (label.includes("1.5")) {
+        return label.includes("m\xE1s") || label.includes("over") ? totalGoals > 1.5 ? "WON" : "LOST" : totalGoals < 1.5 ? "WON" : "LOST";
+      }
+      if (label.includes("2.5")) {
+        return label.includes("m\xE1s") || label.includes("over") ? totalGoals > 2.5 ? "WON" : "LOST" : totalGoals < 2.5 ? "WON" : "LOST";
+      }
+      return totalGoals > 1.5 ? "WON" : "LOST";
+    }
+    case "BTTS": {
+      const bttsHit = homeGoals > 0 && awayGoals > 0;
+      if (label.includes("s\xED") || label.includes("si") || label.includes("yes")) {
+        return bttsHit ? "WON" : "LOST";
+      }
+      if (label.includes("no")) {
+        return !bttsHit ? "WON" : "LOST";
+      }
+      return "LOST";
+    }
+    case "TOTAL_CORNERS_MATCH": {
+      if (label.includes("8.5")) {
+        return totalCorners > 8.5 ? "WON" : "LOST";
+      }
+      if (label.includes("9.5")) {
+        return totalCorners > 9.5 ? "WON" : "LOST";
+      }
+      if (label.includes("10.5")) {
+        return label.includes("menos") ? totalCorners < 10.5 ? "WON" : "LOST" : totalCorners > 10.5 ? "WON" : "LOST";
+      }
+      return totalCorners > 8.5 ? "WON" : "LOST";
+    }
+    case "DRAW_NO_BET": {
+      if (homeGoals === awayGoals) {
+        return "VOID";
+      }
+      if (label.includes("local") || label.includes(String(finishedMatch.teams?.home?.name || "").toLowerCase())) {
+        return homeGoals > awayGoals ? "WON" : "LOST";
+      }
+      return awayGoals > homeGoals ? "WON" : "LOST";
+    }
+    default:
+      return "LOST";
+  }
+}
+async function auditPendingSmartParlaysWithFinishedMatches(finishedFixtures) {
+  if (!Array.isArray(finishedFixtures) || finishedFixtures.length === 0) return;
+  const store = await loadSmartParlaysStore();
+  const pendingSlips = store.slips.filter((s) => s.status === "PENDING");
+  if (pendingSlips.length === 0) return;
+  let modified = false;
+  for (const slip of pendingSlips) {
+    let hasLoss = false;
+    let pendingCount = 0;
+    let wonCount = 0;
+    let voidCount = 0;
+    for (const leg of slip.legs) {
+      const matchedFixture = finishedFixtures.find((f) => {
+        if (!f) return false;
+        if (String(f.id) === String(leg.fixtureId) || String(f.espnEventId) === String(leg.fixtureId)) return true;
+        const hName = String(f.teams?.home?.name || "").toLowerCase();
+        const aName = String(f.teams?.away?.name || "").toLowerCase();
+        const lMatch = leg.matchName.toLowerCase();
+        return hName && aName && lMatch.includes(hName.split(" ")[0]) && lMatch.includes(aName.split(" ")[0]);
+      });
+      if (!matchedFixture) {
+        pendingCount++;
+        continue;
+      }
+      const legRes = evaluateLegResult(leg, matchedFixture);
+      if (legRes === "LOST") {
+        hasLoss = true;
+        break;
+      } else if (legRes === "WON") {
+        wonCount++;
+      } else if (legRes === "VOID") {
+        voidCount++;
+      } else {
+        pendingCount++;
+      }
+    }
+    if (hasLoss) {
+      slip.status = "LOST";
+      slip.evaluationDate = (/* @__PURE__ */ new Date()).toISOString();
+      modified = true;
+    } else if (pendingCount === 0 && wonCount > 0) {
+      slip.status = "WON";
+      slip.evaluationDate = (/* @__PURE__ */ new Date()).toISOString();
+      modified = true;
+    } else if (pendingCount === 0 && voidCount === slip.legs.length) {
+      slip.status = "VOID";
+      slip.evaluationDate = (/* @__PURE__ */ new Date()).toISOString();
+      modified = true;
+    }
+  }
+  if (modified) {
+    await saveSmartParlaysStore(store);
+  }
+}
+app.get("/api/parlays/metrics", dataRateLimitMiddleware, async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado. M\xF3dulo Beta exclusivo para Administrador." });
+  }
+  clearAuthFailures(req);
+  try {
+    const store = await loadSmartParlaysStore();
+    const todayStr = getColombiaDateStr(0);
+    const todaySlips = store.slips.filter((s) => s.date === todayStr);
+    if (todaySlips.length === 0) {
+      const sharedUpcoming = getCacheItem(`upcoming_v8_${todayStr}`);
+      const availableMatches = sharedUpcoming?.data || [];
+      if (availableMatches.length >= 2) {
+        const generated = generateSmartParlays(availableMatches, todayStr);
+        if (generated.length > 0) {
+          store.slips.unshift(...generated);
+          await saveSmartParlaysStore(store);
+        }
+      }
+    }
+    const totalGenerated = store.slips.length;
+    const totalWon = store.slips.filter((s) => s.status === "WON").length;
+    const totalLost = store.slips.filter((s) => s.status === "LOST").length;
+    const totalPending = store.slips.filter((s) => s.status === "PENDING").length;
+    const totalVoid = store.slips.filter((s) => s.status === "VOID").length;
+    const resolvedCount = totalWon + totalLost;
+    const winRate = resolvedCount > 0 ? Number((totalWon / resolvedCount * 100).toFixed(1)) : 0;
+    const avgOdds = totalGenerated > 0 ? Number((store.slips.reduce((acc, s) => acc + s.totalOdds, 0) / totalGenerated).toFixed(2)) : 0;
+    let netProfitUnits = 0;
+    for (const slip of store.slips) {
+      if (slip.status === "WON") {
+        netProfitUnits += slip.totalOdds - 1;
+      } else if (slip.status === "LOST") {
+        netProfitUnits -= 1;
+      }
+    }
+    const netYieldUnits = Number(netProfitUnits.toFixed(2));
+    const yieldPercent = resolvedCount > 0 ? Number((netProfitUnits / resolvedCount * 100).toFixed(1)) : 0;
+    return res.json({
+      success: true,
+      metrics: {
+        totalGenerated,
+        totalWon,
+        totalLost,
+        totalPending,
+        totalVoid,
+        winRate,
+        avgOdds,
+        netYieldUnits,
+        yieldPercent
+      },
+      slips: store.slips
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: "Error al consultar m\xE9tricas de parlays inteligentes",
+      details: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 var ADMIN_USER_FEEDBACK_CACHE_KEY = "__admin_user_feedback_v1__";

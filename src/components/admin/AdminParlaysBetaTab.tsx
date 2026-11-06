@@ -1,43 +1,88 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Check, Copy, Trash2, Ticket, Flame, ShieldCheck, Target, Sparkles, TrendingUp, Plus, Info } from 'lucide-react';
-import { MatchFixture, ParlayPick, GMetricsSingleBetSuggestion } from '../../types';
+import * as XLSX from 'xlsx';
 import {
-  AccuracyEvaluatorService,
-  CompactParlayAuditRecord,
-  MonthlyParlayEffectivenessSummary
-} from '../../services/accuracyEvaluatorService';
+  Check,
+  Copy,
+  Ticket,
+  Target,
+  TrendingUp,
+  BarChart3,
+  Lock,
+  RefreshCw,
+  FileSpreadsheet,
+  Calendar,
+  Filter
+} from 'lucide-react';
+import { MatchFixture, ParlayPick, GMetricsSingleBetSuggestion, SmartParlaySlip } from '../../types';
 import {
-  generateGMetricsAdminParlays,
-  GMetricsParlaySuggestion,
-  generateGMetricsSingleValueBets
+  generateGMetricsSingleValueBets,
+  generateSmartParlays
 } from '../../services/mathEngine';
 import { getLocalUpcomingCache, getColombiaDateString } from '../../services/apiService';
 import { useParlay } from '../../context/ParlayContext';
-
-const LOCAL_MONTHLY_PARLAYS_CACHE_KEY = 'sportstats_monthly_parlays_ledger_v2';
 
 export interface AdminParlaysBetaTabProps {
   fixtures: MatchFixture[];
   onCloseAdmin: () => void;
 }
 
+interface ParlayMetricsData {
+  totalGenerated: number;
+  totalWon: number;
+  totalLost: number;
+  totalPending: number;
+  totalVoid: number;
+  winRate: number;
+  avgOdds: number;
+  netYieldUnits: number;
+  yieldPercent: number;
+}
+
+interface MonthlyStatItem {
+  monthKey: string;
+  monthLabel: string;
+  totalSlips: number;
+  won: number;
+  lost: number;
+  pending: number;
+  voidCount: number;
+  resolved: number;
+  winRate: number;
+  avgOdds: number;
+  netYieldUnits: number;
+  yieldPercent: number;
+}
+
+const MONTH_NAMES_ES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
+
+function getSpanishMonthLabel(monthKey: string): string {
+  const [yearStr, monthStr] = monthKey.split('-');
+  const monthIdx = Number(monthStr) - 1;
+  const monthName = MONTH_NAMES_ES[monthIdx] || monthKey;
+  return `${monthName} ${yearStr}`;
+}
+
 export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
   fixtures,
   onCloseAdmin
 }) => {
-  const { loadSuggestedParlay, addPick, setIsOpen } = useParlay();
-  const [copiedComboId, setCopiedComboId] = useState<string | null>(null);
+  const { addPick, setIsOpen } = useParlay();
+  const [copiedSlipId, setCopiedSlipId] = useState<string | null>(null);
   const [copiedSingleId, setCopiedSingleId] = useState<string | null>(null);
-  const [subTab, setSubTab] = useState<'PARLAYS' | 'SINGLES'>('PARLAYS');
-  const [legsFilter, setLegsFilter] = useState<'ALL' | 2 | 3>('ALL');
+  const [subTab, setSubTab] = useState<'SMART_PARLAYS' | 'MONTHLY_BREAKDOWN' | 'SINGLES'>('SMART_PARLAYS');
+  const [profileFilter, setProfileFilter] = useState<'ALL' | 'BALANCED' | 'HIGH_ODDS' | 'CONSERVATIVE'>('BALANCED');
+  const [monthFilter, setMonthFilter] = useState<string>('ALL');
   const [singleTypeFilter, setSingleTypeFilter] = useState<'ALL' | 'HIGH_VALUE' | 'BANKER'>('ALL');
   const [singleTopLimit, setSingleTopLimit] = useState<5 | 10>(5);
-  const [monthlyRecords, setMonthlyRecords] = useState<CompactParlayAuditRecord[]>([]);
 
-  const [monthKey, setMonthKey] = useState<string>(() => new Date().toISOString().slice(0, 7));
-  const [isLoadingLedger, setIsLoadingLedger] = useState<boolean>(true);
-  const [showHistoryTable, setShowHistoryTable] = useState<boolean>(false);
-  const [confirmResetMonth, setConfirmResetMonth] = useState<boolean>(false);
+  const [smartSlips, setSmartSlips] = useState<SmartParlaySlip[]>([]);
+  const [metrics, setMetrics] = useState<ParlayMetricsData | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
 
   const getAdminAuthHeaders = useCallback((withJson = false): Record<string, string> => {
     const headers: Record<string, string> = {};
@@ -52,122 +97,57 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     return headers;
   }, []);
 
-  const syncMonthlyParlayEffectiveness = useCallback(async () => {
-    setIsLoadingLedger(true);
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    setMonthKey(currentMonth);
-
-    const mergedMap = new Map<string, CompactParlayAuditRecord>();
-
-    // 1. Limpiar cualquier rastro de versión previa y cargar respaldo local limpio del mes
+  const fetchSmartParlaysAndMetrics = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMsg(null);
     try {
-      localStorage.removeItem('sportstats_monthly_parlays_ledger_v1');
-      const rawLocal = localStorage.getItem(LOCAL_MONTHLY_PARLAYS_CACHE_KEY);
-      if (rawLocal) {
-        const parsed = JSON.parse(rawLocal);
-        if (parsed && parsed.monthKey === currentMonth && Array.isArray(parsed.records)) {
-          parsed.records.forEach((r: CompactParlayAuditRecord) => {
-            if (r && r.id) mergedMap.set(r.id, r);
-          });
-        } else {
-          localStorage.removeItem(LOCAL_MONTHLY_PARLAYS_CACHE_KEY);
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    // 2. Consultar ledger mensual en Base de Datos (Supabase / backend)
-    try {
-      const res = await fetch('/api/admin/parlays-beta', {
+      const res = await fetch('/api/parlays/metrics', {
         headers: getAdminAuthHeaders(false)
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.success && data.ledger && Array.isArray(data.ledger.records)) {
-          if (data.ledger.monthKey) setMonthKey(data.ledger.monthKey);
-          data.ledger.records.forEach((r: CompactParlayAuditRecord) => {
-            if (r && r.id) mergedMap.set(r.id, r);
+        if (data.success) {
+          if (Array.isArray(data.slips)) {
+            setSmartSlips(data.slips);
+          }
+          if (data.metrics) {
+            setMetrics(data.metrics);
+          }
+        }
+      } else if (res.status === 403) {
+        setErrorMsg('Acceso restringido: Módulo exclusivo para Administrador.');
+      } else {
+        const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(getColombiaDateString(0))?.fixtures || [];
+        const localGenerated = generateSmartParlays(effective);
+        if (localGenerated.length > 0) {
+          setSmartSlips(localGenerated);
+          setMetrics({
+            totalGenerated: localGenerated.length,
+            totalWon: 0,
+            totalLost: 0,
+            totalPending: localGenerated.length,
+            totalVoid: 0,
+            winRate: 0,
+            avgOdds: Number((localGenerated.reduce((acc, s) => acc + s.totalOdds, 0) / localGenerated.length).toFixed(2)),
+            netYieldUnits: 0,
+            yieldPercent: 0
           });
         }
       }
     } catch {
-      // ignore offline
-    }
-
-    // 3. Evaluar nuevos parlays sobre partidos finalizados del mes ($0 cuota API)
-    try {
-      const newlyEvaluated = await AccuracyEvaluatorService.evaluateCompletedParlaysForMonth(fixtures);
-      let hasNewRecords = false;
-      for (const rec of newlyEvaluated) {
-        if (!mergedMap.has(rec.id)) {
-          hasNewRecords = true;
-        }
-        mergedMap.set(rec.id, rec);
+      const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(getColombiaDateString(0))?.fixtures || [];
+      const localGenerated = generateSmartParlays(effective);
+      if (localGenerated.length > 0) {
+        setSmartSlips(localGenerated);
       }
-
-      const finalRecords = Array.from(mergedMap.values()).sort((a, b) => b.d.localeCompare(a.d));
-      setMonthlyRecords(finalRecords);
-
-      try {
-        localStorage.setItem(
-          LOCAL_MONTHLY_PARLAYS_CACHE_KEY,
-          JSON.stringify({ monthKey: currentMonth, records: finalRecords })
-        );
-      } catch {
-        // ignore
-      }
-
-      // 4. Sincronizar registros nuevos hacia la Base de Datos de forma ultra-compacta
-      if (hasNewRecords && newlyEvaluated.length > 0) {
-        const pin =
-          sessionStorage.getItem('futbolstats_admin_pin') ||
-          localStorage.getItem('sportstats_admin_saved_pin') ||
-          '';
-        await fetch('/api/admin/parlays-beta', {
-          method: 'POST',
-          headers: getAdminAuthHeaders(true),
-          body: JSON.stringify({ pin, records: newlyEvaluated })
-        }).catch(() => {});
-      }
-    } catch {
-      setMonthlyRecords(Array.from(mergedMap.values()).sort((a, b) => b.d.localeCompare(a.d)));
     } finally {
-      setIsLoadingLedger(false);
+      setIsLoading(false);
     }
   }, [fixtures, getAdminAuthHeaders]);
 
   useEffect(() => {
-    syncMonthlyParlayEffectiveness();
-  }, [syncMonthlyParlayEffectiveness]);
-
-  const handleResetMonthlyParlays = async () => {
-    setConfirmResetMonth(false);
-    try {
-      localStorage.removeItem(LOCAL_MONTHLY_PARLAYS_CACHE_KEY);
-    } catch {
-      // ignore
-    }
-    setMonthlyRecords([]);
-
-    try {
-      const pin =
-        sessionStorage.getItem('futbolstats_admin_pin') ||
-        localStorage.getItem('sportstats_admin_saved_pin') ||
-        '';
-      await fetch('/api/admin/parlays-beta', {
-        method: 'POST',
-        headers: getAdminAuthHeaders(true),
-        body: JSON.stringify({ pin, resetMonth: true })
-      });
-    } catch {
-      // ignore
-    }
-  };
-
-  const monthlyStats = useMemo<MonthlyParlayEffectivenessSummary>(() => {
-    return AccuracyEvaluatorService.computeMonthlyParlaySummary(monthlyRecords, monthKey);
-  }, [monthlyRecords, monthKey]);
+    fetchSmartParlaysAndMetrics();
+  }, [fetchSmartParlaysAndMetrics]);
 
   const effectiveFixtures = useMemo(() => {
     if (fixtures && fixtures.length > 0) return fixtures;
@@ -175,14 +155,92 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     return cached?.fixtures || [];
   }, [fixtures]);
 
-  const suggestedParlays = useMemo<GMetricsParlaySuggestion[]>(() => {
-    return generateGMetricsAdminParlays(effectiveFixtures);
-  }, [effectiveFixtures]);
+  // Desglose Mes a Mes estricto sobre datos reales
+  const monthlyStats = useMemo<MonthlyStatItem[]>(() => {
+    const map = new Map<string, SmartParlaySlip[]>();
+    for (const slip of smartSlips) {
+      const mKey = slip.date ? slip.date.slice(0, 7) : '2026-11';
+      const list = map.get(mKey) || [];
+      list.push(slip);
+      map.set(mKey, list);
+    }
 
-  const filteredSuggestions = useMemo(() => {
-    if (legsFilter === 'ALL') return suggestedParlays;
-    return suggestedParlays.filter((c) => c.legsCount === legsFilter);
-  }, [suggestedParlays, legsFilter]);
+    const result: MonthlyStatItem[] = [];
+    map.forEach((slipsInMonth, monthKey) => {
+      const totalSlips = slipsInMonth.length;
+      const won = slipsInMonth.filter((s) => s.status === 'WON').length;
+      const lost = slipsInMonth.filter((s) => s.status === 'LOST').length;
+      const pending = slipsInMonth.filter((s) => s.status === 'PENDING').length;
+      const voidCount = slipsInMonth.filter((s) => s.status === 'VOID').length;
+      const resolved = won + lost;
+      const winRate = resolved > 0 ? Number(((won / resolved) * 100).toFixed(1)) : 0;
+      const avgOdds = totalSlips > 0
+        ? Number((slipsInMonth.reduce((acc, s) => acc + s.totalOdds, 0) / totalSlips).toFixed(2))
+        : 0;
+
+      let netUnits = 0;
+      for (const slip of slipsInMonth) {
+        if (slip.status === 'WON') {
+          netUnits += (slip.totalOdds - 1);
+        } else if (slip.status === 'LOST') {
+          netUnits -= 1;
+        }
+      }
+      const netYieldUnits = Number(netUnits.toFixed(2));
+      const yieldPercent = resolved > 0 ? Number(((netUnits / resolved) * 100).toFixed(1)) : 0;
+
+      result.push({
+        monthKey,
+        monthLabel: getSpanishMonthLabel(monthKey),
+        totalSlips,
+        won,
+        lost,
+        pending,
+        voidCount,
+        resolved,
+        winRate,
+        avgOdds,
+        netYieldUnits,
+        yieldPercent
+      });
+    });
+
+    return result.sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+  }, [smartSlips]);
+
+  // Lista de meses disponibles para el selector
+  const availableMonths = useMemo(() => {
+    return monthlyStats.map((m) => ({ key: m.monthKey, label: m.monthLabel }));
+  }, [monthlyStats]);
+
+  // Filtrado de boletos por perfil y por mes
+  const filteredSlips = useMemo(() => {
+    return smartSlips.filter((s) => {
+      const matchesProfile = profileFilter === 'ALL' || s.profile === profileFilter;
+      const matchesMonth = monthFilter === 'ALL' || (s.date && s.date.startsWith(monthFilter));
+      return matchesProfile && matchesMonth;
+    });
+  }, [smartSlips, profileFilter, monthFilter]);
+
+  // Métricas activas según el mes seleccionado
+  const activeMetrics = useMemo(() => {
+    if (monthFilter === 'ALL') {
+      return metrics;
+    }
+    const found = monthlyStats.find((m) => m.monthKey === monthFilter);
+    if (!found) return metrics;
+    return {
+      totalGenerated: found.totalSlips,
+      totalWon: found.won,
+      totalLost: found.lost,
+      totalPending: found.pending,
+      totalVoid: found.voidCount,
+      winRate: found.winRate,
+      avgOdds: found.avgOdds,
+      netYieldUnits: found.netYieldUnits,
+      yieldPercent: found.yieldPercent
+    };
+  }, [monthFilter, metrics, monthlyStats]);
 
   const singleValueBets = useMemo<GMetricsSingleBetSuggestion[]>(() => {
     return generateGMetricsSingleValueBets(effectiveFixtures, false, singleTopLimit);
@@ -193,33 +251,145 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     return singleValueBets.filter((s) => s.betType === singleTypeFilter);
   }, [singleValueBets, singleTypeFilter]);
 
-  const countHighValue = useMemo(
-    () => singleValueBets.filter((s) => s.betType === 'HIGH_VALUE').length,
-    [singleValueBets]
-  );
-  const countBanker = useMemo(
-    () => singleValueBets.filter((s) => s.betType === 'BANKER').length,
-    [singleValueBets]
-  );
+  // Exportación a Excel (.xlsx) con datos 100% reales
+  const handleExportExcel = () => {
+    setIsExporting(true);
+    try {
+      const wb = XLSX.utils.book_new();
 
-  const handleAddSingleToSlip = (single: GMetricsSingleBetSuggestion) => {
-    const mappedPick: ParlayPick = {
-      id: `${single.fixtureId}_${single.marketKey}`,
-      fixtureId: single.fixtureId,
-      sport: single.sport,
-      matchTitle: single.matchTitle,
-      homeTeamName: single.homeTeamName,
-      awayTeamName: single.awayTeamName,
-      matchDate: single.matchDate,
-      matchTime: single.matchTime,
-      marketKey: single.marketKey,
-      selectionLabel: single.selectionLabel,
-      referenceOdd: single.estimatedBookieOdd,
-      userOdd: single.estimatedBookieOdd,
-      probability: single.probability,
-      isEV: true
-    };
-    addPick(mappedPick);
+      // Hoja 1: Resumen Mes a Mes
+      const summaryRows = monthlyStats.map((m) => ({
+        'Mes (Clave)': m.monthKey,
+        'Nombre del Mes': m.monthLabel,
+        'Boletos Generados': m.totalSlips,
+        'Ganados (WON)': m.won,
+        'Perdidos (LOST)': m.lost,
+        'Pendientes': m.pending,
+        'Resueltos': m.resolved,
+        'Tasa de Acierto (%)': `${m.winRate}%`,
+        'Cuota Promedio': `@${m.avgOdds.toFixed(2)}x`,
+        'Yield Neto (Unidades)': `${m.netYieldUnits >= 0 ? '+' : ''}${m.netYieldUnits} u`,
+        'ROI Neto (%)': `${m.yieldPercent >= 0 ? '+' : ''}${m.yieldPercent}%`
+      }));
+
+      const wsSummary = XLSX.utils.json_to_sheet(summaryRows.length > 0 ? summaryRows : [
+        { Mensaje: 'Sin datos registrados aún en la base de datos' }
+      ]);
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumen_Mes_a_Mes');
+
+      // Hoja 2: Detalle de Parlays Reales
+      const parlayRows = smartSlips.map((s) => {
+        let netProfit = 0;
+        if (s.status === 'WON') netProfit = Number((s.totalOdds - 1).toFixed(2));
+        else if (s.status === 'LOST') netProfit = -1;
+
+        const legsSummary = s.legs
+          .map((l, i) => `${i + 1}) ${l.matchName}: ${l.label} (@${l.odds.toFixed(2)})`)
+          .join(' | ');
+
+        return {
+          'ID Boleto': s.id,
+          'Fecha (YYYY-MM-DD)': s.date,
+          'Perfil': s.profile === 'BALANCED' ? 'Equilibrado' : s.profile === 'HIGH_ODDS' ? 'Cuota Alta' : 'Conservador',
+          'Cuota Total': Number(s.totalOdds.toFixed(2)),
+          'Estado': s.status,
+          'Total Patas': s.legs.length,
+          'Casa Sugerida (Colombia)': s.profile === 'HIGH_ODDS' ? 'BetPlay / Rushbet' : 'BetPlay / Wplay',
+          'Detalle de Selecciones': legsSummary,
+          'Ganancia Neta (Unidades)': netProfit,
+          'Fecha Evaluación': s.evaluationDate || 'Pendiente'
+        };
+      });
+
+      const wsParlays = XLSX.utils.json_to_sheet(parlayRows.length > 0 ? parlayRows : [
+        { Mensaje: 'Sin boletos registrados' }
+      ]);
+      XLSX.utils.book_append_sheet(wb, wsParlays, 'Detalle_Parlays');
+
+      // Hoja 3: Detalle de Patas y Mercados
+      const legsRows: any[] = [];
+      smartSlips.forEach((s) => {
+        s.legs.forEach((leg, idx) => {
+          legsRows.push({
+            'ID Boleto': s.id,
+            'Fecha Boleto': s.date,
+            'N° Pata': idx + 1,
+            'Partido': leg.matchName,
+            'Liga': leg.leagueName,
+            'Categoría Mercado': leg.category,
+            'Pronóstico': leg.label,
+            'Cuota Decimal': Number(leg.odds.toFixed(2)),
+            'Probabilidad Modelo (%)': `${Math.round(leg.impliedProb * 100)}%`,
+            'Valor Esperado (+EV)': leg.expectedValue > 0 ? `+${(leg.expectedValue * 100).toFixed(1)}%` : '0%',
+            'Compatible Casas Colombianas': leg.availableInColombianBooks ? 'Sí' : 'No',
+            'Operador Sugerido': leg.category === 'TOTAL_GOALS' || leg.category === 'TOTAL_CORNERS_MATCH' ? 'BetPlay (Líneas Goles/Córners)' : leg.category === 'BTTS' ? 'Wplay / BetPlay' : 'BetPlay / Rushbet'
+          });
+        });
+      });
+
+      const wsLegs = XLSX.utils.json_to_sheet(legsRows.length > 0 ? legsRows : [
+        { Mensaje: 'Sin selecciones registradas' }
+      ]);
+      XLSX.utils.book_append_sheet(wb, wsLegs, 'Detalle_Mercados');
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const filename = `G_METRICS_Reporte_Parlays_Reales_${todayStr}.xlsx`;
+      XLSX.writeFile(wb, filename);
+    } catch (err) {
+      console.error('Error al exportar Excel de parlays:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleCopySmartParlay = async (slip: SmartParlaySlip) => {
+    const profileLabel =
+      slip.profile === 'BALANCED'
+        ? 'EQUILIBRADO (~3.00)'
+        : slip.profile === 'HIGH_ODDS'
+        ? 'CUOTA ALTA (~6.00)'
+        : 'CONSERVADOR (~2.00)';
+
+    let text = `🔥 *PARLAY G METRICS · ${profileLabel}*\n`;
+    text += `🇨🇴 *Compatible con BetPlay / Wplay / Rushbet*\n`;
+    text += `📅 Fecha: ${slip.date} | Cuota Total: @${slip.totalOdds.toFixed(2)}x\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    slip.legs.forEach((leg, i) => {
+      text += `${i + 1}. ⚽ *${leg.matchName}* (${leg.leagueName})\n`;
+      text += `   ▪️ Mercado: *${leg.label}*\n`;
+      text += `   ▪️ Cuota: @${leg.odds.toFixed(2)}x | Prob. Modelo: ${Math.round(leg.impliedProb * 100)}% (+EV)\n`;
+    });
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    text += `💰 Gestión de Banca: 1 Unidad (Flat Stake)\n`;
+    text += `⚡ Análisis cuantitativo motor matemático G METRICS`;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedSlipId(slip.id);
+      setTimeout(() => setCopiedSlipId(null), 2500);
+    } catch {}
+  };
+
+  const handleLoadSmartParlayIntoSlip = (slip: SmartParlaySlip) => {
+    slip.legs.forEach((leg) => {
+      const pick: ParlayPick = {
+        id: `${leg.fixtureId}_${leg.category}_${leg.label.replace(/\s+/g, '')}`,
+        fixtureId: leg.fixtureId,
+        matchTitle: leg.matchName,
+        homeTeamName: leg.matchName.split(' vs ')[0] || leg.matchName,
+        awayTeamName: leg.matchName.split(' vs ')[1] || leg.matchName,
+        matchDate: slip.date,
+        matchTime: '15:00',
+        marketKey: leg.category,
+        selectionLabel: leg.label,
+        referenceOdd: leg.odds,
+        userOdd: leg.odds,
+        probability: Math.round(leg.impliedProb * 100),
+        isEV: true,
+        sport: 'SOCCER'
+      };
+      addPick(pick);
+    });
     onCloseAdmin();
     setTimeout(() => setIsOpen(true), 150);
   };
@@ -236,651 +406,437 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     text += `⚡ *Ventaja Estadística (+EV):* +${single.valueEdgePct}%\n`;
     text += `💰 *Stake Sugerido (Kelly):* ${single.recommendedKellyStakePct}% de banca\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `💡 *Análisis Cuantitativo:*\n${single.reasoning}\n`;
+    text += `💡 *Análisis:* ${single.reasoning}\n`;
     text += `🔍 *Clave Táctica:* ${single.tacticalFactor}`;
 
     try {
       await navigator.clipboard.writeText(text);
       setCopiedSingleId(single.id);
       setTimeout(() => setCopiedSingleId(null), 2500);
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
-  const handleLoadToSlip = (combo: GMetricsParlaySuggestion) => {
-    const mappedPicks: ParlayPick[] = combo.legs.map((leg) => ({
-      id: `${leg.fixtureId}_${leg.marketKey}`,
-      fixtureId: leg.fixtureId,
-      sport: 'SOCCER',
-      matchTitle: leg.matchTitle,
-      homeTeamName: leg.homeTeamName,
-      awayTeamName: leg.awayTeamName,
-      matchDate: leg.matchDate,
-      matchTime: leg.matchTime,
-      marketKey: leg.marketKey,
-      selectionLabel: leg.selectionLabel,
-      referenceOdd: leg.estimatedBookieOdd,
-      userOdd: leg.estimatedBookieOdd,
-      probability: leg.probability,
-      isEV: true
-    }));
-
-    loadSuggestedParlay(
-      mappedPicks,
-      `🎫 Parlay "${combo.title}" (${combo.legs.length} selecciones) cargado al boleto (${combo.combinedEstimatedOdd.toFixed(2)}x).`
-    );
-    onCloseAdmin();
-    setTimeout(() => setIsOpen(true), 150);
-  };
-
-  const handleCopyCombo = async (combo: GMetricsParlaySuggestion) => {
-    let text = `🎫 *PARLAY G METRICS · BETA ADMIN*\n`;
-    text += `📌 *${combo.title}*\n`;
-    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    combo.legs.forEach((leg, i) => {
-      text += `${i + 1}. ⚽ *${leg.matchTitle}* (${leg.leagueName})\n`;
-      text += `   ▪️ Pick: *${leg.selectionLabel}* (${leg.probability}%) | Fair Mín: *@${leg.fairMinOdd.toFixed(2)}x*\n`;
-    });
-    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `📊 *Cuota Est.:* @${combo.combinedEstimatedOdd.toFixed(2)}x | *Fair Mín.:* @${combo.combinedFairMinOdd.toFixed(2)}x+\n`;
-    text += `🎯 *Prob. Conjunta:* ${combo.jointProbability}% (${combo.stressTest.simulatedWinsPer100}/100 sim.)\n`;
-    text += `💰 *Inversión Sugerida (Stake):* ${combo.recommendedKellyStakePct}% de banca`;
-
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedComboId(combo.id);
-      setTimeout(() => setCopiedComboId(null), 2500);
-    } catch {
-      // ignore
-    }
-  };
-
-  const count3Legs = suggestedParlays.filter((c) => c.legsCount === 3).length;
-  const count2Legs = suggestedParlays.filter((c) => c.legsCount === 2).length;
-
+  const resolvedCount = (activeMetrics?.totalWon ?? 0) + (activeMetrics?.totalLost ?? 0);
 
   return (
     <div className="space-y-3 font-sans text-slate-800">
-      {/* 1. Resumen Mensual de Efectividad de Parlays (Persistente en BD con Auto-Reset Mensual) */}
-      <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                📊 Control Mensual BD ({monthlyStats.monthKey})
+      {/* 1. Barra Superior Compacta con Acciones Rápidas */}
+      <div className="p-3 rounded-2xl bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+            <Lock className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-xs sm:text-sm">Parlays Cuantitativos (+EV)</span>
+              <span className="px-2 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-500 text-slate-950 uppercase">
+                Admin Beta
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white text-slate-600 border border-slate-200">
-                ⚡ Auto-limpieza mensual (&lt;15 KB en BD)
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2 flex-wrap pt-0.5">
-              <h3 className="text-base sm:text-lg font-bold text-slate-900 font-mono">
-                Efectividad Mensual Parlays:{' '}
-                <span className="text-emerald-700">{monthlyStats.accuracyPercentage}%</span>
-              </h3>
-              <span className="text-xs font-medium text-slate-500">
-                ({monthlyStats.hits} aciertos de {monthlyStats.totalEvaluated} boletos cerrados)
+              <span className="text-[10px] font-mono text-emerald-400">
+                🇨🇴 BetPlay · Wplay · Rushbet
               </span>
             </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            {monthlyStats.totalEvaluated > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowHistoryTable(!showHistoryTable)}
-                className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold transition cursor-pointer"
-              >
-                {showHistoryTable ? 'Ocultar Historial' : `Historial (${monthlyStats.totalEvaluated})`}
-              </button>
-            )}
-
-            {confirmResetMonth ? (
-              <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-xl px-2 py-1">
-                <span className="text-[11px] text-rose-800 font-bold">¿Reiniciar mes?</span>
-                <button
-                  type="button"
-                  onClick={handleResetMonthlyParlays}
-                  className="px-2 py-0.5 rounded bg-rose-600 text-white text-xs font-bold cursor-pointer"
-                >
-                  Sí
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmResetMonth(false)}
-                  className="px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200 text-xs font-bold cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmResetMonth(true)}
-                className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 text-xs font-medium transition cursor-pointer flex items-center gap-1"
-                title="Reiniciar efectividad mensual de parlays"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Nuevo Mes</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* 4 Indicadores Rápidos Compactos */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <div className="p-2 rounded-xl bg-white border border-slate-200 text-xs">
-            <span className="text-slate-500 block text-[10px] uppercase font-semibold">Boletos Mes</span>
-            <span className="text-sm font-bold font-mono text-slate-900">
-              {isLoadingLedger ? '...' : `${monthlyStats.hits}/${monthlyStats.totalEvaluated}`}
-            </span>
-          </div>
-
-          <div className="p-2 rounded-xl bg-emerald-50/60 border border-emerald-200 text-xs">
-            <span className="text-emerald-800 block text-[10px] uppercase font-semibold">Efect. Dúos (2P)</span>
-            <span className="text-sm font-bold font-mono text-emerald-700">
-              {monthlyStats.duoAccuracyPct}% ({monthlyStats.duoHits}/{monthlyStats.duoEvaluated})
-            </span>
-          </div>
-
-          <div className="p-2 rounded-xl bg-indigo-50/60 border border-indigo-200 text-xs">
-            <span className="text-indigo-800 block text-[10px] uppercase font-semibold">Efect. Tríos (3P)</span>
-            <span className="text-sm font-bold font-mono text-indigo-700">
-              {monthlyStats.trioAccuracyPct}% ({monthlyStats.trioHits}/{monthlyStats.trioEvaluated})
-            </span>
-          </div>
-
-          <div className="p-2 rounded-xl bg-amber-50/60 border border-amber-200 text-xs">
-            <span className="text-amber-800 block text-[10px] uppercase font-semibold">Cuota Prom.</span>
-            <span className="text-sm font-bold font-mono text-amber-800">
-              {monthlyStats.avgHitOdd > 0 ? `@${monthlyStats.avgHitOdd.toFixed(2)}x` : '@1.85x'}
+            <span className="text-[10.5px] text-slate-400 font-mono block">
+              Motor Dixon-Coles & Poisson · Cuotas Reales sin Duplicados
             </span>
           </div>
         </div>
 
-        {/* Tabla Plegable de Parlays Evaluados en el Mes */}
-        {showHistoryTable && monthlyStats.records.length > 0 && (
-          <div className="overflow-x-auto bg-white rounded-xl border border-slate-200 max-h-52 overflow-y-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 text-[10px] uppercase">
-                  <th className="py-1.5 px-2.5">Fecha</th>
-                  <th className="py-1.5 px-2">Boleto</th>
-                  <th className="py-1.5 px-2">Selecciones</th>
-                  <th className="py-1.5 px-2">Cuota</th>
-                  <th className="py-1.5 px-2.5 text-right">Estado</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {monthlyStats.records.map((rec) => (
-                  <tr key={rec.id} className="hover:bg-slate-50">
-                    <td className="py-1.5 px-2.5 text-[11px] text-slate-500">{rec.d}</td>
-                    <td className="py-1.5 px-2 font-sans font-semibold text-slate-900 text-[11px]">
-                      {rec.t} ({rec.l}P)
-                    </td>
-                    <td className="py-1.5 px-2 font-sans text-[10px] text-slate-600">
-                      {rec.legs.map((l, idx) => (
-                        <span key={idx} className="block truncate max-w-xs">
-                          {l.h ? '✓' : '✕'} {l.m}: <strong>{l.p}</strong>
-                        </span>
-                      ))}
-                    </td>
-                    <td className="py-1.5 px-2 font-bold text-slate-900">@{Number(rec.o).toFixed(2)}x</td>
-                    <td className="py-1.5 px-2.5 text-right">
-                      {rec.s === 'HIT' ? (
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                          ✓ ACIERTO
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
-                          ✕ FALLO
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={isExporting || smartSlips.length === 0}
+            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            title="Descargar archivo Excel oficial (.xlsx) con auditoría mes a mes"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />
+            <span>{isExporting ? 'Exportando...' : 'Descargar Excel (.xlsx)'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={fetchSmartParlaysAndMetrics}
+            className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-semibold transition cursor-pointer flex items-center gap-1.5"
+            title="Sincronizar y auditar boletos con partidos finalizados"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Actualizar</span>
+          </button>
+        </div>
       </div>
 
-      {/* 2. Switcher de Sub-Pestañas: Parlays Combinados vs Apuestas Sencillas (+EV & Bankers) */}
-      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-100 border border-slate-200">
+      {errorMsg && (
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
+          {errorMsg}
+        </div>
+      )}
+
+      {/* 2. Filtro de Mes y Período */}
+      {availableMonths.length > 0 && (
+        <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="font-semibold text-slate-700">Período de Análisis:</span>
+            <select
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-indigo-500 shadow-2xs"
+            >
+              <option value="ALL">🗓️ Histórico Completo ({smartSlips.length} parlays)</option>
+              {availableMonths.map((m) => (
+                <option key={m.key} value={m.key}>
+                  📅 {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <span className="text-[11px] font-mono text-slate-500">
+            {filteredSlips.length} boletos filtrados
+          </span>
+        </div>
+      )}
+
+      {/* 3. Tarjetas KPI Reales (Sin Datos Falsos ni Estimaciones) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        {/* KPI 1: Tasa de Acierto */}
+        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+              Tasa de Acierto Real
+            </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xl sm:text-2xl font-black font-mono text-emerald-700">
+                {isLoading ? '...' : `${activeMetrics?.winRate ?? 0}%`}
+              </span>
+              <span className="text-[10px] font-mono text-slate-500">
+                ({activeMetrics ? `${activeMetrics.totalWon}W / ${activeMetrics.totalLost}L` : '0W / 0L'})
+              </span>
+            </div>
+            <span className="text-[9.5px] font-mono text-slate-400 block">
+              {resolvedCount > 0
+                ? `${resolvedCount} boletos evaluados oficialmente`
+                : `${activeMetrics?.totalPending ?? filteredSlips.length} en juego o pendientes`}
+            </span>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+            <Target className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* KPI 2: Cuota Promedio Ponderada */}
+        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+              Cuota Promedio Real
+            </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xl sm:text-2xl font-black font-mono text-indigo-700">
+                {isLoading ? '...' : `@${(activeMetrics?.avgOdds ?? 0).toFixed(2)}x`}
+              </span>
+              <span className="text-[10px] font-mono text-slate-500">
+                Ponderada
+              </span>
+            </div>
+            <span className="text-[9.5px] font-mono text-slate-400 block">
+              Sobre {activeMetrics?.totalGenerated ?? filteredSlips.length} parlays generados
+            </span>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-700 shrink-0">
+            <BarChart3 className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* KPI 3: Rendimiento / Yield Neto */}
+        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+              Rendimiento Neto Real
+            </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className={`text-xl sm:text-2xl font-black font-mono ${(activeMetrics?.netYieldUnits ?? 0) >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                {isLoading ? '...' : `${(activeMetrics?.netYieldUnits ?? 0) >= 0 ? '+' : ''}${(activeMetrics?.netYieldUnits ?? 0).toFixed(2)} u`}
+              </span>
+              <span className="text-[10px] font-mono text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                {activeMetrics ? `${activeMetrics.yieldPercent >= 0 ? '+' : ''}${activeMetrics.yieldPercent}% ROI` : '0.0% ROI'}
+              </span>
+            </div>
+            <span className="text-[9.5px] font-mono text-slate-400 block">
+              Apuesta fija de 1.0 unidad (Flat Stake)
+            </span>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+            <TrendingUp className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+
+      {/* 4. Selector de Pestañas Principales */}
+      <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200/90 font-mono text-xs">
         <button
           type="button"
-          onClick={() => setSubTab('PARLAYS')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-            subTab === 'PARLAYS'
-              ? 'bg-white text-slate-900 border border-slate-300 shadow-xs'
+          onClick={() => setSubTab('SMART_PARLAYS')}
+          className={`flex-1 py-1.5 px-3 rounded-lg font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            subTab === 'SMART_PARLAYS'
+              ? 'bg-white text-slate-900 border border-slate-200 shadow-2xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <Ticket className="w-3.5 h-3.5 text-indigo-600" />
-          <span>Parlays Combinados ({suggestedParlays.length})</span>
+          <Ticket className="w-3.5 h-3.5 text-emerald-600" />
+          <span>Boletos del Día ({filteredSlips.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('MONTHLY_BREAKDOWN')}
+          className={`flex-1 py-1.5 px-3 rounded-lg font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            subTab === 'MONTHLY_BREAKDOWN'
+              ? 'bg-white text-slate-900 border border-slate-200 shadow-2xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+          <span>Auditoría Mes a Mes ({monthlyStats.length})</span>
         </button>
 
         <button
           type="button"
           onClick={() => setSubTab('SINGLES')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`flex-1 py-1.5 px-3 rounded-lg font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
             subTab === 'SINGLES'
-              ? 'bg-white text-amber-950 border border-amber-300 shadow-xs'
+              ? 'bg-white text-slate-900 border border-slate-200 shadow-2xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Target className="w-3.5 h-3.5 text-amber-600" />
-          <span>Apuestas Sencillas (+EV & Bankers) ({singleValueBets.length})</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 font-mono text-[9px] font-black uppercase">
-            NUEVO
-          </span>
+          <span>Sencillas (+EV) ({singleValueBets.length})</span>
         </button>
       </div>
 
-      {/* VISTA A: PARLAYS COMBINADOS (2 Y 3 PATAS) */}
-      {subTab === 'PARLAYS' && (
-        <div className="space-y-2.5">
-          {/* Filtro de patas */}
-          <div className="flex items-center justify-between gap-2 flex-wrap bg-slate-100 p-1 rounded-xl border border-slate-200">
-            <div className="flex items-center gap-1 flex-wrap">
+      {/* CONTENIDO 1: AUDITORÍA MES A MES */}
+      {subTab === 'MONTHLY_BREAKDOWN' && (
+        <div className="space-y-3">
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+            <div className="p-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <BarChart3 className="w-4 h-4 text-indigo-600" />
+                  <span>Historial Mensual de Eficiencia Cuantitativa</span>
+                </h4>
+                <p className="text-[10.5px] text-slate-500 font-mono">
+                  Datos auditados contra resultados oficiales de marcadores de ESPN y Football-Data.
+                </p>
+              </div>
+
               <button
                 type="button"
-                onClick={() => setLegsFilter('ALL')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  legsFilter === 'ALL'
-                    ? 'bg-white text-slate-900 border border-slate-300 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                onClick={handleExportExcel}
+                className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition"
               >
-                Todos ({suggestedParlays.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setLegsFilter(3)}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  legsFilter === 3
-                    ? 'bg-white text-indigo-800 border border-indigo-300 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                🎯 3 Selecciones ({count3Legs})
-              </button>
-              <button
-                type="button"
-                onClick={() => setLegsFilter(2)}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  legsFilter === 2
-                    ? 'bg-white text-emerald-800 border border-emerald-300 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                🔥 2 Selecciones ({count2Legs})
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Exportar Hoja Excel</span>
               </button>
             </div>
 
-            <span className="text-[10px] font-mono text-slate-500 px-2">
-              Consenso 3 Sub-Modelos · Cuotas &gt; 1.50x
-            </span>
-          </div>
-
-          {/* Tarjetas de Parlays */}
-          {filteredSuggestions.length === 0 ? (
-            <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1.5">
-              <Ticket className="w-6 h-6 text-slate-400 mx-auto" />
-              <p className="text-xs font-bold text-slate-700">
-                Sin partidos activos suficientes para armar parlays en esta fecha.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-2.5">
-              {filteredSuggestions.map((combo) => (
-                <div
-                  key={combo.id}
-                  className="rounded-2xl border border-slate-200 bg-white shadow-2xs overflow-hidden"
-                >
-                  {/* Cabecera Ultra-Compacta */}
-                  <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border shrink-0 ${
-                          combo.legsCount === 3
-                            ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
-                            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                        }`}
-                      >
-                        {combo.legsCount} Selecciones
-                      </span>
-                      <h4 className="font-bold text-xs sm:text-sm text-slate-900 truncate">
-                        {combo.title}
-                      </h4>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0 font-mono text-xs">
-                      <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
-                        Est: @{combo.combinedEstimatedOdd.toFixed(2)}x
-                      </span>
-                      <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 font-bold">
-                        Fair Mín: @{combo.combinedFairMinOdd.toFixed(2)}x+
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Lista Compacta de Selecciones */}
-                  <div className="px-3.5 py-2 divide-y divide-slate-100">
-                    {combo.legs.map((leg, idx) => (
-                      <div
-                        key={leg.fixtureId}
-                        className="py-1.5 flex items-center justify-between gap-2 text-xs"
-                      >
-                        <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
-                          <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-800 font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
-                            {idx + 1}
+            {monthlyStats.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-xs">
+                No hay parlays registrados aún en la base de datos histórica.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/80 text-[10px] font-mono text-slate-500 uppercase">
+                      <th className="p-2.5 font-bold">Mes</th>
+                      <th className="p-2.5 font-bold text-center">Boletos</th>
+                      <th className="p-2.5 font-bold text-center">Ganados</th>
+                      <th className="p-2.5 font-bold text-center">Perdidos</th>
+                      <th className="p-2.5 font-bold text-center">Pendientes</th>
+                      <th className="p-2.5 font-bold text-center">Win Rate</th>
+                      <th className="p-2.5 font-bold text-center">Cuota Prom.</th>
+                      <th className="p-2.5 font-bold text-right">Yield Neto</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-mono">
+                    {monthlyStats.map((item) => (
+                      <tr key={item.monthKey} className="hover:bg-slate-50/80 transition">
+                        <td className="p-2.5 font-bold text-slate-900">
+                          {item.monthLabel}
+                        </td>
+                        <td className="p-2.5 text-center font-bold text-slate-700">
+                          {item.totalSlips}
+                        </td>
+                        <td className="p-2.5 text-center font-bold text-emerald-700">
+                          {item.won}
+                        </td>
+                        <td className="p-2.5 text-center font-bold text-rose-700">
+                          {item.lost}
+                        </td>
+                        <td className="p-2.5 text-center text-amber-700">
+                          {item.pending}
+                        </td>
+                        <td className="p-2.5 text-center font-bold">
+                          <span className={`px-2 py-0.5 rounded-md ${item.resolved > 0 && item.winRate >= 50 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}`}>
+                            {item.winRate}%
                           </span>
-                          <span className="font-bold text-slate-900 truncate">{leg.matchTitle}</span>
-                          <span className="text-[10px] text-slate-400">({leg.matchTime})</span>
-                          <span className="font-extrabold text-emerald-700">{leg.selectionLabel}</span>
-                          <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-semibold">
-                            {leg.probability}%
+                        </td>
+                        <td className="p-2.5 text-center text-indigo-700 font-bold">
+                          @{item.avgOdds.toFixed(2)}x
+                        </td>
+                        <td className="p-2.5 text-right font-bold">
+                          <span className={item.netYieldUnits >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
+                            {item.netYieldUnits >= 0 ? '+' : ''}{item.netYieldUnits} u
                           </span>
-                          <span className="text-[10px] font-mono text-amber-800">
-                            Mín @{leg.fairMinOdd.toFixed(2)}x
+                          <span className="text-[10px] text-slate-400 block">
+                            ({item.yieldPercent >= 0 ? '+' : ''}{item.yieldPercent}%)
                           </span>
-                        </div>
-
-                        <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-800 font-mono font-bold text-[11px] shrink-0">
-                          ~@{leg.estimatedBookieOdd.toFixed(2)}x
-                        </span>
-                      </div>
+                        </td>
+                      </tr>
                     ))}
-                  </div>
-
-                  {/* Barra Inferior Compacta */}
-                  <div className="px-3.5 py-2 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-wrap text-[11px]">
-                      <span className="font-semibold text-slate-700">
-                        {combo.stressTest.trafficLight === 'GREEN'
-                          ? '🟢'
-                          : combo.stressTest.trafficLight === 'YELLOW'
-                          ? '🟡'
-                          : '🔴'}{' '}
-                        Estrés: <strong>{combo.stressTest.simulatedWinsPer100}/100</strong> aciertos
-                      </span>
-                      <span className="text-slate-300">|</span>
-                      <span className="font-mono text-indigo-700 font-semibold">
-                        Stake Sugerido: {combo.recommendedKellyStakePct}%
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-end gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleCopyCombo(combo)}
-                        className="px-2.5 py-1 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-semibold text-xs flex items-center gap-1 transition cursor-pointer"
-                      >
-                        {copiedComboId === combo.id ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-600" />
-                            <span className="text-emerald-700">Copiado</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5" />
-                            <span>Copiar</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleLoadToSlip(combo)}
-                        className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-2xs transition cursor-pointer"
-                      >
-                        <Ticket className="w-3.5 h-3.5" />
-                        <span>Cargar al Boleto</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* VISTA B: APUESTAS SENCILLAS (+EV & BANKERS) */}
-      {subTab === 'SINGLES' && (
+      {/* CONTENIDO 2: PARLAYS INTELIGENTES */}
+      {subTab === 'SMART_PARLAYS' && (
         <div className="space-y-3">
-          {/* Banner Didáctico Estratégico */}
-          <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-50 to-emerald-50 border border-amber-200/80 flex items-start gap-2.5">
-            <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <div className="text-xs space-y-0.5">
-              <h4 className="font-bold text-amber-950">
-                Estrategia de Apuestas Sencillas de Alto Rendimiento
-              </h4>
-              <p className="text-slate-600 leading-relaxed text-[11px]">
-                Apostar en sencillo elimina el riesgo multiplicativo de las combinadas. Aquí seleccionamos
-                <strong className="text-amber-900 font-semibold"> Alta Cuota (1.80 a 2.65 con +EV estadístico positivo)</strong> y
-                <strong className="text-emerald-900 font-semibold"> Bankers Seguros (74% a 88% de acierto histórico)</strong>.
-              </p>
-            </div>
+          {/* Selector de Perfil */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-mono">
+            {[
+              { key: 'BALANCED', label: 'Equilibrado (~3.00)' },
+              { key: 'HIGH_ODDS', label: 'Cuota Alta (~6.00)' },
+              { key: 'CONSERVATIVE', label: 'Conservador (~2.00)' },
+              { key: 'ALL', label: 'Todos los Perfiles' }
+            ].map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setProfileFilter(p.key as any)}
+                className={`px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer shrink-0 border ${
+                  profileFilter === p.key
+                    ? 'bg-slate-900 border-slate-900 text-white shadow-2xs'
+                    : 'bg-white border-slate-200 text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
 
-          {/* Filtro de Tipo de Sencilla y Selector Top 5 vs Top 10 */}
-          <div className="flex items-center justify-between gap-2 flex-wrap bg-slate-100 p-1 rounded-xl border border-slate-200">
-            <div className="flex items-center gap-1 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setSingleTypeFilter('ALL')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  singleTypeFilter === 'ALL'
-                    ? 'bg-white text-slate-900 border border-slate-300 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Todas ({filteredSingles.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSingleTypeFilter('HIGH_VALUE')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                  singleTypeFilter === 'HIGH_VALUE'
-                    ? 'bg-white text-amber-900 border border-amber-300 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Flame className="w-3.5 h-3.5 text-amber-600" />
-                <span>Alta Cuota +EV ({countHighValue})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSingleTypeFilter('BANKER')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                  singleTypeFilter === 'BANKER'
-                    ? 'bg-white text-emerald-900 border border-emerald-300 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Bankers Seguros ({countBanker})</span>
-              </button>
-            </div>
-
-            {/* Selector interactivo Top 5 vs Top 10 */}
-            <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded-lg border border-slate-200 shrink-0">
-              <span className="text-[10px] font-bold text-slate-500 uppercase">Ver:</span>
-              <button
-                type="button"
-                onClick={() => setSingleTopLimit(5)}
-                className={`px-2 py-0.5 rounded-md text-xs font-bold transition cursor-pointer ${
-                  singleTopLimit === 5
-                    ? 'bg-amber-600 text-white shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900 bg-slate-100'
-                }`}
-              >
-                ⭐ Top 5
-              </button>
-              <button
-                type="button"
-                onClick={() => setSingleTopLimit(10)}
-                className={`px-2 py-0.5 rounded-md text-xs font-bold transition cursor-pointer ${
-                  singleTopLimit === 10
-                    ? 'bg-amber-600 text-white shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900 bg-slate-100'
-                }`}
-              >
-                🔟 Top 10
-              </button>
-            </div>
-          </div>
-
-          {/* Tarjetas de Apuestas Sencillas Curadas */}
-          {filteredSingles.length === 0 ? (
-            <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1.5">
-              <Target className="w-6 h-6 text-slate-400 mx-auto" />
+          {/* Lista de Boletos */}
+          {filteredSlips.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-white border border-slate-200 text-center space-y-2">
+              <Ticket className="w-8 h-8 text-slate-300 mx-auto" />
               <p className="text-xs font-bold text-slate-700">
-                No se detectaron apuestas sencillas que cumplan el umbral estricto en esta cartelera.
+                No hay parlays disponibles para el filtro seleccionado.
+              </p>
+              <p className="text-[11px] text-slate-500 font-mono">
+                El motor requiere al menos 2 partidos oficiales programados para calcular combinadas con +EV.
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-2.5">
-              {filteredSingles.map((single) => {
-                const isHighValue = single.betType === 'HIGH_VALUE';
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {filteredSlips.map((slip) => {
+                const profileName =
+                  slip.profile === 'BALANCED'
+                    ? 'Equilibrado'
+                    : slip.profile === 'HIGH_ODDS'
+                    ? 'Cuota Alta'
+                    : 'Conservador';
+
+                const statusColor =
+                  slip.status === 'WON'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                    : slip.status === 'LOST'
+                    ? 'bg-rose-50 text-rose-800 border-rose-300'
+                    : 'bg-amber-50 text-amber-800 border-amber-300';
+
+                const statusText =
+                  slip.status === 'WON'
+                    ? 'ACERTADO'
+                    : slip.status === 'LOST'
+                    ? 'FALLIDO'
+                    : 'EN JUEGO / PENDIENTE';
+
                 return (
                   <div
-                    key={single.id}
-                    className="rounded-2xl border border-slate-200 bg-white shadow-2xs overflow-hidden hover:border-slate-300 transition"
+                    key={slip.id}
+                    className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between space-y-3 hover:border-slate-300 transition"
                   >
-                    {/* Cabecera */}
-                    <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {single.rank && (
-                          <span
-                            className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-black border flex items-center gap-1 shrink-0 ${
-                              single.rank === 1
-                                ? 'bg-amber-100 text-amber-950 border-amber-300'
-                                : single.rank === 2
-                                ? 'bg-slate-200 text-slate-900 border-slate-300'
-                                : single.rank === 3
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : 'bg-slate-100 text-slate-700 border-slate-200'
-                            }`}
+                    <div>
+                      {/* Cabecera del Boleto */}
+                      <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-xs text-slate-900">
+                            {profileName} ({slip.legs.length} Eventos)
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-500">
+                            {slip.date}
+                          </span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold border ${statusColor}`}>
+                          {statusText}
+                        </span>
+                      </div>
+
+                      {/* Lista de Patas */}
+                      <div className="mt-2.5 space-y-2">
+                        {slip.legs.map((leg, idx) => (
+                          <div
+                            key={`${leg.fixtureId}_${idx}`}
+                            className="p-2 rounded-xl bg-slate-50 border border-slate-200/70 text-xs flex items-center justify-between gap-2"
                           >
-                            {single.rank === 1 ? '🥇 #1' : single.rank === 2 ? '🥈 #2' : single.rank === 3 ? '🥉 #3' : `#${single.rank}`}
-                          </span>
-                        )}
-                        <span
-                          className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border flex items-center gap-1 shrink-0 ${
-                            isHighValue
-                              ? 'bg-amber-50 text-amber-900 border-amber-200'
-                              : 'bg-emerald-50 text-emerald-900 border-emerald-200'
-                          }`}
-                        >
-                          {isHighValue ? (
-                            <>
-                              <Flame className="w-3 h-3 text-amber-600" />
-                              <span>Alta Cuota (+EV)</span>
-                            </>
-                          ) : (
-                            <>
-                              <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                              <span>Banker Seguro</span>
-                            </>
-                          )}
-                        </span>
-                        <span className="text-xs text-slate-500 font-medium truncate">
-                          {single.leagueName} · {single.matchTime}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0 font-mono text-xs">
-                        <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-extrabold">
-                          Cuota Est: @{single.estimatedBookieOdd.toFixed(2)}x
-                        </span>
-                        <span className="px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 font-bold">
-                          +{single.valueEdgePct}% EV
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Cuerpo de la Selección */}
-                    <div className="p-3.5 space-y-2.5">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div>
-                          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
-                            {single.categoryLabel}
-                          </div>
-                          <div className="text-sm sm:text-base font-extrabold text-slate-900 font-sans">
-                            {single.matchTitle}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {single.qualityScore !== undefined && (
-                            <div className="px-3 py-1 rounded-xl bg-slate-100 border border-slate-200 text-center">
-                              <span className="text-[9px] uppercase font-bold text-slate-500 block">Score G-Metrics</span>
-                              <span className="text-xs font-mono font-black text-amber-900">{single.qualityScore}</span>
+                            <div className="min-w-0">
+                              <span className="font-bold text-slate-900 truncate block">
+                                {idx + 1}. {leg.matchName}
+                              </span>
+                              <span className="text-[10px] font-mono text-slate-500">
+                                {leg.label} ({leg.category})
+                              </span>
                             </div>
-                          )}
-                          <div className="px-3 py-1 rounded-xl bg-slate-100 border border-slate-200 text-center">
-                            <span className="text-[9px] uppercase font-bold text-slate-500 block">Probabilidad</span>
-                            <span className="text-xs font-mono font-black text-slate-900">{single.probability}%</span>
+                            <div className="text-right shrink-0">
+                              <span className="font-mono font-bold text-indigo-700">
+                                @{leg.odds.toFixed(2)}x
+                              </span>
+                              <span className="text-[9px] font-mono text-emerald-700 block">
+                                {Math.round(leg.impliedProb * 100)}% +EV
+                              </span>
+                            </div>
                           </div>
-                          <div className="px-3 py-1 rounded-xl bg-slate-100 border border-slate-200 text-center">
-                            <span className="text-[9px] uppercase font-bold text-slate-500 block">Cuota Mín Fair</span>
-                            <span className="text-xs font-mono font-black text-amber-800">@{single.fairMinOdd.toFixed(2)}x</span>
-                          </div>
-                          <div className="px-3 py-1 rounded-xl bg-slate-100 border border-slate-200 text-center">
-                            <span className="text-[9px] uppercase font-bold text-slate-500 block">Stake Kelly</span>
-                            <span className="text-xs font-mono font-black text-indigo-700">{single.recommendedKellyStakePct}%</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Selección Destacada */}
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-xs font-bold text-slate-700 font-sans">Pronóstico Recomendado:</span>
-                          <span className="text-xs sm:text-sm font-black text-emerald-800 font-sans">
-                            {single.selectionLabel}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Justificación Cuantitativa y Táctica */}
-                      <div className="text-xs text-slate-600 bg-amber-50/40 p-2.5 rounded-xl border border-amber-200/60 space-y-1">
-                        <div className="flex items-start gap-1.5">
-                          <Info className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
-                          <p className="leading-relaxed">
-                            <strong className="text-slate-800">Análisis Matemático:</strong> {single.reasoning}
-                          </p>
-                        </div>
-                        <div className="text-[11px] text-slate-500 pl-5">
-                          <strong>Factor Clave:</strong> {single.tacticalFactor}
-                        </div>
+                        ))}
                       </div>
                     </div>
 
-                    {/* Acciones */}
-                    <div className="px-3.5 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        Recomendado para jugar como apuesta individual directa
-                      </span>
+                    {/* Footer del Boleto */}
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <div>
+                        <span className="text-[9.5px] font-mono text-slate-400 block uppercase">
+                          Cuota Total
+                        </span>
+                        <span className="text-lg font-black font-mono text-slate-900">
+                          @{slip.totalOdds.toFixed(2)}x
+                        </span>
+                      </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => handleCopySingle(single)}
-                          className="px-2.5 py-1 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-semibold text-xs flex items-center gap-1 transition cursor-pointer"
+                          onClick={() => handleCopySmartParlay(slip)}
+                          className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 cursor-pointer transition"
                         >
-                          {copiedSingleId === single.id ? (
+                          {copiedSlipId === slip.id ? (
                             <>
                               <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              <span className="text-emerald-700">Copiado</span>
+                              <span>Copiado</span>
                             </>
                           ) : (
                             <>
-                              <Copy className="w-3.5 h-3.5" />
+                              <Copy className="w-3.5 h-3.5 text-slate-500" />
                               <span>Copiar</span>
                             </>
                           )}
@@ -888,11 +844,11 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
 
                         <button
                           type="button"
-                          onClick={() => handleAddSingleToSlip(single)}
-                          className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                          onClick={() => handleLoadSmartParlayIntoSlip(slip)}
+                          className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer transition shadow-2xs"
                         >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Añadir al Boleto</span>
+                          <Ticket className="w-3.5 h-3.5" />
+                          <span>Cargar Slip</span>
                         </button>
                       </div>
                     </div>
@@ -904,6 +860,94 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         </div>
       )}
 
+      {/* CONTENIDO 3: SENCILLAS (+EV) */}
+      {subTab === 'SINGLES' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap text-xs font-mono">
+            <div className="flex items-center gap-1.5">
+              {[
+                { key: 'ALL', label: 'Todas' },
+                { key: 'HIGH_VALUE', label: 'Alta Cuota (+EV)' },
+                { key: 'BANKER', label: 'Bankers Seguros' }
+              ].map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setSingleTypeFilter(f.key as any)}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer border ${
+                    singleTypeFilter === f.key
+                      ? 'bg-slate-900 border-slate-900 text-white'
+                      : 'bg-white border-slate-200 text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1 text-[11px] text-slate-500">
+              <span>Top:</span>
+              <button
+                type="button"
+                onClick={() => setSingleTopLimit(5)}
+                className={`px-1.5 py-0.5 rounded font-bold cursor-pointer ${singleTopLimit === 5 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
+              >
+                5
+              </button>
+              <button
+                type="button"
+                onClick={() => setSingleTopLimit(10)}
+                className={`px-1.5 py-0.5 rounded font-bold cursor-pointer ${singleTopLimit === 10 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
+              >
+                10
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {filteredSingles.map((single) => (
+              <div
+                key={single.id}
+                className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5"
+              >
+                <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                  <span className="font-bold text-xs text-slate-900 truncate">
+                    {single.matchTitle}
+                  </span>
+                  <span className="px-2 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                    {single.betType === 'HIGH_VALUE' ? '+EV ALTO' : 'BANKER'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <div>
+                    <span className="font-bold text-slate-800 block">{single.selectionLabel}</span>
+                    <span className="text-[10px] text-slate-500 font-mono">{single.categoryLabel}</span>
+                  </div>
+                  <div className="text-right font-mono">
+                    <span className="font-bold text-indigo-700 block">@{single.estimatedBookieOdd.toFixed(2)}x</span>
+                    <span className="text-[10px] text-emerald-700 font-semibold">{single.probability}% prob.</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-[10px] font-mono text-emerald-700 font-semibold">
+                    Ventaja: +{single.valueEdgePct}% (+EV)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopySingle(single)}
+                    className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition"
+                  >
+                    {copiedSingleId === single.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-slate-500" />}
+                    <span>{copiedSingleId === single.id ? 'Copiado' : 'Copiar'}</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

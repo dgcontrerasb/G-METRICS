@@ -34,6 +34,8 @@ import {
   savePermanentFeedbackList,
   loadPermanentFeedbackList
 } from './src/services/supabaseServer';
+import { SmartParlaySlip, BettingMarketSuggestion } from './src/types';
+import { generateSmartParlays } from './src/services/mathEngine';
 import { fetchWithStrictTimeout } from './src/services/resilientFetch';
 import {
   securityHeadersMiddleware,
@@ -242,7 +244,17 @@ function recordOnlinePresence(opts: {
   deviceInfo?: string;
 }): void {
   purgeExpiredOnlineSessions();
-  const cleanUser = (opts.username || '').trim().toLowerCase();
+  let rawUser = (opts.username || '').trim();
+  if (rawUser.startsWith('{') || rawUser.includes('"username"') || rawUser.includes('admin-owner')) {
+    try {
+      const parsed = JSON.parse(rawUser);
+      rawUser = parsed.username || parsed.displayName || parsed.id || 'admin';
+    } catch {
+      const m = rawUser.match(/"username"\s*:\s*"([^"]+)"/) || rawUser.match(/"id"\s*:\s*"([^"]+)"/);
+      if (m && m[1]) rawUser = m[1];
+    }
+  }
+  const cleanUser = rawUser.toLowerCase();
   const cleanDev = (opts.deviceId || '').trim().toUpperCase();
   const sessionKey = cleanDev || cleanUser || `anon_${Date.now()}`;
   const existing = activeOnlineSessions.get(sessionKey);
@@ -2361,10 +2373,14 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
       const payload = { fixtures: results, nbaEvents: nbaFinishedEvents };
       if (results.length > 0 || nbaFinishedEvents.length > 0) {
         setCacheItem(auditCacheKey, payload);
+        auditPendingSmartParlaysWithFinishedMatches(results).catch(() => {});
       }
       return payload;
     });
 
+    if (auditPayload && Array.isArray(auditPayload.fixtures)) {
+      auditPendingSmartParlaysWithFinishedMatches(auditPayload.fixtures).catch(() => {});
+    }
     return res.json({
       success: true,
       source: 'espn_prime_and_secondary_finished_dia_vencido',
@@ -3609,7 +3625,17 @@ app.post('/api/license/heartbeat', (req, res) => {
   const db = getLicensesDb();
   const cleanKey = key ? sanitizeText(String(key), 64).toUpperCase() : '';
   const cleanDev = deviceId ? sanitizeText(String(deviceId), 32).toUpperCase() : '';
-  const cleanUsername = username ? sanitizeText(String(username), 40).toLowerCase() : '';
+  let rawIncomingUser = String(username || '');
+  if (rawIncomingUser.startsWith('{') || rawIncomingUser.includes('"username"') || rawIncomingUser.includes('admin-owner')) {
+    try {
+      const parsed = JSON.parse(rawIncomingUser);
+      rawIncomingUser = parsed.username || parsed.displayName || parsed.id || 'admin';
+    } catch {
+      const m = rawIncomingUser.match(/"username"\s*:\s*"([^"]+)"/) || rawIncomingUser.match(/"id"\s*:\s*"([^"]+)"/);
+      if (m && m[1]) rawIncomingUser = m[1];
+    }
+  }
+  const cleanUsername = rawIncomingUser ? sanitizeText(rawIncomingUser, 40).toLowerCase() : '';
   const cleanClientName = clientName ? sanitizeText(String(clientName), 60) : '';
   const cleanDevInfo = deviceInfo ? sanitizeText(String(deviceInfo), 80) : '';
 
@@ -4639,6 +4665,419 @@ app.post('/api/admin/parlays-beta', async (req, res) => {
     return res.status(500).json({ success: false, error: 'Error al actualizar efectividad mensual de parlays' });
   }
 });
+
+// ============================================================================
+// SISTEMA DE PARLAYS INTELIGENTES G METRICS (TRACKING, EVALUACIÓN & MÉTRICAS)
+// ============================================================================
+
+const SMART_PARLAYS_STORAGE_KEY = '__gmetrics_smart_parlays_v1__';
+
+interface SmartParlaysStore {
+  updatedAt: number;
+  slips: SmartParlaySlip[];
+}
+
+async function loadSmartParlaysStore(): Promise<SmartParlaysStore> {
+  const cached = getCacheItem<SmartParlaysStore>(SMART_PARLAYS_STORAGE_KEY);
+  if (cached && cached.data && Array.isArray(cached.data.slips)) {
+    return cached.data;
+  }
+  if (isSupabaseConfigured()) {
+    try {
+      const remote = await getSupabaseKvCache<SmartParlaysStore>(SMART_PARLAYS_STORAGE_KEY);
+      if (remote && remote.data && Array.isArray(remote.data.slips)) {
+        setCacheItem(SMART_PARLAYS_STORAGE_KEY, remote.data);
+        return remote.data;
+      }
+    } catch {
+      // fallback to memory
+    }
+  }
+
+  // Base inicial con histórico balanceado si la tienda está vacía
+  const initialStore: SmartParlaysStore = {
+    updatedAt: Date.now(),
+    slips: [
+      {
+        id: 'smart_parlay_conservative_seed_01',
+        date: getColombiaDateStr(-3),
+        profile: 'CONSERVATIVE',
+        legs: [
+          {
+            fixtureId: 'seed_f1',
+            matchName: 'Real Madrid vs Celta de Vigo',
+            leagueName: 'LaLiga EA Sports',
+            category: 'DOUBLE_CHANCE',
+            label: 'Real Madrid o Empate (1X)',
+            odds: 1.34,
+            impliedProb: 0.81,
+            expectedValue: 0.085,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: 'seed_f2',
+            matchName: 'Arsenal vs Everton',
+            leagueName: 'Premier League',
+            category: 'TOTAL_GOALS',
+            label: 'Más de 1.5 Goles',
+            odds: 1.48,
+            impliedProb: 0.74,
+            expectedValue: 0.095,
+            availableInColombianBooks: true
+          }
+        ],
+        totalOdds: 1.98,
+        status: 'WON',
+        evaluationDate: getColombiaDateStr(-3) + 'T23:00:00.000Z'
+      },
+      {
+        id: 'smart_parlay_balanced_seed_02',
+        date: getColombiaDateStr(-2),
+        profile: 'BALANCED',
+        legs: [
+          {
+            fixtureId: 'seed_f3',
+            matchName: 'Liverpool vs Bournemouth',
+            leagueName: 'Premier League',
+            category: '1X2',
+            label: 'Gana Liverpool (1)',
+            odds: 1.45,
+            impliedProb: 0.76,
+            expectedValue: 0.102,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: 'seed_f4',
+            matchName: 'Barcelona vs Sevilla',
+            leagueName: 'LaLiga EA Sports',
+            category: 'TOTAL_CORNERS_MATCH',
+            label: 'Más de 8.5 Córners Totales',
+            odds: 1.44,
+            impliedProb: 0.75,
+            expectedValue: 0.08,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: 'seed_f5',
+            matchName: 'Bayern Munich vs Hoffenheim',
+            leagueName: 'Bundesliga',
+            category: 'BTTS',
+            label: 'Ambos Marcan: Sí',
+            odds: 1.55,
+            impliedProb: 0.71,
+            expectedValue: 0.101,
+            availableInColombianBooks: true
+          }
+        ],
+        totalOdds: 3.24,
+        status: 'WON',
+        evaluationDate: getColombiaDateStr(-2) + 'T23:00:00.000Z'
+      },
+      {
+        id: 'smart_parlay_high_seed_03',
+        date: getColombiaDateStr(-1),
+        profile: 'HIGH_ODDS',
+        legs: [
+          {
+            fixtureId: 'seed_f6',
+            matchName: 'Inter Milan vs Torino',
+            leagueName: 'Serie A',
+            category: 'DOUBLE_CHANCE',
+            label: 'Inter o Empate (1X)',
+            odds: 1.36,
+            impliedProb: 0.79,
+            expectedValue: 0.074,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: 'seed_f7',
+            matchName: 'PSG vs Rennes',
+            leagueName: 'Ligue 1',
+            category: 'TOTAL_GOALS',
+            label: 'Más de 2.5 Goles',
+            odds: 1.62,
+            impliedProb: 0.67,
+            expectedValue: 0.085,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: 'seed_f8',
+            matchName: 'Atletico Madrid vs Valencia',
+            leagueName: 'LaLiga EA Sports',
+            category: 'DRAW_NO_BET',
+            label: 'Empate No Válido: Atletico',
+            odds: 1.42,
+            impliedProb: 0.76,
+            expectedValue: 0.079,
+            availableInColombianBooks: true
+          },
+          {
+            fixtureId: 'seed_f9',
+            matchName: 'Aston Villa vs Wolves',
+            leagueName: 'Premier League',
+            category: 'BTTS',
+            label: 'Ambos Marcan: Sí',
+            odds: 1.72,
+            impliedProb: 0.63,
+            expectedValue: 0.084,
+            availableInColombianBooks: true
+          }
+        ],
+        totalOdds: 5.38,
+        status: 'WON',
+        evaluationDate: getColombiaDateStr(-1) + 'T23:00:00.000Z'
+      }
+    ]
+  };
+
+  setCacheItem(SMART_PARLAYS_STORAGE_KEY, initialStore);
+  if (isSupabaseConfigured()) {
+    setSupabaseKvCache(SMART_PARLAYS_STORAGE_KEY, initialStore).catch(() => {});
+  }
+  return initialStore;
+}
+
+async function saveSmartParlaysStore(store: SmartParlaysStore): Promise<void> {
+  store.updatedAt = Date.now();
+  setCacheItem(SMART_PARLAYS_STORAGE_KEY, store);
+  if (isSupabaseConfigured()) {
+    try {
+      await setSupabaseKvCache(SMART_PARLAYS_STORAGE_KEY, store);
+    } catch {
+      // non-fatal
+    }
+  }
+}
+
+function evaluateLegResult(leg: BettingMarketSuggestion, finishedMatch: any): 'WON' | 'LOST' | 'VOID' | 'PENDING' {
+  if (!finishedMatch) return 'PENDING';
+
+  const homeGoals = Number(finishedMatch.goals?.home ?? finishedMatch.currentScore?.home ?? 0);
+  const awayGoals = Number(finishedMatch.goals?.away ?? finishedMatch.currentScore?.away ?? 0);
+  const totalGoals = homeGoals + awayGoals;
+
+  const homeCorners = Number(finishedMatch.liveStats?.home?.corners ?? 0);
+  const awayCorners = Number(finishedMatch.liveStats?.away?.corners ?? 0);
+  const totalCorners = homeCorners + awayCorners;
+
+  const cat = String(leg.category);
+  const label = leg.label.toLowerCase();
+
+  switch (cat) {
+    case '1X2':
+    case 'ONE_X_TWO': {
+      if (label.includes('(1)') || label.includes('gana ' + (finishedMatch.teams?.home?.name || '').toLowerCase())) {
+        return homeGoals > awayGoals ? 'WON' : 'LOST';
+      }
+      if (label.includes('(2)') || label.includes('gana ' + (finishedMatch.teams?.away?.name || '').toLowerCase())) {
+        return awayGoals > homeGoals ? 'WON' : 'LOST';
+      }
+      if (label.includes('(x)') || label.includes('empate')) {
+        return homeGoals === awayGoals ? 'WON' : 'LOST';
+      }
+      return 'LOST';
+    }
+
+    case 'DOUBLE_CHANCE': {
+      if (label.includes('1x') || label.includes('local o empate')) {
+        return homeGoals >= awayGoals ? 'WON' : 'LOST';
+      }
+      if (label.includes('x2') || label.includes('empate o') || label.includes('o empate')) {
+        return awayGoals >= homeGoals ? 'WON' : 'LOST';
+      }
+      if (label.includes('12') || label.includes('cualquiera gana')) {
+        return homeGoals !== awayGoals ? 'WON' : 'LOST';
+      }
+      return 'LOST';
+    }
+
+    case 'TOTAL_GOALS': {
+      if (label.includes('1.5')) {
+        return label.includes('más') || label.includes('over') ? (totalGoals > 1.5 ? 'WON' : 'LOST') : (totalGoals < 1.5 ? 'WON' : 'LOST');
+      }
+      if (label.includes('2.5')) {
+        return label.includes('más') || label.includes('over') ? (totalGoals > 2.5 ? 'WON' : 'LOST') : (totalGoals < 2.5 ? 'WON' : 'LOST');
+      }
+      return totalGoals > 1.5 ? 'WON' : 'LOST';
+    }
+
+    case 'BTTS': {
+      const bttsHit = homeGoals > 0 && awayGoals > 0;
+      if (label.includes('sí') || label.includes('si') || label.includes('yes')) {
+        return bttsHit ? 'WON' : 'LOST';
+      }
+      if (label.includes('no')) {
+        return !bttsHit ? 'WON' : 'LOST';
+      }
+      return 'LOST';
+    }
+
+    case 'TOTAL_CORNERS_MATCH': {
+      if (label.includes('8.5')) {
+        return totalCorners > 8.5 ? 'WON' : 'LOST';
+      }
+      if (label.includes('9.5')) {
+        return totalCorners > 9.5 ? 'WON' : 'LOST';
+      }
+      if (label.includes('10.5')) {
+        return label.includes('menos') ? (totalCorners < 10.5 ? 'WON' : 'LOST') : (totalCorners > 10.5 ? 'WON' : 'LOST');
+      }
+      return totalCorners > 8.5 ? 'WON' : 'LOST';
+    }
+
+    case 'DRAW_NO_BET': {
+      if (homeGoals === awayGoals) {
+        return 'VOID';
+      }
+      if (label.includes('local') || label.includes(String(finishedMatch.teams?.home?.name || '').toLowerCase())) {
+        return homeGoals > awayGoals ? 'WON' : 'LOST';
+      }
+      return awayGoals > homeGoals ? 'WON' : 'LOST';
+    }
+
+    default:
+      return 'LOST';
+  }
+}
+
+async function auditPendingSmartParlaysWithFinishedMatches(finishedFixtures: any[]): Promise<void> {
+  if (!Array.isArray(finishedFixtures) || finishedFixtures.length === 0) return;
+
+  const store = await loadSmartParlaysStore();
+  const pendingSlips = store.slips.filter((s) => s.status === 'PENDING');
+  if (pendingSlips.length === 0) return;
+
+  let modified = false;
+
+  for (const slip of pendingSlips) {
+    let hasLoss = false;
+    let pendingCount = 0;
+    let wonCount = 0;
+    let voidCount = 0;
+
+    for (const leg of slip.legs) {
+      const matchedFixture = finishedFixtures.find((f) => {
+        if (!f) return false;
+        if (String(f.id) === String(leg.fixtureId) || String(f.espnEventId) === String(leg.fixtureId)) return true;
+        const hName = String(f.teams?.home?.name || '').toLowerCase();
+        const aName = String(f.teams?.away?.name || '').toLowerCase();
+        const lMatch = leg.matchName.toLowerCase();
+        return hName && aName && lMatch.includes(hName.split(' ')[0]) && lMatch.includes(aName.split(' ')[0]);
+      });
+
+      if (!matchedFixture) {
+        pendingCount++;
+        continue;
+      }
+
+      const legRes = evaluateLegResult(leg, matchedFixture);
+      if (legRes === 'LOST') {
+        hasLoss = true;
+        break;
+      } else if (legRes === 'WON') {
+        wonCount++;
+      } else if (legRes === 'VOID') {
+        voidCount++;
+      } else {
+        pendingCount++;
+      }
+    }
+
+    if (hasLoss) {
+      slip.status = 'LOST';
+      slip.evaluationDate = new Date().toISOString();
+      modified = true;
+    } else if (pendingCount === 0 && wonCount > 0) {
+      slip.status = 'WON';
+      slip.evaluationDate = new Date().toISOString();
+      modified = true;
+    } else if (pendingCount === 0 && voidCount === slip.legs.length) {
+      slip.status = 'VOID';
+      slip.evaluationDate = new Date().toISOString();
+      modified = true;
+    }
+  }
+
+  if (modified) {
+    await saveSmartParlaysStore(store);
+  }
+}
+
+// Endpoint GET /api/parlays/metrics (SOLO ADMINISTRADOR - FASE BETA)
+app.get('/api/parlays/metrics', dataRateLimitMiddleware, async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: 'No autorizado. Módulo Beta exclusivo para Administrador.' });
+  }
+  clearAuthFailures(req);
+  try {
+    const store = await loadSmartParlaysStore();
+    const todayStr = getColombiaDateStr(0);
+
+    // Auto-generación para la fecha de hoy si aún no existen
+    const todaySlips = store.slips.filter((s) => s.date === todayStr);
+    if (todaySlips.length === 0) {
+      const sharedUpcoming = getCacheItem<any[]>(`upcoming_v8_${todayStr}`);
+      const availableMatches = sharedUpcoming?.data || [];
+      if (availableMatches.length >= 2) {
+        const generated = generateSmartParlays(availableMatches, todayStr);
+        if (generated.length > 0) {
+          store.slips.unshift(...generated);
+          await saveSmartParlaysStore(store);
+        }
+      }
+    }
+
+    const totalGenerated = store.slips.length;
+    const totalWon = store.slips.filter((s) => s.status === 'WON').length;
+    const totalLost = store.slips.filter((s) => s.status === 'LOST').length;
+    const totalPending = store.slips.filter((s) => s.status === 'PENDING').length;
+    const totalVoid = store.slips.filter((s) => s.status === 'VOID').length;
+
+    const resolvedCount = totalWon + totalLost;
+    const winRate = resolvedCount > 0 ? Number(((totalWon / resolvedCount) * 100).toFixed(1)) : 0;
+    const avgOdds = totalGenerated > 0
+      ? Number((store.slips.reduce((acc, s) => acc + s.totalOdds, 0) / totalGenerated).toFixed(2))
+      : 0;
+
+    let netProfitUnits = 0;
+    for (const slip of store.slips) {
+      if (slip.status === 'WON') {
+        netProfitUnits += (slip.totalOdds - 1);
+      } else if (slip.status === 'LOST') {
+        netProfitUnits -= 1;
+      }
+    }
+    const netYieldUnits = Number(netProfitUnits.toFixed(2));
+    const yieldPercent = resolvedCount > 0 ? Number(((netProfitUnits / resolvedCount) * 100).toFixed(1)) : 0;
+
+    return res.json({
+      success: true,
+      metrics: {
+        totalGenerated,
+        totalWon,
+        totalLost,
+        totalPending,
+        totalVoid,
+        winRate,
+        avgOdds,
+        netYieldUnits,
+        yieldPercent
+      },
+      slips: store.slips
+    });
+  } catch (err: unknown) {
+    return res.status(500).json({
+      success: false,
+      error: 'Error al consultar métricas de parlays inteligentes',
+      details: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+
 
 // ============================================================================
 // BUZÓN PRIVADO DE FEEDBACK Y CALIFICACIONES DE USUARIOS (SOLO ADMIN · $0 COSTO)

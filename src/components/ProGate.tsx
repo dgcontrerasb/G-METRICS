@@ -4,6 +4,13 @@ import { verifyLicenseToken } from '../services/licenseService';
 
 export function checkIsProClient(): boolean {
   if (typeof window === 'undefined') return false;
+  // 1. Verificación directa de administrador por credenciales locales o sesión
+  try {
+    if (localStorage.getItem('sportstats_admin_remember') === 'true') return true;
+    if (sessionStorage.getItem('futbolstats_admin_pin') || localStorage.getItem('sportstats_admin_saved_pin')) return true;
+  } catch {}
+
+  // 2. Verificación de objeto de usuario autenticado
   try {
     const raw = localStorage.getItem('sportstats_auth_user');
     if (raw) {
@@ -12,6 +19,8 @@ export function checkIsProClient(): boolean {
       if (u.expiresAt && Number(u.expiresAt) > Date.now()) return true;
     }
   } catch {}
+
+  // 3. Verificación de licencia activa criptográfica
   try {
     const rawLic = localStorage.getItem('futbolstats_active_license');
     if (rawLic) {
@@ -47,7 +56,7 @@ export const ProGate: React.FC<ProGateProps> = ({
   children,
   className = ''
 }) => {
-  const effectiveIsPro = isPro !== undefined ? isPro : checkIsProClient();
+  const effectiveIsPro = isPro === true || checkIsProClient();
 
   if (effectiveIsPro) {
     return <>{children}</>;

@@ -54,6 +54,7 @@ import {
 } from './services/favoritesService';
 import { registerBackgroundPushSubscription } from './services/pushNotificationService';
 import { getBrowserSupabase } from './services/supabaseBrowser';
+import { checkIsProClient } from './components/ProGate';
 
 export default function App() {
   // Animación de entrada y salida de sesión
@@ -297,7 +298,12 @@ export default function App() {
   // Silent Background Revalidation (Capa 5 Sesión - Sincronización en vivo de días)
   const revalidateSession = useCallback(async () => {
     try {
-      const sessionRes = await fetch('/api/auth/session', { credentials: 'include' });
+      const token = typeof window !== 'undefined' ? (localStorage.getItem('sportstats_session_jwt') || sessionStorage.getItem('sportstats_session_jwt')) : null;
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const sessionRes = await fetch('/api/auth/session', { credentials: 'include', headers });
       if (sessionRes.ok) {
         const sessionData = await sessionRes.json();
         if (sessionData?.authenticated && sessionData?.user) {
@@ -340,9 +346,16 @@ export default function App() {
           }
           return;
         } else if (sessionData && !sessionData.authenticated) {
-          setIsAppUnlocked(false);
-          setActiveLicenseInfo(null);
-          return;
+          const hasLocalAdmin = typeof window !== 'undefined' && (
+            localStorage.getItem('sportstats_admin_remember') === 'true' ||
+            sessionStorage.getItem('futbolstats_admin_pin') !== null ||
+            localStorage.getItem('sportstats_admin_saved_pin') !== null
+          );
+          if (!hasLocalAdmin) {
+            setIsAppUnlocked(false);
+            setActiveLicenseInfo(null);
+            return;
+          }
         }
       }
     } catch {
@@ -430,8 +443,20 @@ export default function App() {
       try {
         const active = getActiveStoredLicense();
         const devId = getOrCreateDeviceId();
-        const username = localStorage.getItem('sportstats_auth_user') || undefined;
-        const clientName = localStorage.getItem('sportstats_client_name') || username || undefined;
+        let cleanUsername: string | undefined = undefined;
+        try {
+          const raw = localStorage.getItem('sportstats_auth_user');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            cleanUsername = parsed.username || parsed.displayName || parsed.id;
+          }
+        } catch {
+          cleanUsername = localStorage.getItem('sportstats_client_name') || undefined;
+        }
+        if (!cleanUsername) {
+          cleanUsername = localStorage.getItem('sportstats_client_name') || undefined;
+        }
+        const clientName = localStorage.getItem('sportstats_client_name') || cleanUsername || undefined;
         const deviceInfo = typeof navigator !== 'undefined' ? `${navigator.platform || ''} (${navigator.userAgent.slice(0, 45)})` : undefined;
 
         const res = await fetch('/api/license/heartbeat', {
@@ -440,7 +465,7 @@ export default function App() {
           body: JSON.stringify({
             key: active?.key,
             deviceId: devId,
-            username,
+            username: cleanUsername,
             clientName,
             deviceInfo
           })
@@ -2280,7 +2305,16 @@ export default function App() {
         isSavedSlipsOpen={isSavedSlipsOpen}
         onCloseSavedSlipsModal={() => setIsSavedSlipsOpen(false)}
         onOpenSavedSlipsModal={() => setIsSavedSlipsOpen(true)}
-        isPro={Boolean(activeLicenseInfo?.isValid && !activeLicenseInfo?.isExpired)}
+        isPro={Boolean(
+          (activeLicenseInfo?.isValid && !activeLicenseInfo?.isExpired) ||
+          activeLicenseInfo?.isPermanent ||
+          (typeof window !== 'undefined' && (
+            localStorage.getItem('sportstats_admin_remember') === 'true' ||
+            sessionStorage.getItem('futbolstats_admin_pin') !== null ||
+            localStorage.getItem('sportstats_admin_saved_pin') !== null
+          )) ||
+          checkIsProClient()
+        )}
       />
 
       {/* Animación fluida de Inicio y Cierre de Sesión (Pantalla Completa Blanca Minimalista) */}

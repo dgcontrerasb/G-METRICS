@@ -828,7 +828,11 @@ const SoccerTabContent: React.FC<{
       </div>
     );
 
-    return tab === 'PICKS' ? <ProGate isPro={isPro} featureName="Picks Algorítmicos">{soccerPicksView}</ProGate> : soccerPicksView;
+    return (
+      <ProGate isPro={isPro} featureName={tab === 'PICKS' ? 'Picks Algorítmicos' : 'Mercados en Vivo'}>
+        {soccerPicksView}
+      </ProGate>
+    );
   }
 
   if (tab === 'GOALS_CORNERS') {
