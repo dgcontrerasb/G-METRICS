@@ -11,7 +11,9 @@ import {
   RefreshCw,
   FileSpreadsheet,
   Calendar,
-  Filter
+  Filter,
+  Image as ImageIcon,
+  FileText
 } from 'lucide-react';
 import { MatchFixture, ParlayPick, GMetricsSingleBetSuggestion, SmartParlaySlip } from '../../types';
 import {
@@ -20,6 +22,7 @@ import {
 } from '../../services/mathEngine';
 import { getLocalUpcomingCache, getColombiaDateString } from '../../services/apiService';
 import { useParlay } from '../../context/ParlayContext';
+import { SocialCardExportService, ExportMediaFormat } from '../../services/socialCardExportService';
 
 export interface AdminParlaysBetaTabProps {
   fixtures: MatchFixture[];
@@ -83,6 +86,30 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [isExportingMedia, setIsExportingMedia] = useState<boolean>(false);
+
+  const handleExportParlay = async (slip: SmartParlaySlip, format: ExportMediaFormat) => {
+    setIsExportingMedia(true);
+    try {
+      await SocialCardExportService.exportParlay(slip, format);
+    } catch (err) {
+      console.error('Error al exportar parlay para redes:', err);
+    } finally {
+      setIsExportingMedia(false);
+    }
+  };
+
+  const handleExportSingles = async (format: ExportMediaFormat) => {
+    setIsExportingMedia(true);
+    try {
+      const todayStr = getColombiaDateString(0);
+      await SocialCardExportService.exportSinglesSheet(filteredSingles, format, todayStr);
+    } catch (err) {
+      console.error('Error al exportar apuestas individuales para redes:', err);
+    } finally {
+      setIsExportingMedia(false);
+    }
+  };
 
   const getAdminAuthHeaders = useCallback((withJson = false): Record<string, string> => {
     const headers: Record<string, string> = {};
@@ -813,7 +840,7 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                     </div>
 
                     {/* Footer del Boleto */}
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                       <div>
                         <span className="text-[9.5px] font-mono text-slate-400 block uppercase">
                           Cuota Total
@@ -823,7 +850,31 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* Botones de Descarga en Redes (Imagen PNG y PDF) */}
+                        <div className="inline-flex rounded-xl bg-slate-900 p-0.5 border border-amber-500/30 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => handleExportParlay(slip, 'PNG')}
+                            disabled={isExportingMedia}
+                            className="px-2 py-1 rounded-lg text-amber-300 hover:text-white hover:bg-slate-800 transition cursor-pointer flex items-center gap-1 font-mono text-[11px] font-bold"
+                            title="Descargar Imagen para Redes (PNG)"
+                          >
+                            <ImageIcon className="w-3 h-3 text-amber-400" />
+                            <span>PNG</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleExportParlay(slip, 'PDF')}
+                            disabled={isExportingMedia}
+                            className="px-2 py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer flex items-center gap-1 font-mono text-[11px] font-bold"
+                            title="Descargar Documento para Redes (PDF)"
+                          >
+                            <FileText className="w-3 h-3 text-indigo-400" />
+                            <span>PDF</span>
+                          </button>
+                        </div>
+
                         <button
                           type="button"
                           onClick={() => handleCopySmartParlay(slip)}
@@ -885,22 +936,48 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
               ))}
             </div>
 
-            <div className="flex items-center gap-1 text-[11px] text-slate-500">
-              <span>Top:</span>
-              <button
-                type="button"
-                onClick={() => setSingleTopLimit(5)}
-                className={`px-1.5 py-0.5 rounded font-bold cursor-pointer ${singleTopLimit === 5 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
-              >
-                5
-              </button>
-              <button
-                type="button"
-                onClick={() => setSingleTopLimit(10)}
-                className={`px-1.5 py-0.5 rounded font-bold cursor-pointer ${singleTopLimit === 10 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
-              >
-                10
-              </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Botón Descargar Lámina Consolidada */}
+              <div className="inline-flex rounded-xl bg-slate-900 p-0.5 border border-amber-500/30 text-xs shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => handleExportSingles('PNG')}
+                  disabled={isExportingMedia || filteredSingles.length === 0}
+                  className="px-2.5 py-1 rounded-lg text-amber-300 hover:text-white hover:bg-slate-800 transition cursor-pointer flex items-center gap-1.5 font-mono text-[11px] font-bold"
+                  title="Descargar todas las apuestas individuales del día acomodadas en UNA SOLA Imagen (PNG)"
+                >
+                  <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Descargar Lámina (PNG)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportSingles('PDF')}
+                  disabled={isExportingMedia || filteredSingles.length === 0}
+                  className="px-2.5 py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer flex items-center gap-1 font-mono text-[11px] font-bold"
+                  title="Descargar todas las apuestas individuales en Documento PDF"
+                >
+                  <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>PDF</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1 text-[11px] text-slate-500 pl-2 border-l border-slate-200">
+                <span>Top:</span>
+                <button
+                  type="button"
+                  onClick={() => setSingleTopLimit(5)}
+                  className={`px-1.5 py-0.5 rounded font-bold cursor-pointer ${singleTopLimit === 5 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
+                >
+                  5
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSingleTopLimit(10)}
+                  className={`px-1.5 py-0.5 rounded font-bold cursor-pointer ${singleTopLimit === 10 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
+                >
+                  10
+                </button>
+              </div>
             </div>
           </div>
 
