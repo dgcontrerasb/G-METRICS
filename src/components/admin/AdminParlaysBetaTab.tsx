@@ -287,7 +287,12 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
 
       if (res.ok && data.success) {
         if (Array.isArray(data.slips) && data.slips.length > 0) {
-          const clean = data.slips.filter((s: SmartParlaySlip) => s && !s.id.includes('seed'));
+          const clean = data.slips.filter(
+            (s: SmartParlaySlip) =>
+              s &&
+              !s.id.includes('seed') &&
+              !(s.status === 'PENDING' && s.engineVersion !== PARLAY_ENGINE_VERSION)
+          );
           setSmartSlips(clean);
           saveStoredSmartSlips(clean);
         }
@@ -346,7 +351,12 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         const data = txt ? JSON.parse(txt) : {};
         if (data.success) {
           if (Array.isArray(data.slips)) {
-            const cleanSlips = data.slips.filter((s: SmartParlaySlip) => s && !s.id.includes('seed'));
+            const cleanSlips = data.slips.filter(
+              (s: SmartParlaySlip) =>
+                s &&
+                !s.id.includes('seed') &&
+                !(s.status === 'PENDING' && s.engineVersion !== PARLAY_ENGINE_VERSION)
+            );
             const localStored = getStoredSmartSlips();
             const mergedSlips = cleanSlips.length > 0 ? cleanSlips : localStored;
             setSmartSlips(mergedSlips);
