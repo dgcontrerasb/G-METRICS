@@ -2535,18 +2535,18 @@ var NBA_30_TEAMS_ROSTERS = {
 function findNBARosterForTeam(teamNameOrAbbrev) {
   if (!teamNameOrAbbrev) return null;
   const lower = teamNameOrAbbrev.toLowerCase().trim();
+  if (lower.length < 3) return null;
   if (NBA_30_TEAMS_ROSTERS[lower]) {
     return NBA_30_TEAMS_ROSTERS[lower];
   }
   const matchingKey = Object.keys(NBA_30_TEAMS_ROSTERS).find((k) => {
-    return lower.includes(k) || k.includes(lower);
+    return lower.includes(k);
   });
   if (matchingKey) {
     return NBA_30_TEAMS_ROSTERS[matchingKey];
   }
   const ALIAS_MAP = {
     gsw: "warriors",
-    gs: "warriors",
     golden: "warriors",
     lal: "lakers",
     la_lakers: "lakers",
@@ -2603,10 +2603,8 @@ function findNBARosterForTeam(teamNameOrAbbrev) {
     mem: "grizzlies",
     memphis: "grizzlies",
     nop: "pelicans",
-    no: "pelicans",
     orleans: "pelicans",
     sas: "spurs",
-    sa: "spurs",
     san_antonio: "spurs",
     sac: "kings",
     sacramento: "kings",
@@ -2614,7 +2612,7 @@ function findNBARosterForTeam(teamNameOrAbbrev) {
     phoenix: "suns"
   };
   for (const [alias, canonicalKey] of Object.entries(ALIAS_MAP)) {
-    if (lower.includes(alias)) {
+    if (lower === alias || new RegExp(`\\b${alias.replace(/_/g, "[_ ]")}\\b`, "i").test(lower)) {
       return NBA_30_TEAMS_ROSTERS[canonicalKey] || null;
     }
   }
@@ -4038,26 +4036,33 @@ function extractNBABettingMarketSuggestions(fixture, analysis) {
       addCandidate("NBA_MONEYLINE" /* NBA_MONEYLINE */, `Gana ${awayName} (ML)`, pAway, 0.045);
     }
   }
-  const nbaLineup = getNBALineupData(fixture);
-  const allActiveStarters = [...nbaLineup.homeStarters, ...nbaLineup.awayStarters].filter(
-    (p) => !p.isInjured && p.name && !p.name.includes("Titular") && !p.name.includes("Base") && !p.name.includes("P\xEDvot") && !p.name.includes("Escolta")
-  );
-  for (const player of allActiveStarters) {
-    if (player.threePm >= 2.4) {
-      const line3pm = Math.floor(player.threePm - 0.5) + 0.5;
-      const probOver = poissonOver(player.threePm, line3pm) / 100;
-      if (probOver >= 0.74) {
-        addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `${player.name}: M\xE1s de ${line3pm} Triples`, probOver, 0.05);
-        break;
+  const isTrueNBA = fixture.league?.id === "nba" || (fixture.league?.name || "").toLowerCase() === "nba";
+  if (isTrueNBA) {
+    const nbaLineup = getNBALineupData(fixture);
+    const allActiveStarters = [...nbaLineup.homeStarters, ...nbaLineup.awayStarters].filter(
+      (p) => !p.isInjured && p.name && !p.name.includes("Titular") && !p.name.includes("Base") && !p.name.includes("P\xEDvot") && !p.name.includes("Escolta")
+    );
+    let added3pm = false;
+    let addedPts = false;
+    for (const player of allActiveStarters) {
+      if (!added3pm && player.threePm >= 2.4) {
+        const line3pm = Math.floor(player.threePm - 0.5) + 0.5;
+        const probOver = poissonOver(player.threePm, line3pm) / 100;
+        if (probOver >= 0.74) {
+          addCandidate("NBA_PLAYER_THREES" /* NBA_PLAYER_THREES */, `${player.name}: M\xE1s de ${line3pm} Triples`, probOver, 0.05);
+          added3pm = true;
+        }
       }
-    } else if (player.ppg >= 22) {
-      const safePtsLine = Math.floor(player.ppg - 4.5) + 0.5;
-      const zPts = (safePtsLine - player.ppg) / 5.2;
-      const probPts = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zPts)));
-      if (probPts >= 0.74) {
-        addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `${player.name}: M\xE1s de ${safePtsLine} Puntos`, probPts, 0.05);
-        break;
+      if (!addedPts && player.ppg >= 22) {
+        const safePtsLine = Math.floor(player.ppg - 4.5) + 0.5;
+        const zPts = (safePtsLine - player.ppg) / 5.2;
+        const probPts = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zPts)));
+        if (probPts >= 0.74) {
+          addCandidate("NBA_PLAYER_POINTS" /* NBA_PLAYER_POINTS */, `${player.name}: M\xE1s de ${safePtsLine} Puntos`, probPts, 0.05);
+          addedPts = true;
+        }
       }
+      if (added3pm && addedPts) break;
     }
   }
   return suggestions;
@@ -4108,30 +4113,39 @@ function calculateMatchAnalysis(fixture) {
   if (liveScoreKey && analysisCache.has(liveScoreKey)) {
     return analysisCache.get(liveScoreKey);
   }
-  const { homeTeam, awayTeam, league, derbyOrRivalry } = fixture;
+  const homeTeam = fixture.homeTeam || { id: "h", name: "Local", shortName: "Local", restHours: 96, attackStrength: 1.35, defenseStrength: 0.9 };
+  const awayTeam = fixture.awayTeam || { id: "a", name: "Visita", shortName: "Visita", restHours: 96, attackStrength: 1.15, defenseStrength: 1.05 };
+  const league = fixture.league || { id: "l", name: "Liga Oficial", avgGoalsPerMatch: 2.7 };
+  const derbyOrRivalry = fixture.derbyOrRivalry;
   const referee = fixture.referee || { name: "\xC1rbitro Oficial", avgYellowCards: 4.1, avgRedCards: 0.16, rigor: "Equilibrado" };
   const travel = fixture.travel || { awayDistanceKm: 180, awayFlightHours: 0.5 };
   const homeShort = homeTeam?.shortName || homeTeam?.name || "Local";
   const awayShort = awayTeam?.shortName || awayTeam?.name || "Visita";
-  const homeRestHours = homeTeam?.restHours ?? 96;
-  const awayRestHours = awayTeam?.restHours ?? 96;
+  const homeRestHours = Number(homeTeam.restHours ?? 96) || 96;
+  const awayRestHours = Number(awayTeam.restHours ?? 96) || 96;
   const homeRestPenalty = homeRestHours < 72 ? Math.min(0.09, 0.05 + (72 - homeRestHours) / 72 * 0.04) : 0;
   const awayRestPenalty = awayRestHours < 72 ? Math.min(0.09, 0.05 + (72 - awayRestHours) / 72 * 0.04) : 0;
   const awayTravelPenalty = travel.awayFlightHours > 3 ? Math.min(0.05, 0.02 + (travel.awayFlightHours - 3) * 0.01) : 0;
   const awayTotalPenalty = Math.min(0.12, awayRestPenalty + awayTravelPenalty);
   const fatigue = {
-    homeRestHours: homeTeam.restHours,
-    awayRestHours: awayTeam.restHours,
+    homeRestHours,
+    awayRestHours,
     awayTravelKm: travel.awayDistanceKm,
     awayTravelHours: travel.awayFlightHours,
     awayPenaltyPercent: Math.round(awayTotalPenalty * 1e3) / 10,
     homePenaltyPercent: Math.round(homeRestPenalty * 1e3) / 10,
-    fatigueDiagnosis: awayTotalPenalty > 0.07 ? `Desgaste severo en el cuadro visitante: ${awayTeam.restHours}h de descanso y ${travel.awayDistanceKm}km de traslado. Penalizaci\xF3n de -${(awayTotalPenalty * 100).toFixed(1)}% en xG.` : awayTotalPenalty > 0.03 ? `Fatiga moderada para ${awayShort} (${awayTeam.restHours}h de recuperaci\xF3n). Ligera desventaja de fondo f\xEDsico.` : `Condici\xF3n atl\xE9tica \xF3ptima en ambos planteles (>72h de recuperaci\xF3n entre competencias).`
+    fatigueDiagnosis: awayTotalPenalty > 0.07 ? `Desgaste severo en el cuadro visitante: ${awayRestHours}h de descanso y ${travel.awayDistanceKm}km de traslado. Penalizaci\xF3n de -${(awayTotalPenalty * 100).toFixed(1)}% en xG.` : awayTotalPenalty > 0.03 ? `Fatiga moderada para ${awayShort} (${awayRestHours}h de recuperaci\xF3n). Ligera desventaja de fondo f\xEDsico.` : `Condici\xF3n atl\xE9tica \xF3ptima en ambos planteles (>72h de recuperaci\xF3n entre competencias).`
   };
   const leagueMean = league.avgGoalsPerMatch ? league.avgGoalsPerMatch / 2 : 1.35;
   const homeAdvantageFactor = 1.15;
-  let lambdaHome = leagueMean * homeTeam.attackStrength * awayTeam.defenseStrength * homeAdvantageFactor * (1 - homeRestPenalty);
-  let lambdaAway = leagueMean * awayTeam.attackStrength * homeTeam.defenseStrength * (1 - awayTotalPenalty);
+  const homeAttack = Number(homeTeam.attackStrength) || 1.35;
+  const awayAttack = Number(awayTeam.attackStrength) || 1.15;
+  const homeDefense = Number(homeTeam.defenseStrength) || 0.9;
+  const awayDefense = Number(awayTeam.defenseStrength) || 1.05;
+  let lambdaHome = leagueMean * homeAttack * awayDefense * homeAdvantageFactor * (1 - homeRestPenalty);
+  let lambdaAway = leagueMean * awayAttack * homeDefense * (1 - awayTotalPenalty);
+  if (isNaN(lambdaHome) || lambdaHome <= 0) lambdaHome = 1.45;
+  if (isNaN(lambdaAway) || lambdaAway <= 0) lambdaAway = 1.1;
   const lineup = getSoccerLineupData(fixture);
   const homeInjured = [...lineup.homeStarters, ...lineup.homeSubstitutes].filter((p) => p.isInjured);
   const awayInjured = [...lineup.awayStarters, ...lineup.awaySubstitutes].filter((p) => p.isInjured);
@@ -4955,10 +4969,10 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
   const hasNBAMatches = Boolean(availableNBAMatches && availableNBAMatches.length > 0);
   if (!hasMatches && !hasNBAMatches) return [];
   const eligibleMatches = (availableMatches || []).filter(
-    (m) => m.status !== "CANCELLED" && m.status !== "POSTPONED"
+    (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam) && m.status !== "CANCELLED" && m.status !== "POSTPONED"
   );
   const eligibleNBAMatches = (availableNBAMatches || []).filter(
-    (m) => Boolean(m && m.id)
+    (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam)
   );
   if (eligibleMatches.length + eligibleNBAMatches.length < 2) return [];
   const matchCandidatesMap = /* @__PURE__ */ new Map();
@@ -4982,7 +4996,10 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
     if (distinctMatchIds.length < numLegs) return null;
     let bestCombo = null;
     let bestScore = -Infinity;
+    let searchIterations = 0;
+    const MAX_SEARCH_ITERATIONS = 15e3;
     const search = (matchIdx, currentLegs, usedCategories, currentOdds) => {
+      if (++searchIterations > MAX_SEARCH_ITERATIONS) return;
       if (currentOdds > maxOdds * 1.05) return;
       if (currentLegs.length === numLegs) {
         if (currentOdds >= minOdds && currentOdds <= maxOdds) {
@@ -5019,7 +5036,10 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
     if (!bestCombo) {
       let closestCombo = null;
       let minDistance = Infinity;
+      let fallbackIterations = 0;
       const fallbackSearch = (matchIdx, currentLegs, usedCategories, currentOdds) => {
+        if (++fallbackIterations > MAX_SEARCH_ITERATIONS) return;
+        if (currentOdds > maxOdds * 1.25) return;
         if (currentLegs.length === numLegs) {
           const hash2 = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join("|");
           if (excludedSlipHashes.has(hash2)) return;
@@ -9256,6 +9276,10 @@ function evaluateLegResult(leg, finishedMatch) {
           return totalPoints < line ? "WON" : "LOST";
         }
       }
+      return "PENDING";
+    }
+    case "NBA_PLAYER_POINTS":
+    case "NBA_PLAYER_THREES": {
       return "PENDING";
     }
     case "NBA_MONEYLINE": {

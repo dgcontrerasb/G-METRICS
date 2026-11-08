@@ -948,28 +948,35 @@ export function extractNBABettingMarketSuggestions(
     }
   }
 
-  // 3. MERCADO DE JUGADORES ESTRELLA (PLAYER PROPS REALES Y VERIFICADOS)
-  const nbaLineup = getNBALineupData(fixture);
-  const allActiveStarters = [...nbaLineup.homeStarters, ...nbaLineup.awayStarters].filter(
-    (p) => !p.isInjured && p.name && !p.name.includes('Titular') && !p.name.includes('Base') && !p.name.includes('Pívot') && !p.name.includes('Escolta')
-  );
+  // 3. MERCADO DE JUGADORES ESTRELLA (PLAYER PROPS REALES Y VERIFICADOS SOLO PARA FRANQUICIAS NBA)
+  const isTrueNBA = fixture.league?.id === 'nba' || (fixture.league?.name || '').toLowerCase() === 'nba';
+  if (isTrueNBA) {
+    const nbaLineup = getNBALineupData(fixture);
+    const allActiveStarters = [...nbaLineup.homeStarters, ...nbaLineup.awayStarters].filter(
+      (p) => !p.isInjured && p.name && !p.name.includes('Titular') && !p.name.includes('Base') && !p.name.includes('Pívot') && !p.name.includes('Escolta')
+    );
 
-  for (const player of allActiveStarters) {
-    if (player.threePm >= 2.4) {
-      const line3pm = Math.floor(player.threePm - 0.5) + 0.5;
-      const probOver = poissonOver(player.threePm, line3pm) / 100;
-      if (probOver >= 0.74) {
-        addCandidate(BetMarketCategory.NBA_TOTAL_POINTS, `${player.name}: Más de ${line3pm} Triples`, probOver, 0.05);
-        break;
+    let added3pm = false;
+    let addedPts = false;
+    for (const player of allActiveStarters) {
+      if (!added3pm && player.threePm >= 2.4) {
+        const line3pm = Math.floor(player.threePm - 0.5) + 0.5;
+        const probOver = poissonOver(player.threePm, line3pm) / 100;
+        if (probOver >= 0.74) {
+          addCandidate(BetMarketCategory.NBA_PLAYER_THREES, `${player.name}: Más de ${line3pm} Triples`, probOver, 0.05);
+          added3pm = true;
+        }
       }
-    } else if (player.ppg >= 22.0) {
-      const safePtsLine = Math.floor(player.ppg - 4.5) + 0.5;
-      const zPts = (safePtsLine - player.ppg) / 5.2;
-      const probPts = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zPts)));
-      if (probPts >= 0.74) {
-        addCandidate(BetMarketCategory.NBA_TOTAL_POINTS, `${player.name}: Más de ${safePtsLine} Puntos`, probPts, 0.05);
-        break;
+      if (!addedPts && player.ppg >= 22.0) {
+        const safePtsLine = Math.floor(player.ppg - 4.5) + 0.5;
+        const zPts = (safePtsLine - player.ppg) / 5.2;
+        const probPts = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zPts)));
+        if (probPts >= 0.74) {
+          addCandidate(BetMarketCategory.NBA_PLAYER_POINTS, `${player.name}: Más de ${safePtsLine} Puntos`, probPts, 0.05);
+          addedPts = true;
+        }
       }
+      if (added3pm && addedPts) break;
     }
   }
 

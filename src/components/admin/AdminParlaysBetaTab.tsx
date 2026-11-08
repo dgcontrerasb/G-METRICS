@@ -218,12 +218,18 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         homeTeam: {
           id: f.homeTeam?.id,
           name: f.homeTeam?.name,
-          shortName: f.homeTeam?.shortName
+          shortName: f.homeTeam?.shortName,
+          restHours: f.homeTeam?.restHours,
+          attackStrength: f.homeTeam?.attackStrength,
+          defenseStrength: f.homeTeam?.defenseStrength
         },
         awayTeam: {
           id: f.awayTeam?.id,
           name: f.awayTeam?.name,
-          shortName: f.awayTeam?.shortName
+          shortName: f.awayTeam?.shortName,
+          restHours: f.awayTeam?.restHours,
+          attackStrength: f.awayTeam?.attackStrength,
+          defenseStrength: f.awayTeam?.defenseStrength
         },
         league: {
           id: f.league?.id,
@@ -233,10 +239,22 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         liveStats: f.liveStats
       }));
 
+      const compactNBA = effectiveNBA.map((f: NBAMatchFixture) => ({
+        id: f.id,
+        date: f.date,
+        time: f.time,
+        status: f.status,
+        homeTeam: f.homeTeam,
+        awayTeam: f.awayTeam,
+        league: f.league,
+        officialInjuries: f.officialInjuries || [],
+        externalOdds: f.externalOdds
+      }));
+
       const res = await fetch('/api/parlays/generate-day', {
         method: 'POST',
         headers: getAdminAuthHeaders(true),
-        body: JSON.stringify({ fixtures: compactFixtures, nbaFixtures: effectiveNBA, force: true })
+        body: JSON.stringify({ fixtures: compactFixtures, nbaFixtures: compactNBA, force: true })
       });
 
       const resText = await res.text();
@@ -257,8 +275,28 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         setTimeout(() => setSuccessNotice(null), 4500);
       } else {
         // Fallback local garantizado si el backend no pudo persistir
+        try {
+          const todayStr = getColombiaDateString(0);
+          const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBA);
+          if (localGenerated.length > 0) {
+            const updated = [...localGenerated, ...smartSlips.filter((s) => s.date !== todayStr)];
+            setSmartSlips(updated);
+            saveStoredSmartSlips(updated);
+            setSuccessNotice(`⚡ Generados ${localGenerated.length} parlays reales en motor local.`);
+            setTimeout(() => setSuccessNotice(null), 4500);
+          } else {
+            setErrorMsg(data.error || 'No se pudieron generar los parlays para los partidos de hoy.');
+          }
+        } catch {
+          setErrorMsg(data.error || 'No se pudieron generar los parlays para los partidos de hoy.');
+        }
+      }
+    } catch (err: unknown) {
+      // Fallback local en caso de error de red
+      try {
         const todayStr = getColombiaDateString(0);
-        const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBA);
+        const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(todayStr)?.fixtures || [];
+        const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBAFixtures);
         if (localGenerated.length > 0) {
           const updated = [...localGenerated, ...smartSlips.filter((s) => s.date !== todayStr)];
           setSmartSlips(updated);
@@ -266,21 +304,9 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
           setSuccessNotice(`⚡ Generados ${localGenerated.length} parlays reales en motor local.`);
           setTimeout(() => setSuccessNotice(null), 4500);
         } else {
-          setErrorMsg(data.error || 'No se pudieron generar los parlays para los partidos de hoy.');
+          setErrorMsg(err instanceof Error ? err.message : 'Error al generar parlays del día.');
         }
-      }
-    } catch (err: unknown) {
-      // Fallback local en caso de error de red
-      const todayStr = getColombiaDateString(0);
-      const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(todayStr)?.fixtures || [];
-      const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBAFixtures);
-      if (localGenerated.length > 0) {
-        const updated = [...localGenerated, ...smartSlips.filter((s) => s.date !== todayStr)];
-        setSmartSlips(updated);
-        saveStoredSmartSlips(updated);
-        setSuccessNotice(`⚡ Generados ${localGenerated.length} parlays reales en motor local.`);
-        setTimeout(() => setSuccessNotice(null), 4500);
-      } else {
+      } catch {
         setErrorMsg(err instanceof Error ? err.message : 'Error al generar parlays del día.');
       }
     } finally {
@@ -319,15 +345,40 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                 date: f.date,
                 time: f.time,
                 status: f.status,
-                homeTeam: { id: f.homeTeam?.id, name: f.homeTeam?.name, shortName: f.homeTeam?.shortName },
-                awayTeam: { id: f.awayTeam?.id, name: f.awayTeam?.name, shortName: f.awayTeam?.shortName },
+                homeTeam: {
+                  id: f.homeTeam?.id,
+                  name: f.homeTeam?.name,
+                  shortName: f.homeTeam?.shortName,
+                  restHours: f.homeTeam?.restHours,
+                  attackStrength: f.homeTeam?.attackStrength,
+                  defenseStrength: f.homeTeam?.defenseStrength
+                },
+                awayTeam: {
+                  id: f.awayTeam?.id,
+                  name: f.awayTeam?.name,
+                  shortName: f.awayTeam?.shortName,
+                  restHours: f.awayTeam?.restHours,
+                  attackStrength: f.awayTeam?.attackStrength,
+                  defenseStrength: f.awayTeam?.defenseStrength
+                },
                 league: { id: f.league?.id, name: f.league?.name, country: f.league?.country },
                 liveStats: f.liveStats
+              }));
+              const compactNBA = effectiveNBA.map((f: NBAMatchFixture) => ({
+                id: f.id,
+                date: f.date,
+                time: f.time,
+                status: f.status,
+                homeTeam: f.homeTeam,
+                awayTeam: f.awayTeam,
+                league: f.league,
+                officialInjuries: f.officialInjuries || [],
+                externalOdds: f.externalOdds
               }));
               fetch('/api/parlays/generate-day', {
                 method: 'POST',
                 headers: getAdminAuthHeaders(true),
-                body: JSON.stringify({ fixtures: compact, nbaFixtures: effectiveNBA, force: false })
+                body: JSON.stringify({ fixtures: compact, nbaFixtures: compactNBA, force: false })
               })
                 .then((r) => r.text())
                 .then((txtData) => {
@@ -339,11 +390,15 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                   }
                 })
                 .catch(() => {
-                  const localGen = generateSmartParlays(effective, todayStr, effectiveNBA);
-                  if (localGen.length > 0) {
-                    const updated = [...localGen, ...mergedSlips.filter((s: SmartParlaySlip) => s.date !== todayStr)];
-                    setSmartSlips(updated);
-                    saveStoredSmartSlips(updated);
+                  try {
+                    const localGen = generateSmartParlays(effective, todayStr, effectiveNBA);
+                    if (localGen.length > 0) {
+                      const updated = [...localGen, ...mergedSlips.filter((s: SmartParlaySlip) => s.date !== todayStr)];
+                      setSmartSlips(updated);
+                      saveStoredSmartSlips(updated);
+                    }
+                  } catch {
+                    // non-fatal
                   }
                 });
             }

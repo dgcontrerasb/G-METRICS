@@ -703,7 +703,9 @@ export enum BetMarketCategory {
   DRAW_NO_BET = 'DRAW_NO_BET',
   NBA_TOTAL_POINTS = 'NBA_TOTAL_POINTS',
   NBA_MONEYLINE = 'NBA_MONEYLINE',
-  NBA_SPREAD = 'NBA_SPREAD'
+  NBA_SPREAD = 'NBA_SPREAD',
+  NBA_PLAYER_POINTS = 'NBA_PLAYER_POINTS',
+  NBA_PLAYER_THREES = 'NBA_PLAYER_THREES'
 }
 
 export type BetMarketCategoryType =
@@ -715,7 +717,9 @@ export type BetMarketCategoryType =
   | 'DRAW_NO_BET'
   | 'NBA_TOTAL_POINTS'
   | 'NBA_MONEYLINE'
-  | 'NBA_SPREAD';
+  | 'NBA_SPREAD'
+  | 'NBA_PLAYER_POINTS'
+  | 'NBA_PLAYER_THREES';
 
 export interface BettingMarketSuggestion {
   fixtureId: string;

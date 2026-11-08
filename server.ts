@@ -4856,6 +4856,12 @@ function evaluateLegResult(leg: BettingMarketSuggestion, finishedMatch: any): 'W
       return 'PENDING';
     }
 
+    case 'NBA_PLAYER_POINTS':
+    case 'NBA_PLAYER_THREES': {
+      // Player props de puntos y triples de la NBA permanecen PENDING hasta auditar boxscore final
+      return 'PENDING';
+    }
+
     case 'NBA_MONEYLINE': {
       const hName = String(finishedMatch.teams?.home?.name || '').toLowerCase();
       const aName = String(finishedMatch.teams?.away?.name || '').toLowerCase();

@@ -100,15 +100,18 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
     return analysisCache.get(liveScoreKey)!;
   }
 
-  const { homeTeam, awayTeam, league, derbyOrRivalry } = fixture;
+  const homeTeam = fixture.homeTeam || { id: 'h', name: 'Local', shortName: 'Local', restHours: 96, attackStrength: 1.35, defenseStrength: 0.90 };
+  const awayTeam = fixture.awayTeam || { id: 'a', name: 'Visita', shortName: 'Visita', restHours: 96, attackStrength: 1.15, defenseStrength: 1.05 };
+  const league = fixture.league || { id: 'l', name: 'Liga Oficial', avgGoalsPerMatch: 2.7 };
+  const derbyOrRivalry = fixture.derbyOrRivalry;
   const referee = fixture.referee || { name: 'Árbitro Oficial', avgYellowCards: 4.1, avgRedCards: 0.16, rigor: 'Equilibrado' as const };
   const travel = fixture.travel || { awayDistanceKm: 180, awayFlightHours: 0.5 };
   const homeShort = homeTeam?.shortName || homeTeam?.name || 'Local';
   const awayShort = awayTeam?.shortName || awayTeam?.name || 'Visita';
 
   // 1. Fatigue & Rest calculation (Module H)
-  const homeRestHours = homeTeam?.restHours ?? 96;
-  const awayRestHours = awayTeam?.restHours ?? 96;
+  const homeRestHours = Number(homeTeam.restHours ?? 96) || 96;
+  const awayRestHours = Number(awayTeam.restHours ?? 96) || 96;
   const homeRestPenalty = homeRestHours < 72 ? Math.min(0.09, 0.05 + ((72 - homeRestHours) / 72) * 0.04) : 0;
 
   const awayRestPenalty = awayRestHours < 72 ? Math.min(0.09, 0.05 + ((72 - awayRestHours) / 72) * 0.04) : 0;
@@ -116,17 +119,17 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
   const awayTotalPenalty = Math.min(0.12, awayRestPenalty + awayTravelPenalty);
 
   const fatigue: BilateralFatigueResult = {
-    homeRestHours: homeTeam.restHours,
-    awayRestHours: awayTeam.restHours,
+    homeRestHours,
+    awayRestHours,
     awayTravelKm: travel.awayDistanceKm,
     awayTravelHours: travel.awayFlightHours,
     awayPenaltyPercent: Math.round(awayTotalPenalty * 1000) / 10,
     homePenaltyPercent: Math.round(homeRestPenalty * 1000) / 10,
     fatigueDiagnosis:
       awayTotalPenalty > 0.07
-        ? `Desgaste severo en el cuadro visitante: ${awayTeam.restHours}h de descanso y ${travel.awayDistanceKm}km de traslado. Penalización de -${(awayTotalPenalty * 100).toFixed(1)}% en xG.`
+        ? `Desgaste severo en el cuadro visitante: ${awayRestHours}h de descanso y ${travel.awayDistanceKm}km de traslado. Penalización de -${(awayTotalPenalty * 100).toFixed(1)}% en xG.`
         : awayTotalPenalty > 0.03
-        ? `Fatiga moderada para ${awayShort} (${awayTeam.restHours}h de recuperación). Ligera desventaja de fondo físico.`
+        ? `Fatiga moderada para ${awayShort} (${awayRestHours}h de recuperación). Ligera desventaja de fondo físico.`
         : `Condición atlética óptima en ambos planteles (>72h de recuperación entre competencias).`
   };
 
@@ -134,8 +137,16 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
   const leagueMean = league.avgGoalsPerMatch ? league.avgGoalsPerMatch / 2 : 1.35;
   const homeAdvantageFactor = 1.15; // +15% historical home advantage
 
-  let lambdaHome = leagueMean * homeTeam.attackStrength * awayTeam.defenseStrength * homeAdvantageFactor * (1 - homeRestPenalty);
-  let lambdaAway = leagueMean * awayTeam.attackStrength * homeTeam.defenseStrength * (1 - awayTotalPenalty);
+  const homeAttack = Number(homeTeam.attackStrength) || 1.35;
+  const awayAttack = Number(awayTeam.attackStrength) || 1.15;
+  const homeDefense = Number(homeTeam.defenseStrength) || 0.90;
+  const awayDefense = Number(awayTeam.defenseStrength) || 1.05;
+
+  let lambdaHome = leagueMean * homeAttack * awayDefense * homeAdvantageFactor * (1 - homeRestPenalty);
+  let lambdaAway = leagueMean * awayAttack * homeDefense * (1 - awayTotalPenalty);
+
+  if (isNaN(lambdaHome) || lambdaHome <= 0) lambdaHome = 1.45;
+  if (isNaN(lambdaAway) || lambdaAway <= 0) lambdaAway = 1.10;
 
   // Calibrate expected goals using real lineup injury/suspension status
   const lineup = getSoccerLineupData(fixture);
@@ -2173,12 +2184,12 @@ export function generateSmartParlays(
 
   // Filtrar partidos de fútbol activos o válidos para el boleto
   const eligibleMatches = (availableMatches || []).filter(
-    (m) => m.status !== 'CANCELLED' && m.status !== 'POSTPONED'
+    (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam) && m.status !== 'CANCELLED' && m.status !== 'POSTPONED'
   );
 
   // Filtrar partidos de baloncesto activos o válidos para el boleto
   const eligibleNBAMatches = (availableNBAMatches || []).filter(
-    (m) => Boolean(m && m.id)
+    (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam)
   );
 
   if (eligibleMatches.length + eligibleNBAMatches.length < 2) return [];
@@ -2217,6 +2228,8 @@ export function generateSmartParlays(
 
     let bestCombo: BettingMarketSuggestion[] | null = null;
     let bestScore = -Infinity;
+    let searchIterations = 0;
+    const MAX_SEARCH_ITERATIONS = 15000;
 
     // Función recursiva para seleccionar numLegs de partidos distintos y categorías distintas
     const search = (
@@ -2225,6 +2238,7 @@ export function generateSmartParlays(
       usedCategories: Set<string>,
       currentOdds: number
     ) => {
+      if (++searchIterations > MAX_SEARCH_ITERATIONS) return;
       // Poda por cuota máxima excedida
       if (currentOdds > maxOdds * 1.05) return;
 
@@ -2277,6 +2291,7 @@ export function generateSmartParlays(
     if (!bestCombo) {
       let closestCombo: BettingMarketSuggestion[] | null = null;
       let minDistance = Infinity;
+      let fallbackIterations = 0;
 
       const fallbackSearch = (
         matchIdx: number,
@@ -2284,6 +2299,9 @@ export function generateSmartParlays(
         usedCategories: Set<string>,
         currentOdds: number
       ) => {
+        if (++fallbackIterations > MAX_SEARCH_ITERATIONS) return;
+        if (currentOdds > maxOdds * 1.25) return;
+
         if (currentLegs.length === numLegs) {
           const hash = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join('|');
           if (excludedSlipHashes.has(hash)) return;

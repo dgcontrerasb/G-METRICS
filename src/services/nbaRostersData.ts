@@ -524,6 +524,7 @@ export const NBA_30_TEAMS_ROSTERS: Record<string, NBARosterEntry> = {
 export function findNBARosterForTeam(teamNameOrAbbrev: string): NBARosterEntry | null {
   if (!teamNameOrAbbrev) return null;
   const lower = teamNameOrAbbrev.toLowerCase().trim();
+  if (lower.length < 3) return null;
 
   // 1. Direct key match
   if (NBA_30_TEAMS_ROSTERS[lower]) {
@@ -532,7 +533,7 @@ export function findNBARosterForTeam(teamNameOrAbbrev: string): NBARosterEntry |
 
   // 2. Substring matching
   const matchingKey = Object.keys(NBA_30_TEAMS_ROSTERS).find((k) => {
-    return lower.includes(k) || k.includes(lower);
+    return lower.includes(k);
   });
   if (matchingKey) {
     return NBA_30_TEAMS_ROSTERS[matchingKey];
@@ -541,7 +542,6 @@ export function findNBARosterForTeam(teamNameOrAbbrev: string): NBARosterEntry |
   // 3. Known aliases and abbreviations
   const ALIAS_MAP: Record<string, string> = {
     gsw: 'warriors',
-    gs: 'warriors',
     golden: 'warriors',
     lal: 'lakers',
     la_lakers: 'lakers',
@@ -598,10 +598,8 @@ export function findNBARosterForTeam(teamNameOrAbbrev: string): NBARosterEntry |
     mem: 'grizzlies',
     memphis: 'grizzlies',
     nop: 'pelicans',
-    no: 'pelicans',
     orleans: 'pelicans',
     sas: 'spurs',
-    sa: 'spurs',
     san_antonio: 'spurs',
     sac: 'kings',
     sacramento: 'kings',
@@ -610,7 +608,7 @@ export function findNBARosterForTeam(teamNameOrAbbrev: string): NBARosterEntry |
   };
 
   for (const [alias, canonicalKey] of Object.entries(ALIAS_MAP)) {
-    if (lower.includes(alias)) {
+    if (lower === alias || new RegExp(`\\b${alias.replace(/_/g, '[_ ]')}\\b`, 'i').test(lower)) {
       return NBA_30_TEAMS_ROSTERS[canonicalKey] || null;
     }
   }
