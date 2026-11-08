@@ -526,7 +526,8 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     text += `📅 Fecha: ${slip.date} | Cuota Total: @${slip.totalOdds.toFixed(2)}x\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
     slip.legs.forEach((leg, i) => {
-      text += `${i + 1}. ⚽ *${leg.matchName}* (${leg.leagueName})\n`;
+      const isBball = leg.sport === 'NBA' || (leg.leagueName || '').toLowerCase().includes('nba');
+      text += `${i + 1}. ${isBball ? '🏀' : '⚽'} *${leg.matchName}* (${isBball ? 'Baloncesto' : 'Fútbol'} · ${leg.leagueName})\n`;
       text += `   ▪️ Mercado: *${leg.label}*\n`;
       text += `   ▪️ Cuota: @${leg.odds.toFixed(2)}x | Prob. Modelo: ${Math.round(leg.impliedProb * 100)}% (+EV)\n`;
     });
@@ -566,9 +567,10 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
   };
 
   const handleCopySingle = async (single: GMetricsSingleBetSuggestion) => {
+    const isBball = single.sport === 'NBA' || (single.leagueName || '').toLowerCase().includes('nba');
     const typeTag = single.betType === 'HIGH_VALUE' ? '🔥 ALTA CUOTA (+EV)' : '🛡️ BANKER SEGURO';
     let text = `🎯 *APUESTA SENCILLA G METRICS · ${typeTag}*\n`;
-    text += `⚽ *${single.matchTitle}* (${single.leagueName})\n`;
+    text += `${isBball ? '🏀' : '⚽'} *${single.matchTitle}* (${isBball ? 'Baloncesto' : 'Fútbol'} · ${single.leagueName})\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
     text += `📌 *Selección:* ${single.selectionLabel}\n`;
     text += `📊 *Mercado:* ${single.categoryLabel}\n`;
@@ -988,29 +990,37 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
 
                       {/* Lista de Patas */}
                       <div className="mt-2.5 space-y-2">
-                        {slip.legs.map((leg, idx) => (
-                          <div
-                            key={`${leg.fixtureId}_${idx}`}
-                            className="p-2 rounded-xl bg-slate-50 border border-slate-200/70 text-xs flex items-center justify-between gap-2"
-                          >
-                            <div className="min-w-0">
-                              <span className="font-bold text-slate-900 truncate block">
-                                {idx + 1}. {leg.matchName}
-                              </span>
-                              <span className="text-[10px] font-mono text-slate-500">
-                                {leg.label} ({leg.category})
-                              </span>
+                        {slip.legs.map((leg, idx) => {
+                          const isBball = leg.sport === 'NBA' || (leg.leagueName || '').toLowerCase().includes('nba');
+                          return (
+                            <div
+                              key={`${leg.fixtureId}_${idx}`}
+                              className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 text-xs flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-slate-900 truncate">
+                                    {idx + 1}. {leg.matchName}
+                                  </span>
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-slate-200/90 text-slate-700 shrink-0">
+                                    {isBball ? '🏀 Baloncesto' : '⚽ Fútbol'}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] font-mono text-slate-500 block truncate">
+                                  {leg.label} ({leg.leagueName})
+                                </span>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <span className="font-mono font-bold text-indigo-700">
+                                  @{leg.odds.toFixed(2)}x
+                                </span>
+                                <span className="text-[9px] font-mono text-emerald-700 block">
+                                  {Math.round(leg.impliedProb * 100)}% +EV
+                                </span>
+                              </div>
                             </div>
-                            <div className="text-right shrink-0">
-                              <span className="font-mono font-bold text-indigo-700">
-                                @{leg.odds.toFixed(2)}x
-                              </span>
-                              <span className="text-[9px] font-mono text-emerald-700 block">
-                                {Math.round(leg.impliedProb * 100)}% +EV
-                              </span>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -1174,10 +1184,15 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                 className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5"
               >
                 <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                  <span className="font-bold text-xs text-slate-900 truncate">
-                    {single.matchTitle}
-                  </span>
-                  <span className="px-2 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="font-bold text-xs text-slate-900 truncate">
+                      {single.matchTitle}
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-slate-100 text-slate-600 shrink-0">
+                      {single.sport === 'NBA' || (single.leagueName || '').toLowerCase().includes('nba') ? '🏀 Baloncesto' : '⚽ Fútbol'}
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
                     {single.betType === 'HIGH_VALUE' ? '+EV ALTO' : 'BANKER'}
                   </span>
                 </div>

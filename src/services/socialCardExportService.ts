@@ -50,7 +50,7 @@ export class SocialCardExportService {
                 ${leg.label}
               </div>
               <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">
-                ${leg.leagueName} · ${leg.category}
+                <span style="font-weight: 700; color: #475569;">${leg.sport === 'NBA' || (leg.leagueName || '').toLowerCase().includes('nba') ? '🏀 Baloncesto' : '⚽ Fútbol'}</span> · ${leg.leagueName}
               </div>
             </div>
           </div>
@@ -182,7 +182,7 @@ export class SocialCardExportService {
             <span style="font-family: monospace; font-size: 18px; font-weight: 900; color: #B45309; min-width: 22px; text-align: center; line-height: 1.25; flex-shrink: 0;">${idx + 1}</span>
             <div style="min-width: 0; flex: 1;">
               <div style="color: #0F172A; font-size: 15.5px; font-weight: 800; line-height: 1.3; word-break: break-word;">
-                ${item.matchTitle} <span style="font-size: 11.5px; color: #64748B; font-weight: 600;">(${item.leagueName})</span>
+                ${item.matchTitle} <span style="font-size: 11.5px; color: #64748B; font-weight: 600;">(${item.sport === 'NBA' ? '🏀 Baloncesto' : '⚽ Fútbol'} · ${item.leagueName})</span>
               </div>
               <div style="font-size: 14.5px; font-weight: 700; color: #B45309; margin-top: 3px;">
                 ${item.selectionLabel}

@@ -721,6 +721,7 @@ export interface BettingMarketSuggestion {
   impliedProb: number; // probabilidad calculada del modelo (0 - 1)
   expectedValue: number; // EV calculado (+EV)
   availableInColombianBooks: boolean;
+  sport?: 'SOCCER' | 'NBA';
 }
 
 export interface SmartParlaySlip {
