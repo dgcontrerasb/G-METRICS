@@ -1,5 +1,6 @@
 import {
   MatchFixture,
+  NBAMatchFixture,
   MatchAnalysis,
   DixonColesResult,
   GoalsMarketResult,
@@ -20,6 +21,10 @@ import {
   SmartParlaySlip
 } from '../types';
 import { getSoccerLineupData, resolveTeamStarPlayerName } from './lineupService';
+import {
+  extractNBABettingMarketSuggestions,
+  generateGMetricsNBABankerPicks
+} from './nbaEngine';
 
 // Factorial cache for fast Poisson calculation
 const factorials: number[] = [1, 1, 2, 6, 24, 120, 720, 5040, 40320];
@@ -1430,19 +1435,20 @@ export function generateGMetricsAdminParlays(
 export function generateGMetricsSingleValueBets(
   fixtures: MatchFixture[],
   includeFinished = false,
-  limitPerCategory: number = 10
+  limitPerCategory: number = 10,
+  nbaFixtures?: NBAMatchFixture[]
 ): GMetricsSingleBetSuggestion[] {
-  if (!fixtures || fixtures.length === 0) return [];
+  if ((!fixtures || fixtures.length === 0) && (!nbaFixtures || nbaFixtures.length === 0)) return [];
 
   const activeFixtures = includeFinished
-    ? fixtures.filter((f) => f.status !== 'CANCELLED' && f.status !== 'POSTPONED')
-    : fixtures.filter(
+    ? (fixtures || []).filter((f) => f.status !== 'CANCELLED' && f.status !== 'POSTPONED')
+    : (fixtures || []).filter(
         (f) => f.status !== 'FINISHED' && f.status !== 'CANCELLED' && f.status !== 'POSTPONED'
       );
-  const sourceFixtures = activeFixtures.length > 0 ? activeFixtures : fixtures;
+  const sourceFixtures = activeFixtures.length > 0 ? activeFixtures : (fixtures || []);
 
   interface CandidateSingle extends GMetricsSingleBetSuggestion {
-    categoryFamily: 'OUTCOME' | 'GOALS' | 'BTTS' | 'CORNERS';
+    categoryFamily: 'OUTCOME' | 'GOALS' | 'BTTS' | 'CORNERS' | 'BASKETBALL_TOTAL' | 'BASKETBALL_MONEYLINE' | 'BASKETBALL_SPREAD' | 'BASKETBALL_PLAYER_PROP';
   }
 
   const singles: CandidateSingle[] = [];
@@ -1906,6 +1912,22 @@ export function generateGMetricsSingleValueBets(
     }
   }
 
+  // Integración de Apuestas Banker de Baloncesto (NBA) con Cojín de Seguridad Elástico
+  if (nbaFixtures && nbaFixtures.length > 0) {
+    const nbaBankers = generateGMetricsNBABankerPicks(nbaFixtures);
+    for (const b of nbaBankers) {
+      let categoryFamily: CandidateSingle['categoryFamily'] = 'BASKETBALL_TOTAL';
+      if (b.marketKey === 'NBA_ML_HOME') categoryFamily = 'BASKETBALL_MONEYLINE';
+      else if (b.marketKey === 'NBA_PLAYER_3PM' || b.marketKey === 'NBA_PLAYER_PTS') categoryFamily = 'BASKETBALL_PLAYER_PROP';
+      else if (b.marketKey === 'NBA_SPREAD_PLUS') categoryFamily = 'BASKETBALL_SPREAD';
+
+      singles.push({
+        ...b,
+        categoryFamily
+      });
+    }
+  }
+
   // =========================================================================
   // CURACIÓN CUANTITATIVA DIVERSIFICADA (ANTI-MONOTONÍA Y CROSS-MATCH BALANCEADO)
   // =========================================================================
@@ -2142,23 +2164,38 @@ export function extractMatchBettingMarketSuggestions(
  */
 export function generateSmartParlays(
   availableMatches: MatchFixture[],
-  targetDate?: string
+  targetDate?: string,
+  availableNBAMatches?: NBAMatchFixture[]
 ): SmartParlaySlip[] {
-  if (!availableMatches || availableMatches.length === 0) return [];
+  const hasMatches = Boolean(availableMatches && availableMatches.length > 0);
+  const hasNBAMatches = Boolean(availableNBAMatches && availableNBAMatches.length > 0);
+  if (!hasMatches && !hasNBAMatches) return [];
 
-  // Filtrar partidos activos o válidos para el boleto
-  const eligibleMatches = availableMatches.filter(
+  // Filtrar partidos de fútbol activos o válidos para el boleto
+  const eligibleMatches = (availableMatches || []).filter(
     (m) => m.status !== 'CANCELLED' && m.status !== 'POSTPONED'
   );
 
-  if (eligibleMatches.length < 2) return [];
+  // Filtrar partidos de baloncesto activos o válidos para el boleto
+  const eligibleNBAMatches = (availableNBAMatches || []).filter(
+    (m) => Boolean(m && m.id)
+  );
 
-  // 1. Extraer todas las sugerencias por partido
+  if (eligibleMatches.length + eligibleNBAMatches.length < 2) return [];
+
+  // 1. Extraer todas las sugerencias por partido (Fútbol + NBA)
   const matchCandidatesMap = new Map<string, BettingMarketSuggestion[]>();
   for (const match of eligibleMatches) {
     const suggestions = extractMatchBettingMarketSuggestions(match);
     if (suggestions.length > 0) {
       matchCandidatesMap.set(match.id, suggestions);
+    }
+  }
+
+  for (const nbaMatch of eligibleNBAMatches) {
+    const nbaSuggestions = extractNBABettingMarketSuggestions(nbaMatch);
+    if (nbaSuggestions.length > 0) {
+      matchCandidatesMap.set(nbaMatch.id, nbaSuggestions);
     }
   }
 

@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import type { MatchFixture } from '../types';
+import type { MatchFixture, NBAMatchFixture } from '../types';
 import type { DetailMatchPayload } from './MatchDetailModal';
 import type { GuideModalTab } from './DidacticGuideModal';
 
@@ -17,6 +17,7 @@ export interface AppModalsContainerProps {
   onLogoutSession: () => void;
   onLicenseChanged: () => void;
   fixtures?: MatchFixture[];
+  nbaFixtures?: NBAMatchFixture[];
   isSimulatorOpen: boolean;
   onCloseSimulator: () => void;
   selectedMatchForSimulator: MatchFixture | null;
@@ -48,6 +49,7 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
   onLogoutSession,
   onLicenseChanged,
   fixtures = [],
+  nbaFixtures = [],
   isSimulatorOpen,
   onCloseSimulator,
   selectedMatchForSimulator,
@@ -82,6 +84,7 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
           onLogout={onLogoutSession}
           onLicenseChanged={onLicenseChanged}
           fixtures={fixtures}
+          nbaFixtures={nbaFixtures}
         />
       )}
 

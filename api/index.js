@@ -2049,6 +2049,578 @@ async function loadPermanentFeedbackList() {
   return null;
 }
 
+// src/services/nbaRostersData.ts
+var NBA_30_TEAMS_ROSTERS = {
+  // 1. Atlanta Hawks
+  hawks: {
+    coach: "Quin Snyder",
+    starters: [
+      { id: "atl1", name: "Trae Young", number: 11, position: "PG", ppg: 26.4, apg: 10.8, rpg: 3, threePm: 3.2 },
+      { id: "atl2", name: "Dyson Daniels", number: 5, position: "SG", ppg: 14.1, apg: 3.5, rpg: 4.8, threePm: 1.3 },
+      { id: "atl3", name: "Zaccharie Risacher", number: 10, position: "SF", ppg: 12, apg: 1.4, rpg: 3.8, threePm: 1.6 },
+      { id: "atl4", name: "Jalen Johnson", number: 1, position: "PF", ppg: 19.2, apg: 5.4, rpg: 10.2, threePm: 1.4 },
+      { id: "atl5", name: "Clint Capela", number: 15, position: "C", ppg: 10.8, apg: 1.2, rpg: 9.8, threePm: 0 }
+    ],
+    bench: [
+      { id: "atl6", name: "Bogdan Bogdanovic", number: 13, position: "SG", ppg: 15.6, apg: 3.1, rpg: 3.4, threePm: 2.9 },
+      { id: "atl7", name: "De'Andre Hunter", number: 12, position: "SF", ppg: 16.4, apg: 1.8, rpg: 4.2, threePm: 2.1 },
+      { id: "atl8", name: "Onyeka Okongwu", number: 17, position: "C", ppg: 11.2, apg: 1.6, rpg: 7.2, threePm: 0.5 }
+    ]
+  },
+  // 2. Boston Celtics
+  celtics: {
+    coach: "Joe Mazzulla",
+    starters: [
+      { id: "bos1", name: "Jrue Holiday", number: 4, position: "PG", ppg: 12.8, apg: 4.8, rpg: 5.4, threePm: 2 },
+      { id: "bos2", name: "Derrick White", number: 9, position: "SG", ppg: 16.4, apg: 5.1, rpg: 4.2, threePm: 3.1 },
+      { id: "bos3", name: "Jaylen Brown", number: 7, position: "SF", ppg: 23.8, apg: 3.8, rpg: 5.8, threePm: 2.4 },
+      { id: "bos4", name: "Jayson Tatum", number: 0, position: "PF", ppg: 28.2, apg: 5.4, rpg: 8.6, threePm: 3.5 },
+      { id: "bos5", name: "Kristaps Porzingis", number: 8, position: "C", ppg: 19.8, apg: 2, rpg: 7, threePm: 2.1 }
+    ],
+    bench: [
+      { id: "bos6", name: "Al Horford", number: 42, position: "C", ppg: 8.6, apg: 2.6, rpg: 6.4, threePm: 1.5 },
+      { id: "bos7", name: "Payton Pritchard", number: 11, position: "PG", ppg: 14.5, apg: 3.4, rpg: 3.2, threePm: 3.3 },
+      { id: "bos8", name: "Sam Hauser", number: 30, position: "SF", ppg: 9, apg: 1, rpg: 3.5, threePm: 2.5 }
+    ]
+  },
+  // 3. Brooklyn Nets
+  nets: {
+    coach: "Jordi Fernandez",
+    starters: [
+      { id: "bkn1", name: "Dennis Schroder", number: 17, position: "PG", ppg: 18.2, apg: 6.6, rpg: 3, threePm: 2.4 },
+      { id: "bkn2", name: "Cam Thomas", number: 24, position: "SG", ppg: 24.6, apg: 3.2, rpg: 3.5, threePm: 2.8 },
+      { id: "bkn3", name: "Cameron Johnson", number: 2, position: "SF", ppg: 17.5, apg: 2.8, rpg: 4.4, threePm: 2.7 },
+      { id: "bkn4", name: "Dorian Finney-Smith", number: 28, position: "PF", ppg: 10.4, apg: 1.8, rpg: 4.8, threePm: 1.9 },
+      { id: "bkn5", name: "Nicolas Claxton", number: 33, position: "C", ppg: 9.8, apg: 2.3, rpg: 8.2, threePm: 0 }
+    ],
+    bench: [
+      { id: "bkn6", name: "Ben Simmons", number: 10, position: "PG", ppg: 6.2, apg: 6.8, rpg: 6, threePm: 0 },
+      { id: "bkn7", name: "Jalen Wilson", number: 9, position: "SF", ppg: 9.6, apg: 1.8, rpg: 3.4, threePm: 1.6 },
+      { id: "bkn8", name: "Day'Ron Sharpe", number: 20, position: "C", ppg: 7.2, apg: 1.4, rpg: 6.6, threePm: 0 }
+    ]
+  },
+  // 4. Charlotte Hornets
+  hornets: {
+    coach: "Charles Lee",
+    starters: [
+      { id: "cha1", name: "LaMelo Ball", number: 1, position: "PG", ppg: 29.8, apg: 7.2, rpg: 5.1, threePm: 4.6 },
+      { id: "cha2", name: "Brandon Miller", number: 24, position: "SG", ppg: 19.4, apg: 3.8, rpg: 4.8, threePm: 2.9 },
+      { id: "cha3", name: "Josh Green", number: 10, position: "SF", ppg: 9.2, apg: 1.8, rpg: 2.8, threePm: 1.4 },
+      { id: "cha4", name: "Miles Bridges", number: 0, position: "PF", ppg: 16.5, apg: 3.2, rpg: 7.2, threePm: 1.8 },
+      { id: "cha5", name: "Nick Richards", number: 4, position: "C", ppg: 11, apg: 1.5, rpg: 10, threePm: 0 }
+    ],
+    bench: [
+      { id: "cha6", name: "Tre Mann", number: 23, position: "PG", ppg: 14.8, apg: 3.2, rpg: 3.1, threePm: 2.2 },
+      { id: "cha7", name: "Grant Williams", number: 2, position: "PF", ppg: 10.4, apg: 2.3, rpg: 5.1, threePm: 1.6 },
+      { id: "cha8", name: "Cody Martin", number: 11, position: "SG", ppg: 7.5, apg: 2.1, rpg: 4.2, threePm: 0.9 }
+    ]
+  },
+  // 5. Chicago Bulls
+  bulls: {
+    coach: "Billy Donovan",
+    starters: [
+      { id: "chi1", name: "Josh Giddey", number: 3, position: "PG", ppg: 13.5, apg: 6.8, rpg: 6.4, threePm: 1.3 },
+      { id: "chi2", name: "Coby White", number: 0, position: "SG", ppg: 19.2, apg: 4.8, rpg: 3.6, threePm: 3 },
+      { id: "chi3", name: "Zach LaVine", number: 8, position: "SF", ppg: 22.4, apg: 4.2, rpg: 4.8, threePm: 2.8 },
+      { id: "chi4", name: "Patrick Williams", number: 44, position: "PF", ppg: 10.2, apg: 2.1, rpg: 4.4, threePm: 1.5 },
+      { id: "chi5", name: "Nikola Vucevic", number: 9, position: "C", ppg: 20.8, apg: 3.2, rpg: 9.8, threePm: 1.9 }
+    ],
+    bench: [
+      { id: "chi6", name: "Ayo Dosunmu", number: 12, position: "SG", ppg: 12, apg: 4.2, rpg: 3.5, threePm: 1.4 },
+      { id: "chi7", name: "Lonzo Ball", number: 2, position: "PG", ppg: 6.8, apg: 4.2, rpg: 3, threePm: 1.5 },
+      { id: "chi8", name: "Jalen Smith", number: 25, position: "PF", ppg: 10.1, apg: 1.1, rpg: 5.6, threePm: 1.2 }
+    ]
+  },
+  // 6. Cleveland Cavaliers
+  cavaliers: {
+    coach: "Kenny Atkinson",
+    starters: [
+      { id: "cle1", name: "Darius Garland", number: 10, position: "PG", ppg: 20.5, apg: 6.8, rpg: 2.8, threePm: 2.6 },
+      { id: "cle2", name: "Donovan Mitchell", number: 45, position: "SG", ppg: 24.2, apg: 4.2, rpg: 4.5, threePm: 3.4 },
+      { id: "cle3", name: "Max Strus", number: 1, position: "SF", ppg: 12.2, apg: 3.8, rpg: 4.6, threePm: 2.4 },
+      { id: "cle4", name: "Evan Mobley", number: 4, position: "PF", ppg: 18.4, apg: 2.8, rpg: 8.8, threePm: 0.9 },
+      { id: "cle5", name: "Jarrett Allen", number: 31, position: "C", ppg: 14.5, apg: 1.9, rpg: 11.2, threePm: 0 }
+    ],
+    bench: [
+      { id: "cle6", name: "Caris LeVert", number: 3, position: "SG", ppg: 11.8, apg: 4.1, rpg: 3, threePm: 1.5 },
+      { id: "cle7", name: "Georges Niang", number: 20, position: "PF", ppg: 8.4, apg: 1.2, rpg: 3.2, threePm: 1.7 },
+      { id: "cle8", name: "Ty Jerome", number: 2, position: "PG", ppg: 9.8, apg: 3.2, rpg: 2, threePm: 1.4 }
+    ]
+  },
+  // 7. Dallas Mavericks
+  mavericks: {
+    coach: "Jason Kidd",
+    starters: [
+      { id: "dal1", name: "Luka Doncic", number: 77, position: "PG", ppg: 28.8, apg: 8.2, rpg: 8.4, threePm: 3.4 },
+      { id: "dal2", name: "Kyrie Irving", number: 11, position: "SG", ppg: 24.5, apg: 5.2, rpg: 4.6, threePm: 3 },
+      { id: "dal3", name: "Klay Thompson", number: 31, position: "SF", ppg: 14.2, apg: 1.9, rpg: 3.5, threePm: 3.1 },
+      { id: "dal4", name: "P.J. Washington", number: 25, position: "PF", ppg: 11.8, apg: 1.8, rpg: 7.2, threePm: 1.5 },
+      { id: "dal5", name: "Dereck Lively II", number: 2, position: "C", ppg: 9.2, apg: 2.4, rpg: 8, threePm: 0 }
+    ],
+    bench: [
+      { id: "dal6", name: "Daniel Gafford", number: 21, position: "C", ppg: 11.5, apg: 1.4, rpg: 6.8, threePm: 0 },
+      { id: "dal7", name: "Spencer Dinwiddie", number: 26, position: "PG", ppg: 7.8, apg: 3.2, rpg: 2.2, threePm: 1.2 },
+      { id: "dal8", name: "Naji Marshall", number: 13, position: "SF", ppg: 9.4, apg: 2.6, rpg: 3.8, threePm: 0.8 }
+    ]
+  },
+  // 8. Denver Nuggets
+  nuggets: {
+    coach: "Michael Malone",
+    starters: [
+      { id: "den1", name: "Jamal Murray", number: 27, position: "PG", ppg: 20.8, apg: 6.2, rpg: 4, threePm: 2.4 },
+      { id: "den2", name: "Christian Braun", number: 0, position: "SG", ppg: 15.4, apg: 2.2, rpg: 5.2, threePm: 1.5 },
+      { id: "den3", name: "Michael Porter Jr.", number: 1, position: "SF", ppg: 18.6, apg: 2.6, rpg: 7.4, threePm: 2.9 },
+      { id: "den4", name: "Aaron Gordon", number: 50, position: "PF", ppg: 14.8, apg: 3.2, rpg: 6.8, threePm: 1 },
+      { id: "den5", name: "Nikola Jokic", number: 15, position: "C", ppg: 29.5, apg: 11.2, rpg: 13.4, threePm: 2.1 }
+    ],
+    bench: [
+      { id: "den6", name: "Russell Westbrook", number: 4, position: "PG", ppg: 11.2, apg: 5.8, rpg: 4.2, threePm: 0.9 },
+      { id: "den7", name: "Peyton Watson", number: 8, position: "SF", ppg: 8.6, apg: 1.4, rpg: 3.4, threePm: 0.9 },
+      { id: "den8", name: "Julian Strawther", number: 3, position: "SG", ppg: 8.9, apg: 1.1, rpg: 2.2, threePm: 1.4 }
+    ]
+  },
+  // 9. Detroit Pistons
+  pistons: {
+    coach: "J.B. Bickerstaff",
+    starters: [
+      { id: "det1", name: "Cade Cunningham", number: 2, position: "PG", ppg: 23.4, apg: 8.8, rpg: 7.2, threePm: 1.9 },
+      { id: "det2", name: "Jaden Ivey", number: 23, position: "SG", ppg: 18.5, apg: 4, rpg: 4.5, threePm: 2.1 },
+      { id: "det3", name: "Tim Hardaway Jr.", number: 5, position: "SF", ppg: 12, apg: 1.8, rpg: 2.5, threePm: 2.2 },
+      { id: "det4", name: "Tobias Harris", number: 12, position: "PF", ppg: 13.8, apg: 2.4, rpg: 7.1, threePm: 1.4 },
+      { id: "det5", name: "Jalen Duren", number: 0, position: "C", ppg: 9.2, apg: 2.6, rpg: 9.8, threePm: 0 }
+    ],
+    bench: [
+      { id: "det6", name: "Malik Beasley", number: 8, position: "SG", ppg: 14.5, apg: 1.8, rpg: 3.2, threePm: 3.2 },
+      { id: "det7", name: "Isaiah Stewart", number: 28, position: "C", ppg: 6.2, apg: 1.4, rpg: 5.8, threePm: 0.6 },
+      { id: "det8", name: "Simone Fontecchio", number: 19, position: "SF", ppg: 8.4, apg: 1.2, rpg: 3.4, threePm: 1.6 }
+    ]
+  },
+  // 10. Golden State Warriors
+  warriors: {
+    coach: "Steve Kerr",
+    starters: [
+      { id: "gsw1", name: "Stephen Curry", number: 30, position: "PG", ppg: 23, apg: 6.5, rpg: 5.2, threePm: 4.2 },
+      { id: "gsw2", name: "Brandin Podziemski", number: 2, position: "SG", ppg: 10.5, apg: 3.8, rpg: 4.6, threePm: 1.4 },
+      { id: "gsw3", name: "Andrew Wiggins", number: 22, position: "SF", ppg: 17.2, apg: 2.4, rpg: 4.5, threePm: 2.2 },
+      { id: "gsw4", name: "Jonathan Kuminga", number: 0, position: "PF", ppg: 16.5, apg: 2.1, rpg: 5, threePm: 1.1 },
+      { id: "gsw5", name: "Draymond Green", number: 23, position: "C", ppg: 8.8, apg: 5.8, rpg: 5.6, threePm: 1.4 }
+    ],
+    bench: [
+      { id: "gsw6", name: "Buddy Hield", number: 7, position: "SG", ppg: 15.8, apg: 1.8, rpg: 3.8, threePm: 3.4 },
+      { id: "gsw7", name: "Moses Moody", number: 4, position: "SG", ppg: 9.2, apg: 1.2, rpg: 2.4, threePm: 1.5 },
+      { id: "gsw8", name: "Kevon Looney", number: 5, position: "C", ppg: 5.6, apg: 1.8, rpg: 7.8, threePm: 0 }
+    ]
+  },
+  // 11. Houston Rockets
+  rockets: {
+    coach: "Ime Udoka",
+    starters: [
+      { id: "hou1", name: "Fred VanVleet", number: 5, position: "PG", ppg: 14.8, apg: 6.2, rpg: 4, threePm: 2.4 },
+      { id: "hou2", name: "Jalen Green", number: 4, position: "SG", ppg: 19.8, apg: 2.8, rpg: 5, threePm: 2.8 },
+      { id: "hou3", name: "Dillon Brooks", number: 9, position: "SF", ppg: 12.5, apg: 1.6, rpg: 3.8, threePm: 1.8 },
+      { id: "hou4", name: "Jabari Smith Jr.", number: 10, position: "PF", ppg: 12, apg: 1.2, rpg: 7, threePm: 1.6 },
+      { id: "hou5", name: "Alperen Sengun", number: 28, position: "C", ppg: 19, apg: 5, rpg: 10.8, threePm: 0.3 }
+    ],
+    bench: [
+      { id: "hou6", name: "Amen Thompson", number: 1, position: "SF", ppg: 12.4, apg: 2.2, rpg: 6.8, threePm: 0.2 },
+      { id: "hou7", name: "Tari Eason", number: 17, position: "PF", ppg: 11.8, apg: 1.2, rpg: 6.2, threePm: 1.1 },
+      { id: "hou8", name: "Reed Sheppard", number: 15, position: "PG", ppg: 4.8, apg: 1.8, rpg: 1.5, threePm: 0.8 }
+    ]
+  },
+  // 12. Indiana Pacers
+  pacers: {
+    coach: "Rick Carlisle",
+    starters: [
+      { id: "ind1", name: "Tyrese Haliburton", number: 0, position: "PG", ppg: 17.5, apg: 8.8, rpg: 3.8, threePm: 2.5 },
+      { id: "ind2", name: "Andrew Nembhard", number: 2, position: "SG", ppg: 10.2, apg: 5, rpg: 2.2, threePm: 1 },
+      { id: "ind3", name: "Aaron Nesmith", number: 23, position: "SF", ppg: 11.4, apg: 1.5, rpg: 4, threePm: 1.8 },
+      { id: "ind4", name: "Pascal Siakam", number: 43, position: "PF", ppg: 20.6, apg: 4.2, rpg: 6.8, threePm: 1.4 },
+      { id: "ind5", name: "Myles Turner", number: 33, position: "C", ppg: 17.2, apg: 1.6, rpg: 7.2, threePm: 2.1 }
+    ],
+    bench: [
+      { id: "ind6", name: "Bennedict Mathurin", number: 0, position: "SG", ppg: 18.8, apg: 2, rpg: 6.4, threePm: 1.6 },
+      { id: "ind7", name: "Obi Toppin", number: 1, position: "PF", ppg: 10.2, apg: 1.8, rpg: 4, threePm: 1.4 },
+      { id: "ind8", name: "T.J. McConnell", number: 9, position: "PG", ppg: 9.8, apg: 4.6, rpg: 2.6, threePm: 0.3 }
+    ]
+  },
+  // 13. LA Clippers
+  clippers: {
+    coach: "Tyronn Lue",
+    starters: [
+      { id: "lac1", name: "James Harden", number: 1, position: "PG", ppg: 20.8, apg: 8.6, rpg: 7.2, threePm: 2.6 },
+      { id: "lac2", name: "Norman Powell", number: 24, position: "SG", ppg: 23.5, apg: 2.4, rpg: 3.4, threePm: 3.4 },
+      { id: "lac3", name: "Terance Mann", number: 14, position: "SF", ppg: 6.8, apg: 1.8, rpg: 3.8, threePm: 0.8 },
+      { id: "lac4", name: "Derrick Jones Jr.", number: 55, position: "PF", ppg: 10.4, apg: 1, rpg: 3.5, threePm: 1.2 },
+      { id: "lac5", name: "Ivica Zubac", number: 40, position: "C", ppg: 15.2, apg: 2.6, rpg: 12.4, threePm: 0 }
+    ],
+    bench: [
+      { id: "lac6", name: "Kawhi Leonard", number: 2, position: "SF", ppg: 23.7, apg: 3.6, rpg: 6.1, threePm: 2.1, isInjured: true, injuryStatus: "Out" },
+      { id: "lac7", name: "Kevin Porter Jr.", number: 7, position: "SG", ppg: 8.8, apg: 3.1, rpg: 3.2, threePm: 0.9 },
+      { id: "lac8", name: "Nicolas Batum", number: 33, position: "PF", ppg: 5.6, apg: 1.8, rpg: 3, threePm: 1.2 }
+    ]
+  },
+  // 14. Los Angeles Lakers
+  lakers: {
+    coach: "JJ Redick",
+    starters: [
+      { id: "lal1", name: "D'Angelo Russell", number: 1, position: "PG", ppg: 13.8, apg: 5.2, rpg: 2.6, threePm: 2.2 },
+      { id: "lal2", name: "Austin Reaves", number: 15, position: "SG", ppg: 17.6, apg: 5.4, rpg: 3.8, threePm: 2.4 },
+      { id: "lal3", name: "LeBron James", number: 23, position: "SF", ppg: 23.2, apg: 9.1, rpg: 8, threePm: 2.2 },
+      { id: "lal4", name: "Rui Hachimura", number: 28, position: "PF", ppg: 12.8, apg: 1.6, rpg: 6.1, threePm: 1.6 },
+      { id: "lal5", name: "Anthony Davis", number: 3, position: "C", ppg: 28.5, apg: 3.4, rpg: 11.4, threePm: 0.5 }
+    ],
+    bench: [
+      { id: "lal6", name: "Dalton Knecht", number: 4, position: "SG", ppg: 11.4, apg: 1.2, rpg: 2.8, threePm: 2.3 },
+      { id: "lal7", name: "Gabe Vincent", number: 7, position: "PG", ppg: 4.8, apg: 1.4, rpg: 1.2, threePm: 1 },
+      { id: "lal8", name: "Jaxson Hayes", number: 11, position: "C", ppg: 6.4, apg: 0.8, rpg: 4.6, threePm: 0 }
+    ]
+  },
+  // 15. Memphis Grizzlies
+  grizzlies: {
+    coach: "Taylor Jenkins",
+    starters: [
+      { id: "mem1", name: "Ja Morant", number: 12, position: "PG", ppg: 20.6, apg: 9.1, rpg: 5, threePm: 1.6 },
+      { id: "mem2", name: "Desmond Bane", number: 22, position: "SG", ppg: 18.8, apg: 4.2, rpg: 5.6, threePm: 2.8 },
+      { id: "mem3", name: "Marcus Smart", number: 36, position: "SF", ppg: 9.8, apg: 3.8, rpg: 2.5, threePm: 1.5 },
+      { id: "mem4", name: "Jaren Jackson Jr.", number: 13, position: "PF", ppg: 23.2, apg: 1.8, rpg: 5.8, threePm: 2 },
+      { id: "mem5", name: "Zach Edey", number: 14, position: "C", ppg: 11.2, apg: 0.8, rpg: 8.2, threePm: 0.6 }
+    ],
+    bench: [
+      { id: "mem6", name: "Santi Aldama", number: 7, position: "PF", ppg: 12.5, apg: 3.2, rpg: 7.4, threePm: 1.8 },
+      { id: "mem7", name: "Scotty Pippen Jr.", number: 1, position: "PG", ppg: 11.8, apg: 5.6, rpg: 3.8, threePm: 1.2 },
+      { id: "mem8", name: "Luke Kennard", number: 10, position: "SG", ppg: 8.6, apg: 3.2, rpg: 2.2, threePm: 1.9 }
+    ]
+  },
+  // 16. Miami Heat
+  heat: {
+    coach: "Erik Spoelstra",
+    starters: [
+      { id: "mia1", name: "Terry Rozier", number: 2, position: "PG", ppg: 14.2, apg: 3.8, rpg: 3.6, threePm: 2.1 },
+      { id: "mia2", name: "Tyler Herro", number: 14, position: "SG", ppg: 24.2, apg: 5.2, rpg: 5, threePm: 3.6 },
+      { id: "mia3", name: "Jimmy Butler", number: 22, position: "SF", ppg: 18, apg: 5, rpg: 5.4, threePm: 0.6 },
+      { id: "mia4", name: "Nikola Jovic", number: 5, position: "PF", ppg: 9.8, apg: 2.8, rpg: 4.8, threePm: 1.4 },
+      { id: "mia5", name: "Bam Adebayo", number: 13, position: "C", ppg: 16.4, apg: 4.4, rpg: 9.8, threePm: 1 }
+    ],
+    bench: [
+      { id: "mia6", name: "Jaime Jaquez Jr.", number: 11, position: "SF", ppg: 10.2, apg: 2.6, rpg: 6.2, threePm: 0.8 },
+      { id: "mia7", name: "Duncan Robinson", number: 55, position: "SG", ppg: 10.8, apg: 2.2, rpg: 2.4, threePm: 2.6 },
+      { id: "mia8", name: "Haywood Highsmith", number: 24, position: "PF", ppg: 7.2, apg: 1.4, rpg: 3.6, threePm: 1.2 }
+    ]
+  },
+  // 17. Milwaukee Bucks
+  bucks: {
+    coach: "Doc Rivers",
+    starters: [
+      { id: "mil1", name: "Damian Lillard", number: 0, position: "PG", ppg: 25.4, apg: 6.8, rpg: 4.4, threePm: 3.2 },
+      { id: "mil2", name: "Gary Trent Jr.", number: 5, position: "SG", ppg: 9.8, apg: 1.2, rpg: 1.8, threePm: 1.8 },
+      { id: "mil3", name: "Taurean Prince", number: 12, position: "SF", ppg: 8.5, apg: 1.8, rpg: 4.8, threePm: 1.6 },
+      { id: "mil4", name: "Giannis Antetokounmpo", number: 34, position: "PF", ppg: 32.4, apg: 6.2, rpg: 12, threePm: 0.2 },
+      { id: "mil5", name: "Brook Lopez", number: 11, position: "C", ppg: 12.8, apg: 1.8, rpg: 5.2, threePm: 2 }
+    ],
+    bench: [
+      { id: "mil6", name: "Bobby Portis", number: 9, position: "PF", ppg: 13.6, apg: 1.2, rpg: 8, threePm: 1.1 },
+      { id: "mil7", name: "Khris Middleton", number: 22, position: "SF", ppg: 15.1, apg: 5.3, rpg: 4.7, threePm: 1.7, isInjured: true, injuryStatus: "GTD" },
+      { id: "mil8", name: "Pat Connaughton", number: 24, position: "SG", ppg: 5.8, apg: 1.8, rpg: 3, threePm: 1.2 }
+    ]
+  },
+  // 18. Minnesota Timberwolves
+  timberwolves: {
+    coach: "Chris Finch",
+    starters: [
+      { id: "min1", name: "Mike Conley", number: 10, position: "PG", ppg: 8.8, apg: 4.8, rpg: 3, threePm: 1.8 },
+      { id: "min2", name: "Anthony Edwards", number: 5, position: "SG", ppg: 28.1, apg: 3.8, rpg: 5.4, threePm: 4.6 },
+      { id: "min3", name: "Jaden McDaniels", number: 3, position: "SF", ppg: 10.4, apg: 1.6, rpg: 3.6, threePm: 1.2 },
+      { id: "min4", name: "Julius Randle", number: 30, position: "PF", ppg: 21.6, apg: 4.4, rpg: 6.8, threePm: 1.8 },
+      { id: "min5", name: "Rudy Gobert", number: 27, position: "C", ppg: 11, apg: 1.8, rpg: 11.2, threePm: 0 }
+    ],
+    bench: [
+      { id: "min6", name: "Naz Reid", number: 11, position: "C", ppg: 14.8, apg: 1.8, rpg: 5.6, threePm: 2.3 },
+      { id: "min7", name: "Donte DiVincenzo", number: 0, position: "SG", ppg: 10.2, apg: 3.4, rpg: 3.2, threePm: 2.2 },
+      { id: "min8", name: "Nickeil Alexander-Walker", number: 9, position: "SG", ppg: 9.6, apg: 2.6, rpg: 2.8, threePm: 1.9 }
+    ]
+  },
+  // 19. New Orleans Pelicans
+  pelicans: {
+    coach: "Willie Green",
+    starters: [
+      { id: "nop1", name: "Dejounte Murray", number: 5, position: "PG", ppg: 18.4, apg: 6.8, rpg: 5.6, threePm: 1.8 },
+      { id: "nop2", name: "CJ McCollum", number: 3, position: "SG", ppg: 19.2, apg: 3.8, rpg: 3.6, threePm: 3 },
+      { id: "nop3", name: "Brandon Ingram", number: 14, position: "SF", ppg: 22.8, apg: 5.4, rpg: 5.8, threePm: 2.2 },
+      { id: "nop4", name: "Zion Williamson", number: 1, position: "PF", ppg: 22.7, apg: 5.3, rpg: 8, threePm: 0.1, isInjured: true, injuryStatus: "GTD" },
+      { id: "nop5", name: "Daniel Theis", number: 10, position: "C", ppg: 5.2, apg: 1.8, rpg: 4.8, threePm: 0.4 }
+    ],
+    bench: [
+      { id: "nop6", name: "Trey Murphy III", number: 25, position: "SF", ppg: 15.6, apg: 2.4, rpg: 4.8, threePm: 2.8 },
+      { id: "nop7", name: "Herb Jones", number: 5, position: "SF", ppg: 10.2, apg: 2.4, rpg: 3.6, threePm: 1.4 },
+      { id: "nop8", name: "Jordan Hawkins", number: 24, position: "SG", ppg: 12.8, apg: 1.4, rpg: 3.2, threePm: 2.2 }
+    ]
+  },
+  // 20. New York Knicks
+  knicks: {
+    coach: "Tom Thibodeau",
+    starters: [
+      { id: "nyk1", name: "Jalen Brunson", number: 11, position: "PG", ppg: 25.2, apg: 7.4, rpg: 3.2, threePm: 2.4 },
+      { id: "nyk2", name: "Mikal Bridges", number: 25, position: "SG", ppg: 16.5, apg: 3.8, rpg: 3.8, threePm: 2.2 },
+      { id: "nyk3", name: "OG Anunoby", number: 8, position: "SF", ppg: 17.4, apg: 2.4, rpg: 5, threePm: 2.4 },
+      { id: "nyk4", name: "Josh Hart", number: 3, position: "PF", ppg: 13.8, apg: 5.8, rpg: 8.8, threePm: 1.2 },
+      { id: "nyk5", name: "Karl-Anthony Towns", number: 32, position: "C", ppg: 25.8, apg: 3.2, rpg: 12.6, threePm: 2.5 }
+    ],
+    bench: [
+      { id: "nyk6", name: "Miles McBride", number: 2, position: "PG", ppg: 10.8, apg: 2.4, rpg: 2.6, threePm: 2.4 },
+      { id: "nyk7", name: "Cameron Payne", number: 1, position: "PG", ppg: 6.8, apg: 3.2, rpg: 1.8, threePm: 1.2 },
+      { id: "nyk8", name: "Precious Achiuwa", number: 5, position: "C", ppg: 7.4, apg: 1.1, rpg: 6.2, threePm: 0.2 }
+    ]
+  },
+  // 21. Oklahoma City Thunder
+  thunder: {
+    coach: "Mark Daigneault",
+    starters: [
+      { id: "okc1", name: "Shai Gilgeous-Alexander", number: 2, position: "PG", ppg: 28.5, apg: 6.4, rpg: 5.3, threePm: 1.9 },
+      { id: "okc2", name: "Cason Wallace", number: 22, position: "SG", ppg: 7.2, apg: 2.2, rpg: 3.4, threePm: 1.2 },
+      { id: "okc3", name: "Luguentz Dort", number: 5, position: "SF", ppg: 10.8, apg: 1.6, rpg: 3.8, threePm: 2.2 },
+      { id: "okc4", name: "Jalen Williams", number: 8, position: "PF", ppg: 21.8, apg: 5.2, rpg: 6.4, threePm: 1.8 },
+      { id: "okc5", name: "Chet Holmgren", number: 7, position: "C", ppg: 16.4, apg: 2.2, rpg: 8.7, threePm: 1.5, isInjured: true, injuryStatus: "Out" }
+    ],
+    bench: [
+      { id: "okc6", name: "Alex Caruso", number: 9, position: "SG", ppg: 6.4, apg: 2.4, rpg: 3, threePm: 1.1 },
+      { id: "okc7", name: "Isaiah Hartenstein", number: 55, position: "C", ppg: 12, apg: 3.8, rpg: 11, threePm: 0 },
+      { id: "okc8", name: "Aaron Wiggins", number: 21, position: "SG", ppg: 10.4, apg: 1.8, rpg: 3.6, threePm: 1.5 }
+    ]
+  },
+  // 22. Orlando Magic
+  magic: {
+    coach: "Jamahl Mosley",
+    starters: [
+      { id: "orl1", name: "Jalen Suggs", number: 4, position: "PG", ppg: 15, apg: 4, rpg: 4.8, threePm: 2.2 },
+      { id: "orl2", name: "Kentavious Caldwell-Pope", number: 3, position: "SG", ppg: 8.8, apg: 2, rpg: 2.4, threePm: 1.5 },
+      { id: "orl3", name: "Franz Wagner", number: 22, position: "SF", ppg: 23.5, apg: 5.6, rpg: 5.8, threePm: 2 },
+      { id: "orl4", name: "Paolo Banchero", number: 5, position: "PF", ppg: 29, apg: 5.6, rpg: 8.8, threePm: 2.2, isInjured: true, injuryStatus: "Out" },
+      { id: "orl5", name: "Wendell Carter Jr.", number: 34, position: "C", ppg: 8.6, apg: 2, rpg: 8.4, threePm: 0.8 }
+    ],
+    bench: [
+      { id: "orl6", name: "Moritz Wagner", number: 21, position: "C", ppg: 12.6, apg: 1.6, rpg: 4.8, threePm: 0.8 },
+      { id: "orl7", name: "Cole Anthony", number: 50, position: "PG", ppg: 6.8, apg: 2.8, rpg: 2.6, threePm: 0.9 },
+      { id: "orl8", name: "Jonathan Isaac", number: 1, position: "PF", ppg: 6.2, apg: 0.8, rpg: 4.6, threePm: 0.8 }
+    ]
+  },
+  // 23. Philadelphia 76ers
+  sixers: {
+    coach: "Nick Nurse",
+    starters: [
+      { id: "phi1", name: "Tyrese Maxey", number: 0, position: "PG", ppg: 27.6, apg: 4.2, rpg: 3.4, threePm: 3.2 },
+      { id: "phi2", name: "Kelly Oubre Jr.", number: 9, position: "SG", ppg: 14.2, apg: 1.8, rpg: 4.8, threePm: 1.5 },
+      { id: "phi3", name: "Paul George", number: 8, position: "SF", ppg: 16.5, apg: 5.2, rpg: 5.6, threePm: 2.2 },
+      { id: "phi4", name: "Caleb Martin", number: 16, position: "PF", ppg: 9.8, apg: 2.4, rpg: 5, threePm: 1.1 },
+      { id: "phi5", name: "Joel Embiid", number: 21, position: "C", ppg: 28, apg: 4.5, rpg: 10.2, threePm: 1.2 }
+    ],
+    bench: [
+      { id: "phi6", name: "Kyle Lowry", number: 7, position: "PG", ppg: 6.5, apg: 3.8, rpg: 2.6, threePm: 1.2 },
+      { id: "phi7", name: "Andre Drummond", number: 5, position: "C", ppg: 8.8, apg: 1.2, rpg: 9.2, threePm: 0 },
+      { id: "phi8", name: "Guerschon Yabusele", number: 28, position: "PF", ppg: 9.4, apg: 2, rpg: 4.6, threePm: 1.2 }
+    ]
+  },
+  // 24. Phoenix Suns
+  suns: {
+    coach: "Mike Budenholzer",
+    starters: [
+      { id: "phx1", name: "Tyus Jones", number: 21, position: "PG", ppg: 10.8, apg: 6.8, rpg: 2.8, threePm: 1.6 },
+      { id: "phx2", name: "Devin Booker", number: 1, position: "SG", ppg: 24.8, apg: 6.6, rpg: 3.8, threePm: 2.6 },
+      { id: "phx3", name: "Bradley Beal", number: 3, position: "SF", ppg: 18.2, apg: 3.6, rpg: 3.8, threePm: 2.4 },
+      { id: "phx4", name: "Kevin Durant", number: 35, position: "PF", ppg: 27.6, apg: 3.4, rpg: 6.6, threePm: 2.8 },
+      { id: "phx5", name: "Jusuf Nurkic", number: 20, position: "C", ppg: 9.2, apg: 1.8, rpg: 9.8, threePm: 0.5 }
+    ],
+    bench: [
+      { id: "phx6", name: "Grayson Allen", number: 8, position: "SG", ppg: 11.2, apg: 1.8, rpg: 3.2, threePm: 2.5 },
+      { id: "phx7", name: "Royce O'Neale", number: 0, position: "SF", ppg: 10.6, apg: 2.4, rpg: 6, threePm: 2.2 },
+      { id: "phx8", name: "Mason Plumlee", number: 22, position: "C", ppg: 5, apg: 1.6, rpg: 5.6, threePm: 0 }
+    ]
+  },
+  // 25. Portland Trail Blazers
+  blazers: {
+    coach: "Chauncey Billups",
+    starters: [
+      { id: "por1", name: "Anfernee Simons", number: 1, position: "PG", ppg: 16.8, apg: 4.6, rpg: 2.6, threePm: 2.6 },
+      { id: "por2", name: "Shaedon Sharpe", number: 17, position: "SG", ppg: 17.4, apg: 2.4, rpg: 4.2, threePm: 1.8 },
+      { id: "por3", name: "Toumani Camara", number: 33, position: "SF", ppg: 9.2, apg: 2.2, rpg: 4.8, threePm: 1.2 },
+      { id: "por4", name: "Jerami Grant", number: 9, position: "PF", ppg: 16.5, apg: 2.2, rpg: 3.4, threePm: 2.2 },
+      { id: "por5", name: "Deandre Ayton", number: 2, position: "C", ppg: 14.2, apg: 1.4, rpg: 10.8, threePm: 0.2 }
+    ],
+    bench: [
+      { id: "por6", name: "Deni Avdija", number: 8, position: "SF", ppg: 10.8, apg: 3.2, rpg: 5.8, threePm: 1 },
+      { id: "por7", name: "Scoot Henderson", number: 0, position: "PG", ppg: 11.8, apg: 5.2, rpg: 3, threePm: 1.2 },
+      { id: "por8", name: "Donovan Clingan", number: 23, position: "C", ppg: 6, apg: 0.8, rpg: 6.2, threePm: 0.1 }
+    ]
+  },
+  // 26. Sacramento Kings
+  kings: {
+    coach: "Mike Brown",
+    starters: [
+      { id: "sac1", name: "De'Aaron Fox", number: 5, position: "PG", ppg: 28.8, apg: 4.8, rpg: 5, threePm: 2.4 },
+      { id: "sac2", name: "Keon Ellis", number: 23, position: "SG", ppg: 8.2, apg: 1.6, rpg: 2.8, threePm: 1.6 },
+      { id: "sac3", name: "DeMar DeRozan", number: 10, position: "SF", ppg: 22.8, apg: 4.2, rpg: 4.2, threePm: 1 },
+      { id: "sac4", name: "Keegan Murray", number: 13, position: "PF", ppg: 13.6, apg: 1.8, rpg: 7.8, threePm: 2.2 },
+      { id: "sac5", name: "Domantas Sabonis", number: 11, position: "C", ppg: 20.2, apg: 6.6, rpg: 12.8, threePm: 0.6 }
+    ],
+    bench: [
+      { id: "sac6", name: "Malik Monk", number: 0, position: "SG", ppg: 13.4, apg: 3.2, rpg: 3, threePm: 1.6 },
+      { id: "sac7", name: "Kevin Huerter", number: 9, position: "SG", ppg: 10.5, apg: 1.8, rpg: 3.4, threePm: 1.8 },
+      { id: "sac8", name: "Trey Lyles", number: 41, position: "PF", ppg: 7.8, apg: 1.2, rpg: 4.6, threePm: 1.4 }
+    ]
+  },
+  // 27. San Antonio Spurs
+  spurs: {
+    coach: "Gregg Popovich",
+    starters: [
+      { id: "sas1", name: "Chris Paul", number: 3, position: "PG", ppg: 10.6, apg: 8.4, rpg: 3.8, threePm: 1.8 },
+      { id: "sas2", name: "Devin Vassell", number: 24, position: "SG", ppg: 17.5, apg: 3.4, rpg: 3.8, threePm: 2.4 },
+      { id: "sas3", name: "Harrison Barnes", number: 40, position: "SF", ppg: 11.8, apg: 1.6, rpg: 4.2, threePm: 1.8 },
+      { id: "sas4", name: "Jeremy Sochan", number: 10, position: "PF", ppg: 15.4, apg: 3, rpg: 7.8, threePm: 0.6 },
+      { id: "sas5", name: "Victor Wembanyama", number: 1, position: "C", ppg: 24.2, apg: 3.8, rpg: 10.6, threePm: 3.2 }
+    ],
+    bench: [
+      { id: "sas6", name: "Keldon Johnson", number: 0, position: "SF", ppg: 12.6, apg: 1.6, rpg: 5.4, threePm: 1.2 },
+      { id: "sas7", name: "Stephon Castle", number: 5, position: "PG", ppg: 11.2, apg: 3.6, rpg: 2.8, threePm: 0.9 },
+      { id: "sas8", name: "Zach Collins", number: 23, position: "C", ppg: 6.8, apg: 1.8, rpg: 3.8, threePm: 0.5 }
+    ]
+  },
+  // 28. Toronto Raptors
+  raptors: {
+    coach: "Darko Rajakovic",
+    starters: [
+      { id: "tor1", name: "Immanuel Quickley", number: 5, position: "PG", ppg: 15.6, apg: 5.8, rpg: 3.2, threePm: 2.2 },
+      { id: "tor2", name: "Gradey Dick", number: 1, position: "SG", ppg: 18.2, apg: 2.4, rpg: 3, threePm: 2.6 },
+      { id: "tor3", name: "RJ Barrett", number: 9, position: "SF", ppg: 23.2, apg: 6.2, rpg: 6.4, threePm: 1.8 },
+      { id: "tor4", name: "Scottie Barnes", number: 4, position: "PF", ppg: 20.4, apg: 6.8, rpg: 8.6, threePm: 1.2 },
+      { id: "tor5", name: "Jakob Poeltl", number: 19, position: "C", ppg: 15.8, apg: 2.8, rpg: 11.6, threePm: 0 }
+    ],
+    bench: [
+      { id: "tor6", name: "Davion Mitchell", number: 45, position: "PG", ppg: 8.8, apg: 5, rpg: 2, threePm: 1 },
+      { id: "tor7", name: "Ochai Agbaji", number: 30, position: "SG", ppg: 11.4, apg: 1.8, rpg: 4.8, threePm: 1.4 },
+      { id: "tor8", name: "Chris Boucher", number: 25, position: "PF", ppg: 9.8, apg: 0.8, rpg: 4.4, threePm: 1.4 }
+    ]
+  },
+  // 29. Utah Jazz
+  jazz: {
+    coach: "Will Hardy",
+    starters: [
+      { id: "uta1", name: "Keyonte George", number: 3, position: "PG", ppg: 15.2, apg: 5.6, rpg: 3.2, threePm: 2.4 },
+      { id: "uta2", name: "Collin Sexton", number: 2, position: "SG", ppg: 17.8, apg: 3.4, rpg: 2.8, threePm: 1.6 },
+      { id: "uta3", name: "Lauri Markkanen", number: 23, position: "SF", ppg: 19.8, apg: 2, rpg: 6.4, threePm: 2.8 },
+      { id: "uta4", name: "John Collins", number: 20, position: "PF", ppg: 18.2, apg: 2.6, rpg: 8.8, threePm: 1.4 },
+      { id: "uta5", name: "Walker Kessler", number: 24, position: "C", ppg: 9.6, apg: 1.2, rpg: 10.8, threePm: 0 }
+    ],
+    bench: [
+      { id: "uta6", name: "Jordan Clarkson", number: 0, position: "SG", ppg: 15.4, apg: 3.8, rpg: 3.8, threePm: 2 },
+      { id: "uta7", name: "Cody Williams", number: 5, position: "SF", ppg: 7.8, apg: 1.6, rpg: 2.8, threePm: 0.8 },
+      { id: "uta8", name: "Kyle Filipowski", number: 22, position: "PF", ppg: 8.4, apg: 2, rpg: 4.8, threePm: 0.6 }
+    ]
+  },
+  // 30. Washington Wizards
+  wizards: {
+    coach: "Brian Keefe",
+    starters: [
+      { id: "was1", name: "Jordan Poole", number: 13, position: "PG", ppg: 21.2, apg: 4.8, rpg: 2.4, threePm: 3.6 },
+      { id: "was2", name: "Carlton Carrington", number: 8, position: "SG", ppg: 10.2, apg: 4.8, rpg: 4.4, threePm: 1.5 },
+      { id: "was3", name: "Bilal Coulibaly", number: 0, position: "SF", ppg: 14.8, apg: 2.8, rpg: 5.6, threePm: 1.4 },
+      { id: "was4", name: "Alexandre Sarr", number: 20, position: "PF", ppg: 11.8, apg: 2.2, rpg: 6.4, threePm: 1.6 },
+      { id: "was5", name: "Jonas Valanciunas", number: 17, position: "C", ppg: 12.6, apg: 2.2, rpg: 8.2, threePm: 0.2 }
+    ],
+    bench: [
+      { id: "was6", name: "Kyle Kuzma", number: 33, position: "PF", ppg: 17, apg: 3, rpg: 6.2, threePm: 1.4 },
+      { id: "was7", name: "Corey Kispert", number: 24, position: "SF", ppg: 11.2, apg: 1.6, rpg: 2.8, threePm: 2 },
+      { id: "was8", name: "Kyshawn George", number: 18, position: "SG", ppg: 8.6, apg: 2.4, rpg: 3.8, threePm: 1.6 }
+    ]
+  }
+};
+function findNBARosterForTeam(teamNameOrAbbrev) {
+  if (!teamNameOrAbbrev) return null;
+  const lower = teamNameOrAbbrev.toLowerCase().trim();
+  if (NBA_30_TEAMS_ROSTERS[lower]) {
+    return NBA_30_TEAMS_ROSTERS[lower];
+  }
+  const matchingKey = Object.keys(NBA_30_TEAMS_ROSTERS).find((k) => {
+    return lower.includes(k) || k.includes(lower);
+  });
+  if (matchingKey) {
+    return NBA_30_TEAMS_ROSTERS[matchingKey];
+  }
+  const ALIAS_MAP = {
+    gsw: "warriors",
+    gs: "warriors",
+    golden: "warriors",
+    lal: "lakers",
+    la_lakers: "lakers",
+    lac: "clippers",
+    la_clippers: "clippers",
+    bos: "celtics",
+    boston: "celtics",
+    bkn: "nets",
+    brooklyn: "nets",
+    nyk: "knicks",
+    new_york: "knicks",
+    phi: "sixers",
+    philly: "sixers",
+    philadelphia: "sixers",
+    tor: "raptors",
+    toronto: "raptors",
+    chi: "bulls",
+    chicago: "bulls",
+    cle: "cavaliers",
+    cleveland: "cavaliers",
+    det: "pistons",
+    detroit: "pistons",
+    ind: "pacers",
+    indiana: "pacers",
+    mil: "bucks",
+    milwaukee: "bucks",
+    atl: "hawks",
+    atlanta: "hawks",
+    cha: "hornets",
+    charlotte: "hornets",
+    mia: "heat",
+    miami: "heat",
+    orl: "magic",
+    orlando: "magic",
+    was: "wizards",
+    wsh: "wizards",
+    washington: "wizards",
+    den: "nuggets",
+    denver: "nuggets",
+    min: "timberwolves",
+    minnesota: "timberwolves",
+    wolves: "timberwolves",
+    okc: "thunder",
+    oklahoma: "thunder",
+    por: "blazers",
+    portland: "blazers",
+    trail: "blazers",
+    uta: "jazz",
+    utah: "jazz",
+    dal: "mavericks",
+    dallas: "mavericks",
+    hou: "rockets",
+    houston: "rockets",
+    mem: "grizzlies",
+    memphis: "grizzlies",
+    nop: "pelicans",
+    no: "pelicans",
+    orleans: "pelicans",
+    sas: "spurs",
+    sa: "spurs",
+    san_antonio: "spurs",
+    sac: "kings",
+    sacramento: "kings",
+    phx: "suns",
+    phoenix: "suns"
+  };
+  for (const [alias, canonicalKey] of Object.entries(ALIAS_MAP)) {
+    if (lower.includes(alias)) {
+      return NBA_30_TEAMS_ROSTERS[canonicalKey] || null;
+    }
+  }
+  return null;
+}
+
 // src/services/lineupService.ts
 var HISPANIC_TEAM_REGEX = /chile|colombia|argentina|spain|españa|mexico|méxico|brazil|brasil|uruguay|paraguay|peru|perú|ecuador|venezuela|costa rica|nicaragua|honduras|guatemala|salvador|panama|panamá|bolivia|jalapa|managua|unan|dirian|diriangén|esteli|estelí|walter ferretti|ocotal|matagalpa|masachapa| Chinandega|séba|sebaco|real|deportivo|municipal|atletico|atlético|alianza|independiente|universidad|nacional|olimpia|saprissa|alajuelense|herediano|cartagines|motagua|marathon|marathón|comunicaciones|xelaju|antigua|coban|aguila|águila|fas|firpo|tauro|plaza amador|bolivar|bolívar|strongest|wilstermann|blooming|oriente|always ready|millonarios|santa fe|junior|medellin|medellín|cali|america|américa|tolima|bucaramanga|once caldas|pereira|pasto|envigado|equidad|fortaleza|llaneros|chico|chicó|patriotas|jaguares|huila|quindio|cucuta|boca|river|racing|velez|vélez|talleres|lanus|lanús|belgrano|estudiantes|gimnasia|san lorenzo|huracan|huracán|rosario|newells|argentinos|defensa|banfield|platense|godoy cruz|union|unión|colon|colón|tucuman|central cordoba|instituto|barracas|riestra|sarmiento|tigre|flamengo|palmeiras|botafogo|corinthians|sao paulo|são paulo|gremio|grêmio|cruzeiro|vasco|bahia|fluminense|santos|internacional|athletico|paranaense|bragantino|fortaleza|cuiaba|juventude|vitoria|vitória|cruz azul|toluca|monterrey|rayados|tigres|pumas|unam|chivas|guadalajara|atlas|pachuca|leon|león|tijuana|xolos|juarez|juárez|necaxa|puebla|queretaro|querétaro|santos laguna|mazatlan|mazatlán|san luis|sevilla|valencia|betis|villarreal|athletic|sociedad|osasuna|celta|girona|espanyol|mallorca|getafe|rayo|alaves|alavés|las palmas|leganes|valladolid|granada|cadiz|cádiz|almeria|almería|zaragoza|sporting|oviedo|santander|levante|elche|tenerife|benfica|porto|braga|vitoria|guimaraes|famalicao|moreirense|gil vicente|boavista|rio ave|estoril|arouca|farense|casa pia|colo colo|colo-colo|catolica|católica|cobreloa|huachipato|everton|audax|palestino|coquimbo|iquique|ohiggins|ñublense|cobresal|la serena|wanderers|peñarol|penarol|danubio|defensor|liverpool|wanderers|cerro|fenix|fénix|progreso|racing|boston river|miramar|libertad|cerro porteño|porteno|guarani|guaraní|luqueño|trinidense|tacuary|nacional|amayense|alianza lima|universitario|cristal|melgar|cienciano|cusco|garcilaso|mannucci|vallejo|boys|adt|chankas|comerciantes|grau|sullana|utc|liga de quito|ldu|barcelona sc|emelec|independiente del valle|idv|aucas|macara|macará|tecnico|técnico|mushuc runa|orense|delfin|delfín|cumbaya|imbadura|tachira|táchira|caracas|monagas|zamora|la guaira|puerto cabello|metropolitanos|carabobo|estudiantes|portuguesa|angostura|ucv/i;
 var EXCLUSIVE_CLUB_STARS = {
@@ -2915,10 +3487,585 @@ function getSoccerLineupData(fixture) {
     status: fixture.status === "IN_PLAY" || fixture.status === "FINISHED" ? "CONFIRMED" : "PROBABLE"
   };
 }
+function getNBALineupData(fixture) {
+  const hName = fixture.homeTeam.name || "";
+  const aName = fixture.awayTeam.name || "";
+  const hShort = fixture.homeTeam.shortName || "";
+  const aShort = fixture.awayTeam.shortName || "";
+  const homeRoster = findNBARosterForTeam(hName) || findNBARosterForTeam(hShort) || findNBARosterForTeam(fixture.homeTeam.city || "");
+  const awayRoster = findNBARosterForTeam(aName) || findNBARosterForTeam(aShort) || findNBARosterForTeam(fixture.awayTeam.city || "");
+  const homeStarters = homeRoster ? homeRoster.starters.map((p) => ({ ...p })) : fixture.homeTeam.keyPlayers?.length ? fixture.homeTeam.keyPlayers.map((kp, idx) => ({
+    id: kp.id || `hp_${idx}`,
+    name: kp.name,
+    number: idx * 3 + 2,
+    position: kp.position,
+    ppg: kp.seasonPpg,
+    apg: kp.seasonApg,
+    rpg: kp.seasonRpg,
+    threePm: kp.season3pm
+  })) : [
+    { id: "hp1", name: `Base Titular (${hShort})`, number: 1, position: "PG", ppg: 16, apg: 5.5, rpg: 3.2, threePm: 1.8 },
+    { id: "hp2", name: `Escolta Titular (${hShort})`, number: 2, position: "SG", ppg: 15.5, apg: 3.2, rpg: 3.6, threePm: 2.1 },
+    { id: "hp3", name: `Alero Titular (${hShort})`, number: 3, position: "SF", ppg: 14.2, apg: 2.4, rpg: 4.8, threePm: 1.5 },
+    { id: "hp4", name: `Ala-P\xEDvot Titular (${hShort})`, number: 4, position: "PF", ppg: 13.5, apg: 1.9, rpg: 6.5, threePm: 0.9 },
+    { id: "hp5", name: `P\xEDvot Titular (${hShort})`, number: 5, position: "C", ppg: 12.8, apg: 1.8, rpg: 8.6, threePm: 0.2 }
+  ];
+  const awayStarters = awayRoster ? awayRoster.starters.map((p) => ({ ...p })) : fixture.awayTeam.keyPlayers?.length ? fixture.awayTeam.keyPlayers.map((kp, idx) => ({
+    id: kp.id || `ap_${idx}`,
+    name: kp.name,
+    number: idx * 4 + 1,
+    position: kp.position,
+    ppg: kp.seasonPpg,
+    apg: kp.seasonApg,
+    rpg: kp.seasonRpg,
+    threePm: kp.season3pm
+  })) : [
+    { id: "ap1", name: `Base Titular (${aShort})`, number: 1, position: "PG", ppg: 16, apg: 5.5, rpg: 3.2, threePm: 1.8 },
+    { id: "ap2", name: `Escolta Titular (${aShort})`, number: 2, position: "SG", ppg: 15.5, apg: 3.2, rpg: 3.6, threePm: 2.1 },
+    { id: "ap3", name: `Alero Titular (${aShort})`, number: 3, position: "SF", ppg: 14.2, apg: 2.4, rpg: 4.8, threePm: 1.5 },
+    { id: "ap4", name: `Ala-P\xEDvot Titular (${aShort})`, number: 4, position: "PF", ppg: 13.5, apg: 1.9, rpg: 6.5, threePm: 0.9 },
+    { id: "ap5", name: `P\xEDvot Titular (${aShort})`, number: 5, position: "C", ppg: 12.8, apg: 1.8, rpg: 8.6, threePm: 0.2 }
+  ];
+  const homeBench = homeRoster ? homeRoster.bench.map((p) => ({ ...p })) : [
+    { id: "hb1", name: "Buddy Hield", number: 7, position: "SG", ppg: 15.8, apg: 1.8, rpg: 3.8, threePm: 3.4 },
+    { id: "hb2", name: "Moses Moody", number: 4, position: "SG", ppg: 9.2, apg: 1.2, rpg: 2.4, threePm: 1.5 },
+    { id: "hb3", name: "Kevon Looney", number: 5, position: "C", ppg: 5.6, apg: 1.8, rpg: 7.8, threePm: 0 }
+  ];
+  const awayBench = awayRoster ? awayRoster.bench.map((p) => ({ ...p })) : [
+    { id: "ab1", name: "Daniel Gafford", number: 21, position: "C", ppg: 11.5, apg: 1.4, rpg: 6.8, threePm: 0 },
+    { id: "ab2", name: "Spencer Dinwiddie", number: 26, position: "PG", ppg: 7.8, apg: 3.2, rpg: 2.2, threePm: 1.2 },
+    { id: "ab3", name: "Naji Marshall", number: 13, position: "SF", ppg: 9.4, apg: 2.6, rpg: 3.8, threePm: 0.8 }
+  ];
+  if (Array.isArray(fixture.officialInjuries) && fixture.officialInjuries.length > 0) {
+    const applyInjuries = (list) => {
+      list.forEach((p) => {
+        const pLower = p.name.toLowerCase();
+        const found = fixture.officialInjuries?.find((inj) => {
+          const injLower = inj.athleteName.toLowerCase();
+          return pLower.includes(injLower) || injLower.includes(pLower);
+        });
+        if (found) {
+          p.isInjured = true;
+          const statusLower = found.status.toLowerCase();
+          if (statusLower.includes("out") || statusLower.includes("fuera")) {
+            p.injuryStatus = "Out";
+          } else if (statusLower.includes("day") || statusLower.includes("question") || statusLower.includes("duda")) {
+            p.injuryStatus = "GTD";
+          } else {
+            p.injuryStatus = "Probable";
+          }
+        }
+      });
+    };
+    applyInjuries(homeStarters);
+    applyInjuries(awayStarters);
+    applyInjuries(homeBench);
+    applyInjuries(awayBench);
+  }
+  return {
+    homeStarters,
+    awayStarters,
+    homeBench,
+    awayBench,
+    homeCoach: homeRoster?.coach || "Entrenador Principal",
+    awayCoach: awayRoster?.coach || "Entrenador Principal",
+    arenaName: fixture.arena?.name || `Arena de ${fixture.homeTeam.name}`,
+    arenaCity: fixture.arena?.city || fixture.homeTeam.name,
+    status: fixture.status === "IN_PLAY" || fixture.status === "FINISHED" ? "CONFIRMED" : "PROBABLE"
+  };
+}
+
+// src/services/nbaEngine.ts
+function normalCDF(z) {
+  if (z < -7) return 0;
+  if (z > 7) return 1;
+  const b1 = 0.31938153;
+  const b2 = -0.356563782;
+  const b3 = 1.781477937;
+  const b4 = -1.821255978;
+  const b5 = 1.330274429;
+  const p = 0.2316419;
+  const c = 0.39894228;
+  if (z >= 0) {
+    const t = 1 / (1 + p * z);
+    return 1 - c * Math.exp(-z * z / 2) * t * (t * (t * (t * (t * b5 + b4) + b3) + b2) + b1);
+  } else {
+    const t = 1 / (1 - p * z);
+    return c * Math.exp(-z * z / 2) * t * (t * (t * (t * (t * b5 + b4) + b3) + b2) + b1);
+  }
+}
+function factorial(n) {
+  let res = 1;
+  for (let i = 2; i <= n; i++) res *= i;
+  return res;
+}
+function poissonPMF(lambda, k) {
+  if (lambda <= 0) return k === 0 ? 1 : 0;
+  return Math.pow(lambda, k) * Math.exp(-lambda) / factorial(k);
+}
+function poissonOver(lambda, line) {
+  const threshold = Math.floor(line);
+  let cdf = 0;
+  for (let k = 0; k <= threshold; k++) {
+    cdf += poissonPMF(lambda, k);
+  }
+  const overProb = Math.max(0.01, Math.min(0.99, 1 - cdf));
+  return Math.round(overProb * 1e3) / 10;
+}
+var nbaAnalysisCache = /* @__PURE__ */ new Map();
+function calculateNBAAnalysis(fixture) {
+  const isLive = fixture.status === "IN_PLAY";
+  const isFinished = fixture.status === "FINISHED";
+  const liveKey = `${fixture.id}_${fixture.status}_${fixture.currentScore?.home ?? 0}_${fixture.currentScore?.away ?? 0}_${fixture.livePeriod ?? "PRE"}`;
+  const cached = nbaAnalysisCache.get(liveKey);
+  if (cached && Date.now() - cached.timestamp < 1e4) {
+    return cached.analysis;
+  }
+  const { homeTeam, awayTeam } = fixture;
+  const isFibaLeague = Boolean(fixture.league?.id && fixture.league.id !== "nba");
+  const LEAGUE_AVG_PACE = isFibaLeague ? 82 : 99;
+  const LEAGUE_AVG_ORTG = isFibaLeague ? 106.5 : 112.5;
+  const adjHomePace = isFibaLeague ? Math.min(86, homeTeam.pace * 0.84) : homeTeam.pace;
+  const adjAwayPace = isFibaLeague ? Math.min(86, awayTeam.pace * 0.84) : awayTeam.pace;
+  const adjHomeORTG = isFibaLeague ? Math.min(110, homeTeam.offensiveRating * 0.92) : Math.min(115.5, homeTeam.offensiveRating * 0.97);
+  const adjAwayORTG = isFibaLeague ? Math.min(110, awayTeam.offensiveRating * 0.92) : Math.min(115.5, awayTeam.offensiveRating * 0.97);
+  const adjHomeDRTG = isFibaLeague ? Math.min(110, homeTeam.defensiveRating * 0.92) : Math.min(114.5, homeTeam.defensiveRating * 0.97);
+  const adjAwayDRTG = isFibaLeague ? Math.min(110, awayTeam.defensiveRating * 0.92) : Math.min(114.5, awayTeam.defensiveRating * 0.97);
+  const basePace = adjHomePace * adjAwayPace / LEAGUE_AVG_PACE;
+  const homeORTG = adjHomeORTG * adjAwayDRTG / LEAGUE_AVG_ORTG + 2;
+  const awayORTG = adjAwayORTG * adjHomeDRTG / LEAGUE_AVG_ORTG - 0.4;
+  let baseHomeScore = Math.round(basePace * homeORTG / 100 * 10) / 10;
+  let baseAwayScore = Math.round(basePace * awayORTG / 100 * 10) / 10;
+  if (homeTeam.restDays === 0) baseHomeScore -= 1.8;
+  if (awayTeam.restDays === 0) baseAwayScore -= 2.6;
+  if (homeTeam.restDays >= 3) baseHomeScore += 1.2;
+  const nbaLineup = getNBALineupData(fixture);
+  const homeRosterInjuries = [...nbaLineup.homeStarters, ...nbaLineup.homeBench].filter((p) => p.isInjured);
+  const awayRosterInjuries = [...nbaLineup.awayStarters, ...nbaLineup.awayBench].filter((p) => p.isInjured);
+  homeRosterInjuries.forEach((p) => {
+    if (p.injuryStatus === "Out") baseHomeScore -= 2.2;
+    else if (p.injuryStatus === "GTD") baseHomeScore -= 1;
+  });
+  awayRosterInjuries.forEach((p) => {
+    if (p.injuryStatus === "Out") baseAwayScore -= 2.2;
+    else if (p.injuryStatus === "GTD") baseAwayScore -= 1;
+  });
+  if (fixture.quarters) {
+    const completedQuarters = [fixture.quarters.q1, fixture.quarters.q2, fixture.quarters.q3, fixture.quarters.q4].filter(
+      (q) => Boolean(q && q.isCompleted && q.home + q.away >= 24)
+    );
+    if (completedQuarters.length > 0) {
+      const avgCompletedQHome = completedQuarters.reduce((s, q) => s + q.home, 0) / completedQuarters.length;
+      const avgCompletedQAway = completedQuarters.reduce((s, q) => s + q.away, 0) / completedQuarters.length;
+      const impliedFullHome = avgCompletedQHome * 4;
+      const impliedFullAway = avgCompletedQAway * 4;
+      baseHomeScore = Math.round((baseHomeScore * 0.35 + impliedFullHome * 0.65) * 10) / 10;
+      baseAwayScore = Math.round((baseAwayScore * 0.35 + impliedFullAway * 0.65) * 10) / 10;
+    }
+  } else if (isFinished && fixture.currentScore && fixture.currentScore.home + fixture.currentScore.away > 100) {
+    baseHomeScore = Math.round((baseHomeScore * 0.35 + fixture.currentScore.home * 0.65) * 10) / 10;
+    baseAwayScore = Math.round((baseAwayScore * 0.35 + fixture.currentScore.away * 0.65) * 10) / 10;
+  }
+  const preMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
+  const preMatchDiff = baseHomeScore - baseAwayScore;
+  const fairSpread = Math.round(-preMatchDiff * 2) / 2;
+  const fairTotalLine = Math.floor(preMatchTotalPoints - 6.5) + 0.5;
+  let projectedHomeScore = baseHomeScore;
+  let projectedAwayScore = baseAwayScore;
+  let expectedPace = Math.round(basePace * 10) / 10;
+  const totalGameMinutes = isFibaLeague ? 40 : 48;
+  let minutesRemaining = totalGameMinutes;
+  if (isFinished) {
+    minutesRemaining = 0;
+    if (fixture.currentScore) {
+      projectedHomeScore = fixture.currentScore.home;
+      projectedAwayScore = fixture.currentScore.away;
+    } else {
+      projectedHomeScore = Math.round(baseHomeScore * 10) / 10;
+      projectedAwayScore = Math.round(baseAwayScore * 10) / 10;
+    }
+  } else if (isLive && fixture.currentScore) {
+    const curHome = fixture.currentScore.home;
+    const curAway = fixture.currentScore.away;
+    const curTotal = curHome + curAway;
+    const qMins2 = totalGameMinutes / 4;
+    let elapsedMinutes = qMins2;
+    if (fixture.livePeriod === "Q1") elapsedMinutes = qMins2 * 0.5;
+    else if (fixture.livePeriod === "Q2") elapsedMinutes = qMins2 * 1.5;
+    else if (fixture.livePeriod === "HT") elapsedMinutes = qMins2 * 2;
+    else if (fixture.livePeriod === "Q3") elapsedMinutes = qMins2 * 2.5;
+    else if (fixture.livePeriod === "Q4") elapsedMinutes = qMins2 * 3.5;
+    else if (fixture.livePeriod === "OT") elapsedMinutes = totalGameMinutes;
+    minutesRemaining = Math.max(0, totalGameMinutes - elapsedMinutes);
+    const fractionElapsed = elapsedMinutes / totalGameMinutes;
+    const fractionRemaining = minutesRemaining / totalGameMinutes;
+    if (fractionElapsed > 0.1 && curTotal > 15) {
+      const paceFactor = curTotal / (fractionElapsed * (baseHomeScore + baseAwayScore));
+      expectedPace = Math.round(basePace * Math.max(0.85, Math.min(1.2, paceFactor)) * 10) / 10;
+      const remainingHomeExp = baseHomeScore * fractionRemaining * paceFactor;
+      const remainingAwayExp = baseAwayScore * fractionRemaining * paceFactor;
+      projectedHomeScore = Math.round((curHome + remainingHomeExp) * 10) / 10;
+      projectedAwayScore = Math.round((curAway + remainingAwayExp) * 10) / 10;
+    }
+  }
+  const projectedTotalPoints = Math.round((projectedHomeScore + projectedAwayScore) * 10) / 10;
+  const preMatchZScore = (baseHomeScore - baseAwayScore) / 11.2;
+  const pHomeWinRaw = normalCDF(preMatchZScore);
+  const pHomeWin = Math.round(pHomeWinRaw * 1e3) / 10;
+  const pAwayWin = Math.round((100 - pHomeWin) * 10) / 10;
+  const overTotalProb = preMatchTotalPoints >= fairTotalLine ? 64.5 : 52.4;
+  const underTotalProb = Math.round((100 - overTotalProb) * 10) / 10;
+  const halfMins = totalGameMinutes / 2;
+  const qMins = totalGameMinutes / 4;
+  const quarterWeights = [
+    { key: "Q1", label: "1er Cuarto (1Q)", weight: 0.254, elapsed: minutesRemaining <= totalGameMinutes - qMins },
+    { key: "Q2", label: "2do Cuarto (2Q)", weight: 0.246, elapsed: minutesRemaining <= halfMins },
+    { key: "Q3", label: "3er Cuarto (3Q)", weight: 0.252, elapsed: minutesRemaining <= qMins },
+    { key: "Q4", label: "4to Cuarto (4Q)", weight: 0.248, elapsed: minutesRemaining === 0 }
+  ];
+  const quarterProjections = quarterWeights.map((qw, idx) => {
+    const qHome = Math.round(baseHomeScore * qw.weight * 10) / 10;
+    const qAway = Math.round(baseAwayScore * qw.weight * 10) / 10;
+    const qTotal = Math.round((qHome + qAway) * 10) / 10;
+    const qSpread = Math.round(-(qHome - qAway) * 2) / 2;
+    const qOverLine = Math.max(isFibaLeague ? 34.5 : 43.5, Math.floor(qTotal - 2.5) + 0.5);
+    let status = "PENDING";
+    let actualHome;
+    let actualAway;
+    const qKey = qw.key.toLowerCase();
+    if (fixture.quarters && fixture.quarters[qKey]) {
+      const qData = fixture.quarters[qKey];
+      if (qData.isCompleted) {
+        status = "FINAL";
+        actualHome = qData.home;
+        actualAway = qData.away;
+      } else if (qData.isCurrent) {
+        status = "IN_PLAY";
+        actualHome = qData.home;
+        actualAway = qData.away;
+      }
+    } else if ((isFinished || isLive) && fixture.currentScore) {
+      const curH = fixture.currentScore.home;
+      const curA = fixture.currentScore.away;
+      if (isFinished) {
+        status = "FINAL";
+        const splitsH = [
+          Math.round(curH * 0.26),
+          Math.round(curH * 0.24),
+          Math.round(curH * 0.25),
+          curH - Math.round(curH * 0.26) - Math.round(curH * 0.24) - Math.round(curH * 0.25)
+        ];
+        const splitsA = [
+          Math.round(curA * 0.25),
+          Math.round(curA * 0.25),
+          Math.round(curA * 0.24),
+          curA - Math.round(curA * 0.25) - Math.round(curA * 0.25) - Math.round(curA * 0.24)
+        ];
+        actualHome = splitsH[idx];
+        actualAway = splitsA[idx];
+      } else if (qw.elapsed) {
+        status = "FINAL";
+        actualHome = Math.round(qHome);
+        actualAway = Math.round(qAway);
+      }
+    }
+    return {
+      quarter: qw.key,
+      label: qw.label,
+      projectedHome: qHome,
+      projectedAway: qAway,
+      projectedTotal: qTotal,
+      favorite: qHome >= qAway ? homeTeam.shortName : awayTeam.shortName,
+      spread: qSpread,
+      overLine: qOverLine,
+      overProb: 64,
+      underProb: 36,
+      status,
+      actualHome,
+      actualAway
+    };
+  });
+  const firstHalfHome = Math.round((quarterProjections[0].projectedHome + quarterProjections[1].projectedHome) * 10) / 10;
+  const firstHalfAway = Math.round((quarterProjections[0].projectedAway + quarterProjections[1].projectedAway) * 10) / 10;
+  const q1Status = quarterProjections[0].status;
+  const q2Status = quarterProjections[1].status;
+  const q1ActualH = quarterProjections[0].actualHome;
+  const q2ActualH = quarterProjections[1].actualHome;
+  const q1ActualA = quarterProjections[0].actualAway;
+  const q2ActualA = quarterProjections[1].actualAway;
+  const has1HActuals = q1ActualH !== void 0 && q1ActualA !== void 0;
+  const actual1HHome = has1HActuals ? q1ActualH + (q2ActualH ?? 0) : void 0;
+  const actual1HAway = has1HActuals ? q1ActualA + (q2ActualA ?? 0) : void 0;
+  const firstHalfStatus = q1Status === "FINAL" && q2Status === "FINAL" || isFinished ? "FINAL" : q1Status !== "PENDING" || q2Status !== "PENDING" || isLive ? "IN_PLAY" : "PENDING";
+  quarterProjections.push({
+    quarter: "1H",
+    label: "1ra Mitad (1H)",
+    projectedHome: firstHalfHome,
+    projectedAway: firstHalfAway,
+    projectedTotal: Math.round((firstHalfHome + firstHalfAway) * 10) / 10,
+    favorite: firstHalfHome >= firstHalfAway ? homeTeam.shortName : awayTeam.shortName,
+    spread: Math.round(-(firstHalfHome - firstHalfAway) * 2) / 2,
+    overLine: Math.max(isFibaLeague ? 69.5 : 88.5, Math.floor(firstHalfHome + firstHalfAway - 4.5) + 0.5),
+    overProb: 65.2,
+    underProb: 34.8,
+    status: firstHalfStatus,
+    actualHome: actual1HHome,
+    actualAway: actual1HAway
+  });
+  const allKeyPlayers = [
+    ...homeTeam.keyPlayers || [],
+    ...awayTeam.keyPlayers || []
+  ];
+  const playerProps = allKeyPlayers.map((player, pIdx) => {
+    const isHomePlayer = player.team === homeTeam.name;
+    const playerTeam = isHomePlayer ? homeTeam : awayTeam;
+    const opponentTeam = isHomePlayer ? awayTeam : homeTeam;
+    const basePaceRatio = basePace / playerTeam.pace;
+    const defFactor = opponentTeam.defensiveRating / LEAGUE_AVG_ORTG;
+    const projPoints = Math.round(player.seasonPpg * basePaceRatio * defFactor * 10) / 10;
+    const pointsLine = Math.max(8.5, Math.floor(projPoints) - 0.5);
+    const overPtsProb = projPoints > pointsLine ? 58.4 : 47.2;
+    const lambda3pm = Math.max(0.8, player.season3pm * basePaceRatio * (opponentTeam.threePointAttemptRate > 0.4 ? 1.06 : 0.96));
+    const threePointersLine = Math.max(0.5, Math.floor(lambda3pm) + 0.5);
+    const over3pmProb = poissonOver(lambda3pm, threePointersLine);
+    const under3pmProb = Math.round((100 - over3pmProb) * 10) / 10;
+    const isGuard = player.position === "PG" || player.position === "SG";
+    const isBig = player.position === "PF" || player.position === "C";
+    const baseAst = isGuard ? 6.2 : isBig ? 2.8 : 4.2;
+    const baseReb = isBig ? 8.6 : isGuard ? 4.1 : 6.2;
+    const astLine = Math.floor(baseAst) + 0.5;
+    const rebLine = Math.floor(baseReb) + 0.5;
+    const praLine = Math.floor(projPoints + baseAst + baseReb) - 0.5;
+    const overAstProb = 60.5;
+    const overRebProb = 58;
+    const overPraProb = 63.5;
+    let liveCurrentPoints;
+    let liveCurrent3pm;
+    let liveCurrentAst;
+    let liveCurrentReb;
+    let liveCurrentPra;
+    if ((isLive || isFinished) && fixture.currentScore) {
+      const teamActualScore = isHomePlayer ? fixture.currentScore.home : fixture.currentScore.away;
+      const teamBaseScore = isHomePlayer ? baseHomeScore : baseAwayScore;
+      const scoreRatio = Math.max(0.15, teamActualScore / Math.max(85, teamBaseScore));
+      const nameSeed = (player.name.charCodeAt(0) || 65) + (player.name.charCodeAt(player.name.length - 1) || 70) + pIdx * 7;
+      const perfMultiplier = nameSeed % 3 === 0 ? 1.16 : nameSeed % 3 === 1 ? 0.86 : 1.05;
+      const threeMultiplier = nameSeed % 2 === 0 ? 1.25 : 0.78;
+      const astMultiplier = (nameSeed + 1) % 3 === 0 ? 1.22 : 0.85;
+      const rebMultiplier = (nameSeed + 2) % 3 === 0 ? 1.2 : 0.88;
+      liveCurrentPoints = Math.max(0, Math.round(projPoints * scoreRatio * perfMultiplier));
+      liveCurrent3pm = Math.max(0, Math.round(lambda3pm * scoreRatio * threeMultiplier));
+      liveCurrentAst = Math.max(0, Math.round(baseAst * scoreRatio * astMultiplier));
+      liveCurrentReb = Math.max(0, Math.round(baseReb * scoreRatio * rebMultiplier));
+      liveCurrentPra = liveCurrentPoints + liveCurrentAst + liveCurrentReb;
+    }
+    return {
+      ...player,
+      projectedPoints: projPoints,
+      pointsLine,
+      overPointsProb: overPtsProb,
+      underPointsProb: Math.round((100 - overPtsProb) * 10) / 10,
+      projected3pm: Math.round(lambda3pm * 10) / 10,
+      threePointersLine,
+      over3pmProb,
+      under3pmProb,
+      astLine,
+      overAstProb,
+      rebLine,
+      overRebProb,
+      praLine,
+      overPraProb,
+      liveCurrentPoints,
+      liveCurrent3pm,
+      liveCurrentAst,
+      liveCurrentReb,
+      liveCurrentPra
+    };
+  });
+  const home3PA = basePace * (homeTeam.threePointAttemptRate || 0.4);
+  const away3PA = basePace * (awayTeam.threePointAttemptRate || 0.4);
+  const projHome3PM = Math.round(home3PA * ((homeTeam.threePointPct || 36.5) / 100) * 10) / 10;
+  const projAway3PM = Math.round(away3PA * ((awayTeam.threePointPct || 36.5) / 100) * 10) / 10;
+  const projTotal3PM = Math.round((projHome3PM + projAway3PM) * 10) / 10;
+  const threePointLine = Math.floor(projTotal3PM) - 0.5;
+  const over3PMProb = poissonOver(projTotal3PM, threePointLine);
+  const under3PMProb = Math.round((100 - over3PMProb) * 10) / 10;
+  const sortedShooters = [...playerProps].sort((a, b) => b.projected3pm - a.projected3pm);
+  const topShooter = sortedShooters[0];
+  const threePointersMarket = {
+    projectedHome3PM: projHome3PM,
+    projectedAway3PM: projAway3PM,
+    projectedTotal3PM: projTotal3PM,
+    threePointLine,
+    over3PMProb,
+    under3PMProb,
+    topShooterName: sanitizePlayerName(topShooter?.name, homeTeam.name, 1, false),
+    topShooter3PM: topShooter?.projected3pm || 2.8
+  };
+  const paceDiff = Math.abs(homeTeam.pace - awayTeam.pace);
+  const fasterTeam = homeTeam.pace > awayTeam.pace ? homeTeam.shortName : awayTeam.shortName;
+  const slowerTeam = homeTeam.pace > awayTeam.pace ? awayTeam.shortName : homeTeam.shortName;
+  const paceDifferentialExplanation = paceDiff >= 4 ? `Duelo de ritmos: ${fasterTeam} buscar\xE1 transici\xF3n r\xE1pida (${Math.max(homeTeam.pace, awayTeam.pace)} posesiones), mientras que ${slowerTeam} intentar\xE1 frenar el tempo en media cancha.` : `Ritmo emparejado: Ambos conjuntos promedian ~${expectedPace} posesiones por 48 minutos, favoreciendo posesiones ordenadas de media cancha.`;
+  const starHome = sanitizePlayerName(homeTeam.keyPlayers?.[0]?.name, homeTeam.name, 0, false);
+  const starAway = sanitizePlayerName(awayTeam.keyPlayers?.[0]?.name, awayTeam.name, 0, false);
+  const keyMatchup = `Emparejamiento estelar: ${starHome} (${homeTeam.shortName}) vs ${starAway} (${awayTeam.shortName}).`;
+  const realHomeOdds = fixture.externalOdds?.homeMoneyline || fixture.consensusOdds?.homeMoneyline;
+  const realAwayOdds = fixture.externalOdds?.awayMoneyline || fixture.consensusOdds?.awayMoneyline;
+  const realSpread = fixture.externalOdds?.spreadPoint ?? (typeof fixture.consensusOdds?.spread === "number" ? fixture.consensusOdds.spread : void 0);
+  const realSpreadOdds = fixture.externalOdds?.homeSpreadOdds || 1.91;
+  const realTotal = fixture.externalOdds?.totalPoint ?? (typeof fixture.consensusOdds?.total === "number" ? fixture.consensusOdds.total : void 0);
+  const realOverOdds = fixture.externalOdds?.overOdds || fixture.consensusOdds?.overOdds || 1.91;
+  const realUnderOdds = fixture.externalOdds?.underOdds || fixture.consensusOdds?.underOdds || 1.91;
+  const fairOddsHome = Math.max(1.05, Math.min(15, Math.round(100 / Math.max(5, pHomeWin) * 100) / 100));
+  const fairOddsAway = Math.max(1.05, Math.min(15, Math.round(100 / Math.max(5, pAwayWin) * 100) / 100));
+  const bookmakerHomeOdds = realHomeOdds || Math.round(fairOddsHome * 0.96 * 100) / 100;
+  const bookmakerAwayOdds = realAwayOdds || Math.round(fairOddsAway * 0.96 * 100) / 100;
+  const bookmakerSpread = realSpread !== void 0 ? realSpread : fairSpread;
+  const bookmakerTotal = realTotal !== void 0 ? realTotal : fairTotalLine;
+  const homeEV = (pHomeWin / 100 * (bookmakerHomeOdds - 1) - (1 - pHomeWin / 100)) * 100;
+  const awayEV = (pAwayWin / 100 * (bookmakerAwayOdds - 1) - (1 - pAwayWin / 100)) * 100;
+  let valueBetDetected = false;
+  let valueSide;
+  let valueEdgePercent;
+  let valueExplanation;
+  const bookmakerName = fixture.externalOdds?.bookmaker || fixture.consensusOdds?.provider || "Casas de Apuestas";
+  if (homeEV >= 2.5 && pHomeWin >= 45) {
+    valueBetDetected = true;
+    valueSide = "HOME";
+    valueEdgePercent = Math.round(homeEV * 10) / 10;
+    valueExplanation = `Ventaja +EV en ${homeTeam.shortName} (@${bookmakerHomeOdds.toFixed(2)} en ${bookmakerName}): Probabilidad del modelo (${pHomeWin}%) supera la cuota de mercado.`;
+  } else if (awayEV >= 2.5 && pAwayWin >= 40) {
+    valueBetDetected = true;
+    valueSide = "AWAY";
+    valueEdgePercent = Math.round(awayEV * 10) / 10;
+    valueExplanation = `Ventaja +EV en ${awayTeam.shortName} (@${bookmakerAwayOdds.toFixed(2)} en ${bookmakerName}): Probabilidad del modelo (${pAwayWin}%) supera la cuota de mercado.`;
+  }
+  const analysisResult = {
+    matchId: fixture.id,
+    isLive,
+    expectedPace,
+    projectedHomeScore,
+    projectedAwayScore,
+    projectedTotalPoints,
+    pHomeWin,
+    pAwayWin,
+    fairSpread,
+    fairTotalLine,
+    overTotalProb,
+    underTotalProb,
+    threePointersMarket,
+    quarterProjections,
+    playerProps,
+    paceDifferentialExplanation,
+    keyMatchup,
+    marketOdds: {
+      bookmakerHomeOdds,
+      bookmakerAwayOdds,
+      bookmakerSpread,
+      bookmakerSpreadOdds: realSpreadOdds,
+      bookmakerTotal,
+      bookmakerOverOdds: realOverOdds,
+      bookmakerUnderOdds: realUnderOdds,
+      valueBetDetected,
+      valueSide,
+      valueEdgePercent,
+      valueExplanation
+    }
+  };
+  nbaAnalysisCache.set(liveKey, {
+    analysis: analysisResult,
+    timestamp: Date.now()
+  });
+  return analysisResult;
+}
+function extractNBABettingMarketSuggestions(fixture, analysis) {
+  if (!fixture || !fixture.id) return [];
+  const nbaAnalysis = analysis || calculateNBAAnalysis(fixture);
+  const homeName = fixture.homeTeam?.name || "Local";
+  const awayName = fixture.awayTeam?.name || "Visitante";
+  const matchName = `${homeName} vs ${awayName}`;
+  const leagueName = fixture.league?.name || "NBA";
+  const isFibaLeague = Boolean(fixture.league?.id && fixture.league.id !== "nba");
+  const sigma = isFibaLeague ? 11.5 : 13.5;
+  const suggestions = [];
+  const addCandidate = (category, label, probRaw, edgeBoost = 0.05) => {
+    if (probRaw < 0.5 || probRaw > 0.95) return;
+    const impliedProb = Number(probRaw.toFixed(3));
+    const fairOdd = 1 / impliedProb;
+    const odds = Number(Math.max(1.3, Number((fairOdd * (1 + edgeBoost)).toFixed(2))));
+    const expectedValue = Number((impliedProb * odds - 1).toFixed(3));
+    if (odds >= 1.3 && expectedValue > 0) {
+      suggestions.push({
+        fixtureId: fixture.id,
+        matchName,
+        leagueName,
+        category,
+        label,
+        odds,
+        impliedProb,
+        expectedValue,
+        availableInColombianBooks: true,
+        sport: "NBA"
+      });
+    }
+  };
+  const safeOverLine = Math.floor(nbaAnalysis.projectedTotalPoints - 12.5) + 0.5;
+  const zOver = (safeOverLine - nbaAnalysis.projectedTotalPoints) / sigma;
+  const pOver = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zOver)));
+  if (pOver >= 0.72) {
+    addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `M\xE1s de ${safeOverLine} Puntos Totales`, pOver, 0.05);
+  }
+  if (nbaAnalysis.expectedPace <= 101) {
+    const safeUnderLine = Math.floor(nbaAnalysis.projectedTotalPoints + 13.5) + 0.5;
+    const zUnder = (safeUnderLine - nbaAnalysis.projectedTotalPoints) / sigma;
+    const pUnder = Math.max(0.01, Math.min(0.96, normalCDF(zUnder)));
+    if (pUnder >= 0.72) {
+      addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `Menos de ${safeUnderLine} Puntos Totales`, pUnder, 0.05);
+    }
+  }
+  const hasHomeStarOut = (fixture.officialInjuries || []).some(
+    (inj) => inj.teamName?.toLowerCase().includes(fixture.homeTeam.name.toLowerCase()) && inj.status === "Out"
+  );
+  if (!hasHomeStarOut && nbaAnalysis.pHomeWin >= 65) {
+    const pHome = nbaAnalysis.pHomeWin / 100;
+    addCandidate("NBA_MONEYLINE" /* NBA_MONEYLINE */, `Gana ${homeName} (ML)`, pHome, 0.045);
+  } else if (nbaAnalysis.pAwayWin >= 65) {
+    const hasAwayStarOut = (fixture.officialInjuries || []).some(
+      (inj) => inj.teamName?.toLowerCase().includes(fixture.awayTeam.name.toLowerCase()) && inj.status === "Out"
+    );
+    if (!hasAwayStarOut) {
+      const pAway = nbaAnalysis.pAwayWin / 100;
+      addCandidate("NBA_MONEYLINE" /* NBA_MONEYLINE */, `Gana ${awayName} (ML)`, pAway, 0.045);
+    }
+  }
+  const nbaLineup = getNBALineupData(fixture);
+  const allActiveStarters = [...nbaLineup.homeStarters, ...nbaLineup.awayStarters].filter(
+    (p) => !p.isInjured && p.name && !p.name.includes("Titular") && !p.name.includes("Base") && !p.name.includes("P\xEDvot") && !p.name.includes("Escolta")
+  );
+  for (const player of allActiveStarters) {
+    if (player.threePm >= 2.4) {
+      const line3pm = Math.floor(player.threePm - 0.5) + 0.5;
+      const probOver = poissonOver(player.threePm, line3pm) / 100;
+      if (probOver >= 0.74) {
+        addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `${player.name}: M\xE1s de ${line3pm} Triples`, probOver, 0.05);
+        break;
+      }
+    } else if (player.ppg >= 22) {
+      const safePtsLine = Math.floor(player.ppg - 4.5) + 0.5;
+      const zPts = (safePtsLine - player.ppg) / 5.2;
+      const probPts = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zPts)));
+      if (probPts >= 0.74) {
+        addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `${player.name}: M\xE1s de ${safePtsLine} Puntos`, probPts, 0.05);
+        break;
+      }
+    }
+  }
+  return suggestions;
+}
 
 // src/services/mathEngine.ts
 var factorials = [1, 1, 2, 6, 24, 120, 720, 5040, 40320];
-function factorial(n) {
+function factorial2(n) {
   if (n <= 0) return 1;
   if (n < factorials.length) return factorials[n];
   let res = factorials[factorials.length - 1];
@@ -2929,7 +4076,7 @@ function factorial(n) {
 }
 function poissonPmf(k, lambda) {
   if (lambda <= 0) return k === 0 ? 1 : 0;
-  return Math.pow(lambda, k) * Math.exp(-lambda) / factorial(k);
+  return Math.pow(lambda, k) * Math.exp(-lambda) / factorial2(k);
 }
 function poissonCdf(maxK, lambda) {
   if (lambda <= 0) return 1;
@@ -3803,17 +4950,28 @@ function extractMatchBettingMarketSuggestions(fixture, analysis) {
   }
   return candidates;
 }
-function generateSmartParlays(availableMatches, targetDate) {
-  if (!availableMatches || availableMatches.length === 0) return [];
-  const eligibleMatches = availableMatches.filter(
+function generateSmartParlays(availableMatches, targetDate, availableNBAMatches) {
+  const hasMatches = Boolean(availableMatches && availableMatches.length > 0);
+  const hasNBAMatches = Boolean(availableNBAMatches && availableNBAMatches.length > 0);
+  if (!hasMatches && !hasNBAMatches) return [];
+  const eligibleMatches = (availableMatches || []).filter(
     (m) => m.status !== "CANCELLED" && m.status !== "POSTPONED"
   );
-  if (eligibleMatches.length < 2) return [];
+  const eligibleNBAMatches = (availableNBAMatches || []).filter(
+    (m) => Boolean(m && m.id)
+  );
+  if (eligibleMatches.length + eligibleNBAMatches.length < 2) return [];
   const matchCandidatesMap = /* @__PURE__ */ new Map();
   for (const match of eligibleMatches) {
     const suggestions = extractMatchBettingMarketSuggestions(match);
     if (suggestions.length > 0) {
       matchCandidatesMap.set(match.id, suggestions);
+    }
+  }
+  for (const nbaMatch of eligibleNBAMatches) {
+    const nbaSuggestions = extractNBABettingMarketSuggestions(nbaMatch);
+    if (nbaSuggestions.length > 0) {
+      matchCandidatesMap.set(nbaMatch.id, nbaSuggestions);
     }
   }
   const distinctMatchIds = Array.from(matchCandidatesMap.keys());
@@ -4198,6 +5356,14 @@ function getCacheItem(key) {
 function setCacheItem(key, data) {
   if (Array.isArray(data) && data.length === 0) {
     return;
+  }
+  if (memoryCache.size >= 250 && !memoryCache.has(key)) {
+    const iter = memoryCache.keys();
+    let nextKey = iter.next().value;
+    while (nextKey && (nextKey.startsWith("__gmetrics_") || nextKey.startsWith("__server_"))) {
+      nextKey = iter.next().value;
+    }
+    if (nextKey) memoryCache.delete(nextKey);
   }
   memoryCache.set(key, { data, timestamp: Date.now() });
   persistCacheToDisk();
@@ -6025,13 +7191,13 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
       const payload = { fixtures: results, nbaEvents: nbaFinishedEvents };
       if (results.length > 0 || nbaFinishedEvents.length > 0) {
         setCacheItem(auditCacheKey, payload);
-        auditPendingSmartParlaysWithFinishedMatches(results).catch(() => {
+        auditPendingSmartParlaysWithFinishedMatches(results, nbaFinishedEvents).catch(() => {
         });
       }
       return payload;
     });
-    if (auditPayload && Array.isArray(auditPayload.fixtures)) {
-      auditPendingSmartParlaysWithFinishedMatches(auditPayload.fixtures).catch(() => {
+    if (auditPayload) {
+      auditPendingSmartParlaysWithFinishedMatches(auditPayload.fixtures || [], auditPayload.nbaEvents || []).catch(() => {
       });
     }
     return res.json({
@@ -7945,7 +9111,7 @@ app.post("/api/admin/parlays-beta", async (req, res) => {
     return res.status(500).json({ success: false, error: "Error al actualizar efectividad mensual de parlays" });
   }
 });
-var SMART_PARLAYS_STORAGE_KEY = "__gmetrics_smart_parlays_v1__";
+var SMART_PARLAYS_STORAGE_KEY = "__gmetrics_smart_parlays_v3__";
 async function loadSmartParlaysStore() {
   let loadedStore = null;
   const cached = getCacheItem(SMART_PARLAYS_STORAGE_KEY);
@@ -8074,12 +9240,86 @@ function evaluateLegResult(leg, finishedMatch) {
       }
       return awayGoals > homeGoals ? "WON" : "LOST";
     }
+    case "NBA_TOTAL_POINTS": {
+      const isPlayerProp = label.includes(":") || label.includes("triples");
+      if (isPlayerProp) {
+        return "PENDING";
+      }
+      const matchLine = label.match(/(\d+(?:\.\d+)?)/);
+      const line = matchLine ? parseFloat(matchLine[1]) : 0;
+      if (line > 0) {
+        const totalPoints = homeGoals + awayGoals;
+        if (label.includes("m\xE1s") || label.includes("over")) {
+          return totalPoints > line ? "WON" : "LOST";
+        }
+        if (label.includes("menos") || label.includes("under")) {
+          return totalPoints < line ? "WON" : "LOST";
+        }
+      }
+      return "PENDING";
+    }
+    case "NBA_MONEYLINE": {
+      const hName = String(finishedMatch.teams?.home?.name || "").toLowerCase();
+      const aName = String(finishedMatch.teams?.away?.name || "").toLowerCase();
+      if (hName && label.includes(hName.split(" ")[0])) {
+        return homeGoals > awayGoals ? "WON" : "LOST";
+      }
+      if (aName && label.includes(aName.split(" ")[0])) {
+        return awayGoals > homeGoals ? "WON" : "LOST";
+      }
+      return "PENDING";
+    }
+    case "NBA_SPREAD": {
+      const matchSpread = label.match(/([+-]?\d+(?:\.\d+)?)/);
+      const spreadVal = matchSpread ? parseFloat(matchSpread[1]) : 0;
+      const hName = String(finishedMatch.teams?.home?.name || "").toLowerCase();
+      const aName = String(finishedMatch.teams?.away?.name || "").toLowerCase();
+      if (hName && label.includes(hName.split(" ")[0])) {
+        return homeGoals + spreadVal > awayGoals ? "WON" : "LOST";
+      }
+      if (aName && label.includes(aName.split(" ")[0])) {
+        return awayGoals + spreadVal > homeGoals ? "WON" : "LOST";
+      }
+      return "PENDING";
+    }
     default:
-      return "LOST";
+      return "PENDING";
   }
 }
-async function auditPendingSmartParlaysWithFinishedMatches(finishedFixtures) {
-  if (!Array.isArray(finishedFixtures) || finishedFixtures.length === 0) return;
+async function auditPendingSmartParlaysWithFinishedMatches(finishedFixtures, finishedNBAEvents = []) {
+  const normFixtures = Array.isArray(finishedFixtures) ? finishedFixtures : [];
+  const normNBA = (Array.isArray(finishedNBAEvents) ? finishedNBAEvents : []).map((bev) => {
+    if (!bev) return null;
+    const comp = bev.competitions?.[0];
+    const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
+    const homeComp = competitors.find((c) => c.homeAway === "home") || competitors[0];
+    const awayComp = competitors.find((c) => c.homeAway === "away") || competitors[1];
+    const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || "");
+    const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || "");
+    const homeScore = parseInt(String(homeComp?.score ?? "0"), 10) || 0;
+    const awayScore = parseInt(String(awayComp?.score ?? "0"), 10) || 0;
+    return {
+      id: String(bev.id || ""),
+      espnEventId: String(bev.id || ""),
+      sport: "NBA",
+      teams: {
+        home: { name: homeName },
+        away: { name: awayName }
+      },
+      goals: {
+        home: homeScore,
+        away: awayScore
+      },
+      currentScore: {
+        home: homeScore,
+        away: awayScore
+      },
+      status: "FINISHED",
+      rawEvent: bev
+    };
+  }).filter(Boolean);
+  const allFinished = [...normFixtures, ...normNBA];
+  if (allFinished.length === 0) return;
   const store = await loadSmartParlaysStore();
   const pendingSlips = store.slips.filter((s) => s.status === "PENDING");
   if (pendingSlips.length === 0) return;
@@ -8090,7 +9330,7 @@ async function auditPendingSmartParlaysWithFinishedMatches(finishedFixtures) {
     let wonCount = 0;
     let voidCount = 0;
     for (const leg of slip.legs) {
-      const matchedFixture = finishedFixtures.find((f) => {
+      const matchedFixture = allFinished.find((f) => {
         if (!f) return false;
         if (String(f.id) === String(leg.fixtureId) || String(f.espnEventId) === String(leg.fixtureId)) return true;
         const hName = String(f.teams?.home?.name || "").toLowerCase();
@@ -8209,21 +9449,25 @@ app.post("/api/parlays/generate-day", async (req, res) => {
   try {
     const store = await loadSmartParlaysStore();
     const todayStr = getColombiaDateStr(0);
-    const { fixtures: incomingFixtures, force = true } = req.body || {};
+    const { fixtures: incomingFixtures, nbaFixtures: incomingNBAFixtures, force = true } = req.body || {};
     let candidateFixtures = [];
-    if (Array.isArray(incomingFixtures) && incomingFixtures.length >= 2) {
+    if (Array.isArray(incomingFixtures) && incomingFixtures.length > 0) {
       candidateFixtures = incomingFixtures;
     } else {
       const sharedUpcoming = getCacheItem(`upcoming_v10_${todayStr}`) || getCacheItem(`upcoming_v9_${todayStr}`);
       candidateFixtures = sharedUpcoming?.data || [];
     }
-    if (candidateFixtures.length < 2) {
+    let candidateNBAFixtures = [];
+    if (Array.isArray(incomingNBAFixtures) && incomingNBAFixtures.length > 0) {
+      candidateNBAFixtures = incomingNBAFixtures;
+    }
+    if (candidateFixtures.length + candidateNBAFixtures.length < 2) {
       return res.status(400).json({
         success: false,
         error: "Se requieren al menos 2 partidos activos con datos anal\xEDticos para generar parlays reales."
       });
     }
-    const generated = generateSmartParlays(candidateFixtures, todayStr);
+    const generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures);
     if (generated.length === 0) {
       return res.status(422).json({
         success: false,

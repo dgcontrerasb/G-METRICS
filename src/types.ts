@@ -700,7 +700,10 @@ export enum BetMarketCategory {
   TOTAL_GOALS = 'TOTAL_GOALS',
   BTTS = 'BTTS',
   TOTAL_CORNERS_MATCH = 'TOTAL_CORNERS_MATCH',
-  DRAW_NO_BET = 'DRAW_NO_BET'
+  DRAW_NO_BET = 'DRAW_NO_BET',
+  NBA_TOTAL_POINTS = 'NBA_TOTAL_POINTS',
+  NBA_MONEYLINE = 'NBA_MONEYLINE',
+  NBA_SPREAD = 'NBA_SPREAD'
 }
 
 export type BetMarketCategoryType =
@@ -709,7 +712,10 @@ export type BetMarketCategoryType =
   | 'TOTAL_GOALS'
   | 'BTTS'
   | 'TOTAL_CORNERS_MATCH'
-  | 'DRAW_NO_BET';
+  | 'DRAW_NO_BET'
+  | 'NBA_TOTAL_POINTS'
+  | 'NBA_MONEYLINE'
+  | 'NBA_SPREAD';
 
 export interface BettingMarketSuggestion {
   fixtureId: string;

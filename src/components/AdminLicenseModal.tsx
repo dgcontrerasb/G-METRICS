@@ -21,7 +21,7 @@ import {
   verifyLicenseToken,
   clearActiveLicense
 } from '../services/licenseService';
-import { MatchFixture } from '../types';
+import { MatchFixture, NBAMatchFixture } from '../types';
 import { AdminMonitorTab } from './admin/AdminMonitorTab';
 import { AdminAuditTab } from './admin/AdminAuditTab';
 import { AdminParlaysBetaTab } from './admin/AdminParlaysBetaTab';
@@ -35,6 +35,7 @@ interface AdminLicenseModalProps {
   onLicenseChanged?: () => void;
   onLogout?: () => void;
   fixtures?: MatchFixture[];
+  nbaFixtures?: NBAMatchFixture[];
 }
 
 export interface SupabaseUserItem {
@@ -62,7 +63,8 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
   onClose,
   onLicenseChanged,
   onLogout,
-  fixtures = []
+  fixtures = [],
+  nbaFixtures = []
 }) => {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
     return localStorage.getItem('sportstats_admin_remember') === 'true';
@@ -826,7 +828,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
 
             {/* TAB 3: PARLAYS SUGERIDOS G METRICS (SOLO BETA ADMIN) */}
             {activeTab === 'PARLAYS_BETA' && (
-              <AdminParlaysBetaTab fixtures={fixtures} onCloseAdmin={handleCloseModal} />
+              <AdminParlaysBetaTab fixtures={fixtures} nbaFixtures={nbaFixtures} onCloseAdmin={handleCloseModal} />
             )}
 
             {/* TAB 4: BUZÓN PRIVADO DE FEEDBACK Y CALIFICACIONES (SOLO ADMIN) */}

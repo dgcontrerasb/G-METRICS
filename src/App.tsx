@@ -2283,6 +2283,7 @@ export default function App() {
           }
         }}
         fixtures={fixtures}
+        nbaFixtures={nbaFixtures}
         isSimulatorOpen={isSimulatorOpen}
         onCloseSimulator={() => setIsSimulatorOpen(false)}
         selectedMatchForSimulator={selectedMatchForSimulator}

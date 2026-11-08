@@ -15,10 +15,9 @@ import {
   Image as ImageIcon,
   FileText,
   Sparkles,
-  Trash2,
   CheckCircle2
 } from 'lucide-react';
-import { MatchFixture, ParlayPick, GMetricsSingleBetSuggestion, SmartParlaySlip } from '../../types';
+import { MatchFixture, NBAMatchFixture, ParlayPick, GMetricsSingleBetSuggestion, SmartParlaySlip, BettingMarketSuggestion } from '../../types';
 import {
   generateGMetricsSingleValueBets,
   generateSmartParlays
@@ -29,6 +28,7 @@ import { SocialCardExportService, ExportMediaFormat } from '../../services/socia
 
 export interface AdminParlaysBetaTabProps {
   fixtures: MatchFixture[];
+  nbaFixtures?: NBAMatchFixture[];
   onCloseAdmin: () => void;
 }
 
@@ -71,24 +71,51 @@ function getSpanishMonthLabel(monthKey: string): string {
   return `${monthName} ${yearStr}`;
 }
 
+const LOCAL_SMART_SLIPS_KEY = 'gmetrics_smart_parlays_slips_v3';
+
+function getStoredSmartSlips(): SmartParlaySlip[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_SMART_SLIPS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((s: SmartParlaySlip) => s && !s.id.includes('seed'));
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function saveStoredSmartSlips(slips: SmartParlaySlip[]): void {
+  try {
+    const clean = slips.filter((s) => s && !s.id.includes('seed'));
+    localStorage.setItem(LOCAL_SMART_SLIPS_KEY, JSON.stringify(clean));
+  } catch {
+    // ignore
+  }
+}
+
 export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
   fixtures,
+  nbaFixtures = [],
   onCloseAdmin
 }) => {
   const { addPick, setIsOpen } = useParlay();
   const [copiedSlipId, setCopiedSlipId] = useState<string | null>(null);
   const [copiedSingleId, setCopiedSingleId] = useState<string | null>(null);
   const [subTab, setSubTab] = useState<'SMART_PARLAYS' | 'MONTHLY_BREAKDOWN' | 'SINGLES'>('SMART_PARLAYS');
-  const [profileFilter, setProfileFilter] = useState<'ALL' | 'BALANCED' | 'HIGH_ODDS' | 'CONSERVATIVE'>('BALANCED');
+  const [profileFilter, setProfileFilter] = useState<'ALL' | 'BALANCED' | 'HIGH_ODDS' | 'CONSERVATIVE'>('ALL');
   const [monthFilter, setMonthFilter] = useState<string>('ALL');
   const [singleTypeFilter, setSingleTypeFilter] = useState<'ALL' | 'HIGH_VALUE' | 'BANKER'>('ALL');
+  const [singleSportFilter, setSingleSportFilter] = useState<'ALL' | 'SOCCER' | 'NBA'>('ALL');
   const [singleTopLimit, setSingleTopLimit] = useState<5 | 10>(5);
 
-  const [smartSlips, setSmartSlips] = useState<SmartParlaySlip[]>([]);
+  const [smartSlips, setSmartSlips] = useState<SmartParlaySlip[]>(() => getStoredSmartSlips());
   const [metrics, setMetrics] = useState<ParlayMetricsData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isGeneratingToday, setIsGeneratingToday] = useState<boolean>(false);
-  const [isPurgingSeeds, setIsPurgingSeeds] = useState<boolean>(false);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -130,13 +157,54 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     return headers;
   }, []);
 
+  const effectiveFixtures = useMemo(() => {
+    if (fixtures && fixtures.length > 0) return fixtures;
+    const cached = getLocalUpcomingCache(getColombiaDateString(0));
+    return cached?.fixtures || [];
+  }, [fixtures]);
+
+  const effectiveNBAFixtures = useMemo(() => {
+    if (nbaFixtures && nbaFixtures.length > 0) return nbaFixtures;
+    try {
+      const cached = localStorage.getItem(`basketstats_nba_v7_${getColombiaDateString(0)}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed.fixtures) && parsed.fixtures.length > 0) {
+          return parsed.fixtures;
+        }
+      }
+    } catch {
+      // non-fatal
+    }
+    return [];
+  }, [nbaFixtures]);
+
+  const isAthleteScratched = useCallback(
+    (leg: BettingMarketSuggestion): boolean => {
+      const isBball = leg.sport === 'NBA' || (leg.leagueName || '').toLowerCase().includes('nba');
+      if (!isBball) return false;
+      const fix = effectiveNBAFixtures.find((f: NBAMatchFixture) => String(f.id) === String(leg.fixtureId));
+      if (!fix || !Array.isArray(fix.officialInjuries)) return false;
+      const legLabelLower = leg.label.toLowerCase();
+      return fix.officialInjuries.some((inj: { status?: string; athleteName?: string }) => {
+        if (inj.status !== 'Out') return false;
+        const athleteNameLower = (inj.athleteName || '').toLowerCase();
+        if (!athleteNameLower) return false;
+        const parts = athleteNameLower.split(' ').filter((p: string) => p.length >= 3);
+        return legLabelLower.includes(athleteNameLower) || parts.some((p: string) => legLabelLower.includes(p));
+      });
+    },
+    [effectiveNBAFixtures]
+  );
+
   const handleGenerateTodayParlays = async () => {
     setIsGeneratingToday(true);
     setErrorMsg(null);
     setSuccessNotice(null);
     try {
       const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(getColombiaDateString(0))?.fixtures || [];
-      if (!effective || effective.length < 2) {
+      const effectiveNBA = effectiveNBAFixtures;
+      if (effective.length + effectiveNBA.length < 2) {
         setErrorMsg('Se requieren al menos 2 partidos activos con datos analíticos para generar parlays.');
         return;
       }
@@ -168,7 +236,7 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
       const res = await fetch('/api/parlays/generate-day', {
         method: 'POST',
         headers: getAdminAuthHeaders(true),
-        body: JSON.stringify({ fixtures: compactFixtures, force: true })
+        body: JSON.stringify({ fixtures: compactFixtures, nbaFixtures: effectiveNBA, force: true })
       });
 
       const resText = await res.text();
@@ -180,17 +248,21 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
       }
 
       if (res.ok && data.success) {
-        if (Array.isArray(data.slips)) {
-          setSmartSlips(data.slips.filter((s: SmartParlaySlip) => s && !s.id.includes('seed')));
+        if (Array.isArray(data.slips) && data.slips.length > 0) {
+          const clean = data.slips.filter((s: SmartParlaySlip) => s && !s.id.includes('seed'));
+          setSmartSlips(clean);
+          saveStoredSmartSlips(clean);
         }
         setSuccessNotice(data.message || 'Parlays reales generados y certificados para hoy.');
         setTimeout(() => setSuccessNotice(null), 4500);
-        await fetchSmartParlaysAndMetrics();
       } else {
         // Fallback local garantizado si el backend no pudo persistir
-        const localGenerated = generateSmartParlays(effective);
+        const todayStr = getColombiaDateString(0);
+        const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBA);
         if (localGenerated.length > 0) {
-          setSmartSlips(localGenerated);
+          const updated = [...localGenerated, ...smartSlips.filter((s) => s.date !== todayStr)];
+          setSmartSlips(updated);
+          saveStoredSmartSlips(updated);
           setSuccessNotice(`⚡ Generados ${localGenerated.length} parlays reales en motor local.`);
           setTimeout(() => setSuccessNotice(null), 4500);
         } else {
@@ -199,10 +271,13 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
       }
     } catch (err: unknown) {
       // Fallback local en caso de error de red
-      const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(getColombiaDateString(0))?.fixtures || [];
-      const localGenerated = generateSmartParlays(effective);
+      const todayStr = getColombiaDateString(0);
+      const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(todayStr)?.fixtures || [];
+      const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBAFixtures);
       if (localGenerated.length > 0) {
-        setSmartSlips(localGenerated);
+        const updated = [...localGenerated, ...smartSlips.filter((s) => s.date !== todayStr)];
+        setSmartSlips(updated);
+        saveStoredSmartSlips(updated);
         setSuccessNotice(`⚡ Generados ${localGenerated.length} parlays reales en motor local.`);
         setTimeout(() => setSuccessNotice(null), 4500);
       } else {
@@ -210,28 +285,6 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
       }
     } finally {
       setIsGeneratingToday(false);
-    }
-  };
-
-  const handlePurgeSeeds = async () => {
-    setIsPurgingSeeds(true);
-    setErrorMsg(null);
-    try {
-      const res = await fetch('/api/parlays/purge-seeds', {
-        method: 'POST',
-        headers: getAdminAuthHeaders(true)
-      });
-      const txt = await res.text();
-      const data = txt ? JSON.parse(txt) : {};
-      if (res.ok && data.success) {
-        setSuccessNotice(data.message || 'Semillas eliminadas correctamente.');
-        setTimeout(() => setSuccessNotice(null), 3500);
-        await fetchSmartParlaysAndMetrics();
-      }
-    } catch {
-      // non-fatal
-    } finally {
-      setIsPurgingSeeds(false);
     }
   };
 
@@ -247,15 +300,20 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         const data = txt ? JSON.parse(txt) : {};
         if (data.success) {
           if (Array.isArray(data.slips)) {
-            // Filtrar en cliente cualquier semilla residual
             const cleanSlips = data.slips.filter((s: SmartParlaySlip) => s && !s.id.includes('seed'));
-            setSmartSlips(cleanSlips);
+            const localStored = getStoredSmartSlips();
+            const mergedSlips = cleanSlips.length > 0 ? cleanSlips : localStored;
+            setSmartSlips(mergedSlips);
+            if (mergedSlips.length > 0) {
+              saveStoredSmartSlips(mergedSlips);
+            }
 
-            // Auto-generación si no existen boletos para hoy y hay partidos disponibles
+            // Auto-generación con datos reales si no existen boletos para hoy y hay partidos disponibles
             const todayStr = getColombiaDateString(0);
-            const hasToday = cleanSlips.some((s: SmartParlaySlip) => s.date === todayStr);
+            const hasToday = mergedSlips.some((s: SmartParlaySlip) => s.date === todayStr);
             const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(todayStr)?.fixtures || [];
-            if (!hasToday && effective.length >= 2) {
+            const effectiveNBA = effectiveNBAFixtures;
+            if (!hasToday && (effective.length + effectiveNBA.length >= 2)) {
               const compact = effective.map((f) => ({
                 id: f.id,
                 date: f.date,
@@ -269,16 +327,25 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
               fetch('/api/parlays/generate-day', {
                 method: 'POST',
                 headers: getAdminAuthHeaders(true),
-                body: JSON.stringify({ fixtures: compact, force: false })
+                body: JSON.stringify({ fixtures: compact, nbaFixtures: effectiveNBA, force: false })
               })
                 .then((r) => r.text())
                 .then((txtData) => {
                   const genData = txtData ? JSON.parse(txtData) : {};
-                  if (genData.success && Array.isArray(genData.slips)) {
-                    setSmartSlips(genData.slips.filter((s: SmartParlaySlip) => s && !s.id.includes('seed')));
+                  if (genData.success && Array.isArray(genData.slips) && genData.slips.length > 0) {
+                    const fresh = genData.slips.filter((s: SmartParlaySlip) => s && !s.id.includes('seed'));
+                    setSmartSlips(fresh);
+                    saveStoredSmartSlips(fresh);
                   }
                 })
-                .catch(() => {});
+                .catch(() => {
+                  const localGen = generateSmartParlays(effective, todayStr, effectiveNBA);
+                  if (localGen.length > 0) {
+                    const updated = [...localGen, ...mergedSlips.filter((s: SmartParlaySlip) => s.date !== todayStr)];
+                    setSmartSlips(updated);
+                    saveStoredSmartSlips(updated);
+                  }
+                });
             }
           }
           if (data.metrics) {
@@ -288,43 +355,30 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
       } else if (res.status === 403) {
         setErrorMsg('Acceso restringido: Módulo exclusivo para Administrador.');
       } else {
-        const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(getColombiaDateString(0))?.fixtures || [];
-        const localGenerated = generateSmartParlays(effective);
+        const todayStr = getColombiaDateString(0);
+        const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(todayStr)?.fixtures || [];
+        const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBAFixtures);
         if (localGenerated.length > 0) {
           setSmartSlips(localGenerated);
-          setMetrics({
-            totalGenerated: localGenerated.length,
-            totalWon: 0,
-            totalLost: 0,
-            totalPending: localGenerated.length,
-            totalVoid: 0,
-            winRate: 0,
-            avgOdds: Number((localGenerated.reduce((acc, s) => acc + s.totalOdds, 0) / localGenerated.length).toFixed(2)),
-            netYieldUnits: 0,
-            yieldPercent: 0
-          });
+          saveStoredSmartSlips(localGenerated);
         }
       }
     } catch {
-      const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(getColombiaDateString(0))?.fixtures || [];
-      const localGenerated = generateSmartParlays(effective);
+      const todayStr = getColombiaDateString(0);
+      const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(todayStr)?.fixtures || [];
+      const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBAFixtures);
       if (localGenerated.length > 0) {
         setSmartSlips(localGenerated);
+        saveStoredSmartSlips(localGenerated);
       }
     } finally {
       setIsLoading(false);
     }
-  }, [fixtures, getAdminAuthHeaders]);
+  }, [fixtures, effectiveNBAFixtures, getAdminAuthHeaders]);
 
   useEffect(() => {
     fetchSmartParlaysAndMetrics();
   }, [fetchSmartParlaysAndMetrics]);
-
-  const effectiveFixtures = useMemo(() => {
-    if (fixtures && fixtures.length > 0) return fixtures;
-    const cached = getLocalUpcomingCache(getColombiaDateString(0));
-    return cached?.fixtures || [];
-  }, [fixtures]);
 
   // Desglose Mes a Mes estricto sobre datos reales
   const monthlyStats = useMemo<MonthlyStatItem[]>(() => {
@@ -393,34 +447,58 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     });
   }, [smartSlips, profileFilter, monthFilter]);
 
-  // Métricas activas según el mes seleccionado
+  // Métricas activas computadas en tiempo real 100% sobre los boletos reales existentes
   const activeMetrics = useMemo(() => {
-    if (monthFilter === 'ALL') {
-      return metrics;
+    const slipsToCalculate = monthFilter === 'ALL'
+      ? smartSlips
+      : smartSlips.filter((s) => s.date && s.date.startsWith(monthFilter));
+
+    const totalGenerated = slipsToCalculate.length;
+    const totalWon = slipsToCalculate.filter((s) => s.status === 'WON').length;
+    const totalLost = slipsToCalculate.filter((s) => s.status === 'LOST').length;
+    const totalPending = slipsToCalculate.filter((s) => s.status === 'PENDING').length;
+    const totalVoid = slipsToCalculate.filter((s) => s.status === 'VOID').length;
+    const resolved = totalWon + totalLost;
+    const winRate = resolved > 0 ? Number(((totalWon / resolved) * 100).toFixed(1)) : 0;
+    const avgOdds = totalGenerated > 0
+      ? Number((slipsToCalculate.reduce((acc, s) => acc + s.totalOdds, 0) / totalGenerated).toFixed(2))
+      : 0;
+
+    let netProfitUnits = 0;
+    for (const slip of slipsToCalculate) {
+      if (slip.status === 'WON') {
+        netProfitUnits += (slip.totalOdds - 1);
+      } else if (slip.status === 'LOST') {
+        netProfitUnits -= 1;
+      }
     }
-    const found = monthlyStats.find((m) => m.monthKey === monthFilter);
-    if (!found) return metrics;
+    const netYieldUnits = Number(netProfitUnits.toFixed(2));
+    const yieldPercent = resolved > 0 ? Number(((netProfitUnits / resolved) * 100).toFixed(1)) : 0;
+
     return {
-      totalGenerated: found.totalSlips,
-      totalWon: found.won,
-      totalLost: found.lost,
-      totalPending: found.pending,
-      totalVoid: found.voidCount,
-      winRate: found.winRate,
-      avgOdds: found.avgOdds,
-      netYieldUnits: found.netYieldUnits,
-      yieldPercent: found.yieldPercent
+      totalGenerated,
+      totalWon,
+      totalLost,
+      totalPending,
+      totalVoid,
+      winRate,
+      avgOdds,
+      netYieldUnits,
+      yieldPercent
     };
-  }, [monthFilter, metrics, monthlyStats]);
+  }, [smartSlips, monthFilter]);
 
   const singleValueBets = useMemo<GMetricsSingleBetSuggestion[]>(() => {
-    return generateGMetricsSingleValueBets(effectiveFixtures, false, singleTopLimit);
-  }, [effectiveFixtures, singleTopLimit]);
+    return generateGMetricsSingleValueBets(effectiveFixtures, false, singleTopLimit, effectiveNBAFixtures);
+  }, [effectiveFixtures, singleTopLimit, effectiveNBAFixtures]);
 
   const filteredSingles = useMemo(() => {
-    if (singleTypeFilter === 'ALL') return singleValueBets;
-    return singleValueBets.filter((s) => s.betType === singleTypeFilter);
-  }, [singleValueBets, singleTypeFilter]);
+    return singleValueBets.filter((s) => {
+      const matchType = singleTypeFilter === 'ALL' || s.betType === singleTypeFilter;
+      const matchSport = singleSportFilter === 'ALL' || s.sport === singleSportFilter;
+      return matchType && matchSport;
+    });
+  }, [singleValueBets, singleTypeFilter, singleSportFilter]);
 
   // Exportación a Excel (.xlsx) con datos 100% reales
   const handleExportExcel = () => {
@@ -616,23 +694,10 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         </div>
 
         <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto flex-wrap">
-          {smartSlips.some((s) => s.id.includes('seed')) && (
-            <button
-              type="button"
-              onClick={handlePurgeSeeds}
-              disabled={isPurgingSeeds}
-              className="px-2.5 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-800 text-rose-200 text-xs font-mono font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-              title="Purgar boletos semilla simulados residuales"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-              <span>{isPurgingSeeds ? 'Purgando...' : 'Limpiar Semillas'}</span>
-            </button>
-          )}
-
           <button
             type="button"
             onClick={handleGenerateTodayParlays}
-            disabled={isGeneratingToday || effectiveFixtures.length < 2}
+            disabled={isGeneratingToday || (effectiveFixtures.length + effectiveNBAFixtures.length < 2)}
             className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
             title="Generar y certificar los 3 parlays cuantitativos del día con los partidos reales de hoy"
           >
@@ -1009,6 +1074,11 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                                 <span className="text-[10px] font-mono text-slate-500 block truncate">
                                   {leg.label} ({leg.leagueName})
                                 </span>
+                                {isAthleteScratched(leg) && (
+                                  <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 font-mono text-[9px] font-bold border border-amber-500/30">
+                                    ⚠️ Atleta reportado baja · Apuesta Nula (Void)
+                                  </span>
+                                )}
                               </div>
                               <div className="text-right shrink-0">
                                 <span className="font-mono font-bold text-indigo-700">
@@ -1100,7 +1170,7 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
       {subTab === 'SINGLES' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap text-xs font-mono">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {[
                 { key: 'ALL', label: 'Todas' },
                 { key: 'HIGH_VALUE', label: 'Alta Cuota (+EV)' },
@@ -1119,6 +1189,28 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                   {f.label}
                 </button>
               ))}
+
+              {/* Filtro por Deporte (Fútbol / Baloncesto) */}
+              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 ml-1">
+                {[
+                  { key: 'ALL', label: 'Todos' },
+                  { key: 'SOCCER', label: '⚽ Fútbol' },
+                  { key: 'NBA', label: '🏀 Baloncesto' }
+                ].map((s) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => setSingleSportFilter(s.key as any)}
+                    className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer ${
+                      singleSportFilter === s.key
+                        ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">

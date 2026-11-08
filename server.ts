@@ -367,6 +367,15 @@ function setCacheItem<T = unknown>(key: string, data: T): void {
   if (Array.isArray(data) && data.length === 0) {
     return;
   }
+  // Control estricto de memoria en memoria compartida (max 250 llaves)
+  if (memoryCache.size >= 250 && !memoryCache.has(key)) {
+    const iter = memoryCache.keys();
+    let nextKey = iter.next().value;
+    while (nextKey && (nextKey.startsWith('__gmetrics_') || nextKey.startsWith('__server_'))) {
+      nextKey = iter.next().value;
+    }
+    if (nextKey) memoryCache.delete(nextKey);
+  }
   memoryCache.set(key, { data, timestamp: Date.now() });
   persistCacheToDisk();
 }
@@ -2373,13 +2382,13 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
       const payload = { fixtures: results, nbaEvents: nbaFinishedEvents };
       if (results.length > 0 || nbaFinishedEvents.length > 0) {
         setCacheItem(auditCacheKey, payload);
-        auditPendingSmartParlaysWithFinishedMatches(results).catch(() => {});
+        auditPendingSmartParlaysWithFinishedMatches(results, nbaFinishedEvents).catch(() => {});
       }
       return payload;
     });
 
-    if (auditPayload && Array.isArray(auditPayload.fixtures)) {
-      auditPendingSmartParlaysWithFinishedMatches(auditPayload.fixtures).catch(() => {});
+    if (auditPayload) {
+      auditPendingSmartParlaysWithFinishedMatches(auditPayload.fixtures || [], auditPayload.nbaEvents || []).catch(() => {});
     }
     return res.json({
       success: true,
@@ -4670,7 +4679,7 @@ app.post('/api/admin/parlays-beta', async (req, res) => {
 // SISTEMA DE PARLAYS INTELIGENTES G METRICS (TRACKING, EVALUACIÓN & MÉTRICAS)
 // ============================================================================
 
-const SMART_PARLAYS_STORAGE_KEY = '__gmetrics_smart_parlays_v1__';
+const SMART_PARLAYS_STORAGE_KEY = '__gmetrics_smart_parlays_v3__';
 
 interface SmartParlaysStore {
   updatedAt: number;
@@ -4827,13 +4836,95 @@ function evaluateLegResult(leg: BettingMarketSuggestion, finishedMatch: any): 'W
       return awayGoals > homeGoals ? 'WON' : 'LOST';
     }
 
+    case 'NBA_TOTAL_POINTS': {
+      const isPlayerProp = label.includes(':') || label.includes('triples');
+      if (isPlayerProp) {
+        // Player props individuales requieren boxscore granular por jugador. Si no está disponible, permanece PENDING.
+        return 'PENDING';
+      }
+      const matchLine = label.match(/(\d+(?:\.\d+)?)/);
+      const line = matchLine ? parseFloat(matchLine[1]) : 0;
+      if (line > 0) {
+        const totalPoints = homeGoals + awayGoals;
+        if (label.includes('más') || label.includes('over')) {
+          return totalPoints > line ? 'WON' : 'LOST';
+        }
+        if (label.includes('menos') || label.includes('under')) {
+          return totalPoints < line ? 'WON' : 'LOST';
+        }
+      }
+      return 'PENDING';
+    }
+
+    case 'NBA_MONEYLINE': {
+      const hName = String(finishedMatch.teams?.home?.name || '').toLowerCase();
+      const aName = String(finishedMatch.teams?.away?.name || '').toLowerCase();
+      if (hName && label.includes(hName.split(' ')[0])) {
+        return homeGoals > awayGoals ? 'WON' : 'LOST';
+      }
+      if (aName && label.includes(aName.split(' ')[0])) {
+        return awayGoals > homeGoals ? 'WON' : 'LOST';
+      }
+      return 'PENDING';
+    }
+
+    case 'NBA_SPREAD': {
+      const matchSpread = label.match(/([+-]?\d+(?:\.\d+)?)/);
+      const spreadVal = matchSpread ? parseFloat(matchSpread[1]) : 0;
+      const hName = String(finishedMatch.teams?.home?.name || '').toLowerCase();
+      const aName = String(finishedMatch.teams?.away?.name || '').toLowerCase();
+      if (hName && label.includes(hName.split(' ')[0])) {
+        return (homeGoals + spreadVal) > awayGoals ? 'WON' : 'LOST';
+      }
+      if (aName && label.includes(aName.split(' ')[0])) {
+        return (awayGoals + spreadVal) > homeGoals ? 'WON' : 'LOST';
+      }
+      return 'PENDING';
+    }
+
     default:
-      return 'LOST';
+      return 'PENDING';
   }
 }
 
-async function auditPendingSmartParlaysWithFinishedMatches(finishedFixtures: any[]): Promise<void> {
-  if (!Array.isArray(finishedFixtures) || finishedFixtures.length === 0) return;
+async function auditPendingSmartParlaysWithFinishedMatches(
+  finishedFixtures: any[],
+  finishedNBAEvents: any[] = []
+): Promise<void> {
+  const normFixtures = Array.isArray(finishedFixtures) ? finishedFixtures : [];
+  const normNBA = (Array.isArray(finishedNBAEvents) ? finishedNBAEvents : []).map((bev) => {
+    if (!bev) return null;
+    const comp = bev.competitions?.[0];
+    const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
+    const homeComp = competitors.find((c: any) => c.homeAway === 'home') || competitors[0];
+    const awayComp = competitors.find((c: any) => c.homeAway === 'away') || competitors[1];
+    const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || '');
+    const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || '');
+    const homeScore = parseInt(String(homeComp?.score ?? '0'), 10) || 0;
+    const awayScore = parseInt(String(awayComp?.score ?? '0'), 10) || 0;
+    return {
+      id: String(bev.id || ''),
+      espnEventId: String(bev.id || ''),
+      sport: 'NBA',
+      teams: {
+        home: { name: homeName },
+        away: { name: awayName }
+      },
+      goals: {
+        home: homeScore,
+        away: awayScore
+      },
+      currentScore: {
+        home: homeScore,
+        away: awayScore
+      },
+      status: 'FINISHED',
+      rawEvent: bev
+    };
+  }).filter(Boolean);
+
+  const allFinished = [...normFixtures, ...normNBA];
+  if (allFinished.length === 0) return;
 
   const store = await loadSmartParlaysStore();
   const pendingSlips = store.slips.filter((s) => s.status === 'PENDING');
@@ -4848,7 +4939,7 @@ async function auditPendingSmartParlaysWithFinishedMatches(finishedFixtures: any
     let voidCount = 0;
 
     for (const leg of slip.legs) {
-      const matchedFixture = finishedFixtures.find((f) => {
+      const matchedFixture = allFinished.find((f: any) => {
         if (!f) return false;
         if (String(f.id) === String(leg.fixtureId) || String(f.espnEventId) === String(leg.fixtureId)) return true;
         const hName = String(f.teams?.home?.name || '').toLowerCase();
@@ -4987,10 +5078,10 @@ app.post('/api/parlays/generate-day', async (req, res) => {
   try {
     const store = await loadSmartParlaysStore();
     const todayStr = getColombiaDateStr(0);
-    const { fixtures: incomingFixtures, force = true } = req.body || {};
+    const { fixtures: incomingFixtures, nbaFixtures: incomingNBAFixtures, force = true } = req.body || {};
 
     let candidateFixtures: any[] = [];
-    if (Array.isArray(incomingFixtures) && incomingFixtures.length >= 2) {
+    if (Array.isArray(incomingFixtures) && incomingFixtures.length > 0) {
       candidateFixtures = incomingFixtures;
     } else {
       const sharedUpcoming =
@@ -4999,14 +5090,19 @@ app.post('/api/parlays/generate-day', async (req, res) => {
       candidateFixtures = sharedUpcoming?.data || [];
     }
 
-    if (candidateFixtures.length < 2) {
+    let candidateNBAFixtures: any[] = [];
+    if (Array.isArray(incomingNBAFixtures) && incomingNBAFixtures.length > 0) {
+      candidateNBAFixtures = incomingNBAFixtures;
+    }
+
+    if (candidateFixtures.length + candidateNBAFixtures.length < 2) {
       return res.status(400).json({
         success: false,
         error: 'Se requieren al menos 2 partidos activos con datos analíticos para generar parlays reales.'
       });
     }
 
-    const generated = generateSmartParlays(candidateFixtures, todayStr);
+    const generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures);
     if (generated.length === 0) {
       return res.status(422).json({
         success: false,
