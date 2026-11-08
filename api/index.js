@@ -5017,11 +5017,30 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
   const hasMatches = Boolean(availableMatches && availableMatches.length > 0);
   const hasNBAMatches = Boolean(availableNBAMatches && availableNBAMatches.length > 0);
   if (!hasMatches && !hasNBAMatches) return [];
-  const eligibleMatches = (availableMatches || []).filter(
-    (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam) && m.status !== "CANCELLED" && m.status !== "POSTPONED"
+  const NOISE_TOKENS = /* @__PURE__ */ new Set(["fc", "fk", "sk", "sc", "cf", "cd", "ca", "bk", "if", "ik", "afc", "club", "de", "the", "women", "femenil", "w"]);
+  const canonicalTeam = (name) => String(name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((t) => t && !NOISE_TOKENS.has(t)).join(" ").trim();
+  const canonicalMatchKey = (m) => `${canonicalTeam(m.homeTeam?.name)}|${canonicalTeam(m.awayTeam?.name)}`;
+  const dedupeByMatch = (list) => {
+    const seenKeys = /* @__PURE__ */ new Set();
+    const seenIds = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const m of list) {
+      const key = canonicalMatchKey(m);
+      const id = String(m.id);
+      if (seenKeys.has(key) || seenIds.has(id)) continue;
+      seenKeys.add(key);
+      seenIds.add(id);
+      out.push(m);
+    }
+    return out;
+  };
+  const eligibleMatches = dedupeByMatch(
+    (availableMatches || []).filter(
+      (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam) && m.status !== "CANCELLED" && m.status !== "POSTPONED"
+    )
   );
-  const eligibleNBAMatches = (availableNBAMatches || []).filter(
-    (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam)
+  const eligibleNBAMatches = dedupeByMatch(
+    (availableNBAMatches || []).filter((m) => Boolean(m && m.id && m.homeTeam && m.awayTeam))
   );
   if (eligibleMatches.length + eligibleNBAMatches.length < 2) return [];
   const matchCandidatesMap = /* @__PURE__ */ new Map();

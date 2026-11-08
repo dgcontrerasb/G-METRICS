@@ -2239,14 +2239,46 @@ export function generateSmartParlays(
   const hasNBAMatches = Boolean(availableNBAMatches && availableNBAMatches.length > 0);
   if (!hasMatches && !hasNBAMatches) return [];
 
-  // Filtrar partidos de fútbol activos o válidos para el boleto
-  const eligibleMatches = (availableMatches || []).filter(
-    (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam) && m.status !== 'CANCELLED' && m.status !== 'POSTPONED'
+  // Clave canónica del partido: independiente del ID de la fuente, de acentos, mayúsculas y sufijos (FC, FK, SK...)
+  const NOISE_TOKENS = new Set(['fc', 'fk', 'sk', 'sc', 'cf', 'cd', 'ca', 'bk', 'if', 'ik', 'afc', 'club', 'de', 'the', 'women', 'femenil', 'w']);
+  const canonicalTeam = (name?: string): string =>
+    String(name || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t && !NOISE_TOKENS.has(t))
+      .join(' ')
+      .trim();
+  const canonicalMatchKey = (m: { homeTeam?: { name?: string }; awayTeam?: { name?: string } }): string =>
+    `${canonicalTeam(m.homeTeam?.name)}|${canonicalTeam(m.awayTeam?.name)}`;
+
+  const dedupeByMatch = <T extends { id: any; homeTeam?: { name?: string }; awayTeam?: { name?: string } }>(list: T[]): T[] => {
+    const seenKeys = new Set<string>();
+    const seenIds = new Set<string>();
+    const out: T[] = [];
+    for (const m of list) {
+      const key = canonicalMatchKey(m);
+      const id = String(m.id);
+      if (seenKeys.has(key) || seenIds.has(id)) continue;
+      seenKeys.add(key);
+      seenIds.add(id);
+      out.push(m);
+    }
+    return out;
+  };
+
+  // Filtrar partidos de fútbol activos o válidos para el boleto (sin partidos duplicados con IDs distintos)
+  const eligibleMatches = dedupeByMatch(
+    (availableMatches || []).filter(
+      (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam) && m.status !== 'CANCELLED' && m.status !== 'POSTPONED'
+    )
   );
 
-  // Filtrar partidos de baloncesto activos o válidos para el boleto
-  const eligibleNBAMatches = (availableNBAMatches || []).filter(
-    (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam)
+  // Filtrar partidos de baloncesto activos o válidos para el boleto (sin duplicados)
+  const eligibleNBAMatches = dedupeByMatch(
+    (availableNBAMatches || []).filter((m) => Boolean(m && m.id && m.homeTeam && m.awayTeam))
   );
 
   if (eligibleMatches.length + eligibleNBAMatches.length < 2) return [];
