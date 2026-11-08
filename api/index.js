@@ -4304,10 +4304,14 @@ function calculateMatchAnalysis(fixture) {
     secondHalfGoalProb
   };
   const isLiveOrDone = fixture.status === "IN_PLAY" || fixture.status === "FINISHED";
-  const baseHomeShots = homeTeam.avgShotsPerMatch * (awayTeam.defenseStrength * 0.95);
-  const baseHomeSOT = homeTeam.avgShotsOnTarget * (awayTeam.defenseStrength * 0.92);
-  const baseAwayShots = awayTeam.avgShotsPerMatch * (homeTeam.defenseStrength * 0.9) * (1 - awayTotalPenalty);
-  const baseAwaySOT = awayTeam.avgShotsOnTarget * (homeTeam.defenseStrength * 0.9) * (1 - awayTotalPenalty);
+  const homeShotsAvg = Number(homeTeam.avgShotsPerMatch ?? 13) || 13;
+  const homeSOTAvg = Number(homeTeam.avgShotsOnTarget ?? 4.5) || 4.5;
+  const awayShotsAvg = Number(awayTeam.avgShotsPerMatch ?? 10.5) || 10.5;
+  const awaySOTAvg = Number(awayTeam.avgShotsOnTarget ?? 3.6) || 3.6;
+  const baseHomeShots = homeShotsAvg * (awayDefense * 0.95);
+  const baseHomeSOT = homeSOTAvg * (awayDefense * 0.92);
+  const baseAwayShots = awayShotsAvg * (homeDefense * 0.9) * (1 - awayTotalPenalty);
+  const baseAwaySOT = awaySOTAvg * (homeDefense * 0.9) * (1 - awayTotalPenalty);
   const homeTotalShots = Math.round(baseHomeShots * 10) / 10;
   const homeShotsOnTarget = Math.round(baseHomeSOT * 10) / 10;
   const awayTotalShots = Math.round(baseAwayShots * 10) / 10;
@@ -4348,8 +4352,8 @@ function calculateMatchAnalysis(fixture) {
     homeStar: {
       name: resolvedHomeStarName,
       position: homeStarObj.position || "DEL",
-      expectedShots: Math.round((homeStarObj.expectedShots || 2.8) * (awayTeam.defenseStrength * 0.96) * 10) / 10,
-      expectedShotsOnTarget: Math.round((homeStarObj.expectedShotsOnTarget || 1.2) * (awayTeam.defenseStrength * 0.95) * 10) / 10,
+      expectedShots: Math.round((homeStarObj.expectedShots || 2.8) * (awayDefense * 0.96) * 10) / 10,
+      expectedShotsOnTarget: Math.round((homeStarObj.expectedShotsOnTarget || 1.2) * (awayDefense * 0.95) * 10) / 10,
       anytimeGoalProb: homeStrikerGoalProb
     },
     awayStar: {
@@ -4361,8 +4365,8 @@ function calculateMatchAnalysis(fixture) {
     }
   };
   const urgencyCornerBoost = urgencyScore >= 7 ? 1.07 : 1;
-  const rawHomeCorners = (baseHomeShots * 0.39 + homeTeam.attackStrength * 0.95) * urgencyCornerBoost;
-  const rawAwayCorners = (baseAwayShots * 0.37 + awayTeam.attackStrength * 0.78) * urgencyCornerBoost;
+  const rawHomeCorners = (baseHomeShots * 0.39 + homeAttack * 0.95) * urgencyCornerBoost;
+  const rawAwayCorners = (baseAwayShots * 0.37 + awayAttack * 0.78) * urgencyCornerBoost;
   const preMatchHomeCorners = Math.min(7.8, Math.max(3.1, Math.round(rawHomeCorners * 10) / 10));
   const preMatchAwayCorners = Math.min(6.8, Math.max(2.5, Math.round(rawAwayCorners * 10) / 10));
   const lambdaHomeCorners = preMatchHomeCorners;
@@ -4969,6 +4973,8 @@ function extractMatchBettingMarketSuggestions(fixture, analysis) {
       addCandidate("TOTAL_CARDS" /* TOTAL_CARDS */, `M\xE1s de 3.5 Tarjetas`, refereeCards.over35CardsProb / 100, 0.042);
     } else if (refereeCards.under45CardsProb >= 68) {
       addCandidate("TOTAL_CARDS" /* TOTAL_CARDS */, `Menos de 4.5 Tarjetas`, refereeCards.under45CardsProb / 100, 0.04);
+    } else if (refereeCards.under55CardsProb >= 72) {
+      addCandidate("TOTAL_CARDS" /* TOTAL_CARDS */, `Menos de 5.5 Tarjetas`, refereeCards.under55CardsProb / 100, 0.038);
     } else if (refereeCards.over45CardsProb >= 58 && refereeCards.rigor === "Severo") {
       addCandidate("TOTAL_CARDS" /* TOTAL_CARDS */, `M\xE1s de 4.5 Tarjetas`, refereeCards.over45CardsProb / 100, 0.048);
     }
@@ -5094,8 +5100,10 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
           const hash2 = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join("|");
           if (excludedSlipHashes.has(hash2)) return;
           const distance = Math.abs(currentOdds - (minOdds + maxOdds) / 2);
-          if (distance < minDistance) {
-            minDistance = distance;
+          const reusedCount = currentLegs.filter((l) => usedFixtureIds.has(l.fixtureId)).length;
+          const adjustedDistance = distance + reusedCount * 2;
+          if (adjustedDistance < minDistance) {
+            minDistance = adjustedDistance;
             closestCombo = [...currentLegs];
           }
           return;

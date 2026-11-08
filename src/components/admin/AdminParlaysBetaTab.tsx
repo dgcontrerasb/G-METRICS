@@ -209,7 +209,7 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         return;
       }
 
-      // Compactar la carga útil para evitar exceder límites de red o payload demasiado pesado
+      // Compactar la carga útil manteniendo intacta la telemetría analítica (árbitro, tiros, estrellas)
       const compactFixtures = effective.map((f) => ({
         id: f.id,
         date: f.date,
@@ -219,23 +219,36 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
           id: f.homeTeam?.id,
           name: f.homeTeam?.name,
           shortName: f.homeTeam?.shortName,
+          form: f.homeTeam?.form,
+          avgShotsPerMatch: f.homeTeam?.avgShotsPerMatch,
+          avgShotsOnTarget: f.homeTeam?.avgShotsOnTarget,
           restHours: f.homeTeam?.restHours,
           attackStrength: f.homeTeam?.attackStrength,
-          defenseStrength: f.homeTeam?.defenseStrength
+          defenseStrength: f.homeTeam?.defenseStrength,
+          starPlayer: f.homeTeam?.starPlayer
         },
         awayTeam: {
           id: f.awayTeam?.id,
           name: f.awayTeam?.name,
           shortName: f.awayTeam?.shortName,
+          form: f.awayTeam?.form,
+          avgShotsPerMatch: f.awayTeam?.avgShotsPerMatch,
+          avgShotsOnTarget: f.awayTeam?.avgShotsOnTarget,
           restHours: f.awayTeam?.restHours,
           attackStrength: f.awayTeam?.attackStrength,
-          defenseStrength: f.awayTeam?.defenseStrength
+          defenseStrength: f.awayTeam?.defenseStrength,
+          starPlayer: f.awayTeam?.starPlayer
         },
         league: {
           id: f.league?.id,
           name: f.league?.name,
-          country: f.league?.country
+          country: f.league?.country,
+          avgGoalsPerMatch: f.league?.avgGoalsPerMatch,
+          avgCardsPerMatch: f.league?.avgCardsPerMatch
         },
+        referee: f.referee,
+        travel: f.travel,
+        venue: f.venue,
         liveStats: f.liveStats
       }));
 
@@ -349,19 +362,36 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                   id: f.homeTeam?.id,
                   name: f.homeTeam?.name,
                   shortName: f.homeTeam?.shortName,
+                  form: f.homeTeam?.form,
+                  avgShotsPerMatch: f.homeTeam?.avgShotsPerMatch,
+                  avgShotsOnTarget: f.homeTeam?.avgShotsOnTarget,
                   restHours: f.homeTeam?.restHours,
                   attackStrength: f.homeTeam?.attackStrength,
-                  defenseStrength: f.homeTeam?.defenseStrength
+                  defenseStrength: f.homeTeam?.defenseStrength,
+                  starPlayer: f.homeTeam?.starPlayer
                 },
                 awayTeam: {
                   id: f.awayTeam?.id,
                   name: f.awayTeam?.name,
                   shortName: f.awayTeam?.shortName,
+                  form: f.awayTeam?.form,
+                  avgShotsPerMatch: f.awayTeam?.avgShotsPerMatch,
+                  avgShotsOnTarget: f.awayTeam?.avgShotsOnTarget,
                   restHours: f.awayTeam?.restHours,
                   attackStrength: f.awayTeam?.attackStrength,
-                  defenseStrength: f.awayTeam?.defenseStrength
+                  defenseStrength: f.awayTeam?.defenseStrength,
+                  starPlayer: f.awayTeam?.starPlayer
                 },
-                league: { id: f.league?.id, name: f.league?.name, country: f.league?.country },
+                league: {
+                  id: f.league?.id,
+                  name: f.league?.name,
+                  country: f.league?.country,
+                  avgGoalsPerMatch: f.league?.avgGoalsPerMatch,
+                  avgCardsPerMatch: f.league?.avgCardsPerMatch
+                },
+                referee: f.referee,
+                travel: f.travel,
+                venue: f.venue,
                 liveStats: f.liveStats
               }));
               const compactNBA = effectiveNBA.map((f: NBAMatchFixture) => ({
