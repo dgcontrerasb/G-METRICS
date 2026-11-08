@@ -136,24 +136,78 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     setSuccessNotice(null);
     try {
       const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(getColombiaDateString(0))?.fixtures || [];
+      if (!effective || effective.length < 2) {
+        setErrorMsg('Se requieren al menos 2 partidos activos con datos analíticos para generar parlays.');
+        return;
+      }
+
+      // Compactar la carga útil para evitar exceder límites de red o payload demasiado pesado
+      const compactFixtures = effective.map((f) => ({
+        id: f.id,
+        date: f.date,
+        time: f.time,
+        status: f.status,
+        homeTeam: {
+          id: f.homeTeam?.id,
+          name: f.homeTeam?.name,
+          shortName: f.homeTeam?.shortName
+        },
+        awayTeam: {
+          id: f.awayTeam?.id,
+          name: f.awayTeam?.name,
+          shortName: f.awayTeam?.shortName
+        },
+        league: {
+          id: f.league?.id,
+          name: f.league?.name,
+          country: f.league?.country
+        },
+        liveStats: f.liveStats
+      }));
+
       const res = await fetch('/api/parlays/generate-day', {
         method: 'POST',
         headers: getAdminAuthHeaders(true),
-        body: JSON.stringify({ fixtures: effective, force: true })
+        body: JSON.stringify({ fixtures: compactFixtures, force: true })
       });
-      const data = await res.json();
+
+      const resText = await res.text();
+      let data: any = {};
+      try {
+        data = resText ? JSON.parse(resText) : {};
+      } catch {
+        data = { success: false, error: `Respuesta del servidor (${res.status}): ${resText.slice(0, 100)}` };
+      }
+
       if (res.ok && data.success) {
         if (Array.isArray(data.slips)) {
-          setSmartSlips(data.slips);
+          setSmartSlips(data.slips.filter((s: SmartParlaySlip) => s && !s.id.includes('seed')));
         }
         setSuccessNotice(data.message || 'Parlays reales generados y certificados para hoy.');
         setTimeout(() => setSuccessNotice(null), 4500);
         await fetchSmartParlaysAndMetrics();
       } else {
-        setErrorMsg(data.error || 'No se pudieron generar los parlays para los partidos de hoy.');
+        // Fallback local garantizado si el backend no pudo persistir
+        const localGenerated = generateSmartParlays(effective);
+        if (localGenerated.length > 0) {
+          setSmartSlips(localGenerated);
+          setSuccessNotice(`⚡ Generados ${localGenerated.length} parlays reales en motor local.`);
+          setTimeout(() => setSuccessNotice(null), 4500);
+        } else {
+          setErrorMsg(data.error || 'No se pudieron generar los parlays para los partidos de hoy.');
+        }
       }
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Error al generar parlays del día.');
+      // Fallback local en caso de error de red
+      const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(getColombiaDateString(0))?.fixtures || [];
+      const localGenerated = generateSmartParlays(effective);
+      if (localGenerated.length > 0) {
+        setSmartSlips(localGenerated);
+        setSuccessNotice(`⚡ Generados ${localGenerated.length} parlays reales en motor local.`);
+        setTimeout(() => setSuccessNotice(null), 4500);
+      } else {
+        setErrorMsg(err instanceof Error ? err.message : 'Error al generar parlays del día.');
+      }
     } finally {
       setIsGeneratingToday(false);
     }
@@ -167,7 +221,8 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         method: 'POST',
         headers: getAdminAuthHeaders(true)
       });
-      const data = await res.json();
+      const txt = await res.text();
+      const data = txt ? JSON.parse(txt) : {};
       if (res.ok && data.success) {
         setSuccessNotice(data.message || 'Semillas eliminadas correctamente.');
         setTimeout(() => setSuccessNotice(null), 3500);
@@ -188,7 +243,8 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         headers: getAdminAuthHeaders(false)
       });
       if (res.ok) {
-        const data = await res.json();
+        const txt = await res.text();
+        const data = txt ? JSON.parse(txt) : {};
         if (data.success) {
           if (Array.isArray(data.slips)) {
             // Filtrar en cliente cualquier semilla residual
@@ -200,13 +256,24 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
             const hasToday = cleanSlips.some((s: SmartParlaySlip) => s.date === todayStr);
             const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(todayStr)?.fixtures || [];
             if (!hasToday && effective.length >= 2) {
+              const compact = effective.map((f) => ({
+                id: f.id,
+                date: f.date,
+                time: f.time,
+                status: f.status,
+                homeTeam: { id: f.homeTeam?.id, name: f.homeTeam?.name, shortName: f.homeTeam?.shortName },
+                awayTeam: { id: f.awayTeam?.id, name: f.awayTeam?.name, shortName: f.awayTeam?.shortName },
+                league: { id: f.league?.id, name: f.league?.name, country: f.league?.country },
+                liveStats: f.liveStats
+              }));
               fetch('/api/parlays/generate-day', {
                 method: 'POST',
                 headers: getAdminAuthHeaders(true),
-                body: JSON.stringify({ fixtures: effective, force: false })
+                body: JSON.stringify({ fixtures: compact, force: false })
               })
-                .then((r) => r.json())
-                .then((genData) => {
+                .then((r) => r.text())
+                .then((txtData) => {
+                  const genData = txtData ? JSON.parse(txtData) : {};
                   if (genData.success && Array.isArray(genData.slips)) {
                     setSmartSlips(genData.slips.filter((s: SmartParlaySlip) => s && !s.id.includes('seed')));
                   }

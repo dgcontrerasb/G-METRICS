@@ -2017,8 +2017,24 @@ export function extractMatchBettingMarketSuggestions(
   const { dixonColes, goalsMarket, cornersMarket } = matchAnalysis;
   const homeName = fixture.homeTeam?.name || 'Local';
   const awayName = fixture.awayTeam?.name || 'Visitante';
-  const homeShort = fixture.homeTeam?.shortName || homeName;
-  const awayShort = fixture.awayTeam?.shortName || awayName;
+
+  const INVALID_STANDALONE = new Set([
+    'san', 'st', 'st.', 'sta', 'sta.', 'santa', 'santo', 'real', 'club', 'cd', 'cf', 'ca', 'cs', 'deportivo',
+    'atletico', 'atlético', 'sporting', 'inter', 'racing', 'boca', 'river', 'union', 'unión', 'independiente',
+    'estudiantes', 'leones', 'la', 'los', 'el', 'las', 'al'
+  ]);
+
+  const resolveTeamLabel = (fullName: string, shortName?: string): string => {
+    if (!fullName) return shortName || 'Equipo';
+    const cleanFull = fullName.trim();
+    if (shortName && shortName.trim().length >= 4 && !INVALID_STANDALONE.has(shortName.trim().toLowerCase())) {
+      return shortName.trim();
+    }
+    return cleanFull;
+  };
+
+  const homeShort = resolveTeamLabel(homeName, fixture.homeTeam?.shortName);
+  const awayShort = resolveTeamLabel(awayName, fixture.awayTeam?.shortName);
   const matchName = `${homeName} vs ${awayName}`;
   const leagueName = fixture.league?.name || 'Liga Oficial';
 

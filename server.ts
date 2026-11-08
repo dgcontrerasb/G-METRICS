@@ -4974,7 +4974,7 @@ app.get('/api/parlays/metrics', dataRateLimitMiddleware, async (req, res) => {
 });
 
 // Endpoint POST /api/parlays/generate-day (SOLO ADMINISTRADOR - Generación Real Certificada)
-app.post('/api/parlays/generate-day', express.json({ limit: '1mb' }), async (req, res) => {
+app.post('/api/parlays/generate-day', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
   const pin = extractAdminCredential(req);
   const cfg = getAdminConfig();

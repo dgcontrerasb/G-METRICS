@@ -375,6 +375,50 @@ export function getColombiaDateString(offsetDays = 0): string {
   }
 }
 
+/**
+ * Normaliza y preserva el nombre reconocible del equipo sin mutilar
+ * prefijos como 'San', 'St.', 'Real', 'Atlético', 'Deportivo', etc.
+ */
+export function resolveRecognizableTeamShortName(fullName: string, rawShort?: string): string {
+  if (!fullName) return rawShort || 'Equipo';
+  const cleanFull = fullName.trim();
+
+  const INVALID_STANDALONE = new Set([
+    'san', 'st', 'st.', 'sta', 'sta.', 'santa', 'santo', 'real', 'club', 'cd', 'cf', 'ca', 'cs', 'deportivo',
+    'atletico', 'atlético', 'sporting', 'inter', 'racing', 'boca', 'river', 'union', 'unión', 'independiente',
+    'estudiantes', 'leones', 'la', 'los', 'el', 'las', 'al'
+  ]);
+
+  if (rawShort && typeof rawShort === 'string') {
+    const sTrim = rawShort.trim();
+    if (sTrim.length >= 4 && !INVALID_STANDALONE.has(sTrim.toLowerCase())) {
+      return sTrim;
+    }
+  }
+
+  // Si el nombre tiene 24 caracteres o menos, usar el nombre completo para garantizar claridad absoluta
+  if (cleanFull.length <= 24) {
+    return cleanFull;
+  }
+
+  const words = cleanFull.split(/\s+/);
+  if (words.length <= 2) {
+    return cleanFull;
+  }
+
+  const firstWordLower = words[0].toLowerCase().replace(/[.,]/g, '');
+  if (INVALID_STANDALONE.has(firstWordLower)) {
+    return `${words[0]} ${words[1]}`;
+  }
+
+  const lastWordLower = words[words.length - 1].toLowerCase().replace(/[.,]/g, '');
+  if (['fc', 'cf', 'sc', 'sad', 'cd', 'ca'].includes(lastWordLower)) {
+    return words.slice(0, -1).join(' ');
+  }
+
+  return cleanFull;
+}
+
 // Convert raw ESPN / Football-Data hybrid response item into normalized MatchFixture in local timezone
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture {
@@ -526,7 +570,7 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
     homeTeam: {
       id: homeTeamId,
       name: homeTeamName,
-      shortName: homeTeamName.split(' ')[0],
+      shortName: resolveRecognizableTeamShortName(homeTeamName, raw.teams?.home?.shortName),
       logo: raw.teams?.home?.logo || '',
       rank: homeRating.rank,
       points: homeRating.points,
@@ -552,7 +596,7 @@ function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture
     awayTeam: {
       id: awayTeamId,
       name: awayTeamName,
-      shortName: awayTeamName.split(' ')[0],
+      shortName: resolveRecognizableTeamShortName(awayTeamName, raw.teams?.away?.shortName),
       logo: raw.teams?.away?.logo || '',
       rank: awayRating.rank,
       points: awayRating.points,
