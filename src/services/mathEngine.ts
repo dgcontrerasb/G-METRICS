@@ -2047,7 +2047,7 @@ export function extractMatchBettingMarketSuggestions(
   analysis?: MatchAnalysis
 ): BettingMarketSuggestion[] {
   const matchAnalysis = analysis || calculateMatchAnalysis(fixture);
-  const { dixonColes, goalsMarket, cornersMarket } = matchAnalysis;
+  const { dixonColes, goalsMarket, cornersMarket, refereeCards, shotsAndPlayers, halfGoals } = matchAnalysis;
   const homeName = fixture.homeTeam?.name || 'Local';
   const awayName = fixture.awayTeam?.name || 'Visitante';
 
@@ -2145,7 +2145,9 @@ export function extractMatchBettingMarketSuggestions(
   }
 
   // 5. MERCADO TOTAL_CORNERS_MATCH
-  if (cornersMarket.over85 >= 62) {
+  if (cornersMarket.over75 >= 70) {
+    addCandidate(BetMarketCategory.TOTAL_CORNERS_MATCH, `Más de 7.5 Córners`, cornersMarket.over75 / 100, 0.038);
+  } else if (cornersMarket.over85 >= 62) {
     addCandidate(BetMarketCategory.TOTAL_CORNERS_MATCH, `Más de 8.5 Córners`, cornersMarket.over85 / 100, 0.04);
   } else if (cornersMarket.over95 >= 54) {
     addCandidate(BetMarketCategory.TOTAL_CORNERS_MATCH, `Más de 9.5 Córners`, cornersMarket.over95 / 100, 0.045);
@@ -2163,6 +2165,54 @@ export function extractMatchBettingMarketSuggestions(
       addCandidate(BetMarketCategory.DRAW_NO_BET, `Empate No Válido: ${homeShort}`, dnbHomeProb, 0.04);
     } else if (dnbAwayProb >= 0.58) {
       addCandidate(BetMarketCategory.DRAW_NO_BET, `Empate No Válido: ${awayShort}`, dnbAwayProb, 0.04);
+    }
+  }
+
+  // 7. MERCADO TOTAL_CARDS (Tarjetas Totales y Disciplina)
+  if (refereeCards) {
+    if (refereeCards.over35CardsProb >= 68) {
+      addCandidate(BetMarketCategory.TOTAL_CARDS, `Más de 3.5 Tarjetas`, refereeCards.over35CardsProb / 100, 0.042);
+    } else if (refereeCards.under45CardsProb >= 68) {
+      addCandidate(BetMarketCategory.TOTAL_CARDS, `Menos de 4.5 Tarjetas`, refereeCards.under45CardsProb / 100, 0.04);
+    } else if (refereeCards.over45CardsProb >= 58 && refereeCards.rigor === 'Severo') {
+      addCandidate(BetMarketCategory.TOTAL_CARDS, `Más de 4.5 Tarjetas`, refereeCards.over45CardsProb / 100, 0.048);
+    }
+  }
+
+  // 8. MERCADO PLAYER_SHOTS_ON_TARGET (Tiros a Puerta por Jugador Estrella)
+  const isValidPlayerName = (name?: string): boolean => {
+    if (!name || typeof name !== 'string') return false;
+    const clean = name.trim();
+    if (clean.length < 4 || clean.includes('#')) return false;
+    const lower = clean.toLowerCase();
+    if (lower.includes('local') || lower.includes('visitante') || lower.includes('equipo') || lower.includes('jugador')) return false;
+    return true;
+  };
+
+  if (shotsAndPlayers) {
+    if (isValidPlayerName(shotsAndPlayers.homeStar?.name) && (shotsAndPlayers.homeStar.expectedShotsOnTarget || 0) >= 1.15) {
+      const lambdaSOT = shotsAndPlayers.homeStar.expectedShotsOnTarget;
+      const probSOT = Math.round((1 - Math.exp(-lambdaSOT)) * 1000) / 1000;
+      if (probSOT >= 0.65) {
+        addCandidate(BetMarketCategory.PLAYER_SHOTS_ON_TARGET, `${shotsAndPlayers.homeStar.name}: Más de 0.5 Tiros a Puerta`, probSOT, 0.042);
+      }
+    }
+    if (isValidPlayerName(shotsAndPlayers.awayStar?.name) && (shotsAndPlayers.awayStar.expectedShotsOnTarget || 0) >= 1.15) {
+      const lambdaSOT = shotsAndPlayers.awayStar.expectedShotsOnTarget;
+      const probSOT = Math.round((1 - Math.exp(-lambdaSOT)) * 1000) / 1000;
+      if (probSOT >= 0.65) {
+        addCandidate(BetMarketCategory.PLAYER_SHOTS_ON_TARGET, `${shotsAndPlayers.awayStar.name}: Más de 0.5 Tiros a Puerta`, probSOT, 0.042);
+      }
+    }
+  }
+
+  // 9. MERCADO HALF_WITH_MOST_GOALS (Mitades con Más Goles & Goles 2T)
+  if (halfGoals) {
+    const prob2ndHalfGoal = Math.round((1 - Math.exp(-halfGoals.expected2ndHalfGoals)) * 1000) / 1000;
+    if (prob2ndHalfGoal >= 0.72) {
+      addCandidate(BetMarketCategory.HALF_WITH_MOST_GOALS, `2.ª Mitad: Más de 0.5 Goles`, prob2ndHalfGoal, 0.038);
+    } else if (halfGoals.secondHalfPercent >= 48) {
+      addCandidate(BetMarketCategory.HALF_WITH_MOST_GOALS, `Mitad con Más Goles: 2.ª Mitad`, halfGoals.secondHalfPercent / 100, 0.045);
     }
   }
 
@@ -2216,6 +2266,10 @@ export function generateSmartParlays(
   const todayStr = targetDate || new Date().toISOString().split('T')[0];
   const generatedSlips: SmartParlaySlip[] = [];
 
+  // Registro global para evitar repetir la misma apuesta en diferentes boletos y priorizar partidos distintos
+  const usedPickSignatures = new Set<string>();
+  const usedFixtureIds = new Set<string>();
+
   // Helper de búsqueda combinatoria
   const findOptimalSlip = (
     profile: 'CONSERVATIVE' | 'BALANCED' | 'HIGH_ODDS',
@@ -2247,10 +2301,11 @@ export function generateSmartParlays(
           const hash = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join('|');
           if (excludedSlipHashes.has(hash)) return;
 
-          // Score: maximizar probabilidad acumulada + EV promedio
+          // Score: maximizar probabilidad acumulada + EV promedio, priorizando partidos no utilizados previamente
           const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
           const avgEV = currentLegs.reduce((acc, l) => acc + l.expectedValue, 0) / numLegs;
-          const score = cumulativeProb * 100 + avgEV * 10;
+          const reusedCount = currentLegs.filter((l) => usedFixtureIds.has(l.fixtureId)).length;
+          const score = cumulativeProb * 100 + avgEV * 10 - (reusedCount * 30);
 
           if (score > bestScore) {
             bestScore = score;
@@ -2270,6 +2325,12 @@ export function generateSmartParlays(
         for (const pick of matchPicks) {
           // REGLA 1 (Anti-Monotonía Estricta): Categorías estrictamente diferentes para todas las patas
           if (usedCategories.has(pick.category)) {
+            continue;
+          }
+
+          // REGLA ANTI-REPETICIÓN: Jamás repetir la misma apuesta en diferentes boletos
+          const pickSig = `${pick.fixtureId}:::${pick.label}`;
+          if (usedPickSignatures.has(pickSig)) {
             continue;
           }
 
@@ -2321,6 +2382,9 @@ export function generateSmartParlays(
           const matchPicks = matchCandidatesMap.get(fixtureId) || [];
           for (const pick of matchPicks) {
             if (usedCategories.has(pick.category)) continue;
+            const pickSig = `${pick.fixtureId}:::${pick.label}`;
+            if (usedPickSignatures.has(pickSig)) continue;
+
             usedCategories.add(pick.category);
             currentLegs.push(pick);
             fallbackSearch(i + 1, currentLegs, usedCategories, Number((currentOdds * pick.odds).toFixed(2)));
@@ -2342,6 +2406,12 @@ export function generateSmartParlays(
     const totalOdds = Number(finalCombo.reduce((acc, l) => acc * l.odds, 1).toFixed(2));
     const hash = finalCombo.map((l) => `${l.fixtureId}_${l.category}`).sort().join('|');
     excludedSlipHashes.add(hash);
+
+    // Guardar firmas para asegurar que boletos subsiguientes no repitan las mismas apuestas
+    for (const leg of finalCombo) {
+      usedPickSignatures.add(`${leg.fixtureId}:::${leg.label}`);
+      usedFixtureIds.add(leg.fixtureId);
+    }
 
     return {
       id: `smart_parlay_${profile.toLowerCase()}_${todayStr.replace(/-/g, '')}_${Math.random().toString(36).substring(2, 7)}`,

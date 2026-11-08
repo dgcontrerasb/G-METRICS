@@ -4842,7 +4842,7 @@ function calculateMatchAnalysis(fixture) {
 }
 function extractMatchBettingMarketSuggestions(fixture, analysis) {
   const matchAnalysis = analysis || calculateMatchAnalysis(fixture);
-  const { dixonColes, goalsMarket, cornersMarket } = matchAnalysis;
+  const { dixonColes, goalsMarket, cornersMarket, refereeCards, shotsAndPlayers, halfGoals } = matchAnalysis;
   const homeName = fixture.homeTeam?.name || "Local";
   const awayName = fixture.awayTeam?.name || "Visitante";
   const INVALID_STANDALONE = /* @__PURE__ */ new Set([
@@ -4944,7 +4944,9 @@ function extractMatchBettingMarketSuggestions(fixture, analysis) {
   if (goalsMarket.bttsNo >= 54) {
     addCandidate("BTTS" /* BTTS */, `Ambos Marcan: No`, goalsMarket.bttsNo / 100, 0.042);
   }
-  if (cornersMarket.over85 >= 62) {
+  if (cornersMarket.over75 >= 70) {
+    addCandidate("TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */, `M\xE1s de 7.5 C\xF3rners`, cornersMarket.over75 / 100, 0.038);
+  } else if (cornersMarket.over85 >= 62) {
     addCandidate("TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */, `M\xE1s de 8.5 C\xF3rners`, cornersMarket.over85 / 100, 0.04);
   } else if (cornersMarket.over95 >= 54) {
     addCandidate("TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */, `M\xE1s de 9.5 C\xF3rners`, cornersMarket.over95 / 100, 0.045);
@@ -4960,6 +4962,47 @@ function extractMatchBettingMarketSuggestions(fixture, analysis) {
       addCandidate("DRAW_NO_BET" /* DRAW_NO_BET */, `Empate No V\xE1lido: ${homeShort}`, dnbHomeProb, 0.04);
     } else if (dnbAwayProb >= 0.58) {
       addCandidate("DRAW_NO_BET" /* DRAW_NO_BET */, `Empate No V\xE1lido: ${awayShort}`, dnbAwayProb, 0.04);
+    }
+  }
+  if (refereeCards) {
+    if (refereeCards.over35CardsProb >= 68) {
+      addCandidate("TOTAL_CARDS" /* TOTAL_CARDS */, `M\xE1s de 3.5 Tarjetas`, refereeCards.over35CardsProb / 100, 0.042);
+    } else if (refereeCards.under45CardsProb >= 68) {
+      addCandidate("TOTAL_CARDS" /* TOTAL_CARDS */, `Menos de 4.5 Tarjetas`, refereeCards.under45CardsProb / 100, 0.04);
+    } else if (refereeCards.over45CardsProb >= 58 && refereeCards.rigor === "Severo") {
+      addCandidate("TOTAL_CARDS" /* TOTAL_CARDS */, `M\xE1s de 4.5 Tarjetas`, refereeCards.over45CardsProb / 100, 0.048);
+    }
+  }
+  const isValidPlayerName = (name) => {
+    if (!name || typeof name !== "string") return false;
+    const clean = name.trim();
+    if (clean.length < 4 || clean.includes("#")) return false;
+    const lower = clean.toLowerCase();
+    if (lower.includes("local") || lower.includes("visitante") || lower.includes("equipo") || lower.includes("jugador")) return false;
+    return true;
+  };
+  if (shotsAndPlayers) {
+    if (isValidPlayerName(shotsAndPlayers.homeStar?.name) && (shotsAndPlayers.homeStar.expectedShotsOnTarget || 0) >= 1.15) {
+      const lambdaSOT = shotsAndPlayers.homeStar.expectedShotsOnTarget;
+      const probSOT = Math.round((1 - Math.exp(-lambdaSOT)) * 1e3) / 1e3;
+      if (probSOT >= 0.65) {
+        addCandidate("PLAYER_SHOTS_ON_TARGET" /* PLAYER_SHOTS_ON_TARGET */, `${shotsAndPlayers.homeStar.name}: M\xE1s de 0.5 Tiros a Puerta`, probSOT, 0.042);
+      }
+    }
+    if (isValidPlayerName(shotsAndPlayers.awayStar?.name) && (shotsAndPlayers.awayStar.expectedShotsOnTarget || 0) >= 1.15) {
+      const lambdaSOT = shotsAndPlayers.awayStar.expectedShotsOnTarget;
+      const probSOT = Math.round((1 - Math.exp(-lambdaSOT)) * 1e3) / 1e3;
+      if (probSOT >= 0.65) {
+        addCandidate("PLAYER_SHOTS_ON_TARGET" /* PLAYER_SHOTS_ON_TARGET */, `${shotsAndPlayers.awayStar.name}: M\xE1s de 0.5 Tiros a Puerta`, probSOT, 0.042);
+      }
+    }
+  }
+  if (halfGoals) {
+    const prob2ndHalfGoal = Math.round((1 - Math.exp(-halfGoals.expected2ndHalfGoals)) * 1e3) / 1e3;
+    if (prob2ndHalfGoal >= 0.72) {
+      addCandidate("HALF_WITH_MOST_GOALS" /* HALF_WITH_MOST_GOALS */, `2.\xAA Mitad: M\xE1s de 0.5 Goles`, prob2ndHalfGoal, 0.038);
+    } else if (halfGoals.secondHalfPercent >= 48) {
+      addCandidate("HALF_WITH_MOST_GOALS" /* HALF_WITH_MOST_GOALS */, `Mitad con M\xE1s Goles: 2.\xAA Mitad`, halfGoals.secondHalfPercent / 100, 0.045);
     }
   }
   return candidates;
@@ -4992,6 +5035,8 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
   if (distinctMatchIds.length < 2) return [];
   const todayStr = targetDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
   const generatedSlips = [];
+  const usedPickSignatures = /* @__PURE__ */ new Set();
+  const usedFixtureIds = /* @__PURE__ */ new Set();
   const findOptimalSlip = (profile, numLegs, minOdds, maxOdds, excludedSlipHashes) => {
     if (distinctMatchIds.length < numLegs) return null;
     let bestCombo = null;
@@ -5007,7 +5052,8 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
           if (excludedSlipHashes.has(hash2)) return;
           const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
           const avgEV = currentLegs.reduce((acc, l) => acc + l.expectedValue, 0) / numLegs;
-          const score = cumulativeProb * 100 + avgEV * 10;
+          const reusedCount = currentLegs.filter((l) => usedFixtureIds.has(l.fixtureId)).length;
+          const score = cumulativeProb * 100 + avgEV * 10 - reusedCount * 30;
           if (score > bestScore) {
             bestScore = score;
             bestCombo = [...currentLegs];
@@ -5021,6 +5067,10 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
         const matchPicks = matchCandidatesMap.get(fixtureId) || [];
         for (const pick of matchPicks) {
           if (usedCategories.has(pick.category)) {
+            continue;
+          }
+          const pickSig = `${pick.fixtureId}:::${pick.label}`;
+          if (usedPickSignatures.has(pickSig)) {
             continue;
           }
           const nextOdds = Number((currentOdds * pick.odds).toFixed(2));
@@ -5056,6 +5106,8 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
           const matchPicks = matchCandidatesMap.get(fixtureId) || [];
           for (const pick of matchPicks) {
             if (usedCategories.has(pick.category)) continue;
+            const pickSig = `${pick.fixtureId}:::${pick.label}`;
+            if (usedPickSignatures.has(pickSig)) continue;
             usedCategories.add(pick.category);
             currentLegs.push(pick);
             fallbackSearch(i + 1, currentLegs, usedCategories, Number((currentOdds * pick.odds).toFixed(2)));
@@ -5074,6 +5126,10 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
     const totalOdds = Number(finalCombo.reduce((acc, l) => acc * l.odds, 1).toFixed(2));
     const hash = finalCombo.map((l) => `${l.fixtureId}_${l.category}`).sort().join("|");
     excludedSlipHashes.add(hash);
+    for (const leg of finalCombo) {
+      usedPickSignatures.add(`${leg.fixtureId}:::${leg.label}`);
+      usedFixtureIds.add(leg.fixtureId);
+    }
     return {
       id: `smart_parlay_${profile.toLowerCase()}_${todayStr.replace(/-/g, "")}_${Math.random().toString(36).substring(2, 7)}`,
       date: todayStr,
@@ -9240,6 +9296,9 @@ function evaluateLegResult(leg, finishedMatch) {
       return "LOST";
     }
     case "TOTAL_CORNERS_MATCH": {
+      if (label.includes("7.5")) {
+        return totalCorners > 7.5 ? "WON" : "LOST";
+      }
       if (label.includes("8.5")) {
         return totalCorners > 8.5 ? "WON" : "LOST";
       }
@@ -9250,6 +9309,38 @@ function evaluateLegResult(leg, finishedMatch) {
         return label.includes("menos") ? totalCorners < 10.5 ? "WON" : "LOST" : totalCorners > 10.5 ? "WON" : "LOST";
       }
       return totalCorners > 8.5 ? "WON" : "LOST";
+    }
+    case "TOTAL_CARDS": {
+      const homeYellows = Number(finishedMatch.liveStats?.home?.yellowCards ?? 0);
+      const awayYellows = Number(finishedMatch.liveStats?.away?.yellowCards ?? 0);
+      const totalCards = homeYellows + awayYellows;
+      if (label.includes("3.5")) {
+        return label.includes("m\xE1s") || label.includes("over") ? totalCards > 3.5 ? "WON" : "LOST" : totalCards < 3.5 ? "WON" : "LOST";
+      }
+      if (label.includes("4.5")) {
+        return label.includes("m\xE1s") || label.includes("over") ? totalCards > 4.5 ? "WON" : "LOST" : totalCards < 4.5 ? "WON" : "LOST";
+      }
+      if (label.includes("5.5")) {
+        return label.includes("menos") ? totalCards < 5.5 ? "WON" : "LOST" : totalCards > 5.5 ? "WON" : "LOST";
+      }
+      return totalCards > 3.5 ? "WON" : "LOST";
+    }
+    case "PLAYER_SHOTS_ON_TARGET": {
+      return "PENDING";
+    }
+    case "HALF_WITH_MOST_GOALS": {
+      if (label.includes("2.\xAA mitad") || label.includes("2\xAA mitad") || label.includes("segunda mitad")) {
+        if (label.includes("0.5")) {
+          const events = Array.isArray(finishedMatch.events || finishedMatch.liveEvents) ? finishedMatch.events || finishedMatch.liveEvents : [];
+          const secondHalfGoals = events.filter((e) => e.type === "GOAL" && Number(e.minute) > 45).length;
+          if (secondHalfGoals > 0) return "WON";
+          if (finishedMatch.status === "FINISHED" || finishedMatch.statusShort === "FT") {
+            return "LOST";
+          }
+          return "PENDING";
+        }
+      }
+      return "PENDING";
     }
     case "DRAW_NO_BET": {
       if (homeGoals === awayGoals) {

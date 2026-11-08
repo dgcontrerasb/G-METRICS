@@ -4814,6 +4814,9 @@ function evaluateLegResult(leg: BettingMarketSuggestion, finishedMatch: any): 'W
     }
 
     case 'TOTAL_CORNERS_MATCH': {
+      if (label.includes('7.5')) {
+        return totalCorners > 7.5 ? 'WON' : 'LOST';
+      }
       if (label.includes('8.5')) {
         return totalCorners > 8.5 ? 'WON' : 'LOST';
       }
@@ -4824,6 +4827,42 @@ function evaluateLegResult(leg: BettingMarketSuggestion, finishedMatch: any): 'W
         return label.includes('menos') ? (totalCorners < 10.5 ? 'WON' : 'LOST') : (totalCorners > 10.5 ? 'WON' : 'LOST');
       }
       return totalCorners > 8.5 ? 'WON' : 'LOST';
+    }
+
+    case 'TOTAL_CARDS': {
+      const homeYellows = Number(finishedMatch.liveStats?.home?.yellowCards ?? 0);
+      const awayYellows = Number(finishedMatch.liveStats?.away?.yellowCards ?? 0);
+      const totalCards = homeYellows + awayYellows;
+      if (label.includes('3.5')) {
+        return label.includes('más') || label.includes('over') ? (totalCards > 3.5 ? 'WON' : 'LOST') : (totalCards < 3.5 ? 'WON' : 'LOST');
+      }
+      if (label.includes('4.5')) {
+        return label.includes('más') || label.includes('over') ? (totalCards > 4.5 ? 'WON' : 'LOST') : (totalCards < 4.5 ? 'WON' : 'LOST');
+      }
+      if (label.includes('5.5')) {
+        return label.includes('menos') ? (totalCards < 5.5 ? 'WON' : 'LOST') : (totalCards > 5.5 ? 'WON' : 'LOST');
+      }
+      return totalCards > 3.5 ? 'WON' : 'LOST';
+    }
+
+    case 'PLAYER_SHOTS_ON_TARGET': {
+      // Boxscore de tiros individuales de fútbol: si no está disponible en tiempo real, permanece PENDING hasta auditoría final
+      return 'PENDING';
+    }
+
+    case 'HALF_WITH_MOST_GOALS': {
+      if (label.includes('2.ª mitad') || label.includes('2ª mitad') || label.includes('segunda mitad')) {
+        if (label.includes('0.5')) {
+          const events = Array.isArray(finishedMatch.events || finishedMatch.liveEvents) ? (finishedMatch.events || finishedMatch.liveEvents) : [];
+          const secondHalfGoals = events.filter((e: any) => e.type === 'GOAL' && Number(e.minute) > 45).length;
+          if (secondHalfGoals > 0) return 'WON';
+          if (finishedMatch.status === 'FINISHED' || finishedMatch.statusShort === 'FT') {
+            return 'LOST';
+          }
+          return 'PENDING';
+        }
+      }
+      return 'PENDING';
     }
 
     case 'DRAW_NO_BET': {
