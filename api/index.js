@@ -370,7 +370,7 @@ function securityHeadersMiddleware(req, res, next) {
   res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self' https: data: blob: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'self' https://*.google.com https://*.aistudio.google.com https://*.run.app;"
+    "default-src 'self' https: data: blob: 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https: http: ws: wss: data: blob:; frame-ancestors 'self' https://*.google.com https://*.aistudio.google.com https://*.run.app;"
   );
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
