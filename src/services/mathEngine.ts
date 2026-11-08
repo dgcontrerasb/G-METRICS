@@ -1441,16 +1441,22 @@ export function generateGMetricsSingleValueBets(
       );
   const sourceFixtures = activeFixtures.length > 0 ? activeFixtures : fixtures;
 
-  const singles: GMetricsSingleBetSuggestion[] = [];
+  interface CandidateSingle extends GMetricsSingleBetSuggestion {
+    categoryFamily: 'OUTCOME' | 'GOALS' | 'BTTS' | 'CORNERS';
+  }
+
+  const singles: CandidateSingle[] = [];
 
   for (const fixture of sourceFixtures) {
     const analysis = calculateMatchAnalysis(fixture);
     const { homeTeam, awayTeam, league } = fixture;
-    const matchTitle = `${homeTeam.shortName || homeTeam.name} vs ${awayTeam.shortName || awayTeam.name}`;
+    const homeName = homeTeam.shortName || homeTeam.name;
+    const awayName = awayTeam.shortName || awayTeam.name;
+    const matchTitle = `${homeName} vs ${awayName}`;
 
     // 1. EVALUAR SENCILLAS DE ALTA CUOTA (+EV) (Cuota 1.80 a 2.65, Prob 52%-68%)
-    // A) Moneyline Local de Cuota Atractiva (pHomeWin entre 54% y 68%)
-    if (analysis.dixonColes.pHomeWin >= 54 && analysis.dixonColes.pHomeWin <= 68) {
+    // A) Moneyline Local (1X2 Local)
+    if (analysis.dixonColes.pHomeWin >= 52 && analysis.dixonColes.pHomeWin <= 70) {
       const prob = analysis.dixonColes.pHomeWin;
       const fairMinOdd = Number((100 / prob).toFixed(2));
       const estimatedBookieOdd = Number(Math.max(1.85, fairMinOdd * 1.12).toFixed(2));
@@ -1461,27 +1467,124 @@ export function generateGMetricsSingleValueBets(
         fixtureId: fixture.id,
         sport: 'SOCCER',
         matchTitle,
-        homeTeamName: homeTeam.shortName || homeTeam.name,
-        awayTeamName: awayTeam.shortName || awayTeam.name,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
         leagueName: league.name,
         matchDate: fixture.date,
         matchTime: fixture.time,
         marketKey: '1X2_HOME',
-        selectionLabel: `Gana ${homeTeam.shortName || homeTeam.name}`,
+        selectionLabel: `Gana ${homeName}`,
         categoryLabel: 'Resultado Final (1X2)',
+        categoryFamily: 'OUTCOME',
         betType: 'HIGH_VALUE',
         probability: prob,
         fairMinOdd,
         estimatedBookieOdd,
         valueEdgePct,
         recommendedKellyStakePct: 2.5,
-        reasoning: `El modelo Dixon-Coles proyecta ${prob}% de victoria local con superioridad en xG (${analysis.dixonColes.lambdaHome.toFixed(2)} vs ${analysis.dixonColes.lambdaAway.toFixed(2)}), superando ampliamente la probabilidad implícita de la cuota (${(100 / estimatedBookieOdd).toFixed(1)}%).`,
+        reasoning: `El modelo Dixon-Coles proyecta ${prob}% de victoria local con superioridad en xG (${analysis.dixonColes.lambdaHome.toFixed(2)} vs ${analysis.dixonColes.lambdaAway.toFixed(2)}), superando la probabilidad implícita de la cuota (${(100 / estimatedBookieOdd).toFixed(1)}%).`,
         tacticalFactor: analysis.verdict.keyTacticalFactor || 'Ventaja de localía y solidez táctica'
       });
     }
 
-    // B) Ambos Equipos Marcan: SÍ (BTTS Yes) con alta cuota
-    if (analysis.goalsMarket.bttsYes >= 58 && analysis.goalsMarket.bttsYes <= 70 && analysis.dixonColes.totalXG >= 2.65) {
+    // B) Moneyline Visitante (1X2 Visitante)
+    if (analysis.dixonColes.pAwayWin >= 48 && analysis.dixonColes.pAwayWin <= 66) {
+      const prob = analysis.dixonColes.pAwayWin;
+      const fairMinOdd = Number((100 / prob).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.90, fairMinOdd * 1.14).toFixed(2));
+      const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
+
+      singles.push({
+        id: `${fixture.id}_single_1x2_away`,
+        fixtureId: fixture.id,
+        sport: 'SOCCER',
+        matchTitle,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
+        leagueName: league.name,
+        matchDate: fixture.date,
+        matchTime: fixture.time,
+        marketKey: '1X2_AWAY',
+        selectionLabel: `Gana ${awayName}`,
+        categoryLabel: 'Resultado Final (1X2)',
+        categoryFamily: 'OUTCOME',
+        betType: 'HIGH_VALUE',
+        probability: prob,
+        fairMinOdd,
+        estimatedBookieOdd,
+        valueEdgePct,
+        recommendedKellyStakePct: 2.0,
+        reasoning: `El modelo proyecta ${prob}% de triunfo visitante con xG proyectado superior (${analysis.dixonColes.lambdaAway.toFixed(2)} vs ${analysis.dixonColes.lambdaHome.toFixed(2)}), encontrando desajuste en el mercado.`,
+        tacticalFactor: 'Superioridad técnica visitante y transiciones rápidas'
+      });
+    }
+
+    // C) Empate Apuesta No Válida (DNB)
+    const dnbDenom = analysis.dixonColes.pHomeWin + analysis.dixonColes.pAwayWin;
+    if (dnbDenom > 0) {
+      const dnbHome = (analysis.dixonColes.pHomeWin / dnbDenom) * 100;
+      const dnbAway = (analysis.dixonColes.pAwayWin / dnbDenom) * 100;
+      if (dnbHome >= 60 && dnbHome <= 74) {
+        const prob = Number(dnbHome.toFixed(1));
+        const fairMinOdd = Number((100 / prob).toFixed(2));
+        const estimatedBookieOdd = Number(Math.max(1.80, fairMinOdd * 1.10).toFixed(2));
+        const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
+        singles.push({
+          id: `${fixture.id}_single_dnb_home`,
+          fixtureId: fixture.id,
+          sport: 'SOCCER',
+          matchTitle,
+          homeTeamName: homeName,
+          awayTeamName: awayName,
+          leagueName: league.name,
+          matchDate: fixture.date,
+          matchTime: fixture.time,
+          marketKey: 'DNB_HOME',
+          selectionLabel: `Empate No Válido: ${homeName}`,
+          categoryLabel: 'Empate No Válido (DNB)',
+          categoryFamily: 'OUTCOME',
+          betType: 'HIGH_VALUE',
+          probability: prob,
+          fairMinOdd,
+          estimatedBookieOdd,
+          valueEdgePct,
+          recommendedKellyStakePct: 3.0,
+          reasoning: `Protección total de reembolso en caso de igualdad, con ${prob}% de probabilidad favorable en tiempo reglamentario.`,
+          tacticalFactor: 'Bloque defensivo sólido con bajo riesgo de derrota'
+        });
+      } else if (dnbAway >= 60 && dnbAway <= 74) {
+        const prob = Number(dnbAway.toFixed(1));
+        const fairMinOdd = Number((100 / prob).toFixed(2));
+        const estimatedBookieOdd = Number(Math.max(1.82, fairMinOdd * 1.10).toFixed(2));
+        const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
+        singles.push({
+          id: `${fixture.id}_single_dnb_away`,
+          fixtureId: fixture.id,
+          sport: 'SOCCER',
+          matchTitle,
+          homeTeamName: homeName,
+          awayTeamName: awayName,
+          leagueName: league.name,
+          matchDate: fixture.date,
+          matchTime: fixture.time,
+          marketKey: 'DNB_AWAY',
+          selectionLabel: `Empate No Válido: ${awayName}`,
+          categoryLabel: 'Empate No Válido (DNB)',
+          categoryFamily: 'OUTCOME',
+          betType: 'HIGH_VALUE',
+          probability: prob,
+          fairMinOdd,
+          estimatedBookieOdd,
+          valueEdgePct,
+          recommendedKellyStakePct: 2.5,
+          reasoning: `Apuesta protegida con devolución de capital ante empate, respaldada por ${prob}% de cobertura estadística visitante.`,
+          tacticalFactor: 'Eficacia en contragolpe visitante'
+        });
+      }
+    }
+
+    // D) Ambos Equipos Marcan: SÍ (BTTS Yes) con alta cuota
+    if (analysis.goalsMarket.bttsYes >= 56 && analysis.goalsMarket.bttsYes <= 72 && analysis.dixonColes.totalXG >= 2.50) {
       const prob = analysis.goalsMarket.bttsYes;
       const fairMinOdd = Number((100 / prob).toFixed(2));
       const estimatedBookieOdd = Number(Math.max(1.82, fairMinOdd * 1.10).toFixed(2));
@@ -1492,27 +1595,60 @@ export function generateGMetricsSingleValueBets(
         fixtureId: fixture.id,
         sport: 'SOCCER',
         matchTitle,
-        homeTeamName: homeTeam.shortName || homeTeam.name,
-        awayTeamName: awayTeam.shortName || awayTeam.name,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
         leagueName: league.name,
         matchDate: fixture.date,
         matchTime: fixture.time,
         marketKey: 'BTTS_YES',
         selectionLabel: 'Ambos Equipos Anotan: SÍ',
         categoryLabel: 'Ambos Marcan (BTTS)',
+        categoryFamily: 'BTTS',
         betType: 'HIGH_VALUE',
         probability: prob,
         fairMinOdd,
         estimatedBookieOdd,
         valueEdgePct,
         recommendedKellyStakePct: 3.0,
-        reasoning: `Ambas defensas conceden oportunidades y el xG global supera 2.65 goles. La probabilidad real calculada (${prob}%) supera la cuota promedio del mercado.`,
+        reasoning: `Ambas defensas conceden oportunidades y el xG global supera 2.50 goles. La probabilidad real calculada (${prob}%) supera la cuota promedio del mercado.`,
         tacticalFactor: 'Ritmo ofensivo bidireccional y debilidad en transiciones defensivas'
       });
     }
 
-    // C) Más de 2.5 Goles con Cuota Alta (Over 2.5)
-    if (analysis.goalsMarket.over25 >= 58 && analysis.goalsMarket.over25 <= 72 && analysis.dixonColes.totalXG >= 2.80) {
+    // E) Ambos Equipos Marcan: NO (BTTS No)
+    if (analysis.goalsMarket.bttsNo >= 58 && analysis.goalsMarket.bttsNo <= 74 && analysis.dixonColes.totalXG <= 2.20) {
+      const prob = analysis.goalsMarket.bttsNo;
+      const fairMinOdd = Number((100 / prob).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.80, fairMinOdd * 1.10).toFixed(2));
+      const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
+
+      singles.push({
+        id: `${fixture.id}_single_btts_no`,
+        fixtureId: fixture.id,
+        sport: 'SOCCER',
+        matchTitle,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
+        leagueName: league.name,
+        matchDate: fixture.date,
+        matchTime: fixture.time,
+        marketKey: 'BTTS_NO',
+        selectionLabel: 'Ambos Equipos Anotan: NO',
+        categoryLabel: 'Ambos Marcan (BTTS)',
+        categoryFamily: 'BTTS',
+        betType: 'HIGH_VALUE',
+        probability: prob,
+        fairMinOdd,
+        estimatedBookieOdd,
+        valueEdgePct,
+        recommendedKellyStakePct: 2.5,
+        reasoning: `Al menos un equipo cuenta con alta probabilidad de portería a cero y el xG proyectado conjunto es bajo (${analysis.dixonColes.totalXG.toFixed(2)}).`,
+        tacticalFactor: 'Duelo táctico cerrado con predominio defensivo'
+      });
+    }
+
+    // F) Más de 2.5 Goles con Cuota Alta (Over 2.5)
+    if (analysis.goalsMarket.over25 >= 56 && analysis.goalsMarket.over25 <= 74 && analysis.dixonColes.totalXG >= 2.65) {
       const prob = analysis.goalsMarket.over25;
       const fairMinOdd = Number((100 / prob).toFixed(2));
       const estimatedBookieOdd = Number(Math.max(1.88, fairMinOdd * 1.11).toFixed(2));
@@ -1523,14 +1659,15 @@ export function generateGMetricsSingleValueBets(
         fixtureId: fixture.id,
         sport: 'SOCCER',
         matchTitle,
-        homeTeamName: homeTeam.shortName || homeTeam.name,
-        awayTeamName: awayTeam.shortName || awayTeam.name,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
         leagueName: league.name,
         matchDate: fixture.date,
         matchTime: fixture.time,
         marketKey: 'OVER_25',
         selectionLabel: 'Más de 2.5 Goles',
         categoryLabel: 'Goles Totales (Over/Under)',
+        categoryFamily: 'GOALS',
         betType: 'HIGH_VALUE',
         probability: prob,
         fairMinOdd,
@@ -1542,7 +1679,39 @@ export function generateGMetricsSingleValueBets(
       });
     }
 
-    // D) Córners Más de 9.5 con Cuota Alta
+    // G) Menos de 2.5 Goles con Cuota Atractiva (Under 2.5)
+    if (analysis.goalsMarket.under25 >= 56 && analysis.goalsMarket.under25 <= 74 && analysis.dixonColes.totalXG <= 2.25) {
+      const prob = analysis.goalsMarket.under25;
+      const fairMinOdd = Number((100 / prob).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.80, fairMinOdd * 1.10).toFixed(2));
+      const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
+
+      singles.push({
+        id: `${fixture.id}_single_under25`,
+        fixtureId: fixture.id,
+        sport: 'SOCCER',
+        matchTitle,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
+        leagueName: league.name,
+        matchDate: fixture.date,
+        matchTime: fixture.time,
+        marketKey: 'UNDER_25',
+        selectionLabel: 'Menos de 2.5 Goles',
+        categoryLabel: 'Goles Totales (Over/Under)',
+        categoryFamily: 'GOALS',
+        betType: 'HIGH_VALUE',
+        probability: prob,
+        fairMinOdd,
+        estimatedBookieOdd,
+        valueEdgePct,
+        recommendedKellyStakePct: 2.5,
+        reasoning: `Generación de xG combinada reducida (${analysis.dixonColes.totalXG.toFixed(2)}) con planteamiento conservador de ambos entrenadores.`,
+        tacticalFactor: 'Ritmo bajo de posesión y repliegue intensivo'
+      });
+    }
+
+    // H) Córners Más de 9.5 con Cuota Alta
     if (analysis.cornersMarket.over95 >= 58 && analysis.cornersMarket.expectedTotalCorners >= 10.2) {
       const prob = analysis.cornersMarket.over95;
       const fairMinOdd = Number((100 / prob).toFixed(2));
@@ -1554,14 +1723,15 @@ export function generateGMetricsSingleValueBets(
         fixtureId: fixture.id,
         sport: 'SOCCER',
         matchTitle,
-        homeTeamName: homeTeam.shortName || homeTeam.name,
-        awayTeamName: awayTeam.shortName || awayTeam.name,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
         leagueName: league.name,
         matchDate: fixture.date,
         matchTime: fixture.time,
         marketKey: 'CORNERS_OVER_95',
         selectionLabel: 'Más de 9.5 Córners',
         categoryLabel: 'Tiros de Esquina',
+        categoryFamily: 'CORNERS',
         betType: 'HIGH_VALUE',
         probability: prob,
         fairMinOdd,
@@ -1575,7 +1745,7 @@ export function generateGMetricsSingleValueBets(
 
     // 2. EVALUAR SENCILLAS 'BANKER' / BASE SEGURA (Cuota 1.35 a 1.72, Probabilidad 74% a 88%+)
     // A) Doble Oportunidad 1X (Gana Local o Empata)
-    if (analysis.goalsMarket.doubleChance1X >= 76) {
+    if (analysis.goalsMarket.doubleChance1X >= 74) {
       const prob = analysis.goalsMarket.doubleChance1X;
       const fairMinOdd = Number((100 / prob).toFixed(2));
       const estimatedBookieOdd = Number(Math.max(1.35, fairMinOdd * 1.05).toFixed(2));
@@ -1586,14 +1756,15 @@ export function generateGMetricsSingleValueBets(
         fixtureId: fixture.id,
         sport: 'SOCCER',
         matchTitle,
-        homeTeamName: homeTeam.shortName || homeTeam.name,
-        awayTeamName: awayTeam.shortName || awayTeam.name,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
         leagueName: league.name,
         matchDate: fixture.date,
         matchTime: fixture.time,
         marketKey: 'DOUBLE_CHANCE_1X',
-        selectionLabel: `1X (${homeTeam.shortName || homeTeam.name} o Empate)`,
+        selectionLabel: `1X (${homeName} o Empate)`,
         categoryLabel: 'Doble Oportunidad',
+        categoryFamily: 'OUTCOME',
         betType: 'BANKER',
         probability: prob,
         fairMinOdd,
@@ -1605,8 +1776,40 @@ export function generateGMetricsSingleValueBets(
       });
     }
 
-    // B) Más de 1.5 Goles (Banker de Goles)
-    if (analysis.goalsMarket.over15 >= 78) {
+    // B) Doble Oportunidad X2 (Empata o Gana Visitante)
+    if (analysis.goalsMarket.doubleChanceX2 >= 74) {
+      const prob = analysis.goalsMarket.doubleChanceX2;
+      const fairMinOdd = Number((100 / prob).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.36, fairMinOdd * 1.05).toFixed(2));
+      const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
+
+      singles.push({
+        id: `${fixture.id}_single_banker_x2`,
+        fixtureId: fixture.id,
+        sport: 'SOCCER',
+        matchTitle,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
+        leagueName: league.name,
+        matchDate: fixture.date,
+        matchTime: fixture.time,
+        marketKey: 'DOUBLE_CHANCE_X2',
+        selectionLabel: `X2 (Empate o ${awayName})`,
+        categoryLabel: 'Doble Oportunidad',
+        categoryFamily: 'OUTCOME',
+        betType: 'BANKER',
+        probability: prob,
+        fairMinOdd,
+        estimatedBookieOdd,
+        valueEdgePct,
+        recommendedKellyStakePct: 4.5,
+        reasoning: `Solidez del conjunto visitante con ${prob}% de probabilidades de sumar puntos.`,
+        tacticalFactor: 'Rendimiento visitante superior ante local con dificultades ofensivas'
+      });
+    }
+
+    // C) Más de 1.5 Goles (Banker de Goles)
+    if (analysis.goalsMarket.over15 >= 76) {
       const prob = analysis.goalsMarket.over15;
       const fairMinOdd = Number((100 / prob).toFixed(2));
       const estimatedBookieOdd = Number(Math.max(1.33, fairMinOdd * 1.04).toFixed(2));
@@ -1617,14 +1820,15 @@ export function generateGMetricsSingleValueBets(
         fixtureId: fixture.id,
         sport: 'SOCCER',
         matchTitle,
-        homeTeamName: homeTeam.shortName || homeTeam.name,
-        awayTeamName: awayTeam.shortName || awayTeam.name,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
         leagueName: league.name,
         matchDate: fixture.date,
         matchTime: fixture.time,
         marketKey: 'OVER_15',
         selectionLabel: 'Más de 1.5 Goles',
         categoryLabel: 'Goles Seguros',
+        categoryFamily: 'GOALS',
         betType: 'BANKER',
         probability: prob,
         fairMinOdd,
@@ -1636,7 +1840,40 @@ export function generateGMetricsSingleValueBets(
       });
     }
 
-    // C) Córners Seguros (+7.5 u +8.5)
+    // D) Menos de 3.5 Goles (Banker Conservador de Goles)
+    const probUnder35 = analysis.goalsMarket.under35 || (100 - (analysis.goalsMarket.over35 || 25));
+    if (probUnder35 >= 78 && analysis.dixonColes.totalXG <= 2.90) {
+      const prob = Number(probUnder35.toFixed(1));
+      const fairMinOdd = Number((100 / prob).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.34, fairMinOdd * 1.04).toFixed(2));
+      const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
+
+      singles.push({
+        id: `${fixture.id}_single_banker_under35`,
+        fixtureId: fixture.id,
+        sport: 'SOCCER',
+        matchTitle,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
+        leagueName: league.name,
+        matchDate: fixture.date,
+        matchTime: fixture.time,
+        marketKey: 'UNDER_35',
+        selectionLabel: 'Menos de 3.5 Goles',
+        categoryLabel: 'Goles Seguros',
+        categoryFamily: 'GOALS',
+        betType: 'BANKER',
+        probability: prob,
+        fairMinOdd,
+        estimatedBookieOdd,
+        valueEdgePct,
+        recommendedKellyStakePct: 4.5,
+        reasoning: `Margen elástico de hasta 3 goles totales con ${prob}% de acierto proyectado por el motor Poisson.`,
+        tacticalFactor: 'Control posicional y disciplina en transiciones defensivas'
+      });
+    }
+
+    // E) Córners Seguros (+7.5 u +8.5)
     if (analysis.cornersMarket.over75 >= 80) {
       const prob = analysis.cornersMarket.over75;
       const fairMinOdd = Number((100 / prob).toFixed(2));
@@ -1648,14 +1885,15 @@ export function generateGMetricsSingleValueBets(
         fixtureId: fixture.id,
         sport: 'SOCCER',
         matchTitle,
-        homeTeamName: homeTeam.shortName || homeTeam.name,
-        awayTeamName: awayTeam.shortName || awayTeam.name,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
         leagueName: league.name,
         matchDate: fixture.date,
         matchTime: fixture.time,
         marketKey: 'CORNERS_OVER_75',
         selectionLabel: 'Más de 7.5 Córners',
         categoryLabel: 'Córners Conservadores',
+        categoryFamily: 'CORNERS',
         betType: 'BANKER',
         probability: prob,
         fairMinOdd,
@@ -1668,32 +1906,97 @@ export function generateGMetricsSingleValueBets(
     }
   }
 
-  // 1. Curar y clasificar el Top N de Alta Cuota (+EV) por Valor Compuesto Matemático (Edge * Probabilidad)
-  const highValuePool = singles
-    .filter((s) => s.betType === 'HIGH_VALUE')
-    .map((s) => ({
+  // =========================================================================
+  // CURACIÓN CUANTITATIVA DIVERSIFICADA (ANTI-MONOTONÍA Y CROSS-MATCH BALANCEADO)
+  // =========================================================================
+  const selectDiversePicks = (
+    pool: CandidateSingle[],
+    limit: number,
+    betType: 'HIGH_VALUE' | 'BANKER'
+  ): GMetricsSingleBetSuggestion[] => {
+    const scoredPool = pool.map((s) => ({
       ...s,
-      qualityScore: Number((s.valueEdgePct * (s.probability / 100)).toFixed(2))
-    }))
-    .sort(
-      (a, b) =>
-        (b.qualityScore || 0) - (a.qualityScore || 0) ||
-        b.probability - a.probability ||
-        b.valueEdgePct - a.valueEdgePct
-    )
-    .slice(0, Math.max(1, limitPerCategory))
-    .map((s, idx) => ({ ...s, rank: idx + 1 }));
+      qualityScore:
+        betType === 'HIGH_VALUE'
+          ? Number((s.valueEdgePct * (s.probability / 100)).toFixed(2))
+          : Number((s.probability + s.valueEdgePct * 0.1).toFixed(1))
+    })).sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0) || b.probability - a.probability);
 
-  // 2. Curar y clasificar el Top N de Bankers Seguros por Mayor Probabilidad Real y Solidez
-  const bankerPool = singles
-    .filter((s) => s.betType === 'BANKER')
-    .map((s) => ({
-      ...s,
-      qualityScore: Number((s.probability + s.valueEdgePct * 0.1).toFixed(1))
-    }))
-    .sort((a, b) => b.probability - a.probability || b.valueEdgePct - a.valueEdgePct)
-    .slice(0, Math.max(1, limitPerCategory))
-    .map((s, idx) => ({ ...s, rank: idx + 1 }));
+    const distinctFixtures = new Set(scoredPool.map((s) => s.fixtureId)).size;
+    // REGLA 1: Diversidad de Partidos
+    // Si hay suficientes partidos disponibles (>= limit), estrictamente 1 pick por partido.
+    // Si la jornada cuenta con pocos partidos, permitir máximo ceil(limit / distinctFixtures).
+    const maxPerFixture = distinctFixtures >= limit ? 1 : Math.max(1, Math.ceil(limit / Math.max(1, distinctFixtures)));
+
+    // REGLA 2: Anti-Monotonía de Mercados (Freno estricto a la saturación de córners)
+    // En Top 5: máx 1 selección de córners. En Top 10: máx 2 selecciones de córners.
+    const maxCorners = limit <= 5 ? 1 : 2;
+    // Para otras familias (OUTCOME, GOALS, BTTS): máx 2 en Top 5, máx 4 en Top 10.
+    const maxOtherFamily = limit <= 5 ? 2 : 4;
+
+    const selected: CandidateSingle[] = [];
+    const fixtureCounts = new Map<string, number>();
+    const familyCounts = new Map<string, number>();
+
+    const canSelect = (cand: CandidateSingle, strictFixture: boolean, strictFamily: boolean): boolean => {
+      const fCount = fixtureCounts.get(cand.fixtureId) || 0;
+      if (strictFixture && fCount >= maxPerFixture) return false;
+
+      const famCount = familyCounts.get(cand.categoryFamily) || 0;
+      if (strictFamily) {
+        if (cand.categoryFamily === 'CORNERS' && famCount >= maxCorners) return false;
+        if (cand.categoryFamily !== 'CORNERS' && famCount >= maxOtherFamily) return false;
+      }
+      return true;
+    };
+
+    // Pase 1: Criterio estricto de máxima diversidad (partidos diferentes y familias variadas)
+    for (const cand of scoredPool) {
+      if (selected.length >= limit) break;
+      if (canSelect(cand, true, true)) {
+        selected.push(cand);
+        fixtureCounts.set(cand.fixtureId, (fixtureCounts.get(cand.fixtureId) || 0) + 1);
+        familyCounts.set(cand.categoryFamily, (familyCounts.get(cand.categoryFamily) || 0) + 1);
+      }
+    }
+
+    // Pase 2: Si aún faltan cupos por escasez de partidos en la jornada, relajar familias manteniendo el freno a córners
+    if (selected.length < limit) {
+      for (const cand of scoredPool) {
+        if (selected.length >= limit) break;
+        if (selected.some((s) => s.id === cand.id)) continue;
+        if (cand.categoryFamily === 'CORNERS' && (familyCounts.get('CORNERS') || 0) >= maxCorners) continue;
+        if (canSelect(cand, false, true)) {
+          selected.push(cand);
+          fixtureCounts.set(cand.fixtureId, (fixtureCounts.get(cand.fixtureId) || 0) + 1);
+          familyCounts.set(cand.categoryFamily, (familyCounts.get(cand.categoryFamily) || 0) + 1);
+        }
+      }
+    }
+
+    // Pase 3: Relleno final en jornadas ultrarreducidas sin duplicar picks idénticos
+    if (selected.length < limit) {
+      for (const cand of scoredPool) {
+        if (selected.length >= limit) break;
+        if (selected.some((s) => s.id === cand.id)) continue;
+        selected.push(cand);
+      }
+    }
+
+    return selected.map((s, idx) => ({ ...s, rank: idx + 1 }));
+  };
+
+  const highValuePool = selectDiversePicks(
+    singles.filter((s) => s.betType === 'HIGH_VALUE'),
+    Math.max(1, limitPerCategory),
+    'HIGH_VALUE'
+  );
+
+  const bankerPool = selectDiversePicks(
+    singles.filter((s) => s.betType === 'BANKER'),
+    Math.max(1, limitPerCategory),
+    'BANKER'
+  );
 
   return [...highValuePool, ...bankerPool];
 }
@@ -1898,8 +2201,8 @@ export function generateSmartParlays(
         const matchPicks = matchCandidatesMap.get(fixtureId) || [];
 
         for (const pick of matchPicks) {
-          // REGLA 1 (Anti-Monotonía en 3+ eventos): Categorías estrictamente diferentes
-          if (numLegs >= 3 && usedCategories.has(pick.category)) {
+          // REGLA 1 (Anti-Monotonía Estricta): Categorías estrictamente diferentes para todas las patas
+          if (usedCategories.has(pick.category)) {
             continue;
           }
 
@@ -1946,7 +2249,7 @@ export function generateSmartParlays(
           const fixtureId = distinctMatchIds[i];
           const matchPicks = matchCandidatesMap.get(fixtureId) || [];
           for (const pick of matchPicks) {
-            if (numLegs >= 3 && usedCategories.has(pick.category)) continue;
+            if (usedCategories.has(pick.category)) continue;
             usedCategories.add(pick.category);
             currentLegs.push(pick);
             fallbackSearch(i + 1, currentLegs, usedCategories, Number((currentOdds * pick.odds).toFixed(2)));

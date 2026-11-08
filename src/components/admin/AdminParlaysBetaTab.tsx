@@ -13,7 +13,10 @@ import {
   Calendar,
   Filter,
   Image as ImageIcon,
-  FileText
+  FileText,
+  Sparkles,
+  Trash2,
+  CheckCircle2
 } from 'lucide-react';
 import { MatchFixture, ParlayPick, GMetricsSingleBetSuggestion, SmartParlaySlip } from '../../types';
 import {
@@ -84,6 +87,9 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
   const [smartSlips, setSmartSlips] = useState<SmartParlaySlip[]>([]);
   const [metrics, setMetrics] = useState<ParlayMetricsData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isGeneratingToday, setIsGeneratingToday] = useState<boolean>(false);
+  const [isPurgingSeeds, setIsPurgingSeeds] = useState<boolean>(false);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [isExportingMedia, setIsExportingMedia] = useState<boolean>(false);
@@ -124,6 +130,56 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     return headers;
   }, []);
 
+  const handleGenerateTodayParlays = async () => {
+    setIsGeneratingToday(true);
+    setErrorMsg(null);
+    setSuccessNotice(null);
+    try {
+      const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(getColombiaDateString(0))?.fixtures || [];
+      const res = await fetch('/api/parlays/generate-day', {
+        method: 'POST',
+        headers: getAdminAuthHeaders(true),
+        body: JSON.stringify({ fixtures: effective, force: true })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (Array.isArray(data.slips)) {
+          setSmartSlips(data.slips);
+        }
+        setSuccessNotice(data.message || 'Parlays reales generados y certificados para hoy.');
+        setTimeout(() => setSuccessNotice(null), 4500);
+        await fetchSmartParlaysAndMetrics();
+      } else {
+        setErrorMsg(data.error || 'No se pudieron generar los parlays para los partidos de hoy.');
+      }
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Error al generar parlays del día.');
+    } finally {
+      setIsGeneratingToday(false);
+    }
+  };
+
+  const handlePurgeSeeds = async () => {
+    setIsPurgingSeeds(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch('/api/parlays/purge-seeds', {
+        method: 'POST',
+        headers: getAdminAuthHeaders(true)
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessNotice(data.message || 'Semillas eliminadas correctamente.');
+        setTimeout(() => setSuccessNotice(null), 3500);
+        await fetchSmartParlaysAndMetrics();
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setIsPurgingSeeds(false);
+    }
+  };
+
   const fetchSmartParlaysAndMetrics = useCallback(async () => {
     setIsLoading(true);
     setErrorMsg(null);
@@ -135,7 +191,28 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         const data = await res.json();
         if (data.success) {
           if (Array.isArray(data.slips)) {
-            setSmartSlips(data.slips);
+            // Filtrar en cliente cualquier semilla residual
+            const cleanSlips = data.slips.filter((s: SmartParlaySlip) => s && !s.id.includes('seed'));
+            setSmartSlips(cleanSlips);
+
+            // Auto-generación si no existen boletos para hoy y hay partidos disponibles
+            const todayStr = getColombiaDateString(0);
+            const hasToday = cleanSlips.some((s: SmartParlaySlip) => s.date === todayStr);
+            const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(todayStr)?.fixtures || [];
+            if (!hasToday && effective.length >= 2) {
+              fetch('/api/parlays/generate-day', {
+                method: 'POST',
+                headers: getAdminAuthHeaders(true),
+                body: JSON.stringify({ fixtures: effective, force: false })
+              })
+                .then((r) => r.json())
+                .then((genData) => {
+                  if (genData.success && Array.isArray(genData.slips)) {
+                    setSmartSlips(genData.slips.filter((s: SmartParlaySlip) => s && !s.id.includes('seed')));
+                  }
+                })
+                .catch(() => {});
+            }
           }
           if (data.metrics) {
             setMetrics(data.metrics);
@@ -469,7 +546,31 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto flex-wrap">
+          {smartSlips.some((s) => s.id.includes('seed')) && (
+            <button
+              type="button"
+              onClick={handlePurgeSeeds}
+              disabled={isPurgingSeeds}
+              className="px-2.5 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-800 text-rose-200 text-xs font-mono font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              title="Purgar boletos semilla simulados residuales"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>{isPurgingSeeds ? 'Purgando...' : 'Limpiar Semillas'}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleGenerateTodayParlays}
+            disabled={isGeneratingToday || effectiveFixtures.length < 2}
+            className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            title="Generar y certificar los 3 parlays cuantitativos del día con los partidos reales de hoy"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${isGeneratingToday ? 'animate-spin' : ''}`} />
+            <span>{isGeneratingToday ? 'Generando...' : '⚡ Generar Parlays de Hoy'}</span>
+          </button>
+
           <button
             type="button"
             onClick={handleExportExcel}
@@ -492,6 +593,13 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
           </button>
         </div>
       </div>
+
+      {successNotice && (
+        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{successNotice}</span>
+        </div>
+      )}
 
       {errorMsg && (
         <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
@@ -979,6 +1087,17 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* Badge Informativo de Diversidad y Cero Repetición */}
+          <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] font-mono text-amber-900">
+            <span className="flex items-center gap-1.5 font-semibold">
+              <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              Filtro Anti-Monotonía Activo · Máx 1 pick por partido · Máx 1 pick de córners en Top 5
+            </span>
+            <span className="text-[10px] text-amber-700/80 hidden sm:inline">
+              100% Datos Cuantitativos Reales
+            </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

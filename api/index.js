@@ -3804,7 +3804,7 @@ function generateSmartParlays(availableMatches, targetDate) {
         const fixtureId = distinctMatchIds[i];
         const matchPicks = matchCandidatesMap.get(fixtureId) || [];
         for (const pick of matchPicks) {
-          if (numLegs >= 3 && usedCategories.has(pick.category)) {
+          if (usedCategories.has(pick.category)) {
             continue;
           }
           const nextOdds = Number((currentOdds * pick.odds).toFixed(2));
@@ -3836,7 +3836,7 @@ function generateSmartParlays(availableMatches, targetDate) {
           const fixtureId = distinctMatchIds[i];
           const matchPicks = matchCandidatesMap.get(fixtureId) || [];
           for (const pick of matchPicks) {
-            if (numLegs >= 3 && usedCategories.has(pick.category)) continue;
+            if (usedCategories.has(pick.category)) continue;
             usedCategories.add(pick.category);
             currentLegs.push(pick);
             fallbackSearch(i + 1, currentLegs, usedCategories, Number((currentOdds * pick.odds).toFixed(2)));
@@ -7906,153 +7906,39 @@ app.post("/api/admin/parlays-beta", async (req, res) => {
 });
 var SMART_PARLAYS_STORAGE_KEY = "__gmetrics_smart_parlays_v1__";
 async function loadSmartParlaysStore() {
+  let loadedStore = null;
   const cached = getCacheItem(SMART_PARLAYS_STORAGE_KEY);
   if (cached && cached.data && Array.isArray(cached.data.slips)) {
-    return cached.data;
-  }
-  if (isSupabaseConfigured()) {
+    loadedStore = cached.data;
+  } else if (isSupabaseConfigured()) {
     try {
       const remote = await getSupabaseKvCache(SMART_PARLAYS_STORAGE_KEY);
       if (remote && remote.data && Array.isArray(remote.data.slips)) {
-        setCacheItem(SMART_PARLAYS_STORAGE_KEY, remote.data);
-        return remote.data;
+        loadedStore = remote.data;
       }
     } catch {
     }
   }
+  if (loadedStore) {
+    const cleanSlips = loadedStore.slips.filter(
+      (s) => s && s.id && !s.id.includes("seed") && !s.id.includes("_seed_") && !s.legs?.some((l) => String(l.fixtureId || "").startsWith("seed_"))
+    );
+    if (cleanSlips.length !== loadedStore.slips.length) {
+      loadedStore.slips = cleanSlips;
+      loadedStore.updatedAt = Date.now();
+      setCacheItem(SMART_PARLAYS_STORAGE_KEY, loadedStore);
+      if (isSupabaseConfigured()) {
+        setSupabaseKvCache(SMART_PARLAYS_STORAGE_KEY, loadedStore).catch(() => {
+        });
+      }
+    } else {
+      setCacheItem(SMART_PARLAYS_STORAGE_KEY, loadedStore);
+    }
+    return loadedStore;
+  }
   const initialStore = {
     updatedAt: Date.now(),
-    slips: [
-      {
-        id: "smart_parlay_conservative_seed_01",
-        date: getColombiaDateStr(-3),
-        profile: "CONSERVATIVE",
-        legs: [
-          {
-            fixtureId: "seed_f1",
-            matchName: "Real Madrid vs Celta de Vigo",
-            leagueName: "LaLiga EA Sports",
-            category: "DOUBLE_CHANCE",
-            label: "Real Madrid o Empate (1X)",
-            odds: 1.34,
-            impliedProb: 0.81,
-            expectedValue: 0.085,
-            availableInColombianBooks: true
-          },
-          {
-            fixtureId: "seed_f2",
-            matchName: "Arsenal vs Everton",
-            leagueName: "Premier League",
-            category: "TOTAL_GOALS",
-            label: "M\xE1s de 1.5 Goles",
-            odds: 1.48,
-            impliedProb: 0.74,
-            expectedValue: 0.095,
-            availableInColombianBooks: true
-          }
-        ],
-        totalOdds: 1.98,
-        status: "WON",
-        evaluationDate: getColombiaDateStr(-3) + "T23:00:00.000Z"
-      },
-      {
-        id: "smart_parlay_balanced_seed_02",
-        date: getColombiaDateStr(-2),
-        profile: "BALANCED",
-        legs: [
-          {
-            fixtureId: "seed_f3",
-            matchName: "Liverpool vs Bournemouth",
-            leagueName: "Premier League",
-            category: "1X2",
-            label: "Gana Liverpool (1)",
-            odds: 1.45,
-            impliedProb: 0.76,
-            expectedValue: 0.102,
-            availableInColombianBooks: true
-          },
-          {
-            fixtureId: "seed_f4",
-            matchName: "Barcelona vs Sevilla",
-            leagueName: "LaLiga EA Sports",
-            category: "TOTAL_CORNERS_MATCH",
-            label: "M\xE1s de 8.5 C\xF3rners Totales",
-            odds: 1.44,
-            impliedProb: 0.75,
-            expectedValue: 0.08,
-            availableInColombianBooks: true
-          },
-          {
-            fixtureId: "seed_f5",
-            matchName: "Bayern Munich vs Hoffenheim",
-            leagueName: "Bundesliga",
-            category: "BTTS",
-            label: "Ambos Marcan: S\xED",
-            odds: 1.55,
-            impliedProb: 0.71,
-            expectedValue: 0.101,
-            availableInColombianBooks: true
-          }
-        ],
-        totalOdds: 3.24,
-        status: "WON",
-        evaluationDate: getColombiaDateStr(-2) + "T23:00:00.000Z"
-      },
-      {
-        id: "smart_parlay_high_seed_03",
-        date: getColombiaDateStr(-1),
-        profile: "HIGH_ODDS",
-        legs: [
-          {
-            fixtureId: "seed_f6",
-            matchName: "Inter Milan vs Torino",
-            leagueName: "Serie A",
-            category: "DOUBLE_CHANCE",
-            label: "Inter o Empate (1X)",
-            odds: 1.36,
-            impliedProb: 0.79,
-            expectedValue: 0.074,
-            availableInColombianBooks: true
-          },
-          {
-            fixtureId: "seed_f7",
-            matchName: "PSG vs Rennes",
-            leagueName: "Ligue 1",
-            category: "TOTAL_GOALS",
-            label: "M\xE1s de 2.5 Goles",
-            odds: 1.62,
-            impliedProb: 0.67,
-            expectedValue: 0.085,
-            availableInColombianBooks: true
-          },
-          {
-            fixtureId: "seed_f8",
-            matchName: "Atletico Madrid vs Valencia",
-            leagueName: "LaLiga EA Sports",
-            category: "DRAW_NO_BET",
-            label: "Empate No V\xE1lido: Atletico",
-            odds: 1.42,
-            impliedProb: 0.76,
-            expectedValue: 0.079,
-            availableInColombianBooks: true
-          },
-          {
-            fixtureId: "seed_f9",
-            matchName: "Aston Villa vs Wolves",
-            leagueName: "Premier League",
-            category: "BTTS",
-            label: "Ambos Marcan: S\xED",
-            odds: 1.72,
-            impliedProb: 0.63,
-            expectedValue: 0.084,
-            availableInColombianBooks: true
-          }
-        ],
-        totalOdds: 5.38,
-        status: "WON",
-        evaluationDate: getColombiaDateStr(-1) + "T23:00:00.000Z"
-      }
-    ]
+    slips: []
   };
   setCacheItem(SMART_PARLAYS_STORAGE_KEY, initialStore);
   if (isSupabaseConfigured()) {
@@ -8219,7 +8105,7 @@ app.get("/api/parlays/metrics", dataRateLimitMiddleware, async (req, res) => {
     const todayStr = getColombiaDateStr(0);
     const todaySlips = store.slips.filter((s) => s.date === todayStr);
     if (todaySlips.length === 0) {
-      const sharedUpcoming = getCacheItem(`upcoming_v8_${todayStr}`);
+      const sharedUpcoming = getCacheItem(`upcoming_v10_${todayStr}`) || getCacheItem(`upcoming_v9_${todayStr}`) || getCacheItem(`upcoming_v8_${todayStr}`);
       const availableMatches = sharedUpcoming?.data || [];
       if (availableMatches.length >= 2) {
         const generated = generateSmartParlays(availableMatches, todayStr);
@@ -8266,6 +8152,89 @@ app.get("/api/parlays/metrics", dataRateLimitMiddleware, async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "Error al consultar m\xE9tricas de parlays inteligentes",
+      details: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+app.post("/api/parlays/generate-day", express.json({ limit: "1mb" }), async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado. M\xF3dulo Beta exclusivo para Administrador." });
+  }
+  clearAuthFailures(req);
+  try {
+    const store = await loadSmartParlaysStore();
+    const todayStr = getColombiaDateStr(0);
+    const { fixtures: incomingFixtures, force = true } = req.body || {};
+    let candidateFixtures = [];
+    if (Array.isArray(incomingFixtures) && incomingFixtures.length >= 2) {
+      candidateFixtures = incomingFixtures;
+    } else {
+      const sharedUpcoming = getCacheItem(`upcoming_v10_${todayStr}`) || getCacheItem(`upcoming_v9_${todayStr}`);
+      candidateFixtures = sharedUpcoming?.data || [];
+    }
+    if (candidateFixtures.length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: "Se requieren al menos 2 partidos activos con datos anal\xEDticos para generar parlays reales."
+      });
+    }
+    const generated = generateSmartParlays(candidateFixtures, todayStr);
+    if (generated.length === 0) {
+      return res.status(422).json({
+        success: false,
+        error: "No se encontraron combinaciones que cumplan los filtros cuantitativos de cuota y +EV para los partidos de hoy."
+      });
+    }
+    if (force) {
+      store.slips = store.slips.filter((s) => s.date !== todayStr);
+    }
+    store.slips.unshift(...generated);
+    await saveSmartParlaysStore(store);
+    return res.json({
+      success: true,
+      message: `Se generaron exitosamente ${generated.length} parlays reales para la jornada de hoy (${todayStr}).`,
+      generatedCount: generated.length,
+      slips: store.slips
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: "Error al generar parlays del d\xEDa",
+      details: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+app.post("/api/parlays/purge-seeds", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado." });
+  }
+  clearAuthFailures(req);
+  try {
+    const store = await loadSmartParlaysStore();
+    const beforeCount = store.slips.length;
+    store.slips = store.slips.filter(
+      (s) => s && s.id && !s.id.includes("seed") && !s.id.includes("_seed_") && !s.legs?.some((l) => String(l.fixtureId || "").startsWith("seed_"))
+    );
+    const purgedCount = beforeCount - store.slips.length;
+    await saveSmartParlaysStore(store);
+    return res.json({
+      success: true,
+      purgedCount,
+      remainingCount: store.slips.length,
+      message: `Se purgaron ${purgedCount} boletos semilla residuales exitosamente.`
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: "Error al purgar boletos semilla",
       details: err instanceof Error ? err.message : String(err)
     });
   }
