@@ -748,6 +748,7 @@ export interface SmartParlaySlip {
   totalOdds: number;
   status: 'PENDING' | 'WON' | 'LOST' | 'VOID';
   evaluationDate?: string;
+  engineVersion?: string;
 }
 
 

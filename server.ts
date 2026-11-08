@@ -35,7 +35,7 @@ import {
   loadPermanentFeedbackList
 } from './src/services/supabaseServer';
 import { SmartParlaySlip, BettingMarketSuggestion } from './src/types';
-import { generateSmartParlays } from './src/services/mathEngine';
+import { generateSmartParlays, PARLAY_ENGINE_VERSION } from './src/services/mathEngine';
 import { fetchWithStrictTimeout } from './src/services/resilientFetch';
 import {
   securityHeadersMiddleware,
@@ -4686,16 +4686,27 @@ interface SmartParlaysStore {
   slips: SmartParlaySlip[];
 }
 
-async function loadSmartParlaysStore(): Promise<SmartParlaysStore> {
+let smartParlaysLastRemoteSync = 0;
+
+async function loadSmartParlaysStore(forceRemote = false): Promise<SmartParlaysStore> {
   let loadedStore: SmartParlaysStore | null = null;
   const cached = getCacheItem<SmartParlaysStore>(SMART_PARLAYS_STORAGE_KEY);
   if (cached && cached.data && Array.isArray(cached.data.slips)) {
     loadedStore = cached.data;
-  } else if (isSupabaseConfigured()) {
+  }
+
+  // Sincronización con Supabase (máx. 1 lectura / 30s por instancia, o forzada al generar) para evitar
+  // que una instancia serverless con memoria vieja sirva boletos obsoletos.
+  const needsRemote =
+    isSupabaseConfigured() && (!loadedStore || forceRemote || Date.now() - smartParlaysLastRemoteSync > 30000);
+  if (needsRemote) {
     try {
       const remote = await getSupabaseKvCache<SmartParlaysStore>(SMART_PARLAYS_STORAGE_KEY);
+      smartParlaysLastRemoteSync = Date.now();
       if (remote && remote.data && Array.isArray(remote.data.slips)) {
-        loadedStore = remote.data;
+        if (!loadedStore || Number(remote.data.updatedAt || 0) >= Number(loadedStore.updatedAt || 0)) {
+          loadedStore = remote.data;
+        }
       }
     } catch {
       // fallback to memory
@@ -4704,13 +4715,15 @@ async function loadSmartParlaysStore(): Promise<SmartParlaysStore> {
 
   if (loadedStore) {
     // FILTRADO ESTRICTO ANTI-MOCK: Remover permanentemente boletos semillas hardcodeados
+    // y boletos PENDIENTES generados por versiones anteriores del motor (los resueltos se conservan).
     const cleanSlips = loadedStore.slips.filter(
       (s) =>
         s &&
         s.id &&
         !s.id.includes('seed') &&
         !s.id.includes('_seed_') &&
-        !s.legs?.some((l: any) => String(l.fixtureId || '').startsWith('seed_'))
+        !s.legs?.some((l: any) => String(l.fixtureId || '').startsWith('seed_')) &&
+        !(s.status === 'PENDING' && s.engineVersion !== PARLAY_ENGINE_VERSION)
     );
     if (cleanSlips.length !== loadedStore.slips.length) {
       loadedStore.slips = cleanSlips;
@@ -5121,7 +5134,7 @@ app.post('/api/parlays/generate-day', async (req, res) => {
   clearAuthFailures(req);
 
   try {
-    const store = await loadSmartParlaysStore();
+    const store = await loadSmartParlaysStore(true);
     const todayStr = getColombiaDateStr(0);
     const { fixtures: incomingFixtures, nbaFixtures: incomingNBAFixtures, force = true } = req.body || {};
 
@@ -5147,7 +5160,23 @@ app.post('/api/parlays/generate-day', async (req, res) => {
       });
     }
 
-    const generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures);
+    // Con force=true se aplica variación ligera para que regenerar produzca combinaciones nuevas
+    let generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures, force ? 1 : 0);
+    // Validación final: ninguna apuesta idéntica (partido + pronóstico) puede repetirse entre boletos
+    {
+      const seenPicks = new Set<string>();
+      const hasDup = generated.some((s) =>
+        s.legs.some((l) => {
+          const k = `${l.matchName}:::${l.label}`;
+          if (seenPicks.has(k)) return true;
+          seenPicks.add(k);
+          return false;
+        })
+      );
+      if (hasDup) {
+        generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures, 1);
+      }
+    }
     if (generated.length === 0) {
       return res.status(422).json({
         success: false,
@@ -5165,7 +5194,7 @@ app.post('/api/parlays/generate-day', async (req, res) => {
 
     return res.json({
       success: true,
-      message: `Se generaron exitosamente ${generated.length} parlays reales para la jornada de hoy (${todayStr}).`,
+      message: `Se generaron exitosamente ${generated.length} parlays reales para la jornada de hoy (${todayStr}) · motor ${PARLAY_ENGINE_VERSION}.`,
       generatedCount: generated.length,
       slips: store.slips
     });

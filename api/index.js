@@ -5013,7 +5013,8 @@ function extractMatchBettingMarketSuggestions(fixture, analysis) {
   }
   return candidates;
 }
-function generateSmartParlays(availableMatches, targetDate, availableNBAMatches) {
+var PARLAY_ENGINE_VERSION = "v6-dedupe-variety";
+function generateSmartParlays(availableMatches, targetDate, availableNBAMatches, variety = 0) {
   const hasMatches = Boolean(availableMatches && availableMatches.length > 0);
   const hasNBAMatches = Boolean(availableNBAMatches && availableNBAMatches.length > 0);
   if (!hasMatches && !hasNBAMatches) return [];
@@ -5078,7 +5079,7 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
           const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
           const avgEV = currentLegs.reduce((acc, l) => acc + l.expectedValue, 0) / numLegs;
           const reusedCount = currentLegs.filter((l) => usedFixtureIds.has(l.fixtureId)).length;
-          const score = cumulativeProb * 100 + avgEV * 10 - reusedCount * 30;
+          const score = cumulativeProb * 100 + avgEV * 10 - reusedCount * 30 + (variety > 0 ? Math.random() * variety * 12 : 0);
           if (score > bestScore) {
             bestScore = score;
             bestCombo = [...currentLegs];
@@ -5163,7 +5164,8 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches)
       profile,
       legs: finalCombo,
       totalOdds,
-      status: "PENDING"
+      status: "PENDING",
+      engineVersion: PARLAY_ENGINE_VERSION
     };
   };
   const usedHashes = /* @__PURE__ */ new Set();
@@ -9215,23 +9217,29 @@ app.post("/api/admin/parlays-beta", async (req, res) => {
   }
 });
 var SMART_PARLAYS_STORAGE_KEY = "__gmetrics_smart_parlays_v3__";
-async function loadSmartParlaysStore() {
+var smartParlaysLastRemoteSync = 0;
+async function loadSmartParlaysStore(forceRemote = false) {
   let loadedStore = null;
   const cached = getCacheItem(SMART_PARLAYS_STORAGE_KEY);
   if (cached && cached.data && Array.isArray(cached.data.slips)) {
     loadedStore = cached.data;
-  } else if (isSupabaseConfigured()) {
+  }
+  const needsRemote = isSupabaseConfigured() && (!loadedStore || forceRemote || Date.now() - smartParlaysLastRemoteSync > 3e4);
+  if (needsRemote) {
     try {
       const remote = await getSupabaseKvCache(SMART_PARLAYS_STORAGE_KEY);
+      smartParlaysLastRemoteSync = Date.now();
       if (remote && remote.data && Array.isArray(remote.data.slips)) {
-        loadedStore = remote.data;
+        if (!loadedStore || Number(remote.data.updatedAt || 0) >= Number(loadedStore.updatedAt || 0)) {
+          loadedStore = remote.data;
+        }
       }
     } catch {
     }
   }
   if (loadedStore) {
     const cleanSlips = loadedStore.slips.filter(
-      (s) => s && s.id && !s.id.includes("seed") && !s.id.includes("_seed_") && !s.legs?.some((l) => String(l.fixtureId || "").startsWith("seed_"))
+      (s) => s && s.id && !s.id.includes("seed") && !s.id.includes("_seed_") && !s.legs?.some((l) => String(l.fixtureId || "").startsWith("seed_")) && !(s.status === "PENDING" && s.engineVersion !== PARLAY_ENGINE_VERSION)
     );
     if (cleanSlips.length !== loadedStore.slips.length) {
       loadedStore.slips = cleanSlips;
@@ -9589,7 +9597,7 @@ app.post("/api/parlays/generate-day", async (req, res) => {
   }
   clearAuthFailures(req);
   try {
-    const store = await loadSmartParlaysStore();
+    const store = await loadSmartParlaysStore(true);
     const todayStr = getColombiaDateStr(0);
     const { fixtures: incomingFixtures, nbaFixtures: incomingNBAFixtures, force = true } = req.body || {};
     let candidateFixtures = [];
@@ -9609,7 +9617,21 @@ app.post("/api/parlays/generate-day", async (req, res) => {
         error: "Se requieren al menos 2 partidos activos con datos anal\xEDticos para generar parlays reales."
       });
     }
-    const generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures);
+    let generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures, force ? 1 : 0);
+    {
+      const seenPicks = /* @__PURE__ */ new Set();
+      const hasDup = generated.some(
+        (s) => s.legs.some((l) => {
+          const k = `${l.matchName}:::${l.label}`;
+          if (seenPicks.has(k)) return true;
+          seenPicks.add(k);
+          return false;
+        })
+      );
+      if (hasDup) {
+        generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures, 1);
+      }
+    }
     if (generated.length === 0) {
       return res.status(422).json({
         success: false,
@@ -9623,7 +9645,7 @@ app.post("/api/parlays/generate-day", async (req, res) => {
     await saveSmartParlaysStore(store);
     return res.json({
       success: true,
-      message: `Se generaron exitosamente ${generated.length} parlays reales para la jornada de hoy (${todayStr}).`,
+      message: `Se generaron exitosamente ${generated.length} parlays reales para la jornada de hoy (${todayStr}) \xB7 motor ${PARLAY_ENGINE_VERSION}.`,
       generatedCount: generated.length,
       slips: store.slips
     });

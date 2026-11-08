@@ -2227,13 +2227,21 @@ export function extractMatchBettingMarketSuggestions(
 }
 
 /**
+ * Versión del motor de parlays. Los boletos PENDIENTES generados con otra versión se purgan
+ * automáticamente (los ya resueltos WON/LOST se conservan para no alterar la medición de eficacia).
+ */
+export const PARLAY_ENGINE_VERSION = 'v6-dedupe-variety';
+
+/**
  * Generador Cuantitativo de Parlays Inteligentes Diversificados
  * Aplica REGLA 1 (Anti-Monotonía), REGLA 2 (Cross-Match), REGLA 3 (Límites por Perfil) y REGLA 4 (+EV >= 1.30).
+ * `variety` (0-1) añade una variación ligera al puntaje para que "Generar de nuevo" produzca combinaciones distintas.
  */
 export function generateSmartParlays(
   availableMatches: MatchFixture[],
   targetDate?: string,
-  availableNBAMatches?: NBAMatchFixture[]
+  availableNBAMatches?: NBAMatchFixture[],
+  variety: number = 0
 ): SmartParlaySlip[] {
   const hasMatches = Boolean(availableMatches && availableMatches.length > 0);
   const hasNBAMatches = Boolean(availableNBAMatches && availableNBAMatches.length > 0);
@@ -2344,7 +2352,7 @@ export function generateSmartParlays(
           const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
           const avgEV = currentLegs.reduce((acc, l) => acc + l.expectedValue, 0) / numLegs;
           const reusedCount = currentLegs.filter((l) => usedFixtureIds.has(l.fixtureId)).length;
-          const score = cumulativeProb * 100 + avgEV * 10 - (reusedCount * 30);
+          const score = cumulativeProb * 100 + avgEV * 10 - (reusedCount * 30) + (variety > 0 ? Math.random() * variety * 12 : 0);
 
           if (score > bestScore) {
             bestScore = score;
@@ -2460,7 +2468,8 @@ export function generateSmartParlays(
       profile,
       legs: finalCombo,
       totalOdds,
-      status: 'PENDING'
+      status: 'PENDING',
+      engineVersion: PARLAY_ENGINE_VERSION
     };
   };
 

@@ -20,7 +20,8 @@ import {
 import { MatchFixture, NBAMatchFixture, ParlayPick, GMetricsSingleBetSuggestion, SmartParlaySlip, BettingMarketSuggestion } from '../../types';
 import {
   generateGMetricsSingleValueBets,
-  generateSmartParlays
+  generateSmartParlays,
+  PARLAY_ENGINE_VERSION
 } from '../../services/mathEngine';
 import { getLocalUpcomingCache, getColombiaDateString } from '../../services/apiService';
 import { useParlay } from '../../context/ParlayContext';
@@ -71,15 +72,20 @@ function getSpanishMonthLabel(monthKey: string): string {
   return `${monthName} ${yearStr}`;
 }
 
-const LOCAL_SMART_SLIPS_KEY = 'gmetrics_smart_parlays_slips_v3';
+const LOCAL_SMART_SLIPS_KEY = 'gmetrics_smart_parlays_slips_v4';
 
 function getStoredSmartSlips(): SmartParlaySlip[] {
   try {
+    // Limpia la caché local de versiones anteriores (boletos con apuestas repetidas)
+    localStorage.removeItem('gmetrics_smart_parlays_slips_v3');
     const raw = localStorage.getItem(LOCAL_SMART_SLIPS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed.filter((s: SmartParlaySlip) => s && !s.id.includes('seed'));
+        return parsed.filter(
+          (s: SmartParlaySlip) =>
+            s && !s.id.includes('seed') && !(s.status === 'PENDING' && s.engineVersion !== PARLAY_ENGINE_VERSION)
+        );
       }
     }
   } catch {
@@ -290,7 +296,7 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         // Fallback local garantizado si el backend no pudo persistir
         try {
           const todayStr = getColombiaDateString(0);
-          const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBA);
+          const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBA, 1);
           if (localGenerated.length > 0) {
             const updated = [...localGenerated, ...smartSlips.filter((s) => s.date !== todayStr)];
             setSmartSlips(updated);
@@ -309,7 +315,7 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
       try {
         const todayStr = getColombiaDateString(0);
         const effective = fixtures && fixtures.length > 0 ? fixtures : getLocalUpcomingCache(todayStr)?.fixtures || [];
-        const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBAFixtures);
+        const localGenerated = generateSmartParlays(effective, todayStr, effectiveNBAFixtures, 1);
         if (localGenerated.length > 0) {
           const updated = [...localGenerated, ...smartSlips.filter((s) => s.date !== todayStr)];
           setSmartSlips(updated);
