@@ -35,7 +35,7 @@ import {
   loadPermanentFeedbackList
 } from './src/services/supabaseServer';
 import { SmartParlaySlip, BettingMarketSuggestion } from './src/types';
-import { generateSmartParlays, PARLAY_ENGINE_VERSION } from './src/services/mathEngine';
+import { generateSmartParlays, PARLAY_ENGINE_VERSION, getCanonicalPickSignature } from './src/services/mathEngine';
 import { fetchWithStrictTimeout } from './src/services/resilientFetch';
 import {
   securityHeadersMiddleware,
@@ -5162,20 +5162,19 @@ app.post('/api/parlays/generate-day', async (req, res) => {
 
     // Con force=true se aplica variación ligera para que regenerar produzca combinaciones nuevas
     let generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures, force ? 1 : 0);
-    // Validación final: ninguna apuesta idéntica (partido + pronóstico) puede repetirse entre boletos
+
+    // Validación final estricta de cero duplicados cruzados
     {
       const seenPicks = new Set<string>();
-      const hasDup = generated.some((s) =>
-        s.legs.some((l) => {
-          const k = `${l.matchName}:::${l.label}`;
-          if (seenPicks.has(k)) return true;
-          seenPicks.add(k);
+      generated = generated.filter((slip) => {
+        const hasDup = slip.legs.some((l) => {
+          const sig = getCanonicalPickSignature(l.matchName, l.label);
+          if (seenPicks.has(sig)) return true;
+          seenPicks.add(sig);
           return false;
-        })
-      );
-      if (hasDup) {
-        generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures, 1);
-      }
+        });
+        return !hasDup;
+      });
     }
     if (generated.length === 0) {
       return res.status(422).json({

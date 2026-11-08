@@ -2227,10 +2227,68 @@ export function extractMatchBettingMarketSuggestions(
 }
 
 /**
+ * Normalizador riguroso de nombres de equipos deportivos (Fútbol y Baloncesto).
+ * Remueve sufijos, tipos de entidad (FC, FK, SK, CF, CD...), prefijos genéricos, mascottes
+ * y maneja caracteres especiales como ø -> o, æ -> ae, ß -> ss, ð -> d, þ -> th.
+ */
+const SPORT_NOISE_TOKENS = new Set([
+  'fc', 'fk', 'sk', 'sc', 'cf', 'cd', 'ca', 'cs', 'cp', 'bk', 'if', 'ik', 'ff', 'afc', 'bsc', 'ksc', 'tsv', 'vfb', 'vfl', 'sv', 'rb', 'ac', 'as', 'ss', 'us',
+  'club', 'deportivo', 'atletico', 'atlético', 'sporting', 'real', 'de', 'del', 'la', 'las', 'los', 'el', 'the', 'al', 'and', 'y',
+  'women', 'femenil', 'fem', 'w', 'lady', 'ladies', 'men', 'masculino', 'm', 'bear', 'bears', 'sooner', 'sooners', 'team'
+]);
+
+export function normalizeSportTeamName(name?: string): string {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[\u00f8\u00d8]/g, 'o') // ø, Ø -> o
+    .replace(/[\u00e6\u00c6]/g, 'ae') // æ, Æ -> ae
+    .replace(/[\u00df]/g, 'ss') // ß -> ss
+    .replace(/[\u00f0\u00d0]/g, 'd') // ð, Ð -> d
+    .replace(/[\u00fe\u00de]/g, 'th') // þ, Þ -> th
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .map((t) => (t.endsWith('s') && t.length > 4 ? t.slice(0, -1) : t))
+    .filter((t) => t && !SPORT_NOISE_TOKENS.has(t))
+    .join(' ')
+    .trim();
+}
+
+export function getCanonicalMatchKey(home?: string, away?: string): string {
+  const h = normalizeSportTeamName(home);
+  const a = normalizeSportTeamName(away);
+  return `${h}|${a}`;
+}
+
+export function normalizeBetLabel(label?: string): string {
+  return String(label || '')
+    .toLowerCase()
+    .replace(/[\u00f8\u00d8]/g, 'o')
+    .replace(/[\u00e6\u00c6]/g, 'ae')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, ' ')
+    .split(/\s+/)
+    .join(' ')
+    .trim();
+}
+
+/**
+ * Obtiene la firma canónica universal de una apuesta (Partido Canónico + Pronóstico Canónico).
+ * Independiente de si el ID proviene de ESPN, API-Football o mocks.
+ */
+export function getCanonicalPickSignature(matchName: string, label: string): string {
+  const parts = matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
+  const mKey = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(matchName);
+  return `${mKey}:::${normalizeBetLabel(label)}`;
+}
+
+/**
  * Versión del motor de parlays. Los boletos PENDIENTES generados con otra versión se purgan
  * automáticamente (los ya resueltos WON/LOST se conservan para no alterar la medición de eficacia).
  */
-export const PARLAY_ENGINE_VERSION = 'v6-dedupe-variety';
+export const PARLAY_ENGINE_VERSION = 'v7-zero-dupes';
 
 /**
  * Generador Cuantitativo de Parlays Inteligentes Diversificados
@@ -2247,75 +2305,52 @@ export function generateSmartParlays(
   const hasNBAMatches = Boolean(availableNBAMatches && availableNBAMatches.length > 0);
   if (!hasMatches && !hasNBAMatches) return [];
 
-  // Clave canónica del partido: independiente del ID de la fuente, de acentos, mayúsculas y sufijos (FC, FK, SK...)
-  const NOISE_TOKENS = new Set(['fc', 'fk', 'sk', 'sc', 'cf', 'cd', 'ca', 'bk', 'if', 'ik', 'afc', 'club', 'de', 'the', 'women', 'femenil', 'w']);
-  const canonicalTeam = (name?: string): string =>
-    String(name || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter((t) => t && !NOISE_TOKENS.has(t))
-      .join(' ')
-      .trim();
-  const canonicalMatchKey = (m: { homeTeam?: { name?: string }; awayTeam?: { name?: string } }): string =>
-    `${canonicalTeam(m.homeTeam?.name)}|${canonicalTeam(m.awayTeam?.name)}`;
+  // 1. Indexar todas las sugerencias agrupadas por Clave Canónica del Partido
+  // Esto elimina de raíz duplicados de un mismo partido con IDs diferentes (ESPN vs API-Football)
+  const matchCandidatesMap = new Map<
+    string,
+    { fixture: MatchFixture | NBAMatchFixture; suggestions: BettingMarketSuggestion[] }
+  >();
 
-  const dedupeByMatch = <T extends { id: any; homeTeam?: { name?: string }; awayTeam?: { name?: string } }>(list: T[]): T[] => {
-    const seenKeys = new Set<string>();
-    const seenIds = new Set<string>();
-    const out: T[] = [];
-    for (const m of list) {
-      const key = canonicalMatchKey(m);
-      const id = String(m.id);
-      if (seenKeys.has(key) || seenIds.has(id)) continue;
-      seenKeys.add(key);
-      seenIds.add(id);
-      out.push(m);
-    }
-    return out;
-  };
-
-  // Filtrar partidos de fútbol activos o válidos para el boleto (sin partidos duplicados con IDs distintos)
-  const eligibleMatches = dedupeByMatch(
-    (availableMatches || []).filter(
-      (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam) && m.status !== 'CANCELLED' && m.status !== 'POSTPONED'
-    )
-  );
-
-  // Filtrar partidos de baloncesto activos o válidos para el boleto (sin duplicados)
-  const eligibleNBAMatches = dedupeByMatch(
-    (availableNBAMatches || []).filter((m) => Boolean(m && m.id && m.homeTeam && m.awayTeam))
-  );
-
-  if (eligibleMatches.length + eligibleNBAMatches.length < 2) return [];
-
-  // 1. Extraer todas las sugerencias por partido (Fútbol + NBA)
-  const matchCandidatesMap = new Map<string, BettingMarketSuggestion[]>();
-  for (const match of eligibleMatches) {
-    const suggestions = extractMatchBettingMarketSuggestions(match);
-    if (suggestions.length > 0) {
-      matchCandidatesMap.set(match.id, suggestions);
+  // Procesar partidos de fútbol válidos
+  for (const match of (availableMatches || [])) {
+    if (!match || !match.id || !match.homeTeam?.name || !match.awayTeam?.name) continue;
+    if (match.status === 'CANCELLED' || match.status === 'POSTPONED') continue;
+    const cKey = getCanonicalMatchKey(match.homeTeam.name, match.awayTeam.name);
+    if (!cKey || cKey === '|') continue;
+    if (!matchCandidatesMap.has(cKey)) {
+      const suggestions = extractMatchBettingMarketSuggestions(match);
+      if (suggestions.length > 0) {
+        matchCandidatesMap.set(cKey, { fixture: match, suggestions });
+      }
     }
   }
 
-  for (const nbaMatch of eligibleNBAMatches) {
-    const nbaSuggestions = extractNBABettingMarketSuggestions(nbaMatch);
-    if (nbaSuggestions.length > 0) {
-      matchCandidatesMap.set(nbaMatch.id, nbaSuggestions);
+  // Procesar partidos de baloncesto válidos
+  for (const nbaMatch of (availableNBAMatches || [])) {
+    if (!nbaMatch || !nbaMatch.id || !nbaMatch.homeTeam?.name || !nbaMatch.awayTeam?.name) continue;
+    const cKey = getCanonicalMatchKey(nbaMatch.homeTeam.name, nbaMatch.awayTeam.name);
+    if (!cKey || cKey === '|') continue;
+    if (!matchCandidatesMap.has(cKey)) {
+      const nbaSuggestions = extractNBABettingMarketSuggestions(nbaMatch);
+      if (nbaSuggestions.length > 0) {
+        matchCandidatesMap.set(cKey, { fixture: nbaMatch, suggestions: nbaSuggestions });
+      }
     }
   }
 
-  const distinctMatchIds = Array.from(matchCandidatesMap.keys());
-  if (distinctMatchIds.length < 2) return [];
+  const distinctMatchKeys = Array.from(matchCandidatesMap.keys());
+  if (distinctMatchKeys.length < 2) return [];
 
   const todayStr = targetDate || new Date().toISOString().split('T')[0];
   const generatedSlips: SmartParlaySlip[] = [];
 
-  // Registro global para evitar repetir la misma apuesta en diferentes boletos y priorizar partidos distintos
-  const usedPickSignatures = new Set<string>();
-  const usedFixtureIds = new Set<string>();
+  // Registro global de selecciones y categorías ya utilizadas en boletos previos
+  // REGLA DE ORO: Ninguna selección idéntica (partido + pronóstico) se puede repetir en diferentes boletos.
+  // Si un partido se reutiliza, DEBE ser con una categoría / apuesta diferente.
+  const globalUsedPickSignatures = new Set<string>();
+  const globalUsedMatchKeys = new Set<string>();
+  const globalMatchUsedCategories = new Map<string, Set<string>>();
 
   // Helper de búsqueda combinatoria
   const findOptimalSlip = (
@@ -2325,7 +2360,7 @@ export function generateSmartParlays(
     maxOdds: number,
     excludedSlipHashes: Set<string>
   ): SmartParlaySlip | null => {
-    if (distinctMatchIds.length < numLegs) return null;
+    if (distinctMatchKeys.length < numLegs) return null;
 
     let bestCombo: BettingMarketSuggestion[] | null = null;
     let bestScore = -Infinity;
@@ -2351,7 +2386,11 @@ export function generateSmartParlays(
           // Score: maximizar probabilidad acumulada + EV promedio, priorizando partidos no utilizados previamente
           const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
           const avgEV = currentLegs.reduce((acc, l) => acc + l.expectedValue, 0) / numLegs;
-          const reusedCount = currentLegs.filter((l) => usedFixtureIds.has(l.fixtureId)).length;
+          const reusedCount = currentLegs.filter((l) => {
+            const parts = l.matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
+            const k = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(l.matchName);
+            return globalUsedMatchKeys.has(k);
+          }).length;
           const score = cumulativeProb * 100 + avgEV * 10 - (reusedCount * 30) + (variety > 0 ? Math.random() * variety * 12 : 0);
 
           if (score > bestScore) {
@@ -2362,22 +2401,28 @@ export function generateSmartParlays(
         return;
       }
 
-      // Si no quedan suficientes partidos para completar numLegs
-      if (distinctMatchIds.length - matchIdx < numLegs - currentLegs.length) return;
+      if (distinctMatchKeys.length - matchIdx < numLegs - currentLegs.length) return;
 
-      for (let i = matchIdx; i < distinctMatchIds.length; i++) {
-        const fixtureId = distinctMatchIds[i];
-        const matchPicks = matchCandidatesMap.get(fixtureId) || [];
+      for (let i = matchIdx; i < distinctMatchKeys.length; i++) {
+        const matchKey = distinctMatchKeys[i];
+        const matchEntry = matchCandidatesMap.get(matchKey);
+        if (!matchEntry) continue;
 
-        for (const pick of matchPicks) {
-          // REGLA 1 (Anti-Monotonía Estricta): Categorías estrictamente diferentes para todas las patas
+        for (const pick of matchEntry.suggestions) {
+          // REGLA 1 (Anti-Monotonía Estricta): Categorías estrictamente diferentes para todas las patas del boleto
           if (usedCategories.has(pick.category)) {
             continue;
           }
 
-          // REGLA ANTI-REPETICIÓN: Jamás repetir la misma apuesta en diferentes boletos
-          const pickSig = `${pick.fixtureId}:::${pick.label}`;
-          if (usedPickSignatures.has(pickSig)) {
+          // REGLA ANTI-REPETICIÓN ABSOLUTA: Jamás repetir la misma apuesta en diferentes boletos
+          const pickSig = getCanonicalPickSignature(pick.matchName, pick.label);
+          if (globalUsedPickSignatures.has(pickSig)) {
+            continue;
+          }
+
+          // Si el partido ya fue utilizado en un boleto anterior, SOLO permitir categoría diferente
+          const priorCats = globalMatchUsedCategories.get(matchKey);
+          if (priorCats && priorCats.has(pick.category)) {
             continue;
           }
 
@@ -2415,7 +2460,11 @@ export function generateSmartParlays(
           if (excludedSlipHashes.has(hash)) return;
 
           const distance = Math.abs(currentOdds - (minOdds + maxOdds) / 2);
-          const reusedCount = currentLegs.filter((l) => usedFixtureIds.has(l.fixtureId)).length;
+          const reusedCount = currentLegs.filter((l) => {
+            const parts = l.matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
+            const k = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(l.matchName);
+            return globalUsedMatchKeys.has(k);
+          }).length;
           const adjustedDistance = distance + (reusedCount * 2.0);
           if (adjustedDistance < minDistance) {
             minDistance = adjustedDistance;
@@ -2424,15 +2473,21 @@ export function generateSmartParlays(
           return;
         }
 
-        if (distinctMatchIds.length - matchIdx < numLegs - currentLegs.length) return;
+        if (distinctMatchKeys.length - matchIdx < numLegs - currentLegs.length) return;
 
-        for (let i = matchIdx; i < distinctMatchIds.length; i++) {
-          const fixtureId = distinctMatchIds[i];
-          const matchPicks = matchCandidatesMap.get(fixtureId) || [];
-          for (const pick of matchPicks) {
+        for (let i = matchIdx; i < distinctMatchKeys.length; i++) {
+          const matchKey = distinctMatchKeys[i];
+          const matchEntry = matchCandidatesMap.get(matchKey);
+          if (!matchEntry) continue;
+
+          for (const pick of matchEntry.suggestions) {
             if (usedCategories.has(pick.category)) continue;
-            const pickSig = `${pick.fixtureId}:::${pick.label}`;
-            if (usedPickSignatures.has(pickSig)) continue;
+
+            const pickSig = getCanonicalPickSignature(pick.matchName, pick.label);
+            if (globalUsedPickSignatures.has(pickSig)) continue;
+
+            const priorCats = globalMatchUsedCategories.get(matchKey);
+            if (priorCats && priorCats.has(pick.category)) continue;
 
             usedCategories.add(pick.category);
             currentLegs.push(pick);
@@ -2458,8 +2513,16 @@ export function generateSmartParlays(
 
     // Guardar firmas para asegurar que boletos subsiguientes no repitan las mismas apuestas
     for (const leg of finalCombo) {
-      usedPickSignatures.add(`${leg.fixtureId}:::${leg.label}`);
-      usedFixtureIds.add(leg.fixtureId);
+      const parts = leg.matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
+      const matchKey = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(leg.matchName);
+      const pickSig = getCanonicalPickSignature(leg.matchName, leg.label);
+
+      globalUsedPickSignatures.add(pickSig);
+      globalUsedMatchKeys.add(matchKey);
+      if (!globalMatchUsedCategories.has(matchKey)) {
+        globalMatchUsedCategories.set(matchKey, new Set());
+      }
+      globalMatchUsedCategories.get(matchKey)!.add(leg.category);
     }
 
     return {
@@ -2486,6 +2549,25 @@ export function generateSmartParlays(
   // 3. PERFIL CUOTA ALTA: 4 eventos (máximo 5), cuota entre 5.00 y 8.50
   const highOddsSlip = findOptimalSlip('HIGH_ODDS', 4, 5.00, 8.50, usedHashes);
   if (highOddsSlip) generatedSlips.push(highOddsSlip);
+
+  // Control Final de Seguridad Post-Generación: Jamás devolver boletos que compartan una apuesta idéntica
+  {
+    const seenPicks = new Set<string>();
+    for (let sIdx = 0; sIdx < generatedSlips.length; sIdx++) {
+      const slip = generatedSlips[sIdx];
+      const hasDuplicate = slip.legs.some((l) => {
+        const sig = getCanonicalPickSignature(l.matchName, l.label);
+        if (seenPicks.has(sig)) return true;
+        seenPicks.add(sig);
+        return false;
+      });
+      if (hasDuplicate) {
+        // En caso extremo de colisión no detectada, filtrar el boleto duplicado
+        generatedSlips.splice(sIdx, 1);
+        sIdx--;
+      }
+    }
+  }
 
   return generatedSlips;
 }

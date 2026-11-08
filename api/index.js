@@ -5013,58 +5013,117 @@ function extractMatchBettingMarketSuggestions(fixture, analysis) {
   }
   return candidates;
 }
-var PARLAY_ENGINE_VERSION = "v6-dedupe-variety";
+var SPORT_NOISE_TOKENS = /* @__PURE__ */ new Set([
+  "fc",
+  "fk",
+  "sk",
+  "sc",
+  "cf",
+  "cd",
+  "ca",
+  "cs",
+  "cp",
+  "bk",
+  "if",
+  "ik",
+  "ff",
+  "afc",
+  "bsc",
+  "ksc",
+  "tsv",
+  "vfb",
+  "vfl",
+  "sv",
+  "rb",
+  "ac",
+  "as",
+  "ss",
+  "us",
+  "club",
+  "deportivo",
+  "atletico",
+  "atl\xE9tico",
+  "sporting",
+  "real",
+  "de",
+  "del",
+  "la",
+  "las",
+  "los",
+  "el",
+  "the",
+  "al",
+  "and",
+  "y",
+  "women",
+  "femenil",
+  "fem",
+  "w",
+  "lady",
+  "ladies",
+  "men",
+  "masculino",
+  "m",
+  "bear",
+  "bears",
+  "sooner",
+  "sooners",
+  "team"
+]);
+function normalizeSportTeamName(name) {
+  return String(name || "").toLowerCase().replace(/[\u00f8\u00d8]/g, "o").replace(/[\u00e6\u00c6]/g, "ae").replace(/[\u00df]/g, "ss").replace(/[\u00f0\u00d0]/g, "d").replace(/[\u00fe\u00de]/g, "th").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ").split(/\s+/).map((t) => t.endsWith("s") && t.length > 4 ? t.slice(0, -1) : t).filter((t) => t && !SPORT_NOISE_TOKENS.has(t)).join(" ").trim();
+}
+function getCanonicalMatchKey(home, away) {
+  const h = normalizeSportTeamName(home);
+  const a = normalizeSportTeamName(away);
+  return `${h}|${a}`;
+}
+function normalizeBetLabel(label) {
+  return String(label || "").toLowerCase().replace(/[\u00f8\u00d8]/g, "o").replace(/[\u00e6\u00c6]/g, "ae").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, " ").split(/\s+/).join(" ").trim();
+}
+function getCanonicalPickSignature(matchName, label) {
+  const parts = matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
+  const mKey = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(matchName);
+  return `${mKey}:::${normalizeBetLabel(label)}`;
+}
+var PARLAY_ENGINE_VERSION = "v7-zero-dupes";
 function generateSmartParlays(availableMatches, targetDate, availableNBAMatches, variety = 0) {
   const hasMatches = Boolean(availableMatches && availableMatches.length > 0);
   const hasNBAMatches = Boolean(availableNBAMatches && availableNBAMatches.length > 0);
   if (!hasMatches && !hasNBAMatches) return [];
-  const NOISE_TOKENS = /* @__PURE__ */ new Set(["fc", "fk", "sk", "sc", "cf", "cd", "ca", "bk", "if", "ik", "afc", "club", "de", "the", "women", "femenil", "w"]);
-  const canonicalTeam = (name) => String(name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((t) => t && !NOISE_TOKENS.has(t)).join(" ").trim();
-  const canonicalMatchKey = (m) => `${canonicalTeam(m.homeTeam?.name)}|${canonicalTeam(m.awayTeam?.name)}`;
-  const dedupeByMatch = (list) => {
-    const seenKeys = /* @__PURE__ */ new Set();
-    const seenIds = /* @__PURE__ */ new Set();
-    const out = [];
-    for (const m of list) {
-      const key = canonicalMatchKey(m);
-      const id = String(m.id);
-      if (seenKeys.has(key) || seenIds.has(id)) continue;
-      seenKeys.add(key);
-      seenIds.add(id);
-      out.push(m);
-    }
-    return out;
-  };
-  const eligibleMatches = dedupeByMatch(
-    (availableMatches || []).filter(
-      (m) => Boolean(m && m.id && m.homeTeam && m.awayTeam) && m.status !== "CANCELLED" && m.status !== "POSTPONED"
-    )
-  );
-  const eligibleNBAMatches = dedupeByMatch(
-    (availableNBAMatches || []).filter((m) => Boolean(m && m.id && m.homeTeam && m.awayTeam))
-  );
-  if (eligibleMatches.length + eligibleNBAMatches.length < 2) return [];
   const matchCandidatesMap = /* @__PURE__ */ new Map();
-  for (const match of eligibleMatches) {
-    const suggestions = extractMatchBettingMarketSuggestions(match);
-    if (suggestions.length > 0) {
-      matchCandidatesMap.set(match.id, suggestions);
+  for (const match of availableMatches || []) {
+    if (!match || !match.id || !match.homeTeam?.name || !match.awayTeam?.name) continue;
+    if (match.status === "CANCELLED" || match.status === "POSTPONED") continue;
+    const cKey = getCanonicalMatchKey(match.homeTeam.name, match.awayTeam.name);
+    if (!cKey || cKey === "|") continue;
+    if (!matchCandidatesMap.has(cKey)) {
+      const suggestions = extractMatchBettingMarketSuggestions(match);
+      if (suggestions.length > 0) {
+        matchCandidatesMap.set(cKey, { fixture: match, suggestions });
+      }
     }
   }
-  for (const nbaMatch of eligibleNBAMatches) {
-    const nbaSuggestions = extractNBABettingMarketSuggestions(nbaMatch);
-    if (nbaSuggestions.length > 0) {
-      matchCandidatesMap.set(nbaMatch.id, nbaSuggestions);
+  for (const nbaMatch of availableNBAMatches || []) {
+    if (!nbaMatch || !nbaMatch.id || !nbaMatch.homeTeam?.name || !nbaMatch.awayTeam?.name) continue;
+    const cKey = getCanonicalMatchKey(nbaMatch.homeTeam.name, nbaMatch.awayTeam.name);
+    if (!cKey || cKey === "|") continue;
+    if (!matchCandidatesMap.has(cKey)) {
+      const nbaSuggestions = extractNBABettingMarketSuggestions(nbaMatch);
+      if (nbaSuggestions.length > 0) {
+        matchCandidatesMap.set(cKey, { fixture: nbaMatch, suggestions: nbaSuggestions });
+      }
     }
   }
-  const distinctMatchIds = Array.from(matchCandidatesMap.keys());
-  if (distinctMatchIds.length < 2) return [];
+  const distinctMatchKeys = Array.from(matchCandidatesMap.keys());
+  if (distinctMatchKeys.length < 2) return [];
   const todayStr = targetDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
   const generatedSlips = [];
-  const usedPickSignatures = /* @__PURE__ */ new Set();
-  const usedFixtureIds = /* @__PURE__ */ new Set();
+  const globalUsedPickSignatures = /* @__PURE__ */ new Set();
+  const globalUsedMatchKeys = /* @__PURE__ */ new Set();
+  const globalMatchUsedCategories = /* @__PURE__ */ new Map();
   const findOptimalSlip = (profile, numLegs, minOdds, maxOdds, excludedSlipHashes) => {
-    if (distinctMatchIds.length < numLegs) return null;
+    if (distinctMatchKeys.length < numLegs) return null;
     let bestCombo = null;
     let bestScore = -Infinity;
     let searchIterations = 0;
@@ -5078,7 +5137,11 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
           if (excludedSlipHashes.has(hash2)) return;
           const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
           const avgEV = currentLegs.reduce((acc, l) => acc + l.expectedValue, 0) / numLegs;
-          const reusedCount = currentLegs.filter((l) => usedFixtureIds.has(l.fixtureId)).length;
+          const reusedCount = currentLegs.filter((l) => {
+            const parts = l.matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
+            const k = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(l.matchName);
+            return globalUsedMatchKeys.has(k);
+          }).length;
           const score = cumulativeProb * 100 + avgEV * 10 - reusedCount * 30 + (variety > 0 ? Math.random() * variety * 12 : 0);
           if (score > bestScore) {
             bestScore = score;
@@ -5087,16 +5150,21 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
         }
         return;
       }
-      if (distinctMatchIds.length - matchIdx < numLegs - currentLegs.length) return;
-      for (let i = matchIdx; i < distinctMatchIds.length; i++) {
-        const fixtureId = distinctMatchIds[i];
-        const matchPicks = matchCandidatesMap.get(fixtureId) || [];
-        for (const pick of matchPicks) {
+      if (distinctMatchKeys.length - matchIdx < numLegs - currentLegs.length) return;
+      for (let i = matchIdx; i < distinctMatchKeys.length; i++) {
+        const matchKey = distinctMatchKeys[i];
+        const matchEntry = matchCandidatesMap.get(matchKey);
+        if (!matchEntry) continue;
+        for (const pick of matchEntry.suggestions) {
           if (usedCategories.has(pick.category)) {
             continue;
           }
-          const pickSig = `${pick.fixtureId}:::${pick.label}`;
-          if (usedPickSignatures.has(pickSig)) {
+          const pickSig = getCanonicalPickSignature(pick.matchName, pick.label);
+          if (globalUsedPickSignatures.has(pickSig)) {
+            continue;
+          }
+          const priorCats = globalMatchUsedCategories.get(matchKey);
+          if (priorCats && priorCats.has(pick.category)) {
             continue;
           }
           const nextOdds = Number((currentOdds * pick.odds).toFixed(2));
@@ -5120,7 +5188,11 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
           const hash2 = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join("|");
           if (excludedSlipHashes.has(hash2)) return;
           const distance = Math.abs(currentOdds - (minOdds + maxOdds) / 2);
-          const reusedCount = currentLegs.filter((l) => usedFixtureIds.has(l.fixtureId)).length;
+          const reusedCount = currentLegs.filter((l) => {
+            const parts = l.matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
+            const k = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(l.matchName);
+            return globalUsedMatchKeys.has(k);
+          }).length;
           const adjustedDistance = distance + reusedCount * 2;
           if (adjustedDistance < minDistance) {
             minDistance = adjustedDistance;
@@ -5128,14 +5200,17 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
           }
           return;
         }
-        if (distinctMatchIds.length - matchIdx < numLegs - currentLegs.length) return;
-        for (let i = matchIdx; i < distinctMatchIds.length; i++) {
-          const fixtureId = distinctMatchIds[i];
-          const matchPicks = matchCandidatesMap.get(fixtureId) || [];
-          for (const pick of matchPicks) {
+        if (distinctMatchKeys.length - matchIdx < numLegs - currentLegs.length) return;
+        for (let i = matchIdx; i < distinctMatchKeys.length; i++) {
+          const matchKey = distinctMatchKeys[i];
+          const matchEntry = matchCandidatesMap.get(matchKey);
+          if (!matchEntry) continue;
+          for (const pick of matchEntry.suggestions) {
             if (usedCategories.has(pick.category)) continue;
-            const pickSig = `${pick.fixtureId}:::${pick.label}`;
-            if (usedPickSignatures.has(pickSig)) continue;
+            const pickSig = getCanonicalPickSignature(pick.matchName, pick.label);
+            if (globalUsedPickSignatures.has(pickSig)) continue;
+            const priorCats = globalMatchUsedCategories.get(matchKey);
+            if (priorCats && priorCats.has(pick.category)) continue;
             usedCategories.add(pick.category);
             currentLegs.push(pick);
             fallbackSearch(i + 1, currentLegs, usedCategories, Number((currentOdds * pick.odds).toFixed(2)));
@@ -5155,8 +5230,15 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
     const hash = finalCombo.map((l) => `${l.fixtureId}_${l.category}`).sort().join("|");
     excludedSlipHashes.add(hash);
     for (const leg of finalCombo) {
-      usedPickSignatures.add(`${leg.fixtureId}:::${leg.label}`);
-      usedFixtureIds.add(leg.fixtureId);
+      const parts = leg.matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
+      const matchKey = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(leg.matchName);
+      const pickSig = getCanonicalPickSignature(leg.matchName, leg.label);
+      globalUsedPickSignatures.add(pickSig);
+      globalUsedMatchKeys.add(matchKey);
+      if (!globalMatchUsedCategories.has(matchKey)) {
+        globalMatchUsedCategories.set(matchKey, /* @__PURE__ */ new Set());
+      }
+      globalMatchUsedCategories.get(matchKey).add(leg.category);
     }
     return {
       id: `smart_parlay_${profile.toLowerCase()}_${todayStr.replace(/-/g, "")}_${Math.random().toString(36).substring(2, 7)}`,
@@ -5175,6 +5257,22 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
   if (balancedSlip) generatedSlips.push(balancedSlip);
   const highOddsSlip = findOptimalSlip("HIGH_ODDS", 4, 5, 8.5, usedHashes);
   if (highOddsSlip) generatedSlips.push(highOddsSlip);
+  {
+    const seenPicks = /* @__PURE__ */ new Set();
+    for (let sIdx = 0; sIdx < generatedSlips.length; sIdx++) {
+      const slip = generatedSlips[sIdx];
+      const hasDuplicate = slip.legs.some((l) => {
+        const sig = getCanonicalPickSignature(l.matchName, l.label);
+        if (seenPicks.has(sig)) return true;
+        seenPicks.add(sig);
+        return false;
+      });
+      if (hasDuplicate) {
+        generatedSlips.splice(sIdx, 1);
+        sIdx--;
+      }
+    }
+  }
   return generatedSlips;
 }
 
@@ -9620,17 +9718,15 @@ app.post("/api/parlays/generate-day", async (req, res) => {
     let generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures, force ? 1 : 0);
     {
       const seenPicks = /* @__PURE__ */ new Set();
-      const hasDup = generated.some(
-        (s) => s.legs.some((l) => {
-          const k = `${l.matchName}:::${l.label}`;
-          if (seenPicks.has(k)) return true;
-          seenPicks.add(k);
+      generated = generated.filter((slip) => {
+        const hasDup = slip.legs.some((l) => {
+          const sig = getCanonicalPickSignature(l.matchName, l.label);
+          if (seenPicks.has(sig)) return true;
+          seenPicks.add(sig);
           return false;
-        })
-      );
-      if (hasDup) {
-        generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures, 1);
-      }
+        });
+        return !hasDup;
+      });
     }
     if (generated.length === 0) {
       return res.status(422).json({

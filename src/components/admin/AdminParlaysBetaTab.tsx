@@ -72,12 +72,13 @@ function getSpanishMonthLabel(monthKey: string): string {
   return `${monthName} ${yearStr}`;
 }
 
-const LOCAL_SMART_SLIPS_KEY = 'gmetrics_smart_parlays_slips_v4';
+const LOCAL_SMART_SLIPS_KEY = 'gmetrics_smart_parlays_slips_v5';
 
 function getStoredSmartSlips(): SmartParlaySlip[] {
   try {
     // Limpia la caché local de versiones anteriores (boletos con apuestas repetidas)
     localStorage.removeItem('gmetrics_smart_parlays_slips_v3');
+    localStorage.removeItem('gmetrics_smart_parlays_slips_v4');
     const raw = localStorage.getItem(LOCAL_SMART_SLIPS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
