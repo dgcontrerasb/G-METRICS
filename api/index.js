@@ -81,7 +81,8 @@ function createSessionJwt(params) {
     iat: nowSec,
     exp: nowSec + ttlSec,
     isVip: isVipComputed,
-    expiresAt: params.expiresAt ?? null
+    expiresAt: params.expiresAt ?? null,
+    authProvider: params.authProvider
   };
   const payload = base64UrlEncode(JSON.stringify(payloadObj));
   const signingInput = `${header}.${payload}`;
@@ -594,7 +595,7 @@ async function verifyAndConsumeRecoveryOtp(deviceId, otpInput) {
 function normalizeUsername(input) {
   return String(input || "").toLowerCase().trim().replace(/[^a-z0-9]/g, "").slice(0, 20);
 }
-async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
+async function loginAppUser(rawUsername, rawPin, deviceId, deviceName, freeAccessMode = false) {
   const rawClean = String(rawUsername || "").toLowerCase().trim();
   const isOwnerEmail = rawClean === "dgcontreras@gmail.com" || rawClean === "dgcontrerasb@gmail.com" || rawClean.startsWith("dgcontreras") || rawClean === "admin" || rawClean === "propietario" || rawClean === "geovanny";
   const isOwnerAdmin = isOwnerEmail || rawClean === "admin";
@@ -683,7 +684,14 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
         }
         const isAdmin = data.role === "admin";
         const isExpired = !isAdmin && Boolean(data.expires_at && Number(data.expires_at) < nowMs);
-        const isPro = !isExpired;
+        const isPromoActive = Boolean(freeAccessMode && !isAdmin);
+        const isPro = isAdmin || isPromoActive || !isExpired;
+        let resolvedPlanLabel = data.plan_label;
+        if (isPromoActive && isExpired) {
+          resolvedPlanLabel = "Acceso Libre Promocional";
+        } else if (!resolvedPlanLabel) {
+          resolvedPlanLabel = isPro ? "Pase Activo" : "Plan Vencido";
+        }
         if (!isAdmin) {
           const deletedSet = getDeletedUsernamesSet();
           if (deletedSet.has(username) || data.status === "deleted" || data.plan_type === "DELETED" || data.notes === "[DELETED]") {
@@ -738,9 +746,9 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
           displayName: data.display_name || void 0,
           pin: "[PROTECTED]",
           role: data.role || "client",
-          status: isExpired ? "expired" : data.status || "active",
-          planType: data.plan_type || "30D",
-          planLabel: data.plan_label || (isPro ? "Pase Activo" : "Plan Vencido"),
+          status: isExpired && !isPromoActive ? "expired" : data.status || "active",
+          planType: isPromoActive && isExpired ? "FREE_PROMO" : data.plan_type || "30D",
+          planLabel: resolvedPlanLabel,
           createdAt: Number(data.created_at || nowMs),
           expiresAt: data.expires_at ? Number(data.expires_at) : null,
           boundDeviceId: data.bound_device_id,
@@ -749,8 +757,8 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName) {
           lastActiveAt: nowMs,
           whatsappNumber: data.whatsapp_number,
           notes: data.notes,
-          daysRemaining,
-          isExpired,
+          daysRemaining: isPromoActive ? null : daysRemaining,
+          isExpired: !isPro,
           isPro,
           authProvider: data.auth_provider || "pin",
           feedbackBonusClaimed: Boolean(data.feedback_bonus_claimed)
@@ -1515,7 +1523,7 @@ async function verifyOAuthIdentityToken(token, expectedEmail, client) {
   }
   return { verified: false, error: "No se pudo certificar la autenticidad del token con ning\xFAn proveedor" };
 }
-async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, deviceName, deviceFingerprint, accessToken, providerToken, clientSubnetHash) {
+async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, deviceName, deviceFingerprint, accessToken, providerToken, clientSubnetHash, freeAccessMode = false, customUsername, customPin) {
   const email = String(rawEmail || "").toLowerCase().trim();
   if (!email || !email.includes("@")) {
     return {
@@ -1622,6 +1630,13 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
       if (existingUser.status === "deleted") {
         return { success: false, code: "USER_NOT_FOUND", message: "Esta cuenta ha sido eliminada por el administrador." };
       }
+      if (customPin && customPin.trim().length >= 4) {
+        const newPinHash = hashUserPin(customPin.trim());
+        await client.from("sportstats_users").update({
+          pin_hash: newPinHash
+        }).eq("id", existingUser.id);
+        existingUser.pin_hash = newPinHash;
+      }
       const isLocalOrDev3 = process.env.NODE_ENV !== "production" || !process.env.VERCEL;
       const isAdminTestDevice2 = isLocalOrDev3 || cleanDevice.startsWith("DEV-");
       if (!existingUser.bound_device_id || isAdminTestDevice2 && existingUser.bound_device_id !== cleanDevice) {
@@ -1639,19 +1654,32 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
           boundDeviceName: existingUser.bound_device_name
         };
       }
-      const isExpired = Boolean(existingUser.expires_at && Number(existingUser.expires_at) < nowMs);
-      const isPro2 = !isExpired;
+      const hasExplicitActiveVip = Boolean(
+        existingUser.expires_at !== null && existingUser.expires_at !== void 0 && Number(existingUser.expires_at) > nowMs
+      );
+      const isPromoActive = Boolean(
+        freeAccessMode && (existingUser.auth_provider === "google" || existingUser.role === "client")
+      );
+      const isPro2 = existingUser.role === "admin" || hasExplicitActiveVip || isPromoActive;
+      const isExpired = !isPro2;
+      let resolvedPlanLabel = existingUser.plan_label;
+      if (isPromoActive && !hasExplicitActiveVip && existingUser.role !== "admin") {
+        resolvedPlanLabel = "Acceso Libre Promocional";
+      } else if (!resolvedPlanLabel) {
+        resolvedPlanLabel = isPro2 ? "Plan VIP" : "Plan Vencido";
+      }
       const sessionToken2 = createSessionJwt({
         userId: existingUser.id,
         username: existingUser.username,
         role: existingUser.role || "client",
         deviceId: cleanDevice,
+        authProvider: "google",
         ttlDays: 30
       });
       return {
         success: true,
         isPro: isPro2,
-        message: isPro2 ? "Sesi\xF3n iniciada con \xE9xito." : "Tu periodo de prueba o plan ha vencido.",
+        message: isPromoActive ? "Sesi\xF3n iniciada con Acceso Libre Promocional activo." : isPro2 ? "Sesi\xF3n iniciada con \xE9xito." : "Tu periodo de prueba o plan ha vencido.",
         sessionToken: sessionToken2,
         user: {
           id: existingUser.id,
@@ -1661,8 +1689,8 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
           pin: "[PROTECTED]",
           role: existingUser.role || "client",
           status: isExpired ? "expired" : existingUser.status || "active",
-          planType: existingUser.plan_type || "GOOGLE_TRIAL",
-          planLabel: existingUser.plan_label || (isPro2 ? "Plan VIP" : "Plan Vencido"),
+          planType: isPromoActive && !hasExplicitActiveVip ? "FREE_PROMO" : existingUser.plan_type || "GOOGLE_TRIAL",
+          planLabel: resolvedPlanLabel,
           createdAt: Number(existingUser.created_at) || nowMs,
           expiresAt: existingUser.expires_at ? Number(existingUser.expires_at) : null,
           boundDeviceId: existingUser.bound_device_id,
@@ -1697,23 +1725,52 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
         }
       }
     }
-    const expiresAt = hasUsedTrial ? nowMs : nowMs + 3 * 24 * 60 * 60 * 1e3;
-    const isPro = !hasUsedTrial;
-    const planLabel = hasUsedTrial ? "Prueba no disponible (Dispositivo previo)" : "Prueba Gratuita (3 D\xEDas)";
+    let expiresAt = null;
+    let isPro = true;
+    let planLabel = "Acceso Libre Promocional";
+    let planType = "FREE_PROMO";
+    let welcomeMessage = "\xA1Bienvenido a G METRICS! Tu cuenta Google tiene Acceso Libre Promocional ilimitado.";
+    if (!freeAccessMode) {
+      expiresAt = hasUsedTrial ? nowMs : nowMs + 3 * 24 * 60 * 60 * 1e3;
+      isPro = !hasUsedTrial;
+      planLabel = hasUsedTrial ? "Prueba no disponible (Dispositivo previo)" : "Prueba Gratuita (3 D\xEDas)";
+      planType = hasUsedTrial ? "EXPIRED_TRIAL" : "GOOGLE_3D_TRIAL";
+      welcomeMessage = isPro ? "\xA1Bienvenido! Tienes 3 d\xEDas de prueba gratuita completa." : "Tu dispositivo ya utiliz\xF3 una prueba previa. Activa tu plan VIP para acceder a todos los an\xE1lisis.";
+    }
     const baseUsername = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 14) || "user";
     const randPart = Math.random().toString(36).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 4);
     let generatedUsername = `${baseUsername}${randPart}`.slice(0, 20);
     if (generatedUsername.length < 3) {
       generatedUsername = `user${Math.floor(100 + Math.random() * 900)}`;
     }
+    let chosenUsername = generatedUsername;
+    if (customUsername && customUsername.trim().length >= 3) {
+      const cleanCustom = customUsername.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+      if (cleanCustom.length >= 3) {
+        try {
+          const { data: userWithSameName } = await client.from("sportstats_users").select("id").eq("username", cleanCustom).maybeSingle();
+          if (!userWithSameName) {
+            chosenUsername = cleanCustom;
+          } else {
+            chosenUsername = `${cleanCustom.slice(0, 16)}${Math.floor(10 + Math.random() * 89)}`;
+          }
+        } catch {
+          chosenUsername = cleanCustom;
+        }
+      }
+    }
+    let chosenPinHash = "GOOGLE_OAUTH";
+    if (customPin && customPin.trim().length >= 4) {
+      chosenPinHash = hashUserPin(customPin.trim());
+    }
     const newUserData = {
-      username: generatedUsername,
+      username: chosenUsername,
       email,
-      display_name: rawDisplayName || email.split("@")[0],
-      pin_hash: "GOOGLE_OAUTH",
+      display_name: rawDisplayName || chosenUsername,
+      pin_hash: chosenPinHash,
       role: "client",
       status: isPro ? "active" : "expired",
-      plan_type: hasUsedTrial ? "EXPIRED_TRIAL" : "GOOGLE_3D_TRIAL",
+      plan_type: planType,
       plan_label: planLabel,
       created_at: nowMs,
       expires_at: expiresAt,
@@ -1751,12 +1808,13 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
       username: insertedUser.username,
       role: "client",
       deviceId: cleanDevice,
+      authProvider: "google",
       ttlDays: 30
     });
     return {
       success: true,
       isPro,
-      message: isPro ? "\xA1Bienvenido! Tienes 3 d\xEDas de prueba gratuita completa." : "Tu dispositivo ya utiliz\xF3 una prueba previa. Activa tu plan VIP para acceder a todos los an\xE1lisis.",
+      message: welcomeMessage,
       sessionToken,
       user: {
         id: insertedUser.id,
@@ -3573,6 +3631,452 @@ function getNBALineupData(fixture) {
   };
 }
 
+// src/services/math/coreProbabilities.ts
+var factorials = [1, 1, 2, 6, 24, 120, 720, 5040, 40320];
+function factorial(n) {
+  if (n <= 0) return 1;
+  if (n < factorials.length) return factorials[n];
+  let res = factorials[factorials.length - 1];
+  for (let i = factorials.length; i <= n; i++) {
+    res *= i;
+  }
+  return res;
+}
+function poissonPmf(k, lambda) {
+  if (lambda <= 0) return k === 0 ? 1 : 0;
+  if (k < 0) return 0;
+  return Math.pow(lambda, k) * Math.exp(-lambda) / factorial(k);
+}
+function poissonCdf(kMax, lambda) {
+  if (lambda <= 0) return 1;
+  if (kMax < 0) return 0;
+  let sum = 0;
+  const maxK = Math.floor(kMax);
+  for (let k = 0; k <= maxK; k++) {
+    sum += poissonPmf(k, lambda);
+  }
+  return Math.min(1, Math.max(0, sum));
+}
+function dixonColesTau(x, y, lambdaX, lambdaY, rho = -0.11) {
+  if (x === 0 && y === 0) {
+    return Math.max(0.01, 1 - lambdaX * lambdaY * rho);
+  }
+  if (x === 1 && y === 0) {
+    return Math.max(0.01, 1 + lambdaY * rho);
+  }
+  if (x === 0 && y === 1) {
+    return Math.max(0.01, 1 + lambdaX * rho);
+  }
+  if (x === 1 && y === 1) {
+    return Math.max(0.01, 1 - rho);
+  }
+  return 1;
+}
+
+// src/services/math/eloBradleyTerryModel.ts
+function calculateWeightedFormPoints(form) {
+  const weights = [1.35, 1.18, 1, 0.85, 0.72];
+  if (!form || form.length === 0) {
+    return { weightedPoints: 4.5, maxPossibleWeightedPoints: 15.3, weightedRatio: 0.35 };
+  }
+  let weightedPoints = 0;
+  let maxPossible = 0;
+  for (let i = 0; i < Math.min(form.length, weights.length); i++) {
+    const outcome = form[i];
+    const w = weights[i];
+    maxPossible += 3 * w;
+    if (outcome === "W") {
+      weightedPoints += 3 * w;
+    } else if (outcome === "D") {
+      weightedPoints += 1 * w;
+    }
+  }
+  if (maxPossible <= 0) maxPossible = 15.3;
+  const weightedRatio = Math.max(0.05, Math.min(0.95, weightedPoints / maxPossible));
+  return {
+    weightedPoints: Number(weightedPoints.toFixed(2)),
+    maxPossibleWeightedPoints: Number(maxPossible.toFixed(2)),
+    weightedRatio: Number(weightedRatio.toFixed(3))
+  };
+}
+function evaluateEloAndBradleyTerry(homeTeam, awayTeam, homeRestPenalty = 0, awayTotalPenalty = 0) {
+  const BASE_ELO = 1500;
+  const HOME_ADVANTAGE_ELO = 65;
+  const homeForm = calculateWeightedFormPoints(homeTeam.form);
+  const awayForm = calculateWeightedFormPoints(awayTeam.form);
+  const homeRankFactor = (20 - Math.min(20, Math.max(1, homeTeam.rank || 10))) * 9.5;
+  const awayRankFactor = (20 - Math.min(20, Math.max(1, awayTeam.rank || 10))) * 9.5;
+  const homeAttack = Number(homeTeam.attackStrength) || 1.35;
+  const awayAttack = Number(awayTeam.attackStrength) || 1.15;
+  const homeDefense = Number(homeTeam.defenseStrength) || 0.9;
+  const awayDefense = Number(awayTeam.defenseStrength) || 1.05;
+  const homePwrFactor = (homeAttack - 1) * 130 + (1 - homeDefense) * 110;
+  const awayPwrFactor = (awayAttack - 1) * 130 + (1 - awayDefense) * 110;
+  const homeFormFactor = (homeForm.weightedRatio - 0.4) * 180;
+  const awayFormFactor = (awayForm.weightedRatio - 0.4) * 180;
+  const homeFatiguePenaltyElo = homeRestPenalty * 220;
+  const awayFatiguePenaltyElo = awayTotalPenalty * 240;
+  const homeEloRating = Math.round(
+    BASE_ELO + homeRankFactor + homePwrFactor + homeFormFactor - homeFatiguePenaltyElo
+  );
+  const awayEloRating = Math.round(
+    BASE_ELO + awayRankFactor + awayPwrFactor + awayFormFactor - awayFatiguePenaltyElo
+  );
+  const effectiveHomeElo = homeEloRating + HOME_ADVANTAGE_ELO;
+  const effectiveAwayElo = awayEloRating;
+  const bradleyTerryHomePower = Math.pow(10, effectiveHomeElo / 400);
+  const bradleyTerryAwayPower = Math.pow(10, effectiveAwayElo / 400);
+  const defenseFactor = Math.max(0.8, Math.min(1.4, 2.2 - (homeDefense + awayDefense) / 2));
+  const davidsonNu = Number((0.52 * defenseFactor).toFixed(3));
+  const denominator = bradleyTerryHomePower + bradleyTerryAwayPower + davidsonNu * Math.sqrt(bradleyTerryHomePower * bradleyTerryAwayPower);
+  let pHomeWin = bradleyTerryHomePower / denominator * 100;
+  let pDraw = davidsonNu * Math.sqrt(bradleyTerryHomePower * bradleyTerryAwayPower) / denominator * 100;
+  let pAwayWin = bradleyTerryAwayPower / denominator * 100;
+  pHomeWin = Math.round(pHomeWin * 10) / 10;
+  pDraw = Math.round(pDraw * 10) / 10;
+  pAwayWin = Math.round(pAwayWin * 10) / 10;
+  const sumDiff = 100 - (pHomeWin + pDraw + pAwayWin);
+  pDraw = Math.max(1, Math.round((pDraw + sumDiff) * 10) / 10);
+  const eloDiffAbs = Math.abs(homeEloRating - awayEloRating);
+  const formAgreement = 100 - Math.abs(homeForm.weightedRatio - awayForm.weightedRatio) * 45;
+  const fatigueImpact = (homeRestPenalty + awayTotalPenalty) * 180;
+  const formConsistencyScore = Math.max(
+    25,
+    Math.min(96, Math.round(formAgreement * 0.55 + Math.min(45, eloDiffAbs * 0.15) - fatigueImpact))
+  );
+  return {
+    homeEloRating,
+    awayEloRating,
+    bradleyTerryHomePower: Number(bradleyTerryHomePower.toFixed(2)),
+    bradleyTerryAwayPower: Number(bradleyTerryAwayPower.toFixed(2)),
+    davidsonNu,
+    eloHomeWinProb: pHomeWin,
+    eloDrawProb: pDraw,
+    eloAwayWinProb: pAwayWin,
+    formConsistencyScore
+  };
+}
+
+// src/services/math/regressionModels.ts
+function logisticSigmoid(z) {
+  if (z < -40) return 0;
+  if (z > 40) return 1;
+  return 1 / (1 + Math.exp(-z));
+}
+function predictCornersByMultipleRegression(input) {
+  const {
+    baseHomeShots,
+    baseAwayShots,
+    homeAttack,
+    awayAttack,
+    urgencyScore,
+    derbyOrRivalry = false,
+    eloDiffWithHomeAdvantage = 50,
+    homeAvgCornersFor,
+    awayAvgCornersFor,
+    homeAvgCornersAgainst,
+    awayAvgCornersAgainst
+  } = input;
+  const urgencyCornerBoost = urgencyScore >= 8 ? 1.09 : urgencyScore >= 6.5 ? 1.05 : derbyOrRivalry ? 1.07 : 1;
+  const eloHomeEffect = Math.max(-0.6, Math.min(0.8, eloDiffWithHomeAdvantage * 18e-4));
+  let regHome = (1.15 + baseHomeShots * 0.35 + homeAttack * 0.88 + eloHomeEffect) * urgencyCornerBoost;
+  const eloAwayEffect = Math.max(-0.7, Math.min(0.6, -eloDiffWithHomeAdvantage * 15e-4));
+  let regAway = (0.95 + baseAwayShots * 0.33 + awayAttack * 0.72 + eloAwayEffect) * urgencyCornerBoost;
+  if (homeAvgCornersFor && homeAvgCornersFor > 2) {
+    regHome = regHome * 0.75 + homeAvgCornersFor * 0.25;
+  }
+  if (awayAvgCornersFor && awayAvgCornersFor > 2) {
+    regAway = regAway * 0.75 + awayAvgCornersFor * 0.25;
+  }
+  if (awayAvgCornersAgainst && awayAvgCornersAgainst > 2) {
+    regHome = regHome * 0.85 + awayAvgCornersAgainst * 0.15;
+  }
+  if (homeAvgCornersAgainst && homeAvgCornersAgainst > 2) {
+    regAway = regAway * 0.85 + homeAvgCornersAgainst * 0.15;
+  }
+  const lambdaHomeCorners = Math.min(8.5, Math.max(2.8, Math.round(regHome * 10) / 10));
+  const lambdaAwayCorners = Math.min(7.5, Math.max(2.2, Math.round(regAway * 10) / 10));
+  const expectedTotalCorners = Math.round((lambdaHomeCorners + lambdaAwayCorners) * 10) / 10;
+  return {
+    lambdaHomeCorners,
+    lambdaAwayCorners,
+    expectedTotalCorners,
+    urgencyCornerBoost
+  };
+}
+function predictCardsByMultipleRegression(input) {
+  const {
+    refereeAvgYellowCards,
+    refereeRigor,
+    derbyOrRivalry = false,
+    isTopClash = false,
+    isRelegationBattle = false,
+    homeAttackStrength = 1.35,
+    awayAttackStrength = 1.15,
+    urgencyIndex = 5
+  } = input;
+  let tensionFactor = 1;
+  if (derbyOrRivalry) tensionFactor += 0.16;
+  if (isTopClash) tensionFactor += 0.09;
+  if (isRelegationBattle) tensionFactor += 0.1;
+  if (urgencyIndex >= 8) tensionFactor += 0.05;
+  tensionFactor = Math.round(tensionFactor * 100) / 100;
+  const baseCards = refereeAvgYellowCards || (refereeRigor === "Severo" ? 4.8 : refereeRigor === "Flexible" ? 3.4 : refereeRigor === "Moderado" ? 3.9 : 4.1);
+  const rawExpectedYellow = baseCards * tensionFactor;
+  const expectedYellowCards = Math.round(Math.min(6.5, Math.max(2.6, rawExpectedYellow)) * 10) / 10;
+  const homeShare = homeAttackStrength >= awayAttackStrength ? 0.46 : 0.5;
+  const expectedHomeYellows = Math.round(expectedYellowCards * homeShare * 10) / 10;
+  const expectedAwayYellows = Math.round((expectedYellowCards - expectedHomeYellows) * 10) / 10;
+  return {
+    expectedHomeYellows,
+    expectedAwayYellows,
+    expectedYellowCards,
+    tensionFactor
+  };
+}
+function calibrateGoalsMarketsWithLogisticRegression(raw, ctx) {
+  const { totalXG, lambdaHome, lambdaAway } = ctx;
+  const minXG = Math.min(lambdaHome, lambdaAway);
+  const zBtts = -0.58 + minXG * 1.35 + (totalXG - 2.5) * 0.42;
+  const logisticBttsYes = logisticSigmoid(zBtts) * 100;
+  const zOver15 = 0.72 + (totalXG - 1.5) * 1.45;
+  const logisticOver15 = logisticSigmoid(zOver15) * 100;
+  const zOver25 = -0.12 + (totalXG - 2.5) * 1.32;
+  const logisticOver25 = logisticSigmoid(zOver25) * 100;
+  const zOver35 = -1.15 + (totalXG - 3.5) * 1.22;
+  const logisticOver35 = logisticSigmoid(zOver35) * 100;
+  const bttsYes = Math.round((raw.bttsYes * 0.75 + logisticBttsYes * 0.25) * 10) / 10;
+  const over15 = Math.round((raw.over15 * 0.75 + logisticOver15 * 0.25) * 10) / 10;
+  const over25 = Math.round((raw.over25 * 0.75 + logisticOver25 * 0.25) * 10) / 10;
+  const over35 = Math.round((raw.over35 * 0.75 + logisticOver35 * 0.25) * 10) / 10;
+  return {
+    bttsYes: Math.max(15, Math.min(88, bttsYes)),
+    over15: Math.max(20, Math.min(94, over15)),
+    over25: Math.max(15, Math.min(88, over25)),
+    over35: Math.max(8, Math.min(75, over35))
+  };
+}
+function evaluateNBAMultipleAndLogisticRegression(input, baseHomeScore, baseAwayScore, fairTotalLine) {
+  const {
+    homePace,
+    awayPace,
+    homeOffensiveRating,
+    awayOffensiveRating,
+    homeDefensiveRating,
+    awayDefensiveRating,
+    homeThreePointPct = 0.36,
+    awayThreePointPct = 0.35,
+    homeRestDays = 1,
+    awayRestDays = 1,
+    isFibaLeague = false,
+    homeWinPct = 0.52,
+    awayWinPct = 0.48
+  } = input;
+  const leaguePace = isFibaLeague ? 82 : 99;
+  const paceZ = ((homePace + awayPace) / 2 - leaguePace) / 4.5;
+  const threePointFactorHome = (homeThreePointPct - 0.355) * 14;
+  const threePointFactorAway = (awayThreePointPct - 0.355) * 14;
+  const restDiff = Math.min(2, Math.max(-2, homeRestDays - awayRestDays));
+  const restBonusHome = restDiff * 0.8;
+  const regressedHomeScore = Number(
+    (baseHomeScore * 0.85 + (baseHomeScore + paceZ * 1.2 + threePointFactorHome + restBonusHome) * 0.15).toFixed(1)
+  );
+  const regressedAwayScore = Number(
+    (baseAwayScore * 0.85 + (baseAwayScore + paceZ * 1.2 + threePointFactorAway - restBonusHome * 0.5) * 0.15).toFixed(1)
+  );
+  const regressedTotalPoints = Number((regressedHomeScore + regressedAwayScore).toFixed(1));
+  const sigma = isFibaLeague ? 10.5 : 12.8;
+  const zTotal = (regressedTotalPoints - fairTotalLine) / sigma;
+  const logisticOverTotalProb = Number((logisticSigmoid(zTotal) * 100).toFixed(1));
+  const winPctDiff = (homeWinPct - awayWinPct) * 100;
+  const netScoreDiff = regressedHomeScore - regressedAwayScore;
+  const zWin = (netScoreDiff * 0.75 + winPctDiff * 0.08) / 9.8;
+  const eloBradleyTerryHomeWinProb = Number((logisticSigmoid(zWin) * 100).toFixed(1));
+  return {
+    regressedHomeScore,
+    regressedAwayScore,
+    regressedTotalPoints,
+    eloBradleyTerryHomeWinProb,
+    logisticOverTotalProb
+  };
+}
+
+// src/services/math/bayesianUncertaintyModel.ts
+var CATEGORY_PRIORS = {
+  DOUBLE_CHANCE: 69.5,
+  SAFE_GOALS: 71.5,
+  CORNERS: 67.5,
+  CARDS: 66.5,
+  HALF_GOALS: 70,
+  SHOTS: 65.5,
+  BTTS: 51.5,
+  "1X2": 46,
+  NBA_TOTAL_POINTS: 62,
+  NBA_MONEYLINE: 58,
+  NBA_PLAYER_PROP: 64,
+  DEFAULT: 60
+};
+function evaluateBayesianCredibility(input) {
+  const {
+    category,
+    observedProbability,
+    formConsistencyScore = 65,
+    sampleMatchesCount = 12,
+    fatiguePenalty = 0,
+    derbyOrRivalry = false
+  } = input;
+  const priorProbability = CATEGORY_PRIORS[category] ?? CATEGORY_PRIORS.DEFAULT;
+  let nEff = sampleMatchesCount * (formConsistencyScore / 70);
+  if (derbyOrRivalry) nEff *= 0.85;
+  if (fatiguePenalty > 0.05) nEff *= 1 - fatiguePenalty * 1.5;
+  nEff = Math.max(3.5, Math.min(25, nEff));
+  const m = 4.8;
+  const credibilityWeight = Math.max(0.35, Math.min(0.92, nEff / (nEff + m)));
+  const posteriorProbability = Number(
+    (credibilityWeight * observedProbability + (1 - credibilityWeight) * priorProbability).toFixed(1)
+  );
+  const pNorm = posteriorProbability / 100;
+  const standardError = Math.sqrt(pNorm * (1 - pNorm) / (nEff + 2));
+  const marginPct = Number((1.05 * standardError * 100).toFixed(1));
+  const lowerCredibleBound = Number(Math.max(20, posteriorProbability - marginPct).toFixed(1));
+  return {
+    priorProbability,
+    credibilityWeight: Number(credibilityWeight.toFixed(3)),
+    posteriorProbability,
+    standardError: Number(standardError.toFixed(4)),
+    lowerCredibleBound
+  };
+}
+function shrinkLambdaBayesian(teamLambda, leaguePriorLambda, formConsistencyScore = 70) {
+  if (teamLambda <= 0 || isNaN(teamLambda)) return leaguePriorLambda;
+  const weight = Math.max(0.6, Math.min(0.92, 0.6 + formConsistencyScore / 100 * 0.3));
+  const shrunken = teamLambda * weight + leaguePriorLambda * (1 - weight);
+  return Number(shrunken.toFixed(2));
+}
+
+// src/services/math/decisionTreePickSelector.ts
+function rankCandidatePicksByDecisionTree(candidates, context) {
+  if (!candidates || candidates.length === 0) return [];
+  const {
+    closeMatchPercent = 50,
+    derbyOrRivalry = false,
+    eloDiffAbs = 80,
+    urgencyScore = 5,
+    formConsistencyScore = 65,
+    homeFatiguePenalty = 0,
+    awayFatiguePenalty = 0
+  } = context;
+  const totalFatigue = homeFatiguePenalty + awayFatiguePenalty;
+  const scored = candidates.map((pick) => {
+    const bayes = evaluateBayesianCredibility({
+      category: pick.category,
+      observedProbability: pick.probability,
+      formConsistencyScore,
+      fatiguePenalty: totalFatigue,
+      derbyOrRivalry
+    });
+    let treeScore = bayes.lowerCredibleBound * 0.6 + pick.probability * 0.4;
+    if (pick.category === "1X2") {
+      if (closeMatchPercent >= 68) treeScore -= 8.5;
+      if (eloDiffAbs < 75) treeScore -= 6;
+      if (derbyOrRivalry) treeScore -= 7.5;
+    }
+    if (pick.category === "DOUBLE_CHANCE") {
+      if (closeMatchPercent >= 65) treeScore += 4.5;
+    } else if (pick.category === "CORNERS") {
+      if (urgencyScore >= 7) treeScore += 3.8;
+      if (derbyOrRivalry) treeScore += 3.2;
+    } else if (pick.category === "CARDS") {
+      if (derbyOrRivalry) treeScore += 5;
+      if (urgencyScore >= 8) treeScore += 3.5;
+    } else if (pick.category === "SAFE_GOALS") {
+      if (pick.label.includes("M\xE1s de 1.5") && urgencyScore >= 6.5) treeScore += 2.5;
+      if (pick.label.includes("Menos de 3.5") && closeMatchPercent >= 70) treeScore += 3;
+    } else if (pick.category === "HALF_GOALS") {
+      if (totalFatigue > 0.05) treeScore += 2.8;
+    }
+    return {
+      pick,
+      treeScore,
+      lcb: bayes.lowerCredibleBound
+    };
+  });
+  scored.sort((a, b) => b.treeScore - a.treeScore);
+  return scored.map((s) => s.pick);
+}
+function selectOptimalCornerLineByDecisionTree(input) {
+  const {
+    cornersOver75,
+    cornersOver85,
+    cornersOver95,
+    cornersUnder105,
+    expectedTotalCorners
+  } = input;
+  let recommendedCornerLine = `M\xE1s de 8.5 Tiros de Esquina`;
+  let recommendedCornerProb = cornersOver85;
+  if (expectedTotalCorners >= 10.4 && cornersOver85 >= 68) {
+    recommendedCornerLine = `M\xE1s de 8.5 Tiros de Esquina`;
+    recommendedCornerProb = cornersOver85;
+  } else if (expectedTotalCorners >= 9.3 && cornersOver75 >= 68) {
+    recommendedCornerLine = `M\xE1s de 7.5 Tiros de Esquina`;
+    recommendedCornerProb = cornersOver75;
+  } else if (expectedTotalCorners < 8.8 && cornersUnder105 >= 68) {
+    recommendedCornerLine = `Menos de 10.5 Tiros de Esquina`;
+    recommendedCornerProb = cornersUnder105;
+  } else if (cornersOver75 >= cornersUnder105) {
+    recommendedCornerLine = `M\xE1s de 7.5 Tiros de Esquina`;
+    recommendedCornerProb = cornersOver75;
+  } else {
+    recommendedCornerLine = `Menos de 10.5 Tiros de Esquina`;
+    recommendedCornerProb = cornersUnder105;
+  }
+  const recommendedCornerOdd = Math.max(
+    1.22,
+    Math.round(100 / Math.max(1, recommendedCornerProb) * 100) / 100
+  );
+  return {
+    recommendedCornerLine,
+    recommendedCornerProb,
+    recommendedCornerOdd
+  };
+}
+function selectOptimalCardLineByDecisionTree(input) {
+  const {
+    over35CardsProb,
+    over45CardsProb,
+    under45CardsProb,
+    under55CardsProb,
+    expectedYellowCards
+  } = input;
+  let recommendedCardPick = `M\xE1s de 3.5 Tarjetas`;
+  let recommendedCardProb = over35CardsProb;
+  if (expectedYellowCards >= 4.7 && over35CardsProb >= 68) {
+    recommendedCardPick = `M\xE1s de 3.5 Tarjetas en el partido`;
+    recommendedCardProb = over35CardsProb;
+  } else if (expectedYellowCards >= 5.2 && over45CardsProb >= 62) {
+    recommendedCardPick = `M\xE1s de 4.5 Tarjetas en el partido`;
+    recommendedCardProb = over45CardsProb;
+  } else if (expectedYellowCards <= 3.8 && under45CardsProb >= 66) {
+    recommendedCardPick = `Menos de 4.5 Tarjetas en el partido`;
+    recommendedCardProb = under45CardsProb;
+  } else if (over35CardsProb >= under55CardsProb - 6) {
+    recommendedCardPick = `M\xE1s de 3.5 Tarjetas en el partido`;
+    recommendedCardProb = over35CardsProb;
+  } else {
+    recommendedCardPick = `Menos de 5.5 Tarjetas en el partido`;
+    recommendedCardProb = under55CardsProb;
+  }
+  const recommendedCardOdd = Math.max(
+    1.22,
+    Math.round(100 / Math.max(1, recommendedCardProb) * 100) / 100
+  );
+  return {
+    recommendedCardPick,
+    recommendedCardProb,
+    recommendedCardOdd
+  };
+}
+
 // src/services/nbaEngine.ts
 function normalCDF(z) {
   if (z < -7) return 0;
@@ -3592,14 +4096,14 @@ function normalCDF(z) {
     return c * Math.exp(-z * z / 2) * t * (t * (t * (t * (t * b5 + b4) + b3) + b2) + b1);
   }
 }
-function factorial(n) {
+function factorial2(n) {
   let res = 1;
   for (let i = 2; i <= n; i++) res *= i;
   return res;
 }
 function poissonPMF(lambda, k) {
   if (lambda <= 0) return k === 0 ? 1 : 0;
-  return Math.pow(lambda, k) * Math.exp(-lambda) / factorial(k);
+  return Math.pow(lambda, k) * Math.exp(-lambda) / factorial2(k);
 }
 function poissonOver(lambda, line) {
   const threshold = Math.floor(line);
@@ -3664,10 +4168,35 @@ function calculateNBAAnalysis(fixture) {
     baseHomeScore = Math.round((baseHomeScore * 0.35 + fixture.currentScore.home * 0.65) * 10) / 10;
     baseAwayScore = Math.round((baseAwayScore * 0.35 + fixture.currentScore.away * 0.65) * 10) / 10;
   }
-  const preMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
+  const rawPreMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
   const preMatchDiff = baseHomeScore - baseAwayScore;
   const fairSpread = Math.round(-preMatchDiff * 2) / 2;
-  const fairTotalLine = Math.floor(preMatchTotalPoints - 6.5) + 0.5;
+  const fairTotalLine = Math.floor(rawPreMatchTotalPoints - 6.5) + 0.5;
+  const homeWinPct = homeTeam.wins && homeTeam.wins + homeTeam.losses > 0 ? homeTeam.wins / (homeTeam.wins + homeTeam.losses) : 0.52;
+  const awayWinPct = awayTeam.wins && awayTeam.wins + awayTeam.losses > 0 ? awayTeam.wins / (awayTeam.wins + awayTeam.losses) : 0.48;
+  const nbaReg = evaluateNBAMultipleAndLogisticRegression(
+    {
+      homePace: homeTeam.pace,
+      awayPace: awayTeam.pace,
+      homeOffensiveRating: homeTeam.offensiveRating,
+      awayOffensiveRating: awayTeam.offensiveRating,
+      homeDefensiveRating: homeTeam.defensiveRating,
+      awayDefensiveRating: awayTeam.defensiveRating,
+      homeThreePointPct: (homeTeam.threePointPct || 36.5) / 100,
+      awayThreePointPct: (awayTeam.threePointPct || 36.5) / 100,
+      homeRestDays: homeTeam.restDays,
+      awayRestDays: awayTeam.restDays,
+      isFibaLeague,
+      homeWinPct,
+      awayWinPct
+    },
+    baseHomeScore,
+    baseAwayScore,
+    fairTotalLine
+  );
+  baseHomeScore = shrinkLambdaBayesian(nbaReg.regressedHomeScore, LEAGUE_AVG_ORTG, 75);
+  baseAwayScore = shrinkLambdaBayesian(nbaReg.regressedAwayScore, LEAGUE_AVG_ORTG, 75);
+  const preMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
   let projectedHomeScore = baseHomeScore;
   let projectedAwayScore = baseAwayScore;
   let expectedPace = Math.round(basePace * 10) / 10;
@@ -3708,10 +4237,22 @@ function calculateNBAAnalysis(fixture) {
   }
   const projectedTotalPoints = Math.round((projectedHomeScore + projectedAwayScore) * 10) / 10;
   const preMatchZScore = (baseHomeScore - baseAwayScore) / 11.2;
-  const pHomeWinRaw = normalCDF(preMatchZScore);
-  const pHomeWin = Math.round(pHomeWinRaw * 1e3) / 10;
+  const pHomeWinRawNormal = normalCDF(preMatchZScore) * 100;
+  const pHomeWinEnsemble = pHomeWinRawNormal * 0.7 + nbaReg.eloBradleyTerryHomeWinProb * 0.3;
+  const bayesWin = evaluateBayesianCredibility({
+    observedProbability: pHomeWinEnsemble,
+    category: "1X2",
+    derbyOrRivalry: false,
+    fatiguePenalty: (homeTeam.restDays === 0 ? 0.05 : 0) + (awayTeam.restDays === 0 ? 0.06 : 0)
+  });
+  const pHomeWin = Math.round(bayesWin.posteriorProbability * 10) / 10;
   const pAwayWin = Math.round((100 - pHomeWin) * 10) / 10;
-  const overTotalProb = preMatchTotalPoints >= fairTotalLine ? 64.5 : 52.4;
+  const bayesTotal = evaluateBayesianCredibility({
+    observedProbability: nbaReg.logisticOverTotalProb,
+    category: "SAFE_GOALS",
+    derbyOrRivalry: false
+  });
+  const overTotalProb = Math.round(bayesTotal.posteriorProbability * 10) / 10;
   const underTotalProb = Math.round((100 - overTotalProb) * 10) / 10;
   const halfMins = totalGameMinutes / 2;
   const qMins = totalGameMinutes / 4;
@@ -3822,10 +4363,23 @@ function calculateNBAAnalysis(fixture) {
     const defFactor = opponentTeam.defensiveRating / LEAGUE_AVG_ORTG;
     const projPoints = Math.round(player.seasonPpg * basePaceRatio * defFactor * 10) / 10;
     const pointsLine = Math.max(8.5, Math.floor(projPoints) - 0.5);
-    const overPtsProb = projPoints > pointsLine ? 58.4 : 47.2;
+    const zPoints = (projPoints - pointsLine) / 3.8;
+    const rawPtsProb = logisticSigmoid(zPoints) * 100;
+    const bayesPts = evaluateBayesianCredibility({
+      observedProbability: rawPtsProb,
+      category: "SHOTS",
+      derbyOrRivalry: false
+    });
+    const overPtsProb = Math.round(bayesPts.posteriorProbability * 10) / 10;
     const lambda3pm = Math.max(0.8, player.season3pm * basePaceRatio * (opponentTeam.threePointAttemptRate > 0.4 ? 1.06 : 0.96));
     const threePointersLine = Math.max(0.5, Math.floor(lambda3pm) + 0.5);
-    const over3pmProb = poissonOver(lambda3pm, threePointersLine);
+    const raw3pmProb = poissonOver(lambda3pm, threePointersLine);
+    const bayes3pm = evaluateBayesianCredibility({
+      observedProbability: raw3pmProb,
+      category: "SHOTS",
+      derbyOrRivalry: false
+    });
+    const over3pmProb = Math.round(bayes3pm.posteriorProbability * 10) / 10;
     const under3pmProb = Math.round((100 - over3pmProb) * 10) / 10;
     const isGuard = player.position === "PG" || player.position === "SG";
     const isBig = player.position === "PF" || player.position === "C";
@@ -3834,9 +4388,16 @@ function calculateNBAAnalysis(fixture) {
     const astLine = Math.floor(baseAst) + 0.5;
     const rebLine = Math.floor(baseReb) + 0.5;
     const praLine = Math.floor(projPoints + baseAst + baseReb) - 0.5;
+    const zPra = (projPoints + baseAst + baseReb - praLine) / 4.5;
+    const rawPraProb = logisticSigmoid(zPra) * 100;
+    const bayesPra = evaluateBayesianCredibility({
+      observedProbability: rawPraProb,
+      category: "SHOTS",
+      derbyOrRivalry: false
+    });
     const overAstProb = 60.5;
     const overRebProb = 58;
-    const overPraProb = 63.5;
+    const overPraProb = Math.round(bayesPra.posteriorProbability * 10) / 10;
     let liveCurrentPoints;
     let liveCurrent3pm;
     let liveCurrentAst;
@@ -4069,43 +4630,6 @@ function extractNBABettingMarketSuggestions(fixture, analysis) {
 }
 
 // src/services/mathEngine.ts
-var factorials = [1, 1, 2, 6, 24, 120, 720, 5040, 40320];
-function factorial2(n) {
-  if (n <= 0) return 1;
-  if (n < factorials.length) return factorials[n];
-  let res = factorials[factorials.length - 1];
-  for (let i = factorials.length; i <= n; i++) {
-    res *= i;
-  }
-  return res;
-}
-function poissonPmf(k, lambda) {
-  if (lambda <= 0) return k === 0 ? 1 : 0;
-  return Math.pow(lambda, k) * Math.exp(-lambda) / factorial2(k);
-}
-function poissonCdf(maxK, lambda) {
-  if (lambda <= 0) return 1;
-  let sum = 0;
-  for (let k = 0; k <= Math.floor(maxK); k++) {
-    sum += poissonPmf(k, lambda);
-  }
-  return Math.min(1, Math.max(0, sum));
-}
-function dixonColesTau(x, y, lambda1, lambda2, rho = -0.11) {
-  if (x === 0 && y === 0) {
-    return Math.max(0.01, 1 - lambda1 * lambda2 * rho);
-  }
-  if (x === 1 && y === 0) {
-    return Math.max(0.01, 1 + lambda2 * rho);
-  }
-  if (x === 0 && y === 1) {
-    return Math.max(0.01, 1 + lambda1 * rho);
-  }
-  if (x === 1 && y === 1) {
-    return Math.max(0.01, 1 - rho);
-  }
-  return 1;
-}
 var analysisCache = /* @__PURE__ */ new Map();
 function calculateMatchAnalysis(fixture) {
   const liveCornersKey = fixture.liveStats ? `_c${fixture.liveStats.home.corners}_${fixture.liveStats.away.corners}_y${fixture.liveStats.home.yellowCards}_${fixture.liveStats.away.yellowCards}` : "";
@@ -4136,6 +4660,7 @@ function calculateMatchAnalysis(fixture) {
     homePenaltyPercent: Math.round(homeRestPenalty * 1e3) / 10,
     fatigueDiagnosis: awayTotalPenalty > 0.07 ? `Desgaste severo en el cuadro visitante: ${awayRestHours}h de descanso y ${travel.awayDistanceKm}km de traslado. Penalizaci\xF3n de -${(awayTotalPenalty * 100).toFixed(1)}% en xG.` : awayTotalPenalty > 0.03 ? `Fatiga moderada para ${awayShort} (${awayRestHours}h de recuperaci\xF3n). Ligera desventaja de fondo f\xEDsico.` : `Condici\xF3n atl\xE9tica \xF3ptima en ambos planteles (>72h de recuperaci\xF3n entre competencias).`
   };
+  const eloBt = evaluateEloAndBradleyTerry(homeTeam, awayTeam, homeRestPenalty, awayTotalPenalty);
   const leagueMean = league.avgGoalsPerMatch ? league.avgGoalsPerMatch / 2 : 1.35;
   const homeAdvantageFactor = 1.15;
   const homeAttack = Number(homeTeam.attackStrength) || 1.35;
@@ -4157,6 +4682,8 @@ function calculateMatchAnalysis(fixture) {
     if (p.position === "DEL" || p.position === "MED") lambdaAway *= 0.94;
     if (p.position === "DEF" || p.position === "POR") lambdaHome *= 1.05;
   });
+  lambdaHome = shrinkLambdaBayesian(lambdaHome, leagueMean, eloBt.formConsistencyScore);
+  lambdaAway = shrinkLambdaBayesian(lambdaAway, leagueMean, eloBt.formConsistencyScore);
   lambdaHome = Math.max(0.35, Math.round(lambdaHome * 100) / 100);
   lambdaAway = Math.max(0.28, Math.round(lambdaAway * 100) / 100);
   const totalXG = Math.round((lambdaHome + lambdaAway) * 100) / 100;
@@ -4208,9 +4735,12 @@ function calculateMatchAnalysis(fixture) {
       });
     }
   }
-  pHomeWin = Math.round(pHomeWin * 10) / 10;
-  pDraw = Math.round(pDraw * 10) / 10;
-  pAwayWin = Math.round(pAwayWin * 10) / 10;
+  const dcHomeWin = pHomeWin;
+  const dcDraw = pDraw;
+  const dcAwayWin = pAwayWin;
+  pHomeWin = Math.round((0.7 * dcHomeWin + 0.3 * eloBt.eloHomeWinProb) * 10) / 10;
+  pDraw = Math.round((0.7 * dcDraw + 0.3 * eloBt.eloDrawProb) * 10) / 10;
+  pAwayWin = Math.round((0.7 * dcAwayWin + 0.3 * eloBt.eloAwayWinProb) * 10) / 10;
   const diff1x2 = 100 - (pHomeWin + pDraw + pAwayWin);
   pDraw = Math.max(1, Math.round((pDraw + diff1x2) * 10) / 10);
   const fairOddsHome = pHomeWin > 0 ? Math.round(100 / pHomeWin * 100) / 100 : 99;
@@ -4277,13 +4807,31 @@ function calculateMatchAnalysis(fixture) {
     expected2ndHalfGoals,
     rationale: `El modelo proyecta mayor resoluci\xF3n en la 2\xAA Mitad (${secondHalfGoalProb}% de prob. de gol en 2T vs ${firstHalfGoalProb}% en 1T), producto del desgaste f\xEDsico y los ajustes t\xE1cticos (${expected2ndHalfGoals} xG en 2T vs ${expected1stHalfGoals} xG en 1T).`
   };
-  const bttsYes = Math.round(bttsYesProb * 10) / 10;
+  const calibratedGoals = calibrateGoalsMarketsWithLogisticRegression(
+    {
+      bttsYes: bttsYesProb,
+      over15: over15Prob,
+      over25: over25Prob,
+      over35: over35Prob
+    },
+    {
+      lambdaHome,
+      lambdaAway,
+      totalXG,
+      urgencyScore,
+      homeAttack,
+      awayAttack,
+      homeDefense,
+      awayDefense
+    }
+  );
+  const bttsYes = calibratedGoals.bttsYes;
   const bttsNo = Math.round((100 - bttsYes) * 10) / 10;
-  const over15 = Math.round(over15Prob * 10) / 10;
+  const over15 = calibratedGoals.over15;
   const under15 = Math.round((100 - over15) * 10) / 10;
-  const over25 = Math.round(over25Prob * 10) / 10;
+  const over25 = calibratedGoals.over25;
   const under25 = Math.round((100 - over25) * 10) / 10;
-  const over35 = Math.round(over35Prob * 10) / 10;
+  const over35 = calibratedGoals.over35;
   const under35 = Math.round((100 - over35) * 10) / 10;
   const doubleChance1X = Math.min(96, Math.round((pHomeWin + pDraw) * 10) / 10);
   const doubleChanceX2 = Math.min(96, Math.round((pAwayWin + pDraw) * 10) / 10);
@@ -4364,14 +4912,20 @@ function calculateMatchAnalysis(fixture) {
       anytimeGoalProb: awayStrikerGoalProb
     }
   };
-  const urgencyCornerBoost = urgencyScore >= 7 ? 1.07 : 1;
-  const rawHomeCorners = (baseHomeShots * 0.39 + homeAttack * 0.95) * urgencyCornerBoost;
-  const rawAwayCorners = (baseAwayShots * 0.37 + awayAttack * 0.78) * urgencyCornerBoost;
-  const preMatchHomeCorners = Math.min(7.8, Math.max(3.1, Math.round(rawHomeCorners * 10) / 10));
-  const preMatchAwayCorners = Math.min(6.8, Math.max(2.5, Math.round(rawAwayCorners * 10) / 10));
-  const lambdaHomeCorners = preMatchHomeCorners;
-  const lambdaAwayCorners = preMatchAwayCorners;
-  const expectedTotalCorners = Math.round((lambdaHomeCorners + lambdaAwayCorners) * 10) / 10;
+  const cornersReg = predictCornersByMultipleRegression({
+    baseHomeShots,
+    baseAwayShots,
+    homeAttack,
+    awayAttack,
+    urgencyScore,
+    derbyOrRivalry: Boolean(derbyOrRivalry),
+    eloDiffWithHomeAdvantage: eloBt.homeEloRating + 45 - eloBt.awayEloRating,
+    homeAvgCornersFor: 5.4,
+    awayAvgCornersFor: 4.5
+  });
+  const lambdaHomeCorners = cornersReg.lambdaHomeCorners;
+  const lambdaAwayCorners = cornersReg.lambdaAwayCorners;
+  const expectedTotalCorners = cornersReg.expectedTotalCorners;
   const calcCornerOverProb = (lineFloor) => {
     return Math.round((1 - poissonCdf(lineFloor, expectedTotalCorners)) * 1e3) / 10;
   };
@@ -4381,25 +4935,17 @@ function calculateMatchAnalysis(fixture) {
   const cornersOver105 = calcCornerOverProb(10);
   const cornersUnder95 = Math.round((100 - cornersOver95) * 10) / 10;
   const cornersUnder105 = Math.round((100 - cornersOver105) * 10) / 10;
-  let recommendedCornerLine = `M\xE1s de 8.5 Tiros de Esquina`;
-  let recommendedCornerProb = cornersOver85;
-  if (expectedTotalCorners >= 10.4 && cornersOver85 >= 68) {
-    recommendedCornerLine = `M\xE1s de 8.5 Tiros de Esquina`;
-    recommendedCornerProb = cornersOver85;
-  } else if (expectedTotalCorners >= 9.3 && cornersOver75 >= 68) {
-    recommendedCornerLine = `M\xE1s de 7.5 Tiros de Esquina`;
-    recommendedCornerProb = cornersOver75;
-  } else if (expectedTotalCorners < 8.8 && cornersUnder105 >= 68) {
-    recommendedCornerLine = `Menos de 10.5 Tiros de Esquina`;
-    recommendedCornerProb = cornersUnder105;
-  } else if (cornersOver75 >= cornersUnder105) {
-    recommendedCornerLine = `M\xE1s de 7.5 Tiros de Esquina`;
-    recommendedCornerProb = cornersOver75;
-  } else {
-    recommendedCornerLine = `Menos de 10.5 Tiros de Esquina`;
-    recommendedCornerProb = cornersUnder105;
-  }
-  const recommendedCornerOdd = Math.max(1.22, Math.round(100 / Math.max(1, recommendedCornerProb) * 100) / 100);
+  const optimalCorner = selectOptimalCornerLineByDecisionTree({
+    expectedTotalCorners,
+    cornersOver75,
+    cornersOver85,
+    cornersOver95,
+    cornersUnder95,
+    cornersUnder105
+  });
+  const recommendedCornerLine = optimalCorner.recommendedCornerLine;
+  const recommendedCornerProb = optimalCorner.recommendedCornerProb;
+  const recommendedCornerOdd = optimalCorner.recommendedCornerOdd;
   const cornersMarket = {
     lambdaHomeCorners,
     lambdaAwayCorners,
@@ -4414,19 +4960,20 @@ function calculateMatchAnalysis(fixture) {
     recommendedProb: recommendedCornerProb,
     recommendedOdd: recommendedCornerOdd
   };
-  let tensionFactor = 1;
-  if (derbyOrRivalry) tensionFactor = 1.16;
-  else if (isTopClash) tensionFactor = 1.1;
-  else if (isRelegationBattle) tensionFactor = 1.09;
-  const baseCards = referee.avgYellowCards || (referee.rigor === "Severo" ? 4.8 : referee.rigor === "Flexible" ? 3.4 : 4.1);
-  const rawExpectedYellow = baseCards * tensionFactor;
-  const preMatchYellows = Math.round(Math.min(6.2, Math.max(2.8, rawExpectedYellow)) * 10) / 10;
-  const homeCardShare = homeTeam.attackStrength > awayTeam.attackStrength ? 0.45 : 0.5;
-  const preMatchHomeYellows = Math.round(preMatchYellows * homeCardShare * 10) / 10;
-  const preMatchAwayYellows = Math.round((preMatchYellows - preMatchHomeYellows) * 10) / 10;
-  const expectedHomeYellows = preMatchHomeYellows;
-  const expectedAwayYellows = preMatchAwayYellows;
-  const expectedYellowCards = Math.round((expectedHomeYellows + expectedAwayYellows) * 10) / 10;
+  const cardsReg = predictCardsByMultipleRegression({
+    refereeAvgYellowCards: referee.avgYellowCards,
+    refereeRigor: referee.rigor,
+    derbyOrRivalry: Boolean(derbyOrRivalry),
+    isTopClash,
+    isRelegationBattle,
+    homeAttackStrength: homeAttack,
+    awayAttackStrength: awayAttack,
+    urgencyIndex: urgencyScore
+  });
+  const tensionFactor = cardsReg.tensionFactor;
+  const expectedYellowCards = cardsReg.expectedYellowCards;
+  const expectedHomeYellows = cardsReg.expectedHomeYellows;
+  const expectedAwayYellows = cardsReg.expectedAwayYellows;
   const calcCardsOverProb = (lineFloor) => {
     return Math.round((1 - poissonCdf(lineFloor, expectedYellowCards)) * 1e3) / 10;
   };
@@ -4434,25 +4981,17 @@ function calculateMatchAnalysis(fixture) {
   const over45CardsProb = calcCardsOverProb(4);
   const under45CardsProb = Math.round((100 - over45CardsProb) * 10) / 10;
   const under55CardsProb = Math.round((100 - calcCardsOverProb(5)) * 10) / 10;
-  let recommendedCardPick = `M\xE1s de 3.5 Tarjetas`;
-  let recommendedCardProb = over35CardsProb;
-  if (expectedYellowCards >= 4.7 && over35CardsProb >= 68) {
-    recommendedCardPick = `M\xE1s de 3.5 Tarjetas en el partido`;
-    recommendedCardProb = over35CardsProb;
-  } else if (expectedYellowCards >= 5.2 && over45CardsProb >= 62) {
-    recommendedCardPick = `M\xE1s de 4.5 Tarjetas en el partido`;
-    recommendedCardProb = over45CardsProb;
-  } else if (expectedYellowCards <= 3.8 && under45CardsProb >= 66) {
-    recommendedCardPick = `Menos de 4.5 Tarjetas en el partido`;
-    recommendedCardProb = under45CardsProb;
-  } else if (over35CardsProb >= under55CardsProb - 6) {
-    recommendedCardPick = `M\xE1s de 3.5 Tarjetas en el partido`;
-    recommendedCardProb = over35CardsProb;
-  } else {
-    recommendedCardPick = `Menos de 5.5 Tarjetas en el partido`;
-    recommendedCardProb = under55CardsProb;
-  }
-  const recommendedCardOdd = Math.max(1.22, Math.round(100 / Math.max(1, recommendedCardProb) * 100) / 100);
+  const optimalCard = selectOptimalCardLineByDecisionTree({
+    expectedYellowCards,
+    over35CardsProb,
+    over45CardsProb,
+    under45CardsProb,
+    under55CardsProb,
+    refereeRigor: referee.rigor
+  });
+  const recommendedCardPick = optimalCard.recommendedCardPick;
+  const recommendedCardProb = optimalCard.recommendedCardProb;
+  const recommendedCardOdd = optimalCard.recommendedCardOdd;
   const baseRed = referee.avgRedCards || 0.16;
   const expectedRedCards = Math.round(Math.min(0.35, Math.max(0.08, baseRed * tensionFactor)) * 100) / 100;
   const redCardRiskPercent = Math.round((1 - Math.exp(-expectedRedCards)) * 1e3) / 10;
@@ -4782,15 +5321,18 @@ function calculateMatchAnalysis(fixture) {
       }
     });
   }
-  candidatePicks.sort((a, b) => {
-    if (Math.abs(b.probability - a.probability) <= 1.2) {
-      if (a.category === "1X2" && b.category !== "1X2") return 1;
-      if (b.category === "1X2" && a.category !== "1X2") return -1;
-    }
-    return b.probability - a.probability;
+  const rankedCandidatePicks = rankCandidatePicksByDecisionTree(candidatePicks, {
+    closeMatchPercent,
+    derbyOrRivalry: Boolean(derbyOrRivalry),
+    eloDiffAbs: Math.abs(eloBt.homeEloRating - eloBt.awayEloRating),
+    urgencyScore,
+    formConsistencyScore: eloBt.formConsistencyScore,
+    homeFatiguePenalty: homeRestPenalty,
+    awayFatiguePenalty: awayTotalPenalty,
+    refereeRigor: referee.rigor
   });
-  const topSafePick = candidatePicks[0];
-  const allRankedPicks = candidatePicks.slice(0, 6);
+  const topSafePick = rankedCandidatePicks[0] || candidatePicks[0];
+  const allRankedPicks = rankedCandidatePicks.slice(0, 6);
   const recommendedPicks = allRankedPicks.map(
     (p) => ({
       label: p.label,
@@ -8156,7 +8698,9 @@ function getAdminConfig() {
     adminWhatsApp: process.env.ADMIN_WHATSAPP || "573213902708",
     supportName: "Administrador G METRICS",
     customLogoUrl: "/custom-logo.png",
-    colorTheme: "cyan-emerald"
+    colorTheme: "cyan-emerald",
+    freeAccessMode: process.env.FREE_ACCESS_MODE === "false" ? false : true
+    // Por defecto activo para acceso libre promocional
   };
   if (memoryAdminConfig) {
     return memoryAdminConfig;
@@ -8357,13 +8901,14 @@ app.get("/api/license/config", (req, res) => {
     supportName: cfg.supportName,
     customLogoUrl: cfg.customLogoUrl,
     colorTheme: cfg.colorTheme || "cyan-emerald",
+    freeAccessMode: cfg.freeAccessMode !== void 0 ? Boolean(cfg.freeAccessMode) : true,
     currentPin: isAuthenticated ? cfg.adminPin : void 0,
     requiresAuth: true
   });
 });
 app.post("/api/license/config", async (req, res) => {
   if (checkAuthLockout(req, res)) return;
-  const { currentPin, newPin, adminWhatsApp, supportName, customLogoUrl, colorTheme } = req.body || {};
+  const { currentPin, newPin, adminWhatsApp, supportName, customLogoUrl, colorTheme, freeAccessMode } = req.body || {};
   const currentCfg = getAdminConfig();
   const cred = extractAdminCredential(req, currentPin);
   if (!isValidAdminPin(cred, currentCfg)) {
@@ -8386,6 +8931,9 @@ app.post("/api/license/config", async (req, res) => {
   if (typeof colorTheme === "string") {
     currentCfg.colorTheme = sanitizeText(colorTheme, 32);
   }
+  if (typeof freeAccessMode === "boolean") {
+    currentCfg.freeAccessMode = freeAccessMode;
+  }
   saveAdminConfig(currentCfg);
   return res.json({
     success: true,
@@ -8395,7 +8943,8 @@ app.post("/api/license/config", async (req, res) => {
       adminWhatsApp: currentCfg.adminWhatsApp,
       supportName: currentCfg.supportName,
       customLogoUrl: currentCfg.customLogoUrl,
-      colorTheme: currentCfg.colorTheme
+      colorTheme: currentCfg.colorTheme,
+      freeAccessMode: Boolean(currentCfg.freeAccessMode)
     }
   });
 });
@@ -8842,7 +9391,9 @@ app.post("/api/auth/login", async (req, res) => {
   if (checkAuthLockout(req, res)) return;
   try {
     const { username, pin, deviceId, deviceName } = req.body || {};
-    const result = await loginAppUser(username, pin, deviceId, deviceName);
+    const cfg = getAdminConfig();
+    const isFreeMode = cfg.freeAccessMode !== void 0 ? Boolean(cfg.freeAccessMode) : true;
+    const result = await loginAppUser(username, pin, deviceId, deviceName, isFreeMode);
     if (!result.success && (result.code === "INVALID_PIN" || result.code === "USER_NOT_FOUND")) {
       await recordAuthFailure(req);
     } else if (result.success) {
@@ -8914,8 +9465,10 @@ app.get("/api/auth/session", async (req, res) => {
       message: "Cuenta suspendida o eliminada"
     });
   }
+  const cfg = getAdminConfig();
+  const isFreePromoActive = cfg.freeAccessMode !== void 0 ? Boolean(cfg.freeAccessMode) : true;
   const isVip = Boolean(
-    latestRole === "admin" || (latestExpiresAt ? latestExpiresAt > Date.now() : true)
+    latestRole === "admin" || latestExpiresAt !== null && latestExpiresAt !== void 0 && Number(latestExpiresAt) > Date.now() || isFreePromoActive && (session.authProvider === "google" || latestRole === "client")
   );
   if (latestExpiresAt !== session.expiresAt || latestRole !== session.role) {
     const refreshedJwt = createSessionJwt({
@@ -8933,6 +9486,7 @@ app.get("/api/auth/session", async (req, res) => {
     success: true,
     authenticated: true,
     isVip,
+    freeAccessMode: isFreePromoActive,
     user: {
       id: session.sub,
       username: latestUsername,
@@ -8956,9 +9510,11 @@ app.get("/api/auth/config", (req, res) => {
 });
 app.post("/api/auth/google", async (req, res) => {
   try {
-    const { email, displayName, deviceId, deviceName, fingerprint, accessToken, providerToken } = req.body || {};
+    const { email, displayName, deviceId, deviceName, fingerprint, accessToken, providerToken, customUsername, customPin } = req.body || {};
     const clientIp = getClientIp(req);
     const subnetHash = calculateSubnetHash(clientIp);
+    const cfg = getAdminConfig();
+    const isFreeMode = cfg.freeAccessMode !== void 0 ? Boolean(cfg.freeAccessMode) : true;
     const result = await loginOrRegisterGoogleUser(
       email,
       displayName,
@@ -8967,7 +9523,10 @@ app.post("/api/auth/google", async (req, res) => {
       fingerprint,
       accessToken,
       providerToken,
-      subnetHash
+      subnetHash,
+      isFreeMode,
+      customUsername,
+      customPin
     );
     if (result.success && result.user) {
       if (result.sessionToken) {

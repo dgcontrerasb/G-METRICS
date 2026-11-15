@@ -1,49 +1,72 @@
-# ⚡ SportStats Pro — Plataforma de Inteligencia Cuantitativa y Análisis Deportivo
+# ⚡ G-METRICS — La Ciencia Detrás de la Victoria
 
-![Version](https://img.shields.io/badge/version-1.0.0-00ff66?style=flat-square&labelColor=0b0e14)
+![Version](https://img.shields.io/badge/version-2.4.0-00ff66?style=flat-square&labelColor=0b0e14)
 ![React](https://img.shields.io/badge/React_19-TypeScript-161b22?style=flat-square&logo=react&logoColor=00ff66)
 ![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS_v4-Cyber--Fintech_Dark-161b22?style=flat-square&logo=tailwindcss&logoColor=00ff66)
+![Architecture](https://img.shields.io/badge/Architecture-Zero--Cost_$0_USD-00ff66?style=flat-square&labelColor=0b0e14)
 ![Backend](https://img.shields.io/badge/Express-Serverless_API-161b22?style=flat-square&logo=node.js&logoColor=00ff66)
-![Database](https://img.shields.io/badge/Supabase-PostgreSQL_%26_Cache-161b22?style=flat-square&logo=supabase&logoColor=00ff66)
+![Database](https://img.shields.io/badge/Supabase-PostgreSQL_Free_Tier-161b22?style=flat-square&logo=supabase&logoColor=00ff66)
 ![Deploy](https://img.shields.io/badge/Deploy-Vercel_Ready-161b22?style=flat-square&logo=vercel&logoColor=ffffff)
 ![PWA](https://img.shields.io/badge/PWA-Installable-161b22?style=flat-square&logoColor=00ff66)
 
-**SportStats Pro** es una plataforma web progresiva (PWA) de alto rendimiento para el análisis estadístico, modelado matemático predictivo y seguimiento de eventos en tiempo real enfocado en **Fútbol Profesional Internacional** y **Baloncesto NBA**.
+**G-METRICS** es una plataforma de inteligencia deportiva cuantitativa de alto rendimiento para el análisis estadístico, modelado matemático predictivo y seguimiento de eventos en tiempo real enfocado en **Fútbol Profesional Internacional** y **Baloncesto NBA**.
 
-Diseñada bajo una interfaz financiera de alta fidelidad (**Cyber-Fintech Dark**), combina modelado probabilístico bivariado, simulaciones estocásticas de Monte Carlo, alertas sonoras en vivo, auditoría de valor esperado (+EV) y exportación de reportes ejecutivos en PDF.
+Diseñada bajo una estética financiera de vanguardia (**Cyber-Fintech Dark**), combina 7 modelos probabilísticos, simulación estocástica, telemetría táctica 2D, escáner de valor esperado (+EV), constructor de boletos inteligentes (Parlays) y acceso instantáneo en 1 clic con Google OAuth.
+
+---
+
+## 🏛️ Arquitectura Zero-Cost ($0 USD/Mes) & Rendimiento
+
+El sistema está diseñado y blindado bajo la premisa inquebrantable de **operar a coste cero absoluto ($0 USD)**:
+* **Protección Extrema de Cuotas de APIs**: Trata APIs de terceros como recursos escasos y críticos. Las llamadas nunca se realizan directamente desde los navegadores de los clientes.
+* **Proxy Centralizado & Stale-While-Revalidate**: Todo el tráfico fluye por `server.ts` / `/api/index.js` utilizando caché en disco y memoria compartida. Si miles de usuarios consultan un partido al mismo tiempo, todos son atendidos desde la caché, consumiendo exactamente 1 llamada al proveedor.
+* **Pool Inteligente de Supabase (Free Tier)**: Agrupamiento de consultas, almacenamiento local (`localStorage`) para licencias, marcadores y slips, y prevención total de polling redundante a la base de datos PostgreSQL.
+* **Autenticación Zero-Trust**: Google OAuth sin fricción integrado con licencias criptográficas (`scrypt` / HMAC-SHA256) y validación de hardware fingerprint (`Device ID`).
 
 ---
 
 ## 🚀 Capacidades y Módulos Principales
 
-### ⚽ 1. Motor Cuantitativo de Fútbol
-* **Modelado Bivariado Poisson & Ajuste Dixon-Coles**: Proyección de goles esperados (**xG**), probabilidades reales de mercados **1X2**, **Doble Oportunidad**, **Over/Under (1.5, 2.5, 3.5)** y **Ambos Marcan (BTTS)**.
-* **Simulación de Monte Carlo (10,000 iteraciones)**: Proyección de la distribución probabilística de marcadores exactos más probables.
-* **Métricas Tácticas y Fricción**: Estimación estadística de córners, tarjetas amarillas/rojas, impacto arbitral y rachas ponderadas por localía y visita.
-* **Clasificaciones y Comparativa H2H**: Tablas de posiciones en vivo (General, Local, Visitante) y desglose de enfrentamientos directos previos.
+### 🌟 1. Landing Page Dinámica (The Quant Terminal + Matchday Live)
+* **Cinta Marquesina de Telemetría en Vivo**: Transmisión continua de partidos programados y en juego del día actual con escudos oficiales, marcadores en tiempo real y porcentaje de certeza.
+* **Escaparate de Duelos Estelares Rotativos**: Tarjeta interactiva con rotación automática suave entre los principales duelos de la jornada (fútbol y NBA), mostrando fotos de jugadores clave, xG proyectado y el pick estelar (+EV).
+* **Auditoría Semanal de Certeza**: Métrica calculada dinámicamente según el ciclo de la semana ISO actual (ej. *Auditoría Semanal Sem. 46: 84.6% Certeza*).
+* **Ingreso Inteligente en 1 Clic**: Botón de acceso directo con Google que registra automáticamente a nuevos usuarios y autentica a usuarios existentes sin contraseñas ni formularios engorrosos.
+* **Dock Dual-Device**: Indicador de compatibilidad widescreen de 3 columnas en PC y sincronización 100% táctil en dispositivos móviles.
 
-### 🔴 2. Monitor en Vivo y Notificaciones Inteligentes (Live Tracker)
-* **Seguimiento Minuto a Minuto**: Estado de partidos en juego con filtros prioritarios para casas de apuestas principales.
-* **Alertas Sonoras y Visuales de Goles**: Sistema de audio sintético generado mediante Web Audio API nativa (sin dependencias externas de archivos de audio) con notificación flotante animada al detectarse cambio de marcador en tiempo real.
-* **Respaldo Cruzado de Marcadores**: Sincronización entre fuentes primarias y cuotas de mercado para asegurar consistencia de resultados.
+### ⚽ 2. Motor Cuantitativo de Fútbol
+* **Modelado de Goles Esperados (xG)**: Proyecciones de poder ofensivo y solidez defensiva para cada equipo.
+* **Probabilidad 1X2 & Marcadores Exactos**: Top 3 de marcadores más probables con cuotas justas y cálculo de porcentaje real.
+* **Mercados de Goles & Córners**: Over/Under (1.5, 2.5, 3.5), Ambos Equipos Anotan (BTTS) y líneas estimadas de tiros de esquina.
+* **Rigor Arbitral & Disciplina**: Análisis del juez principal del encuentro, proyección de tarjetas amarillas esperadas y porcentaje de riesgo de tarjeta roja.
+* **Pestaña Unificada "Goles, Córn. & Árbitro"**: Interfaz optimizada que consolida las métricas disciplinarias y de fricción en una única vista ergonómica sin espacio desperdiciado.
 
 ### 🏀 3. Motor Estadístico NBA
-* **Métricas Avanzadas de Ritmo y Eficiencia**: Proyección de puntos totales por escuadra según ritmo de juego (**Pace**) y rating ofensivo/defensivo.
-* **Proyección de Hándicaps y Totales**: Análisis de margen esperado de victoria (**Spread / Hándicap**), líneas Over/Under y Moneyline ajustadas por factor cancha y descanso.
+* **Métricas de Ritmo (Pace) y Ratings**: Choque de eficiencia ofensiva (ORTG), defensiva (DRTG) y total de puntos proyectados.
+* **Línea Justa y Spread Estimado**: Margen esperado de victoria ajustado por localía, días de descanso y rachas recientes.
+* **Props de Jugadores (+EV)**: Detección de líneas de puntos y triples más favorables con sus respectivas probabilidades de acierto.
+* **Desglose por Cuartos**: Proyecciones individuales para 1Q, 2Q, 3Q, 4Q y primera mitad.
 
-### 💹 4. Análisis de Valor (+EV) y Gestión de Capital
-* **Detector de Valor Esperado (+EV)**: Comparación algorítmica en tiempo real entre la probabilidad estimada por el modelo y las cuotas implícitas ofrecidas por el mercado.
-* **Calculadora Didáctica de Retorno**: Simulación de beneficios brutos, utilidad neta y dimensionamiento de postura basado en el **Criterio de Kelly**.
-* **Constructor de Combinadas (Parlays)**: Acumulador dinámico de selecciones con cálculo de cuota global y probabilidad conjunta estimada.
+### 🏟️ 4. Canchas Tácticas 2D & Alineaciones Oficiales
+* **Cancha 2D Horizontal de Fútbol**: Representación gráfica del terreno de juego con esquema táctico (ej. 4-3-3), entrenadores, estadio, árbitro y distribución espacial de los 11 titulares.
+* **Cancha 2.5D de Baloncesto**: Pizarra táctica de quintetos titulares, banca y estado de posesión.
+* **Vista Lista Alternativa**: Selector para inspeccionar la nómina completa jugador por jugador, con estado de tarjetas, lesiones y acceso a perfiles estadísticos individuales.
 
-### 📄 5. Generación de Reportes PDF
-* **Exportación Ejecutiva de Análisis**: Creación de informes detallados en PDF (vía `jspdf` y `jspdf-autotable`) con desglose de probabilidades, xG proyectado, cuotas y métricas tácticas listos para compartir o imprimir.
+### 🖥️ 5. Columna Match Spotlight (Modo Widescreen 3 Columnas)
+* **Inspección sin salir de la Cartelera**: Al hacer clic en cualquier encuentro en PC, la tercera columna derecha muestra el análisis profundo, telemetría táctica y marcadores sin recargar ni navegar.
+* **Cabecera Degradé Cyber-Fintech**: Fondo en degradé cinematográfico esmeralda con resplandores ambientales cinéticos en fútbol y degradé ámbar en baloncesto.
+* **Lenguaje Accesible**: Eliminación de tecnicismos complejos (*Dixon-Coles*, *Poisson Bivariado*) a favor de métricas claras para cualquier aficionado o analista.
 
-### 🛡️ 6. Seguridad, Licencias y Optimización de APIs
-* **Gestión de Licencias por Dispositivo (`Device ID`)**: Validación criptográfica de accesos (planes Demo, Mensual, Semestral, Anual o Vitalicio).
-* **Base de Datos y Caché Compartida con Supabase**: Persistencia en la nube para sincronización de licencias y caché inteligente de cuotas y partidos para reducir llamadas a APIs externas.
-* **Escudo contra Fuerza Bruta**: Retardo progresivo (*tarpitting*), límite de intentos por IP y bloqueo temporal en caso de actividad sospechosa.
-* **Panel de Control Administrativo**: Interfaz protegida por PIN para generación, revocación y auditoría de licencias en tiempo real.
+### 🎟️ 6. Constructor de Boletos Combinados (Parlays)
+* **Cálculo de Probabilidad Conjunta**: Multiplicación de cuotas y cálculo estocástico de la probabilidad matemática real del boleto.
+* **Prueba de Estrés & Fair Odds**: Recomendación de cuota mínima aceptable para asegurar ventaja matemática sobre la casa.
+* **Historial de Boletos Guardados**: Gestión completa de boletos con filtros de estado (*Pendiente*, *Acertado*, *Fallado*) y exportación en 1 clic para compartir vía WhatsApp.
+
+### 📖 7. Centro de Ayuda, Glosario Didáctico y Modales Glassmorphism
+* **Backdrop Blur Translúcido Cristalino**: Todos los modales implementan fondos difuminados suaves (`bg-black/25 backdrop-blur-sm`) que permiten apreciar claramente el contexto de la aplicación.
+* **Glosario A-Z**: Diccionario con buscador en tiempo real de términos clave (+EV, Fair Odd, Stake, xG, BTTS, Pace, Spread).
+* **Simulador Rápido de Cuota y Retorno**: Calculadora interactiva para proyectar retorno bruto y ganancia neta.
+* **Marco Legal y Habeas Data**: Cumplimiento normativo para mayores de edad (+18) y protección de datos (Ley 1581).
 
 ---
 
@@ -51,123 +74,94 @@ Diseñada bajo una interfaz financiera de alta fidelidad (**Cyber-Fintech Dark**
 
 | Capa | Tecnologías |
 | :--- | :--- |
-| **Frontend** | React 19, TypeScript, Tailwind CSS v4, Lucide Icons, Motion, jsPDF |
+| **Frontend** | React 19, TypeScript, Vite, Tailwind CSS v4, Lucide Icons, Canvas / Web Audio API |
 | **Backend / API** | Node.js, Express, ESBuild (empaquetado a Serverless Bundle) |
-| **Persistencia & Caché** | Supabase (PostgreSQL) + Caché de memoria en runtime |
-| **Fuentes de Datos Deportivos** | ESPN Core API (v2), Football-Data.org (v4), The Odds API |
+| **Autenticación** | Supabase Auth (Google OAuth), tokens seguros HMAC-SHA256 |
+| **Persistencia & Caché** | Supabase (PostgreSQL Free Tier) + Caché en disco/memoria en backend |
+| **Fuentes Deportivas** | Motor híbrido ESPN Core API + Football-Data.org + Consenso de mercado |
 | **Despliegue** | Vercel (Frontend Estático + Serverless Function `/api/index.js`) |
-| **Móvil / PWA** | Web App Manifest, Service Worker y soporte para instalación de pantalla de inicio |
+| **Móvil / PWA** | Web App Manifest, Service Worker offline y soporte instalable |
 
 ---
 
 ## 📂 Estructura del Proyecto
 
 ```text
-sportstats-pro/
+G-METRICS/
 ├── api/
-│   └── index.js              # Bundle serverless autogenerado para Vercel
+│   └── index.js              # Bundle serverless unificado para Vercel
 ├── public/                   # Recursos estáticos, manifiesto PWA e iconos
 ├── src/
 │   ├── components/           # Componentes modulares de interfaz de usuario
-│   │   ├── MatchCard.tsx     # Tarjeta de partido y cuotas
-│   │   ├── MatchDetailModal/ # Análisis profundo, estadísticas H2H y clasificaciones
-│   │   ├── LiveTracker.tsx   # Panel de encuentros en vivo con alertas
-│   │   ├── ValueScanner.tsx  # Escáner de oportunidades de valor (+EV)
-│   │   ├── NbaDashboard.tsx  # Tablero y proyecciones de baloncesto NBA
-│   │   ├── AdminPanel.tsx    # Panel de administración de licencias
-│   │   └── ...               # Modales de autenticación, calculadoras y filtros
-│   ├── context/              # Proveedores de estado global (deporte activo, cuotas)
-│   ├── hooks/                # Hooks personalizados de sonido, PWA y red
-│   ├── services/             # Lógica matemática (Poisson, Dixon-Coles, APIs, Supabase)
-│   ├── types.ts              # Definiciones de tipos TypeScript globales
-│   ├── App.tsx               # Orquestador principal y layout
-│   ├── index.css             # Estilos globales y tokens Cyber-Fintech Dark
-│   └── main.tsx              # Punto de entrada React
-├── server.ts                 # Servidor Express, proxies seguros a APIs y lógica de licencias
-├── vercel.json               # Configuración de compilación y rutas serverless en Vercel
-├── vite.config.ts            # Configuración de Vite, plugins y empaquetado PWA
-├── package.json              # Scripts y dependencias del proyecto
-└── .env.example              # Guía de variables de entorno requeridas
+│   │   ├── AccessLockScreen.tsx       # Landing page institucional con telemetría en vivo
+│   │   ├── MatchSpotlightPanel.tsx    # 3ra columna widescreen con telemetría táctica
+│   │   ├── MatchDetailModal.tsx       # Modal bento de análisis profundo (Fútbol & NBA)
+│   │   ├── SoccerPitch2D.tsx          # Cancha 2D interactiva con esquemas tácticos
+│   │   ├── BasketballCourt25D.tsx     # Cancha 2.5D NBA interactiva
+│   │   ├── LineupRosterTab.tsx        # Plantillas oficiales y fichas de jugadores
+│   │   ├── LiveMatchTimeline.tsx      # Minuto a minuto y estadísticas en vivo
+│   │   ├── ParlayBuilderDrawer.tsx    # Boleto combinado flotante y cálculo conjunto
+│   │   ├── SavedSlipsHistoryModal.tsx # Historial de boletos y exportación a WhatsApp
+│   │   ├── DidacticGuideModal.tsx     # Centro de ayuda, glosario A-Z y marco legal
+│   │   └── ...                        # Cabeceras, filtros, barras de navegación y logos
+│   ├── context/              # Proveedores de estado global (Parlay, Toast, Auth)
+│   ├── services/             # Motores matemáticos, APIs deportivas y Supabase
+│   │   ├── mathEngine.ts     # Goles esperados, Dixon-Coles, córners y tarjetas
+│   │   ├── nbaEngine.ts      # Ritmo (Pace), ratings ofensivos/defensivos y props
+│   │   ├── apiService.ts     # Consumo y normalización de fútbol con caché local
+│   │   ├── nbaApiService.ts  # Consumo y normalización de NBA con caché local
+│   │   └── securityShield.ts # Hashing scrypt, validación de PIN y rate limiting
+│   ├── types.ts              # Definiciones completas de TypeScript
+│   ├── App.tsx               # Orquestador principal y enrutador de vistas
+│   └── index.css             # Tokens de diseño Cyber-Fintech Dark
+├── server.ts                 # Servidor Express, proxies con caché stale-while-revalidate
+├── vercel.json               # Configuración de compilación y rutas serverless
+├── vite.config.ts            # Configuración de Vite y empaquetador PWA
+└── package.json              # Dependencias y scripts del proyecto
 ```
 
 ---
 
 ## ⚙️ Variables de Entorno
 
-Para ejecutar el proyecto tanto en desarrollo local como en producción (Vercel), se deben configurar las siguientes variables:
+Para ejecutar el proyecto en desarrollo o producción, configurar las siguientes variables en `.env`:
 
 | Variable | Requerida | Propósito |
 | :--- | :---: | :--- |
-| `ODDS_API_KEY` | **Sí** | Llave de The Odds API para cuotas de mercado y marcadores en tiempo real. |
-| `FOOTBALL_DATA_KEY` | **Sí** | Llave de Football-Data.org para cobertura y respaldo de ligas europeas. |
-| `SUPABASE_URL` | **Sí** | URL del proyecto Supabase para base de datos y sincronización de caché. |
-| `SUPABASE_SERVICE_ROLE_KEY` | **Sí** | Llave de servicio (Service Role) para operaciones seguras de servidor. |
-| `ADMIN_PIN` | **Sí** | PIN numérico maestro para acceder al Panel de Administración. |
-| `ADMIN_WHATSAPP` | **Sí** | Número telefónico internacional para soporte o solicitud de licencias. |
-| `JWT_SECRET` | *Opcional* | Clave secreta personalizada para firma de sesiones de administración. |
-| `ADMIN_MASTER_KEY` | *Opcional* | Código maestro de emergencia para desbloqueo de acceso administrativo. |
+| `VITE_SUPABASE_URL` | **Sí** | URL pública de la instancia de Supabase para Google OAuth y base de datos. |
+| `VITE_SUPABASE_ANON_KEY` | **Sí** | Llave anónima pública de Supabase para el cliente frontend. |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Sí** | Llave privada de servidor (Service Role) para el backend seguro. |
+| `ODDS_API_KEY` | *Opcional* | Llave de The Odds API para consenso de cuotas de mercado. |
+| `FOOTBALL_DATA_KEY` | *Opcional* | Llave de Football-Data.org para respaldo de ligas europeas. |
+| `ADMIN_PIN` | **Sí** | PIN numérico maestro para acceso al Panel de Administración. |
+| `ADMIN_MASTER_KEY` | *Opcional* | Clave maestra para auditoría de licencias y operaciones de emergencia. |
 
 ---
 
 ## 💻 Instalación y Desarrollo Local
 
-### Prerrequisitos
-* **Node.js** (versión 18 o superior recomendada)
-* **npm** (versión 9 o superior)
+```bash
+# 1. Clonar el repositorio
+git clone https://github.com/tu-usuario/G-METRICS.git
+cd G-METRICS
 
-### Pasos de Instalación
+# 2. Instalar dependencias
+npm install
 
-1. **Clonar el repositorio:**
-   ```bash
-   git clone https://github.com/tu-usuario/sportstats-pro.git
-   cd sportstats-pro
-   ```
+# 3. Configurar variables de entorno
+cp .env.example .env
 
-2. **Instalar dependencias:**
-   ```bash
-   npm install
-   ```
+# 4. Iniciar servidor de desarrollo (Express + Vite HMR)
+npm run dev
 
-3. **Configurar el entorno:**
-   Copia el archivo de ejemplo y añade tus credenciales:
-   ```bash
-   cp .env.example .env
-   ```
+# 5. Compilar para producción y verificar tipos
+npm run build
+```
 
-4. **Iniciar el entorno de desarrollo:**
-   ```bash
-   npm run dev
-   ```
-   El servidor unificado (Express + Vite con HMR) se ejecutará en:  
-   `http://localhost:3000`
-
-5. **Verificar tipado y linting:**
-   ```bash
-   npm run lint
-   ```
-
----
-
-## ☁️ Despliegue en Producción (Vercel)
-
-El proyecto está optimizado con una arquitectura de compilación dual lista para Vercel:
-
-1. **Subir los cambios a GitHub:**
-   Asegúrate de que tu repositorio contenga la última versión del código fuente.
-2. **Importar el proyecto en Vercel:**
-   * Entra a [vercel.com](https://vercel.com/) y haz clic en **Add New Project**.
-   * Selecciona tu repositorio de GitHub e impórtalo.
-   * **Framework Preset**: Deja la opción por defecto (*Vite*).
-   * **Build Command**: `npm run build`
-   * **Output Directory**: `dist`
-3. **Cargar las Variables de Entorno:**
-   * En la sección **Environment Variables** del proyecto en Vercel, agrega las variables listadas en la sección [Variables de Entorno](#-variables-de-entorno).
-4. **Desplegar:**
-   * Haz clic en **Deploy**.
-   * El script de compilación generará automáticamente tanto el frontend optimizado (`dist/`) como la función serverless empaquetada (`api/index.js`), garantizando que todas las rutas bajo `/api/*` operen sin interrupciones.
+El servidor local se iniciará en `http://localhost:3000`.
 
 ---
 
 ## 📄 Descargo de Responsabilidad y Uso Ético
 
-SportStats Pro es una herramienta tecnológica destinada exclusivamente al **análisis cuantitativo, educación estadística y consulta informativa deportiva**. Todas las probabilidades, estimaciones de goles esperados y cálculos de valor representan modelos matemáticos basados en datos históricos y no garantizan resultados futuros. Promovemos el análisis responsable de datos y una gestión consciente del capital.
+**G-METRICS** es una herramienta analítica y de software estadístico basada en modelos matemáticos y telemetría de eventos deportivos. **No somos una casa de apuestas, no operamos juegos de azar ni recibimos fondos destinados a apuestas**. La información y métricas presentadas son de carácter exclusivamente informativo y educativo. El usuario es el único responsable de sus decisiones personales. Servicio exclusivo para mayores de edad (+18). Todos los nombres comerciales, escudos y marcas deportivas mostradas pertenecen a sus respectivos titulares y se utilizan con fines meramente identificativos y descriptivos (*Uso Legítimo / Nominative Fair Use*).

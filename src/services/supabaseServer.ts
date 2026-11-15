@@ -356,20 +356,25 @@ export function normalizeUsername(input: string): string {
 
 export interface LoginResult {
   success: boolean;
-  code?: 'USER_NOT_FOUND' | 'INVALID_PIN' | 'PENDING_APPROVAL' | 'SUSPENDED' | 'EXPIRED' | 'DEVICE_LOCKED' | 'SERVER_ERROR' | 'UNAUTHORIZED';
+  code?: 'USER_NOT_FOUND' | 'INVALID_PIN' | 'PENDING_APPROVAL' | 'SUSPENDED' | 'EXPIRED' | 'DEVICE_LOCKED' | 'SERVER_ERROR' | 'UNAUTHORIZED' | 'REQUIRES_PIN_SETUP';
   message: string;
   user?: AppUser;
   sessionToken?: string;
   boundDeviceName?: string | null;
   whatsappContact?: string;
   isPro?: boolean;
+  requiresPinSetup?: boolean;
+  suggestedUsername?: string;
+  email?: string;
+  displayName?: string;
 }
 
 export async function loginAppUser(
   rawUsername: string,
   rawPin: string,
   deviceId: string,
-  deviceName?: string
+  deviceName?: string,
+  freeAccessMode = false
 ): Promise<LoginResult> {
   const rawClean = String(rawUsername || '').toLowerCase().trim();
   const isOwnerEmail =
@@ -489,7 +494,15 @@ export async function loginAppUser(
 
         const isAdmin = data.role === 'admin';
         const isExpired = !isAdmin && Boolean(data.expires_at && Number(data.expires_at) < nowMs);
-        const isPro = !isExpired;
+        const isPromoActive = Boolean(freeAccessMode && !isAdmin);
+        const isPro = isAdmin || isPromoActive || !isExpired;
+
+        let resolvedPlanLabel = data.plan_label;
+        if (isPromoActive && isExpired) {
+          resolvedPlanLabel = 'Acceso Libre Promocional';
+        } else if (!resolvedPlanLabel) {
+          resolvedPlanLabel = isPro ? 'Pase Activo' : 'Plan Vencido';
+        }
 
         if (!isAdmin) {
           const deletedSet = getDeletedUsernamesSet();
@@ -562,9 +575,9 @@ export async function loginAppUser(
           displayName: data.display_name || undefined,
           pin: '[PROTECTED]',
           role: data.role || 'client',
-          status: isExpired ? 'expired' : (data.status || 'active'),
-          planType: data.plan_type || '30D',
-          planLabel: data.plan_label || (isPro ? 'Pase Activo' : 'Plan Vencido'),
+          status: (isExpired && !isPromoActive) ? 'expired' : (data.status || 'active'),
+          planType: (isPromoActive && isExpired) ? 'FREE_PROMO' : (data.plan_type || '30D'),
+          planLabel: resolvedPlanLabel,
           createdAt: Number(data.created_at || nowMs),
           expiresAt: data.expires_at ? Number(data.expires_at) : null,
           boundDeviceId: data.bound_device_id,
@@ -573,8 +586,8 @@ export async function loginAppUser(
           lastActiveAt: nowMs,
           whatsappNumber: data.whatsapp_number,
           notes: data.notes,
-          daysRemaining,
-          isExpired,
+          daysRemaining: isPromoActive ? null : daysRemaining,
+          isExpired: !isPro,
           isPro,
           authProvider: (data.auth_provider as any) || 'pin',
           feedbackBonusClaimed: Boolean(data.feedback_bonus_claimed)
@@ -1527,7 +1540,10 @@ export async function loginOrRegisterGoogleUser(
   deviceFingerprint?: string,
   accessToken?: string,
   providerToken?: string,
-  clientSubnetHash?: string
+  clientSubnetHash?: string,
+  freeAccessMode = false,
+  customUsername?: string,
+  customPin?: string
 ): Promise<LoginResult> {
   const email = String(rawEmail || '').toLowerCase().trim();
   if (!email || !email.includes('@')) {
@@ -1664,6 +1680,15 @@ export async function loginOrRegisterGoogleUser(
         return { success: false, code: 'USER_NOT_FOUND', message: 'Esta cuenta ha sido eliminada por el administrador.' };
       }
 
+      // Si el usuario proporcionó un PIN personalizado durante este registro/vincular, actualizar su hash
+      if (customPin && customPin.trim().length >= 4) {
+        const newPinHash = hashUserPin(customPin.trim());
+        await client.from('sportstats_users').update({
+          pin_hash: newPinHash
+        }).eq('id', existingUser.id);
+        existingUser.pin_hash = newPinHash;
+      }
+
       // En entorno local o dispositivo de pruebas del administrador: auto-vincular sin bloquear
       const isLocalOrDev = process.env.NODE_ENV !== 'production' || !process.env.VERCEL;
       const isAdminTestDevice = isLocalOrDev || cleanDevice.startsWith('DEV-');
@@ -1684,21 +1709,39 @@ export async function loginOrRegisterGoogleUser(
         };
       }
 
-      const isExpired = Boolean(existingUser.expires_at && Number(existingUser.expires_at) < nowMs);
-      const isPro = !isExpired;
+      const hasExplicitActiveVip = Boolean(
+        existingUser.expires_at !== null &&
+        existingUser.expires_at !== undefined &&
+        Number(existingUser.expires_at) > nowMs
+      );
+      const isPromoActive = Boolean(
+        freeAccessMode && (existingUser.auth_provider === 'google' || existingUser.role === 'client')
+      );
+      const isPro = existingUser.role === 'admin' || hasExplicitActiveVip || isPromoActive;
+      const isExpired = !isPro;
+
+      let resolvedPlanLabel = existingUser.plan_label;
+      if (isPromoActive && !hasExplicitActiveVip && existingUser.role !== 'admin') {
+        resolvedPlanLabel = 'Acceso Libre Promocional';
+      } else if (!resolvedPlanLabel) {
+        resolvedPlanLabel = isPro ? 'Plan VIP' : 'Plan Vencido';
+      }
 
       const sessionToken = createSessionJwt({
         userId: existingUser.id,
         username: existingUser.username,
         role: existingUser.role || 'client',
         deviceId: cleanDevice,
+        authProvider: 'google',
         ttlDays: 30
       });
 
       return {
         success: true,
         isPro,
-        message: isPro ? 'Sesión iniciada con éxito.' : 'Tu periodo de prueba o plan ha vencido.',
+        message: isPromoActive
+          ? 'Sesión iniciada con Acceso Libre Promocional activo.'
+          : (isPro ? 'Sesión iniciada con éxito.' : 'Tu periodo de prueba o plan ha vencido.'),
         sessionToken,
         user: {
           id: existingUser.id,
@@ -1708,8 +1751,8 @@ export async function loginOrRegisterGoogleUser(
           pin: '[PROTECTED]',
           role: existingUser.role || 'client',
           status: isExpired ? 'expired' : (existingUser.status || 'active'),
-          planType: existingUser.plan_type || 'GOOGLE_TRIAL',
-          planLabel: existingUser.plan_label || (isPro ? 'Plan VIP' : 'Plan Vencido'),
+          planType: isPromoActive && !hasExplicitActiveVip ? 'FREE_PROMO' : (existingUser.plan_type || 'GOOGLE_TRIAL'),
+          planLabel: resolvedPlanLabel,
           createdAt: Number(existingUser.created_at) || nowMs,
           expiresAt: existingUser.expires_at ? Number(existingUser.expires_at) : null,
           boundDeviceId: existingUser.bound_device_id,
@@ -1724,7 +1767,7 @@ export async function loginOrRegisterGoogleUser(
       };
     }
 
-    // 2. Usuario NUEVO con Google
+    // 2. Usuario NUEVO con Google: Registro automático instantáneo (Doble Propósito: Registro + Login en 1 clic)
     // Exención de pruebas: Si es localhost / dev o dispositivo de pruebas del administrador, siempre otorgar los 3 días de prueba
     const isLocalOrDev = process.env.NODE_ENV !== 'production' || !process.env.VERCEL;
     const isAdminTestDevice = isLocalOrDev || cleanDevice.startsWith('DEV-');
@@ -1764,9 +1807,21 @@ export async function loginOrRegisterGoogleUser(
       }
     }
 
-    const expiresAt = hasUsedTrial ? nowMs : (nowMs + 3 * 24 * 60 * 60 * 1000);
-    const isPro = !hasUsedTrial;
-    const planLabel = hasUsedTrial ? 'Prueba no disponible (Dispositivo previo)' : 'Prueba Gratuita (3 Días)';
+    let expiresAt: number | null = null;
+    let isPro = true;
+    let planLabel = 'Acceso Libre Promocional';
+    let planType = 'FREE_PROMO';
+    let welcomeMessage = '¡Bienvenido a G METRICS! Tu cuenta Google tiene Acceso Libre Promocional ilimitado.';
+
+    if (!freeAccessMode) {
+      expiresAt = hasUsedTrial ? nowMs : (nowMs + 3 * 24 * 60 * 60 * 1000);
+      isPro = !hasUsedTrial;
+      planLabel = hasUsedTrial ? 'Prueba no disponible (Dispositivo previo)' : 'Prueba Gratuita (3 Días)';
+      planType = hasUsedTrial ? 'EXPIRED_TRIAL' : 'GOOGLE_3D_TRIAL';
+      welcomeMessage = isPro 
+        ? '¡Bienvenido! Tienes 3 días de prueba gratuita completa.' 
+        : 'Tu dispositivo ya utilizó una prueba previa. Activa tu plan VIP para acceder a todos los análisis.';
+    }
 
     // Nombre de usuario: Estrictamente alfanumérico a-z0-9 (sin guion bajo ni caracteres especiales) para cumplir restricción PostgreSQL
     const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 14) || 'user';
@@ -1776,14 +1831,40 @@ export async function loginOrRegisterGoogleUser(
       generatedUsername = `user${Math.floor(100 + Math.random() * 900)}`;
     }
 
+    let chosenUsername = generatedUsername;
+    if (customUsername && customUsername.trim().length >= 3) {
+      const cleanCustom = customUsername.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+      if (cleanCustom.length >= 3) {
+        try {
+          const { data: userWithSameName } = await client
+            .from('sportstats_users')
+            .select('id')
+            .eq('username', cleanCustom)
+            .maybeSingle();
+          if (!userWithSameName) {
+            chosenUsername = cleanCustom;
+          } else {
+            chosenUsername = `${cleanCustom.slice(0, 16)}${Math.floor(10 + Math.random() * 89)}`;
+          }
+        } catch {
+          chosenUsername = cleanCustom;
+        }
+      }
+    }
+
+    let chosenPinHash = 'GOOGLE_OAUTH';
+    if (customPin && customPin.trim().length >= 4) {
+      chosenPinHash = hashUserPin(customPin.trim());
+    }
+
     const newUserData: Record<string, any> = {
-      username: generatedUsername,
+      username: chosenUsername,
       email,
-      display_name: rawDisplayName || email.split('@')[0],
-      pin_hash: 'GOOGLE_OAUTH',
+      display_name: rawDisplayName || chosenUsername,
+      pin_hash: chosenPinHash,
       role: 'client',
       status: isPro ? 'active' : 'expired',
-      plan_type: hasUsedTrial ? 'EXPIRED_TRIAL' : 'GOOGLE_3D_TRIAL',
+      plan_type: planType,
       plan_label: planLabel,
       created_at: nowMs,
       expires_at: expiresAt,
@@ -1834,15 +1915,14 @@ export async function loginOrRegisterGoogleUser(
       username: insertedUser.username,
       role: 'client',
       deviceId: cleanDevice,
+      authProvider: 'google',
       ttlDays: 30
     });
 
     return {
       success: true,
       isPro,
-      message: isPro 
-        ? '¡Bienvenido! Tienes 3 días de prueba gratuita completa.' 
-        : 'Tu dispositivo ya utilizó una prueba previa. Activa tu plan VIP para acceder a todos los análisis.',
+      message: welcomeMessage,
       sessionToken,
       user: {
         id: insertedUser.id,

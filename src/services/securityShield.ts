@@ -86,6 +86,7 @@ export interface SessionTokenPayload {
   exp: number;
   isVip?: boolean;
   expiresAt?: number | null;
+  authProvider?: string;
 }
 
 function base64UrlEncode(input: string | Buffer): string {
@@ -112,6 +113,7 @@ export function createSessionJwt(params: {
   ttlDays?: number;
   isVip?: boolean;
   expiresAt?: number | null;
+  authProvider?: string;
 }): string {
   const nowSec = Math.floor(Date.now() / 1000);
   const ttlSec = (params.ttlDays ?? 30) * 24 * 60 * 60;
@@ -129,6 +131,7 @@ export function createSessionJwt(params: {
     exp: nowSec + ttlSec,
     isVip: isVipComputed,
     expiresAt: params.expiresAt ?? null,
+    authProvider: params.authProvider
   };
   const payload = base64UrlEncode(JSON.stringify(payloadObj));
   const signingInput = `${header}.${payload}`;

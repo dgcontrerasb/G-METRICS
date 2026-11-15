@@ -255,7 +255,7 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
   const renderInlineSoccerMatches = (matches: MatchFixture[]) => {
     if (!matches || matches.length === 0) return null;
     return (
-      <div className="mt-1 mb-1.5 ml-2 pl-2 border-l-2 border-emerald-300 space-y-1">
+      <div className="mt-1 mb-1.5 ml-2 pl-2 border-l border-[#d9b114]/45 space-y-1">
         {matches.map((f) => {
           const isLive = f.status === 'IN_PLAY';
           return (
@@ -269,10 +269,10 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                 }
                 onCloseMobileDrawer();
               }}
-              className="w-full px-2 py-1.5 rounded-lg bg-white hover:bg-emerald-50/80 border border-slate-200/80 hover:border-emerald-300 transition-all flex items-center justify-between gap-1.5 text-left cursor-pointer group shadow-2xs"
+              className="w-full px-2 py-1.5 rounded-xl bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] hover:border-[#d9b114]/55 transition-all flex items-center justify-between gap-1.5 text-left cursor-pointer group"
               title="Haz clic para abrir probabilidades, goles, árbitro y alineaciones"
             >
-              <div className="flex items-center gap-1 min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 {f.homeTeam.logo?.trim() ? (
                   <img
                     src={f.homeTeam.logo}
@@ -283,10 +283,10 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                     }}
                   />
                 ) : null}
-                <span className="text-[10.5px] font-medium text-slate-800 group-hover:text-emerald-800 truncate">
+                <span className="text-[10.5px] font-medium text-[#8b949e] group-hover:text-white truncate">
                   {formatCompactTeamName(f.homeTeam.name)}
                 </span>
-                <span className="text-[9px] font-mono text-slate-400 shrink-0">vs</span>
+                <span className="text-[9px] font-mono text-[#6e7681] shrink-0">vs</span>
                 {f.awayTeam.logo?.trim() ? (
                   <img
                     src={f.awayTeam.logo}
@@ -297,15 +297,15 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                     }}
                   />
                 ) : null}
-                <span className="text-[10.5px] font-medium text-slate-800 group-hover:text-emerald-800 truncate">
+                <span className="text-[10.5px] font-medium text-[#8b949e] group-hover:text-white truncate">
                   {formatCompactTeamName(f.awayTeam.name)}
                 </span>
               </div>
               <span
-                className={`font-mono text-[9.5px] px-1 py-0.2 rounded shrink-0 ${
+                className={`font-mono tabular-nums text-[10px] font-bold px-1.5 py-0.5 rounded-lg shrink-0 ${
                   isLive
-                    ? 'bg-rose-50 text-rose-700 font-bold border border-rose-200'
-                    : 'bg-slate-100 text-slate-600'
+                    ? 'bg-rose-950/60 text-rose-400 border border-rose-500/50'
+                    : 'bg-[#0b0e14] text-white border border-[#30363d]'
                 }`}
               >
                 {isLive && f.currentScore
@@ -322,7 +322,7 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
   const renderInlineNBAMatches = (matches: NBAMatchFixture[]) => {
     if (!matches || matches.length === 0) return null;
     return (
-      <div className="mt-1 mb-1.5 ml-2 pl-2 border-l-2 border-amber-400 space-y-1">
+      <div className="mt-1 mb-1.5 ml-2 pl-2 border-l border-[#d9b114]/45 space-y-1">
         {matches.map((f) => {
           const isLive = f.status === 'IN_PLAY';
           return (
@@ -336,10 +336,10 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                 }
                 onCloseMobileDrawer();
               }}
-              className="w-full px-2 py-1.5 rounded-lg bg-white hover:bg-amber-50/80 border border-slate-200/80 hover:border-amber-300 transition-all flex items-center justify-between gap-1.5 text-left cursor-pointer group shadow-2xs"
+              className="w-full px-2 py-1.5 rounded-xl bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] hover:border-[#d9b114]/55 transition-all flex items-center justify-between gap-1.5 text-left cursor-pointer group"
               title="Haz clic para abrir probabilidades, cuartos, ritmo y quintetos"
             >
-              <div className="flex items-center gap-1 min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 {f.homeTeam.logo?.trim() ? (
                   <img
                     src={f.homeTeam.logo}
@@ -350,10 +350,10 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                     }}
                   />
                 ) : null}
-                <span className="text-[10.5px] font-medium text-slate-800 group-hover:text-amber-900 truncate">
+                <span className="text-[10.5px] font-medium text-[#8b949e] group-hover:text-white truncate">
                   {f.homeTeam.shortName || f.homeTeam.name}
                 </span>
-                <span className="text-[9px] font-mono text-slate-400 shrink-0">vs</span>
+                <span className="text-[9px] font-mono text-[#6e7681] shrink-0">vs</span>
                 {f.awayTeam.logo?.trim() ? (
                   <img
                     src={f.awayTeam.logo}
@@ -364,15 +364,15 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                     }}
                   />
                 ) : null}
-                <span className="text-[10.5px] font-medium text-slate-800 group-hover:text-amber-900 truncate">
+                <span className="text-[10.5px] font-medium text-[#8b949e] group-hover:text-white truncate">
                   {f.awayTeam.shortName || f.awayTeam.name}
                 </span>
               </div>
               <span
-                className={`font-mono text-[9.5px] px-1 py-0.2 rounded shrink-0 ${
+                className={`font-mono tabular-nums text-[10px] font-bold px-1.5 py-0.5 rounded-lg shrink-0 ${
                   isLive
-                    ? 'bg-rose-50 text-rose-700 font-bold border border-rose-200'
-                    : 'bg-slate-100 text-slate-600'
+                    ? 'bg-rose-950/60 text-rose-400 border border-rose-500/50'
+                    : 'bg-[#0b0e14] text-white border border-[#30363d]'
                 }`}
               >
                 {isLive && f.currentScore
@@ -389,42 +389,50 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
   const renderSidebarContent = (isCompactRail: boolean) => {
     if (isCompactRail) {
       return (
-        <div className="flex flex-col items-center justify-between h-full py-3 px-1.5 select-none bg-white/95">
-          {/* Zona Superior: Toggle + Selector de Deportes Vectorial + Navegación */}
+        <div className="flex flex-col items-center justify-between h-full py-3 px-1.5 select-none bg-[#0b0e14] text-white">
+          {/* Zona Superior: Isotipo + Toggle + Selector de Deportes + Navegación */}
           <div className="flex flex-col items-center gap-2.5 w-full">
+            {/* Isotipo reducido en modo colapsado (Paso 2.5) */}
+            <button
+              type="button"
+              onClick={onSecretAdminLogoClick}
+              className="cursor-pointer transition-transform hover:scale-105"
+              title="G METRICS"
+            >
+              <SportStatsLogo size="sm" activeSport={activeSport} withGlow={false} />
+            </button>
+
             {/* Toggle Expansión */}
             <div className="group relative flex items-center justify-center w-full">
               <button
                 type="button"
                 onClick={onToggleDesktopCollapse}
-                className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 flex items-center justify-center transition-all cursor-pointer border border-slate-200/80 shadow-2xs hover:scale-105 active:scale-95"
+                className="w-10 h-10 rounded-xl bg-[#161b22] hover:bg-[#1c2129] text-[#8b949e] hover:text-white flex items-center justify-center transition-all cursor-pointer border border-[#30363d] hover:border-[#d9b114]/50 active:scale-95"
                 aria-label="Expandir menú lateral"
               >
-                <PanelLeftOpen className="w-4 h-4 text-slate-700" />
+                <PanelLeftOpen className="w-4 h-4" strokeWidth={2} />
               </button>
-              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white shadow-xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-xl bg-[#161b22] border border-[#30363d] px-2.5 py-1 text-[11px] font-semibold text-white shadow-xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
                 Expandir menú lateral
-                <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-900" />
               </div>
             </div>
 
-            {/* Sport Switcher Vectorial Executive Dark Capsule */}
-            <div className="p-1 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col gap-1 w-11 items-center shadow-md">
+            {/* Sport Switcher Vectorial */}
+            <div className="p-1 rounded-2xl bg-[#161b22] border border-[#30363d] flex flex-col gap-1 w-11 items-center">
               {/* Fútbol */}
               <div className="group relative flex items-center justify-center w-full">
                 <button
                   type="button"
                   onClick={() => onSelectSport('SOCCER')}
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer border ${
                     activeSport === 'SOCCER'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/80'
+                      ? 'bg-[#1c2129] text-[#d9b114] border-[#d9b114]/65'
+                      : 'bg-transparent border-transparent text-[#8b949e] hover:text-white hover:bg-[#1c2129]'
                   }`}
                   aria-label="Fútbol"
                 >
-                  <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                  <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" />
-                    <path d="m12 7 3.5 2.5v4L12 16l-3.5-2.5v-4z" fill="currentColor" fillOpacity={activeSport === 'SOCCER' ? '0.35' : '0.1'} />
                     <path d="m12 7 3.5 2.5v4L12 16l-3.5-2.5v-4z" />
                     <path d="M12 7V2" />
                     <path d="m15.5 9.5 4.5-1.5" />
@@ -434,9 +442,8 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                     <path d="M12 16v6" />
                   </svg>
                 </button>
-                <div className="pointer-events-none absolute left-full ml-3 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                <div className="pointer-events-none absolute left-full ml-3 z-50 whitespace-nowrap rounded-xl bg-[#161b22] text-white border border-[#30363d] px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
                   Fútbol Pro
-                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
                 </div>
               </div>
 
@@ -445,14 +452,14 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => onSelectSport('NBA')}
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer border ${
                     activeSport === 'NBA'
-                      ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40 shadow-xs'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/80'
+                      ? 'bg-[#1c2129] text-[#d9b114] border-[#d9b114]/65'
+                      : 'bg-transparent border-transparent text-[#8b949e] hover:text-white hover:bg-[#1c2129]'
                   }`}
                   aria-label="Baloncesto NBA"
                 >
-                  <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                  <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" />
                     <path d="M2.1 12h19.8" />
                     <path d="M12 2.1v19.8" />
@@ -460,43 +467,41 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                     <path d="M19.07 4.93a10 10 0 0 0 0 14.14" />
                   </svg>
                 </button>
-                <div className="pointer-events-none absolute left-full ml-3 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                <div className="pointer-events-none absolute left-full ml-3 z-50 whitespace-nowrap rounded-xl bg-[#161b22] text-white border border-[#30363d] px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
                   Baloncesto NBA
-                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
                 </div>
               </div>
             </div>
 
             {/* Separador fino */}
-            <div className="w-8 h-px bg-slate-200/80 my-0.5" />
+            <div className="w-8 h-px bg-[#21262d] my-0.5" />
 
             {/* Navegación Principal (En Vivo, Joyas, Cartelera) */}
             <div className="flex flex-col gap-2 w-full items-center">
-              {/* Partidos en Vivo */}
+              {/* Partidos en Vivo (Rojo exclusivo para En Vivo) */}
               <div className="group relative flex items-center justify-center w-full">
                 <button
                   type="button"
                   onClick={() => onSelectMainTab('LIVE')}
-                  className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border shadow-2xs hover:scale-105 active:scale-95 ${
+                  className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border active:scale-95 ${
                     mainTab === 'LIVE'
-                      ? 'bg-gradient-to-b from-rose-950 via-rose-900 to-rose-950 text-rose-200 border-rose-800 shadow-sm ring-1 ring-rose-500/30'
-                      : 'bg-white text-rose-700 border-slate-200/90 hover:bg-rose-50/60 hover:border-rose-200'
+                      ? 'bg-rose-950/60 text-rose-300 border-rose-500/70'
+                      : 'bg-[#161b22] text-rose-400 border-[#30363d] hover:bg-[#1c2129] hover:border-rose-500/50'
                   }`}
                   aria-label={`Partidos en Vivo (${liveMatchesCount})`}
                 >
                   <span className="relative flex h-2.5 w-2.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
                   </span>
                   {liveMatchesCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1 px-1.5 py-0.2 rounded-full bg-slate-900 text-white font-mono text-[9px] font-bold shadow-xs border border-slate-700">
+                    <span className="absolute -top-1.5 -right-1 px-1.5 py-0.2 rounded-full bg-rose-600 text-white font-mono tabular-nums text-[9px] font-bold">
                       {liveMatchesCount}
                     </span>
                   )}
                 </button>
-                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-xl bg-[#161b22] text-white border border-[#30363d] px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
                   Partidos en Vivo ({liveMatchesCount})
-                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
                 </div>
               </div>
 
@@ -505,18 +510,17 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => onSelectMainTab('TOP_PICKS')}
-                  className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border shadow-2xs hover:scale-105 active:scale-95 ${
+                  className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border active:scale-95 ${
                     mainTab === 'TOP_PICKS'
-                      ? 'bg-slate-900 text-emerald-400 border-slate-800 shadow-sm ring-1 ring-emerald-500/25'
-                      : 'bg-white text-slate-600 border-slate-200/90 hover:bg-slate-50 hover:text-emerald-700 hover:border-emerald-300/50'
+                      ? 'bg-[#1c2129] text-[#d9b114] border-[#d9b114]/65'
+                      : 'bg-[#161b22] text-[#8b949e] border-[#30363d] hover:bg-[#1c2129] hover:text-white'
                   }`}
                   aria-label={`Joyas del Día (${topPicksCount})`}
                 >
-                  <Flame className="w-4.5 h-4.5" />
+                  <Flame className="w-4.5 h-4.5" strokeWidth={2} />
                 </button>
-                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
-                  Joyas Cuantitativas ({topPicksCount})
-                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-xl bg-[#161b22] text-white border border-[#30363d] px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                  Top Picks ({topPicksCount})
                 </div>
               </div>
 
@@ -525,104 +529,93 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => onSelectMainTab('ALL_LEAGUES')}
-                  className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border shadow-2xs hover:scale-105 active:scale-95 ${
+                  className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border active:scale-95 ${
                     mainTab === 'ALL_LEAGUES'
-                      ? 'bg-slate-900 text-slate-100 border-slate-800 shadow-sm ring-1 ring-slate-700'
-                      : 'bg-white text-slate-600 border-slate-200/90 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300'
+                      ? 'bg-[#1c2129] text-[#d9b114] border-[#d9b114]/65'
+                      : 'bg-[#161b22] text-[#8b949e] border-[#30363d] hover:bg-[#1c2129] hover:text-white'
                   }`}
                   aria-label={`Cartelera Completa (${allLeaguesCount})`}
                 >
-                  <Globe className="w-4.5 h-4.5" />
+                  <Globe className="w-4.5 h-4.5" strokeWidth={2} />
                 </button>
-                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
-                  Cartelera Completa ({allLeaguesCount})
-                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
+                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-xl bg-[#161b22] text-white border border-[#30363d] px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                  Cartelera ({allLeaguesCount})
                 </div>
               </div>
             </div>
           </div>
 
           {/* Zona Inferior: Boletos + Guía + Fondo + Salir + (Admin si aplica) */}
-          <div className="flex flex-col items-center gap-2 w-full pt-2.5 border-t border-slate-200/80">
-            {/* Panel Admin (Solo visible para administrador) */}
+          <div className="flex flex-col items-center gap-2 w-full pt-2.5 border-t border-[#21262d]">
             {isAdminVisible && (
               <div className="group relative flex items-center justify-center w-full">
                 <button
                   type="button"
                   onClick={onOpenAdminModal}
-                  className="w-10 h-10 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 flex items-center justify-center transition-all cursor-pointer shadow-xs hover:scale-105 active:scale-95"
+                  className="w-10 h-10 rounded-xl bg-[#161b22] hover:bg-[#1c2129] text-[#d9b114] border border-[#d9b114]/55 flex items-center justify-center transition-all cursor-pointer active:scale-95"
                   aria-label="Panel de Administración"
                 >
-                  <ShieldCheck className="w-4.5 h-4.5 text-amber-400" />
+                  <ShieldCheck className="w-4.5 h-4.5" strokeWidth={2} />
                 </button>
-                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+                <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-xl bg-[#161b22] text-white border border-[#30363d] px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
                   Panel de Administración
-                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
                 </div>
               </div>
             )}
 
-            {/* Mis Boletos Guardados */}
             <div className="group relative flex items-center justify-center w-full">
               <button
                 type="button"
                 onClick={onOpenSavedSlips}
-                className="w-10 h-10 rounded-xl bg-white hover:bg-slate-50 text-slate-600 hover:text-emerald-700 border border-slate-200/90 hover:border-emerald-300/60 flex items-center justify-center transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                className="w-10 h-10 rounded-xl bg-[#161b22] hover:bg-[#1c2129] text-[#8b949e] hover:text-white border border-[#30363d] flex items-center justify-center transition-all cursor-pointer active:scale-95"
                 aria-label="Mis Boletos Guardados"
               >
-                <History className="w-4.5 h-4.5" />
+                <History className="w-4.5 h-4.5" strokeWidth={2} />
               </button>
-              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-xl bg-[#161b22] text-white border border-[#30363d] px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
                 Mis Boletos Guardados
-                <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
               </div>
             </div>
 
-            {/* Guía y Glosario Didáctico A-Z */}
             <div className="group relative flex items-center justify-center w-full">
               <button
                 type="button"
                 onClick={() => onOpenGuideModal('GUIDE')}
-                className="w-10 h-10 rounded-xl bg-white hover:bg-slate-50 text-slate-600 hover:text-amber-700 border border-slate-200/90 hover:border-amber-300/60 flex items-center justify-center transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                className="w-10 h-10 rounded-xl bg-[#161b22] hover:bg-[#1c2129] text-[#8b949e] hover:text-white border border-[#30363d] flex items-center justify-center transition-all cursor-pointer active:scale-95"
                 aria-label="Guía Didáctica y Glosario A-Z"
               >
-                <BookOpen className="w-4.5 h-4.5" />
+                <BookOpen className="w-4.5 h-4.5" strokeWidth={2} />
               </button>
-              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-xl bg-[#161b22] text-white border border-[#30363d] px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
                 Guía y Glosario A-Z
-                <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
               </div>
             </div>
 
-            {/* Personalizar Fondo de Pantalla */}
             <div className="group relative flex items-center justify-center w-full">
               <button
                 type="button"
                 onClick={onOpenWallpaperModal}
-                className="w-10 h-10 rounded-xl bg-white hover:bg-slate-50 text-slate-600 hover:text-purple-700 border border-slate-200/90 hover:border-purple-300/60 flex items-center justify-center transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                className="w-10 h-10 rounded-xl bg-[#161b22] hover:bg-[#1c2129] text-[#8b949e] hover:text-white border border-[#30363d] flex items-center justify-center transition-all cursor-pointer active:scale-95"
                 aria-label="Cambiar Fondo de Pantalla"
               >
-                <ImageIcon className="w-4.5 h-4.5" />
+                <ImageIcon className="w-4.5 h-4.5" strokeWidth={2} />
               </button>
-              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-xl bg-[#161b22] text-white border border-[#30363d] px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
                 Fondo Cinematográfico
-                <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
               </div>
             </div>
 
-            {/* Cerrar Sesión */}
             <div className="group relative flex items-center justify-center w-full">
               <button
                 type="button"
                 onClick={onLogoutSession}
-                className="w-10 h-10 rounded-xl bg-white hover:bg-rose-50/60 text-slate-400 hover:text-rose-600 border border-slate-200/90 hover:border-rose-300/60 flex items-center justify-center transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                className="w-10 h-10 rounded-xl bg-[#161b22] hover:bg-[#1c2129] text-[#8b949e] hover:text-white border border-[#30363d] flex items-center justify-center transition-all cursor-pointer active:scale-95"
                 aria-label="Cerrar sesión en este dispositivo"
               >
-                <Power className="w-4.5 h-4.5" />
+                <Power className="w-4.5 h-4.5" strokeWidth={2} />
               </button>
-              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-lg bg-slate-950 text-slate-200 border border-slate-800 px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+              <div className="pointer-events-none absolute left-full ml-2.5 z-50 whitespace-nowrap rounded-xl bg-[#161b22] text-white border border-[#30363d] px-2.5 py-1 text-[11px] font-semibold shadow-2xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
                 Cerrar Sesión
-                <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-slate-950" />
               </div>
             </div>
           </div>
@@ -631,20 +624,21 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
     }
 
     return (
-      <div className="flex flex-col h-full select-none text-slate-900">
-        {/* 1. Encabezado Compacto: Marca + Switcher Fútbol / Baloncesto */}
-        <div className="p-2.5 border-b border-slate-200/80 space-y-2 bg-slate-50/70">
+      <div className="flex flex-col h-full select-none bg-[#0b0e14] text-white">
+        {/* 1. Encabezado Canónico de Marca (Paso 2.5): G ampliada + Titular + Switcher */}
+        <div className="p-3 border-b border-[#21262d] space-y-2.5 bg-[#0b0e14]">
           <div className="flex items-center justify-between gap-2">
             <div
-              className="flex items-center gap-1.5 min-w-0 select-none"
+              onClick={onSecretAdminLogoClick}
+              className="flex items-center gap-2 min-w-0 select-none cursor-pointer group"
               title="G METRICS · La Ciencia Detrás de la Victoria"
             >
-              <SportStatsLogo size="sm" activeSport={activeSport} withGlow={false} />
+              <SportStatsLogo size="md" activeSport={activeSport} withGlow={true} />
               <div className="min-w-0 flex flex-col justify-center">
-                <span className="gmetrics-brand-title text-[12.5px] leading-none block whitespace-nowrap">
+                <span className="gmetrics-brand-title text-[14px] leading-none block whitespace-nowrap">
                   G METRICS
                 </span>
-                <span className="text-[6.2px] font-extrabold uppercase tracking-tight text-slate-600 block whitespace-nowrap leading-none mt-1">
+                <span className="text-[6.8px] font-bold uppercase tracking-tight text-[#8b949e] group-hover:text-white/90 transition-colors block whitespace-nowrap leading-none mt-1">
                   LA CIENCIA DETRÁS DE LA VICTORIA ({activeSport === 'NBA' ? 'Baloncesto' : 'Fútbol'})
                 </span>
               </div>
@@ -654,98 +648,81 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
             <button
               type="button"
               onClick={onToggleDesktopCollapse}
-              className="hidden lg:flex w-7 h-7 rounded-lg hover:bg-slate-200/70 text-slate-500 hover:text-slate-900 items-center justify-center transition-colors cursor-pointer"
+              className="hidden lg:flex w-8 h-8 rounded-xl bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] text-[#8b949e] hover:text-white items-center justify-center transition-colors cursor-pointer shrink-0"
               title="Colapsar menú lateral"
             >
-              <PanelLeftClose className="w-4 h-4" />
+              <PanelLeftClose className="w-4 h-4" strokeWidth={2} />
             </button>
 
             {/* Mobile Close Drawer Button */}
             <button
               type="button"
               onClick={onCloseMobileDrawer}
-              className="lg:hidden w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+              className="lg:hidden w-8 h-8 rounded-xl bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] text-[#8b949e] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
               aria-label="Cerrar menú lateral"
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4" strokeWidth={2} />
             </button>
           </div>
 
-          {/* Switcher Destacado de Alto Contraste: FÚTBOL vs BALONCESTO */}
-          <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-900/95 border border-slate-800 shadow-inner">
+          {/* Switcher Unificado de Deporte (.cyber-chrome-chip lenguaje único del Chrome) */}
+          <div className="grid grid-cols-2 gap-1.5">
             <button
               type="button"
               onClick={() => onSelectSport('SOCCER')}
-              className={`h-[30px] px-2.5 rounded-lg text-[11px] font-bold tracking-wide uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                activeSport === 'SOCCER'
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm ring-1 ring-emerald-300/60'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+              className={`cyber-chrome-chip w-full ${
+                activeSport === 'SOCCER' ? 'cyber-chrome-chip-active' : ''
               }`}
             >
               <span className="text-xs leading-none">⚽</span>
               <span>Fútbol</span>
               {activeSport === 'SOCCER' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-white shadow-2xs shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#d9b114] shrink-0" />
               )}
             </button>
             <button
               type="button"
               onClick={() => onSelectSport('NBA')}
-              className={`h-[30px] px-2.5 rounded-lg text-[11px] font-bold tracking-wide uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                activeSport === 'NBA'
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-sm ring-1 ring-amber-300/70'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+              className={`cyber-chrome-chip w-full ${
+                activeSport === 'NBA' ? 'cyber-chrome-chip-active' : ''
               }`}
             >
               <span className="text-xs leading-none">🏀</span>
               <span>Baloncesto</span>
               {activeSport === 'NBA' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-950 shadow-2xs shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#d9b114] shrink-0" />
               )}
             </button>
           </div>
         </div>
 
         {/* 2. Cuerpo Scrollable: Botones Principales + Calendario (5 días) + Catálogo Completo de Ligas */}
-        <div className="flex-1 overflow-y-auto px-2.5 py-2 space-y-2.5">
-          {/* Botones Prioritarios Compactos: 🔴 Partidos en Vivo + Top Picks / Cartelera */}
+        <div className="flex-1 overflow-y-auto px-2.5 py-2.5 space-y-3">
+          {/* Botones Prioritarios Compactos */}
           <div className="space-y-1.5">
+            {/* Rojo reservado exclusivamente para En Vivo */}
             <button
               type="button"
               onClick={() => {
                 onSelectMainTab('LIVE');
                 onCloseMobileDrawer();
               }}
-              className={`w-full h-[29px] px-2.5 rounded-lg flex items-center justify-between text-[11px] font-bold tracking-tight transition-all cursor-pointer border ${
+              className={`w-full h-8 px-3 rounded-xl flex items-center justify-between text-xs font-semibold tracking-tight transition-all cursor-pointer border ${
                 mainTab === 'LIVE'
-                  ? 'bg-gradient-to-r from-rose-600 via-red-600 to-rose-500 text-white border-rose-600 shadow-xs ring-1 ring-rose-400/40'
-                  : 'bg-gradient-to-r from-rose-50 via-white to-rose-50/70 hover:from-rose-100/80 hover:to-rose-50 text-rose-800 border-rose-200/90 shadow-2xs'
+                  ? 'bg-rose-950/60 text-white border-rose-500/75 shadow-[0_0_12px_rgba(244,63,94,0.2)]'
+                  : 'bg-[#161b22] hover:bg-[#1c2129] text-[#8b949e] hover:text-white border-[#30363d]'
               }`}
             >
-              <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
                 <span className="relative flex h-2 w-2 shrink-0">
-                  <span
-                    className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                      mainTab === 'LIVE' ? 'bg-white' : 'bg-rose-500'
-                    }`}
-                  ></span>
-                  <span
-                    className={`relative inline-flex rounded-full h-2 w-2 ${
-                      mainTab === 'LIVE' ? 'bg-white' : 'bg-rose-600'
-                    }`}
-                  ></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500" />
                 </span>
                 <span className="truncate">Partidos en Vivo</span>
               </div>
-              <span
-                className={`px-1.5 py-0.5 rounded-md font-mono tabular-nums text-[9.5px] font-extrabold leading-none flex items-center gap-1 shrink-0 ${
-                  mainTab === 'LIVE'
-                    ? 'bg-white text-rose-700 shadow-2xs'
-                    : 'bg-rose-600 text-white shadow-2xs'
-                }`}
-              >
+              <span className="px-1.5 py-0.5 rounded-lg font-mono tabular-nums text-[10px] font-bold leading-none flex items-center gap-1 shrink-0 bg-rose-600/20 text-rose-400 border border-rose-500/45">
                 <span>{liveMatchesCount}</span>
-                <span className="text-[8px] uppercase tracking-wider opacity-90">VIVO</span>
+                <span className="text-[8px] uppercase tracking-wider">VIVO</span>
               </span>
             </button>
 
@@ -756,27 +733,20 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                   onSelectMainTab('TOP_PICKS');
                   onCloseMobileDrawer();
                 }}
-                className={`h-[29px] px-2 rounded-lg flex items-center justify-between text-[11px] font-bold tracking-tight transition-all cursor-pointer border ${
-                  mainTab === 'TOP_PICKS'
-                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-600 shadow-xs ring-1 ring-emerald-400/40'
-                    : 'bg-gradient-to-b from-white to-emerald-50/50 hover:to-emerald-100/60 text-slate-800 border-emerald-200/80 shadow-2xs'
+                className={`cyber-chrome-chip w-full !justify-between !px-2.5 ${
+                  mainTab === 'TOP_PICKS' ? 'cyber-chrome-chip-active' : ''
                 }`}
               >
-                <span className="flex items-center gap-1 truncate">
+                <span className="flex items-center gap-1.5 truncate">
                   <Flame
                     className={`w-3.5 h-3.5 shrink-0 ${
-                      mainTab === 'TOP_PICKS' ? 'text-amber-300 fill-amber-300/30' : 'text-emerald-600 fill-emerald-500/20'
+                      mainTab === 'TOP_PICKS' ? 'text-[#d9b114]' : 'text-[#8b949e]'
                     }`}
+                    strokeWidth={2}
                   />
                   <span className="truncate">Top Picks</span>
                 </span>
-                <span
-                  className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[9.5px] font-extrabold leading-none shrink-0 ${
-                    mainTab === 'TOP_PICKS'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200/80'
-                  }`}
-                >
+                <span className="px-1.5 py-0.5 rounded-lg font-mono tabular-nums text-[10px] font-bold leading-none shrink-0 bg-[#0b0e14] text-white border border-[#30363d]">
                   {topPicksCount}
                 </span>
               </button>
@@ -787,27 +757,20 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                   onSelectMainTab('ALL_LEAGUES');
                   onCloseMobileDrawer();
                 }}
-                className={`h-[29px] px-2 rounded-lg flex items-center justify-between text-[11px] font-bold tracking-tight transition-all cursor-pointer border ${
-                  mainTab === 'ALL_LEAGUES'
-                    ? 'bg-gradient-to-r from-indigo-600 to-slate-900 text-white border-indigo-700 shadow-xs ring-1 ring-indigo-400/40'
-                    : 'bg-gradient-to-b from-white to-indigo-50/40 hover:to-indigo-100/50 text-slate-800 border-indigo-200/70 shadow-2xs'
+                className={`cyber-chrome-chip w-full !justify-between !px-2.5 ${
+                  mainTab === 'ALL_LEAGUES' ? 'cyber-chrome-chip-active' : ''
                 }`}
               >
-                <span className="flex items-center gap-1 truncate">
+                <span className="flex items-center gap-1.5 truncate">
                   <Globe
                     className={`w-3.5 h-3.5 shrink-0 ${
-                      mainTab === 'ALL_LEAGUES' ? 'text-sky-300' : 'text-indigo-600'
+                      mainTab === 'ALL_LEAGUES' ? 'text-[#d9b114]' : 'text-[#8b949e]'
                     }`}
+                    strokeWidth={2}
                   />
                   <span className="truncate">Cartelera</span>
                 </span>
-                <span
-                  className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[9.5px] font-extrabold leading-none shrink-0 ${
-                    mainTab === 'ALL_LEAGUES'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-indigo-100/80 text-indigo-900 border border-indigo-200/80'
-                  }`}
-                >
+                <span className="px-1.5 py-0.5 rounded-lg font-mono tabular-nums text-[10px] font-bold leading-none shrink-0 bg-[#0b0e14] text-white border border-[#30363d]">
                   {allLeaguesCount}
                 </span>
               </button>
@@ -815,13 +778,13 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
           </div>
 
           {/* Horizonte de Programación: 5 Días Adelante */}
-          <div className="space-y-1 pt-2 border-t border-slate-200/80">
+          <div className="space-y-1.5 pt-2 border-t border-[#21262d]">
             <div className="flex items-center justify-between px-0.5">
-              <span className="text-[10.5px] font-medium text-slate-500 flex items-center gap-1">
-                <Calendar className="w-3 h-3 text-slate-400" />
+              <span className="text-[10.5px] font-semibold text-[#8b949e] flex items-center gap-1.5">
+                <Calendar className="w-3 h-3 text-[#d9b114]" strokeWidth={2} />
                 <span>Calendario (5 Días)</span>
               </span>
-              <span className="text-[9.5px] font-mono tabular-nums text-slate-400">{currentDate}</span>
+              <span className="text-[10px] font-mono tabular-nums text-[#6e7681]">{currentDate}</span>
             </div>
             <div className="grid grid-cols-5 gap-1">
               {fiveDayOptions.map((item) => {
@@ -834,14 +797,22 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                       onDateChange(item.dateStr);
                       onCloseMobileDrawer();
                     }}
-                    className={`min-h-[36px] py-1 px-0.5 rounded-lg flex flex-col items-center justify-center transition-all cursor-pointer border ${
+                    className={`min-h-[40px] py-1 px-0.5 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer border ${
                       isSelectedDate
-                        ? 'bg-slate-900 text-white border-slate-900 shadow-2xs font-semibold'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200/80'
+                        ? 'bg-[#1c2129] text-white border-[#d9b114]/70 shadow-[0_0_12px_rgba(217,177,20,0.18)] font-semibold'
+                        : 'bg-[#161b22] hover:bg-[#1c2129] text-[#8b949e] hover:text-white border-[#30363d]'
                     }`}
                   >
-                    <span className="text-[9px] leading-none truncate max-w-full opacity-85">{item.shortLabel}</span>
-                    <span className="text-[11px] font-mono tabular-nums font-bold leading-tight mt-0.5">{item.dayNum}</span>
+                    <span
+                      className={`text-[9px] leading-none truncate max-w-full ${
+                        isSelectedDate ? 'text-[#d9b114] font-bold' : 'text-[#8b949e]'
+                      }`}
+                    >
+                      {item.shortLabel}
+                    </span>
+                    <span className="text-xs font-mono tabular-nums font-bold leading-tight mt-0.5 text-white">
+                      {item.dayNum}
+                    </span>
                   </button>
                 );
               })}
@@ -849,9 +820,9 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
           </div>
 
           {/* Enfoque de Mercado Cuantitativo */}
-          <div className="space-y-1 pt-2 border-t border-slate-200/80">
-            <label className="text-[10.5px] font-medium text-slate-500 flex items-center gap-1 px-0.5">
-              <Filter className="w-3 h-3 text-slate-400" />
+          <div className="space-y-1.5 pt-2 border-t border-[#21262d]">
+            <label className="text-[10.5px] font-semibold text-[#8b949e] flex items-center gap-1.5 px-0.5">
+              <Filter className="w-3 h-3 text-[#d9b114]" strokeWidth={2} />
               <span>Filtro de Mercado</span>
             </label>
             {activeSport === 'SOCCER' ? (
@@ -861,17 +832,17 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                   onFilterChange(e.target.value as SoccerFilterType);
                   onCloseMobileDrawer();
                 }}
-                className="w-full min-h-[34px] bg-white border border-slate-200/90 hover:border-slate-300 rounded-lg px-2 py-1 text-[11.5px] font-medium text-slate-800 focus:outline-none focus:border-emerald-600 cursor-pointer"
+                className="w-full h-8.5 bg-[#161b22] border border-[#30363d] hover:border-[#484f58] focus:border-[#d9b114] rounded-xl px-2.5 text-xs font-medium text-white focus:outline-none cursor-pointer"
               >
-                <option value="ALL">En Vivo y Próximos (Todos)</option>
-                <option value="LIVE_ONLY">Solo En Vivo Ahora</option>
-                <option value="UPCOMING_ONLY">Solo Próximos por Jugar</option>
-                <option value="RECOMMENDED">Recomendados (Certeza &ge;68%)</option>
-                <option value="CORNERS_SAFE">Especial Córners (&ge;65%)</option>
-                <option value="CARDS_SAFE">Especial Tarjetas (&ge;65%)</option>
-                <option value="DOUBLE_CHANCE">Doble Oportunidad Segura (&ge;72%)</option>
-                <option value="FAVORITES">Favoritos Claros (&ge;55%)</option>
-                <option value="HIGH_GOALS">Alta Probabilidad de Goles</option>
+                <option value="ALL" className="bg-[#161b22] text-white">En Vivo y Próximos (Todos)</option>
+                <option value="LIVE_ONLY" className="bg-[#161b22] text-white">Solo En Vivo Ahora</option>
+                <option value="UPCOMING_ONLY" className="bg-[#161b22] text-white">Solo Próximos por Jugar</option>
+                <option value="RECOMMENDED" className="bg-[#161b22] text-white">Recomendados (Certeza &ge;68%)</option>
+                <option value="CORNERS_SAFE" className="bg-[#161b22] text-white">Especial Córners (&ge;65%)</option>
+                <option value="CARDS_SAFE" className="bg-[#161b22] text-white">Especial Tarjetas (&ge;65%)</option>
+                <option value="DOUBLE_CHANCE" className="bg-[#161b22] text-white">Doble Oportunidad Segura (&ge;72%)</option>
+                <option value="FAVORITES" className="bg-[#161b22] text-white">Favoritos Claros (&ge;55%)</option>
+                <option value="HIGH_GOALS" className="bg-[#161b22] text-white">Alta Probabilidad de Goles</option>
               </select>
             ) : (
               <select
@@ -880,24 +851,24 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                   onNBAFilterChange(e.target.value as NBAFilterType);
                   onCloseMobileDrawer();
                 }}
-                className="w-full min-h-[34px] bg-white border border-slate-200/90 hover:border-slate-300 rounded-lg px-2 py-1 text-[11.5px] font-medium text-slate-800 focus:outline-none focus:border-amber-500 cursor-pointer"
+                className="w-full h-8.5 bg-[#161b22] border border-[#30363d] hover:border-[#484f58] focus:border-[#d9b114] rounded-xl px-2.5 text-xs font-medium text-white focus:outline-none cursor-pointer"
               >
-                <option value="ALL">Todos los Mercados Baloncesto</option>
-                <option value="RECOMMENDED">Selecciones Seguras (&ge;65%)</option>
-                <option value="HIGH_POINTS">Ritmo Alto (Over Puntos)</option>
-                <option value="FAVORITES">Favoritos Claros (Moneyline)</option>
+                <option value="ALL" className="bg-[#161b22] text-white">Todos los Mercados Baloncesto</option>
+                <option value="RECOMMENDED" className="bg-[#161b22] text-white">Selecciones Seguras (&ge;65%)</option>
+                <option value="HIGH_POINTS" className="bg-[#161b22] text-white">Ritmo Alto (Over Puntos)</option>
+                <option value="FAVORITES" className="bg-[#161b22] text-white">Favoritos Claros (Moneyline)</option>
               </select>
             )}
           </div>
 
-          {/* 3. Catálogo Completo de Competiciones (Principales y Secundarias siempre visibles) */}
-          <div className="space-y-1.5 pt-2 border-t border-slate-200/80">
+          {/* 3. Catálogo Completo de Competiciones */}
+          <div className="space-y-2 pt-2 border-t border-[#21262d]">
             <div className="flex items-center justify-between px-0.5">
-              <span className="text-[10.5px] font-medium text-slate-500 flex items-center gap-1">
-                <Trophy className="w-3 h-3 text-slate-400" />
+              <span className="text-[10.5px] font-semibold text-[#8b949e] flex items-center gap-1.5">
+                <Trophy className="w-3 h-3 text-[#d9b114]" strokeWidth={2} />
                 <span>Catálogo de Competiciones</span>
               </span>
-              <span className="text-[9.5px] font-mono tabular-nums text-slate-400">
+              <span className="text-[10px] font-mono tabular-nums font-bold text-[#6e7681]">
                 {activeSport === 'SOCCER'
                   ? STATIC_SOCCER_CATALOG.length + extraDynamicSoccerGroups.length
                   : STATIC_BASKETBALL_CATALOG.length}
@@ -907,27 +878,21 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
             {activeSport === 'SOCCER' ? (
               <div className="space-y-2">
                 {/* Accesos Rápidos Globales */}
-                <div className="space-y-0.5">
+                <div className="space-y-1">
                   <button
                     type="button"
                     onClick={() => handleSelectLeagueAndView('ALL')}
-                    className={`w-full min-h-[34px] px-2.5 py-1 rounded-lg flex items-center justify-between text-[11.5px] transition-all cursor-pointer border ${
+                    className={`w-full min-h-[34px] px-2.5 py-1 rounded-xl flex items-center justify-between text-[11.5px] transition-all cursor-pointer border ${
                       selectedLeague === 'ALL' && mainTab === 'ALL_LEAGUES'
-                        ? 'bg-slate-900 text-white border-slate-900 font-semibold shadow-2xs'
-                        : 'bg-white hover:bg-slate-100/80 text-slate-700 border-slate-200/60'
+                        ? 'bg-[#1c2129] text-white border-[#d9b114]/65 font-semibold'
+                        : 'bg-[#161b22] hover:bg-[#1c2129] text-[#8b949e] hover:text-white border-[#30363d]'
                     }`}
                   >
                     <span className="flex items-center gap-1.5 truncate">
-                      <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <Globe className="w-3.5 h-3.5 text-[#8b949e] shrink-0" strokeWidth={2} />
                       <span className="truncate">Todas las Competiciones</span>
                     </span>
-                    <span
-                      className={`font-mono tabular-nums text-[10px] px-1.5 py-0.2 rounded font-semibold ${
-                        selectedLeague === 'ALL' && mainTab === 'ALL_LEAGUES'
-                          ? 'bg-white/20 text-white'
-                          : 'bg-slate-100 text-slate-700'
-                      }`}
-                    >
+                    <span className="font-mono tabular-nums text-[11px] px-1.5 py-0.5 rounded-lg font-bold bg-[#0b0e14] text-white border border-[#30363d]">
                       {totalFixturesCount}
                     </span>
                   </button>
@@ -935,27 +900,27 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                   <button
                     type="button"
                     onClick={() => handleSelectLeagueAndView('PRIME_CO')}
-                    className={`w-full min-h-[34px] px-2.5 py-1 rounded-lg flex items-center justify-between text-[11.5px] transition-all cursor-pointer border ${
+                    className={`w-full min-h-[34px] px-2.5 py-1 rounded-xl flex items-center justify-between text-[11.5px] transition-all cursor-pointer border ${
                       selectedLeague === 'PRIME_CO' && mainTab === 'ALL_LEAGUES'
-                        ? 'bg-emerald-50 text-emerald-900 border-emerald-300 font-semibold shadow-2xs'
-                        : 'bg-white hover:bg-slate-100/80 text-slate-700 border-slate-200/60'
+                        ? 'bg-[#1c2129] text-white border-[#d9b114]/65 font-semibold'
+                        : 'bg-[#161b22] hover:bg-[#1c2129] text-[#8b949e] hover:text-white border-[#30363d]'
                     }`}
                   >
                     <span className="flex items-center gap-1.5 truncate">
-                      <Star className="w-3.5 h-3.5 text-amber-500 shrink-0 fill-amber-400" />
+                      <Star className="w-3.5 h-3.5 text-[#d9b114] shrink-0" strokeWidth={2} />
                       <span className="truncate">Solo Ligas Top + Colombia</span>
                     </span>
-                    <span className="font-mono tabular-nums text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-semibold">
+                    <span className="font-mono tabular-nums text-[11px] px-1.5 py-0.5 rounded-lg bg-[#0b0e14] text-white border border-[#30363d] font-bold">
                       {primeFixturesCount}
                     </span>
                   </button>
                 </div>
 
                 {/* SECCIÓN A: LIGAS PRINCIPALES */}
-                <div className="space-y-0.5 pt-1">
-                  <div className="px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-700 flex items-center justify-between">
+                <div className="space-y-1 pt-1">
+                  <div className="px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#d9b114] flex items-center justify-between">
                     <span>⭐ Ligas Principales</span>
-                    <span className="text-[9px] text-slate-400 font-normal normal-case">Toca para ver juegos</span>
+                    <span className="text-[9px] text-[#6e7681] font-normal normal-case">Toca para ver juegos</span>
                   </div>
                   {primarySoccerCatalog.map((item) => {
                     const dynamicGroup = dynamicGroupMap.get(item.key);
@@ -969,12 +934,12 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                         <button
                           type="button"
                           onClick={() => handleSelectLeagueAndView(item.key, count)}
-                          className={`w-full min-h-[32px] px-2 py-1 rounded-lg flex items-center justify-between gap-1.5 text-[11.5px] transition-all cursor-pointer border ${
+                          className={`w-full min-h-[34px] px-2.5 py-1 rounded-xl flex items-center justify-between gap-1.5 text-[11.5px] transition-all cursor-pointer border ${
                             isSelectedGroup
-                              ? 'bg-emerald-600 text-white border-emerald-600 font-semibold shadow-2xs'
+                              ? 'bg-[#1c2129] text-white border-[#d9b114]/65 font-semibold'
                               : count > 0
-                              ? 'bg-white/80 hover:bg-slate-100 text-slate-800 border-slate-200/70 font-medium'
-                              : 'hover:bg-slate-100/70 text-slate-500 border-transparent font-normal'
+                              ? 'bg-[#161b22] hover:bg-[#1c2129] text-[#c9d1d9] hover:text-white border-[#30363d] font-medium'
+                              : 'hover:bg-[#161b22]/70 text-[#6e7681] border-transparent font-normal'
                           }`}
                         >
                           <div className="flex items-center gap-1.5 min-w-0 flex-1 text-left">
@@ -986,19 +951,15 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                           <div className="flex items-center gap-1 shrink-0">
                             {hasLive && (
                               <span
-                                className={`w-1.5 h-1.5 rounded-full animate-pulse ${
-                                  isSelectedGroup ? 'bg-white' : 'bg-rose-500'
-                                }`}
+                                className="w-1.5 h-1.5 rounded-full animate-pulse bg-rose-500"
                                 title="Partidos en vivo"
                               />
                             )}
                             <span
-                              className={`font-mono tabular-nums text-[10px] px-1.5 py-0.2 rounded ${
-                                isSelectedGroup
-                                  ? 'bg-white/20 text-white font-bold'
-                                  : count > 0
-                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/80 font-semibold'
-                                  : 'bg-slate-50 text-slate-400'
+                              className={`font-mono tabular-nums text-[10.5px] px-1.5 py-0.2 rounded-md ${
+                                count > 0
+                                  ? 'bg-[#0b0e14] text-white border border-[#30363d] font-bold'
+                                  : 'text-[#6e7681]'
                               }`}
                             >
                               {count}
@@ -1007,13 +968,14 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                               <ChevronDown
                                 className={`w-3 h-3 transition-transform ${
                                   isExpanded ? 'rotate-180' : ''
-                                } ${isSelectedGroup ? 'text-white' : 'text-slate-400'}`}
+                                } ${isSelectedGroup ? 'text-[#d9b114]' : 'text-[#6e7681]'}`}
+                                strokeWidth={2}
                               />
                             )}
                           </div>
                         </button>
                         {isExpanded && dynamicGroup && item.key === 'GROUP_INTL' ? (
-                          <div className="mt-1 mb-1.5 ml-2 pl-2 border-l-2 border-amber-300 space-y-0.5">
+                          <div className="mt-1 mb-1.5 ml-2 pl-2 border-l border-[#d9b114]/45 space-y-0.5">
                             {availableCompetitionGroups
                               .filter((group) => group.category === 'INTERNATIONAL')
                               .map((tournament) => {
@@ -1023,14 +985,14 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                                     key={tournament.key}
                                     type="button"
                                     onClick={() => handleSelectLeagueAndView(tournament.key, tournament.totalMatches)}
-                                    className={`w-full min-h-[30px] px-2 py-1 rounded-md flex items-center justify-between gap-2 text-[10.5px] text-left cursor-pointer ${
+                                    className={`w-full min-h-[30px] px-2 py-1 rounded-lg flex items-center justify-between gap-2 text-[10.5px] text-left cursor-pointer border ${
                                       isTournamentSelected
-                                        ? 'bg-amber-100 text-amber-900 font-semibold'
-                                        : 'text-slate-700 hover:bg-amber-50'
+                                        ? 'bg-[#1c2129] text-white border-[#d9b114]/55 font-semibold'
+                                        : 'border-transparent text-[#8b949e] hover:text-white hover:bg-[#161b22]'
                                     }`}
                                   >
                                     <span className="truncate">{tournament.flag} {tournament.name}</span>
-                                    <span className="shrink-0 font-mono tabular-nums text-slate-500">
+                                    <span className="shrink-0 font-mono tabular-nums font-bold text-white">
                                       {tournament.totalMatches}
                                     </span>
                                   </button>
@@ -1046,8 +1008,8 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                 </div>
 
                 {/* SECCIÓN B: LIGAS SECUNDARIAS Y RESTO DEL MUNDO */}
-                <div className="space-y-0.5 pt-1 border-t border-slate-200/60">
-                  <div className="px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+                <div className="space-y-1 pt-2 border-t border-[#21262d]">
+                  <div className="px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#8b949e] flex items-center justify-between">
                     <span>🌍 Ligas Secundarias y Copas</span>
                   </div>
                   {secondarySoccerCatalog.map((item) => {
@@ -1062,12 +1024,12 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                         <button
                           type="button"
                           onClick={() => handleSelectLeagueAndView(item.key, count)}
-                          className={`w-full min-h-[32px] px-2 py-1 rounded-lg flex items-center justify-between gap-1.5 text-[11.5px] transition-all cursor-pointer border ${
+                          className={`w-full min-h-[34px] px-2.5 py-1 rounded-xl flex items-center justify-between gap-1.5 text-[11.5px] transition-all cursor-pointer border ${
                             isSelectedGroup
-                              ? 'bg-emerald-600 text-white border-emerald-600 font-semibold shadow-2xs'
+                              ? 'bg-[#1c2129] text-white border-[#d9b114]/65 font-semibold'
                               : count > 0
-                              ? 'bg-white/80 hover:bg-slate-100 text-slate-800 border-slate-200/70 font-medium'
-                              : 'hover:bg-slate-100/70 text-slate-500 border-transparent font-normal'
+                              ? 'bg-[#161b22] hover:bg-[#1c2129] text-[#c9d1d9] hover:text-white border-[#30363d] font-medium'
+                              : 'hover:bg-[#161b22]/70 text-[#6e7681] border-transparent font-normal'
                           }`}
                         >
                           <div className="flex items-center gap-1.5 min-w-0 flex-1 text-left">
@@ -1078,19 +1040,13 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             {hasLive && (
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full animate-pulse ${
-                                  isSelectedGroup ? 'bg-white' : 'bg-rose-500'
-                                }`}
-                              />
+                              <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-rose-500" />
                             )}
                             <span
-                              className={`font-mono tabular-nums text-[10px] px-1.5 py-0.2 rounded ${
-                                isSelectedGroup
-                                  ? 'bg-white/20 text-white font-bold'
-                                  : count > 0
-                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/80 font-semibold'
-                                  : 'bg-slate-50 text-slate-400'
+                              className={`font-mono tabular-nums text-[10.5px] px-1.5 py-0.2 rounded-md ${
+                                count > 0
+                                  ? 'bg-[#0b0e14] text-white border border-[#30363d] font-bold'
+                                  : 'text-[#6e7681]'
                               }`}
                             >
                               {count}
@@ -1099,7 +1055,8 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                               <ChevronDown
                                 className={`w-3 h-3 transition-transform ${
                                   isExpanded ? 'rotate-180' : ''
-                                } ${isSelectedGroup ? 'text-white' : 'text-slate-400'}`}
+                                } ${isSelectedGroup ? 'text-[#d9b114]' : 'text-[#6e7681]'}`}
+                                strokeWidth={2}
                               />
                             )}
                           </div>
@@ -1129,10 +1086,10 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                         <button
                           type="button"
                           onClick={() => handleSelectLeagueAndView(filterKey, count)}
-                          className={`w-full min-h-[32px] px-2 py-1 rounded-lg flex items-center justify-between gap-1.5 text-[11.5px] transition-all cursor-pointer border ${
+                          className={`w-full min-h-[34px] px-2.5 py-1 rounded-xl flex items-center justify-between gap-1.5 text-[11.5px] transition-all cursor-pointer border ${
                             isSelectedGroup
-                              ? 'bg-emerald-600 text-white border-emerald-600 font-semibold shadow-2xs'
-                              : 'bg-white/80 hover:bg-slate-100 text-slate-800 border-slate-200/70 font-medium'
+                              ? 'bg-[#1c2129] text-white border-[#d9b114]/65 font-semibold'
+                              : 'bg-[#161b22] hover:bg-[#1c2129] text-[#c9d1d9] hover:text-white border-[#30363d] font-medium'
                           }`}
                         >
                           <div className="flex items-center gap-1.5 min-w-0 flex-1 text-left">
@@ -1143,26 +1100,17 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             {hasLiveInGroup && (
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full animate-pulse ${
-                                  isSelectedGroup ? 'bg-white' : 'bg-rose-500'
-                                }`}
-                              />
+                              <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-rose-500" />
                             )}
-                            <span
-                              className={`font-mono tabular-nums text-[10px] px-1.5 py-0.2 rounded ${
-                                isSelectedGroup
-                                  ? 'bg-white/20 text-white font-bold'
-                                  : 'bg-emerald-50 text-emerald-800 border border-emerald-200/80 font-semibold'
-                              }`}
-                            >
+                            <span className="font-mono tabular-nums text-[10.5px] px-1.5 py-0.2 rounded-md bg-[#0b0e14] text-white border border-[#30363d] font-bold">
                               {count}
                             </span>
                             {count > 0 && (
                               <ChevronDown
                                 className={`w-3 h-3 transition-transform ${
                                   isExpanded ? 'rotate-180' : ''
-                                } ${isSelectedGroup ? 'text-white' : 'text-slate-400'}`}
+                                } ${isSelectedGroup ? 'text-[#d9b114]' : 'text-[#6e7681]'}`}
+                                strokeWidth={2}
                               />
                             )}
                           </div>
@@ -1179,20 +1127,22 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => handleSelectNBALeagueAndView('ALL', 0)}
-                  className={`w-full min-h-[34px] px-2.5 py-1 rounded-lg flex items-center justify-between text-[11.5px] transition-all cursor-pointer border ${
+                  className={`w-full min-h-[34px] px-2.5 py-1 rounded-xl flex items-center justify-between text-[11.5px] transition-all cursor-pointer border ${
                     selectedNBAConference === 'ALL'
-                      ? 'bg-slate-900 text-white border-slate-900 font-semibold'
-                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200/60'
+                      ? 'bg-[#1c2129] text-white border-[#d9b114]/65 font-semibold'
+                      : 'bg-[#161b22] hover:bg-[#1c2129] text-[#8b949e] hover:text-white border-[#30363d]'
                   }`}
                 >
                   <span>🏀 Todas las Competiciones</span>
-                  <span className="font-mono tabular-nums text-[10px]">{totalNBAFixturesCount}</span>
+                  <span className="font-mono tabular-nums text-[11px] px-1.5 py-0.5 rounded-lg bg-[#0b0e14] text-white border border-[#30363d] font-bold">
+                    {totalNBAFixturesCount}
+                  </span>
                 </button>
 
-                <div className="space-y-0.5 pt-1">
-                  <div className="px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 flex items-center justify-between">
+                <div className="space-y-1 pt-1">
+                  <div className="px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#d9b114] flex items-center justify-between">
                     <span>⭐ Ligas Principales</span>
-                    <span className="text-[9px] text-slate-400 font-normal normal-case">Toca para ver juegos</span>
+                    <span className="text-[9px] text-[#6e7681] font-normal normal-case">Toca para ver juegos</span>
                   </div>
                   {STATIC_BASKETBALL_CATALOG.filter((c) => c.tier === 'PRIMARY').map((item) => {
                     const matchesForKey = getNBAMatchesForCatalogKey(item.key);
@@ -1213,12 +1163,12 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                         <button
                           type="button"
                           onClick={() => handleSelectNBALeagueAndView(item.key, matchesForKey.length)}
-                          className={`w-full min-h-[32px] px-2 py-1 rounded-lg flex items-center justify-between text-[11.5px] transition-all cursor-pointer border ${
+                          className={`w-full min-h-[34px] px-2.5 py-1 rounded-xl flex items-center justify-between text-[11.5px] transition-all cursor-pointer border ${
                             isSelected
-                              ? 'bg-amber-500 text-slate-950 border-amber-500 font-semibold'
+                              ? 'bg-[#1c2129] text-white border-[#d9b114]/65 font-semibold'
                               : count > 0
-                              ? 'bg-white/80 hover:bg-slate-100 text-slate-800 border-slate-200/70 font-medium'
-                              : 'hover:bg-slate-100/70 text-slate-500 border-transparent font-normal'
+                              ? 'bg-[#161b22] hover:bg-[#1c2129] text-[#c9d1d9] hover:text-white border-[#30363d] font-medium'
+                              : 'hover:bg-[#161b22]/70 text-[#6e7681] border-transparent font-normal'
                           }`}
                         >
                           <span className="truncate">
@@ -1226,12 +1176,10 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                           </span>
                           <div className="flex items-center gap-1 shrink-0">
                             <span
-                              className={`font-mono tabular-nums text-[10px] px-1.5 py-0.2 rounded ${
-                                isSelected
-                                  ? 'bg-slate-950/15 text-slate-950 font-bold'
-                                  : count > 0
-                                  ? 'bg-amber-50 text-amber-900 border border-amber-200 font-semibold'
-                                  : 'bg-slate-50 text-slate-400'
+                              className={`font-mono tabular-nums text-[10.5px] px-1.5 py-0.2 rounded-md ${
+                                count > 0
+                                  ? 'bg-[#0b0e14] text-white border border-[#30363d] font-bold'
+                                  : 'text-[#6e7681]'
                               }`}
                             >
                               {count}
@@ -1240,7 +1188,8 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                               <ChevronDown
                                 className={`w-3 h-3 transition-transform ${
                                   isExpanded ? 'rotate-180' : ''
-                                } ${isSelected ? 'text-slate-950' : 'text-slate-400'}`}
+                                } ${isSelected ? 'text-[#d9b114]' : 'text-[#6e7681]'}`}
+                                strokeWidth={2}
                               />
                             )}
                           </div>
@@ -1251,8 +1200,8 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                   })}
                 </div>
 
-                <div className="space-y-0.5 pt-1 border-t border-slate-200/60">
-                  <div className="px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <div className="space-y-1 pt-2 border-t border-[#21262d]">
+                  <div className="px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#8b949e]">
                     🌍 Ligas Secundarias
                   </div>
                   {STATIC_BASKETBALL_CATALOG.filter((c) => c.tier === 'SECONDARY').map((item) => {
@@ -1267,12 +1216,12 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                         <button
                           type="button"
                           onClick={() => handleSelectNBALeagueAndView(item.key, matchesForKey.length)}
-                          className={`w-full min-h-[32px] px-2 py-1 rounded-lg flex items-center justify-between text-[11.5px] transition-all cursor-pointer border ${
+                          className={`w-full min-h-[34px] px-2.5 py-1 rounded-xl flex items-center justify-between text-[11.5px] transition-all cursor-pointer border ${
                             isSelected
-                              ? 'bg-amber-500 text-slate-950 border-amber-500 font-semibold'
+                              ? 'bg-[#1c2129] text-white border-[#d9b114]/65 font-semibold'
                               : count > 0
-                              ? 'bg-white/80 hover:bg-slate-100 text-slate-800 border-slate-200/70 font-medium'
-                              : 'hover:bg-slate-100/70 text-slate-500 border-transparent font-normal'
+                              ? 'bg-[#161b22] hover:bg-[#1c2129] text-[#c9d1d9] hover:text-white border-[#30363d] font-medium'
+                              : 'hover:bg-[#161b22]/70 text-[#6e7681] border-transparent font-normal'
                           }`}
                         >
                           <span className="truncate">
@@ -1280,12 +1229,10 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                           </span>
                           <div className="flex items-center gap-1 shrink-0">
                             <span
-                              className={`font-mono tabular-nums text-[10px] px-1.5 py-0.2 rounded ${
-                                isSelected
-                                  ? 'bg-slate-950/15 text-slate-950 font-bold'
-                                  : count > 0
-                                  ? 'bg-amber-50 text-amber-900 border border-amber-200 font-semibold'
-                                  : 'bg-slate-50 text-slate-400'
+                              className={`font-mono tabular-nums text-[10.5px] px-1.5 py-0.2 rounded-md ${
+                                count > 0
+                                  ? 'bg-[#0b0e14] text-white border border-[#30363d] font-bold'
+                                  : 'text-[#6e7681]'
                               }`}
                             >
                               {count}
@@ -1294,7 +1241,8 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                               <ChevronDown
                                 className={`w-3 h-3 transition-transform ${
                                   isExpanded ? 'rotate-180' : ''
-                                } ${isSelected ? 'text-slate-950' : 'text-slate-400'}`}
+                                } ${isSelected ? 'text-[#d9b114]' : 'text-[#6e7681]'}`}
+                                strokeWidth={2}
                               />
                             )}
                           </div>
@@ -1309,8 +1257,8 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
           </div>
         </div>
 
-        {/* 4. Pie del Menú Lateral Compacto en 1 Sola Fila: Boletos, Fondo, Guía, Salir */}
-        <div className="p-2 border-t border-slate-200/80 bg-slate-50/90 space-y-1.5 shrink-0">
+        {/* 4. Pie del Menú Lateral (Lenguaje unificado .cyber-chrome-chip) */}
+        <div className="p-2.5 border-t border-[#21262d] bg-[#0b0e14] space-y-1.5 shrink-0">
           {isAdminVisible && (
             <button
               type="button"
@@ -1318,9 +1266,9 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                 onOpenAdminModal();
                 onCloseMobileDrawer();
               }}
-              className="w-full min-h-[32px] px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+              className="cyber-chrome-chip cyber-chrome-chip-gold w-full"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+              <ShieldCheck className="w-3.5 h-3.5 text-[#d9b114]" strokeWidth={2} />
               <span>Panel Admin</span>
             </button>
           )}
@@ -1332,10 +1280,10 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                 onOpenSavedSlips();
                 onCloseMobileDrawer();
               }}
-              className="min-h-[32px] px-1 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90 flex items-center justify-center gap-0.5 font-medium cursor-pointer whitespace-nowrap"
+              className="cyber-chrome-chip !h-8 !px-1 !text-[10px] w-full whitespace-nowrap"
               title="Mis Boletos Guardados"
             >
-              <History className="w-3 h-3 text-emerald-600 shrink-0" />
+              <History className="w-3 h-3 text-[#d9b114] shrink-0" strokeWidth={2} />
               <span>Boletos</span>
             </button>
 
@@ -1345,10 +1293,10 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                 onOpenWallpaperModal();
                 onCloseMobileDrawer();
               }}
-              className="min-h-[32px] px-1 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90 flex items-center justify-center gap-0.5 font-medium cursor-pointer whitespace-nowrap"
+              className="cyber-chrome-chip !h-8 !px-1 !text-[10px] w-full whitespace-nowrap"
               title="Personalizar Fondo"
             >
-              <ImageIcon className="w-3 h-3 text-purple-600 shrink-0" />
+              <ImageIcon className="w-3 h-3 text-[#8b949e] shrink-0" strokeWidth={2} />
               <span>Fondo</span>
             </button>
 
@@ -1358,20 +1306,20 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
                 onOpenGuideModal('GUIDE');
                 onCloseMobileDrawer();
               }}
-              className="min-h-[32px] px-1 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90 flex items-center justify-center gap-0.5 font-medium cursor-pointer whitespace-nowrap"
+              className="cyber-chrome-chip !h-8 !px-1 !text-[10px] w-full whitespace-nowrap"
               title="Guía y Glosario A-Z"
             >
-              <BookOpen className="w-3 h-3 text-amber-600 shrink-0" />
+              <BookOpen className="w-3 h-3 text-[#d9b114] shrink-0" strokeWidth={2} />
               <span>Guía</span>
             </button>
 
             <button
               type="button"
               onClick={onLogoutSession}
-              className="min-h-[32px] px-1 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 flex items-center justify-center gap-0.5 font-medium cursor-pointer whitespace-nowrap"
+              className="cyber-chrome-chip !h-8 !px-1 !text-[10px] w-full whitespace-nowrap"
               title="Cerrar sesión en este dispositivo"
             >
-              <Power className="w-3 h-3 shrink-0" />
+              <Power className="w-3 h-3 text-[#8b949e] shrink-0" strokeWidth={2} />
               <span>Salir</span>
             </button>
           </div>
@@ -1382,24 +1330,24 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
 
   return (
     <>
-      {/* Desktop Fixed Sidebar (lg and up) - Anclado permanente sin desplazarse con el scroll */}
+      {/* Desktop Floating Bento Sidebar (lg and up) */}
       <aside
-        className={`hidden lg:flex flex-col shrink-0 bg-white/95 backdrop-blur-md border-r border-slate-200/90 shadow-xs fixed top-0 left-0 bottom-0 h-screen z-30 transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        className={`hidden lg:flex flex-col shrink-0 bento-floating-dock fixed top-2.5 left-2.5 bottom-2.5 h-[calc(100vh-20px)] rounded-3xl overflow-hidden z-30 transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isDesktopCollapsed ? 'w-[68px]' : 'w-72'
         }`}
       >
         {renderSidebarContent(isDesktopCollapsed)}
       </aside>
 
-      {/* Espaciador Desktop para reservar el ancho sin solapar la cartelera */}
+      {/* Espaciador Desktop para reservar el ancho del Riel Flotante */}
       <div
         aria-hidden="true"
         className={`hidden lg:block shrink-0 transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          isDesktopCollapsed ? 'w-[68px]' : 'w-72'
+          isDesktopCollapsed ? 'w-[82px]' : 'w-[302px]'
         }`}
       />
 
-      {/* Mobile Slide-Over Drawer (< lg) - Animación Fluida Apple / Linear */}
+      {/* Mobile Slide-Over Drawer (< lg) */}
       <div
         className={`lg:hidden fixed inset-0 z-50 flex transition-opacity duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isMobileDrawerOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
@@ -1407,12 +1355,12 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
         aria-hidden={!isMobileDrawerOpen}
       >
         <div
-          className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm transition-opacity duration-300"
+          className="fixed inset-0 bg-black/40 backdrop-blur-md transition-opacity duration-300"
           onClick={onCloseMobileDrawer}
           aria-hidden="true"
         />
         <aside
-          className={`relative w-72 max-w-[85vw] bg-white h-full shadow-2xl border-r border-slate-200 flex flex-col z-10 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          className={`relative w-72 max-w-[85vw] bg-[#0b0e14] h-full shadow-2xl border-r border-[#30363d] flex flex-col z-10 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             isMobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >

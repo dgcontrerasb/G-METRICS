@@ -90,6 +90,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
 
   // Config & Security PIN
   const [adminWhatsApp, setAdminWhatsApp] = useState('573213902708');
+  const [freeAccessMode, setFreeAccessMode] = useState<boolean>(true);
   const [activeServerPin, setActiveServerPin] = useState(() => {
     return (
       sessionStorage.getItem('futbolstats_admin_pin') ||
@@ -143,6 +144,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
       const data = await res.json();
       if (data.success) {
         if (data.adminWhatsApp) setAdminWhatsApp(data.adminWhatsApp);
+        if (typeof data.freeAccessMode === 'boolean') setFreeAccessMode(data.freeAccessMode);
         if (data.currentPin) {
           setActiveServerPin(data.currentPin);
           localStorage.setItem('sportstats_admin_saved_pin', data.currentPin);
@@ -463,31 +465,33 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
   // STATE 1: Discrete Security Verification Box (Fintech Light White)
   if (!isAdminAuthenticated) {
     return (
-      <div
-        onClick={handleCloseModal}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn"
-      >
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        {/* Backdrop blur independiente (fondo visible y difuminado cristalino) */}
+        <div
+          onClick={handleCloseModal}
+          className="fixed inset-0 bg-black/25 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+        />
         <div
           onClick={(e) => e.stopPropagation()}
-          className="bg-white border border-slate-200/90 rounded-2xl w-full max-w-sm p-6 shadow-2xl relative text-center text-slate-800"
+          className="relative z-10 bg-[#161b22] border border-[#30363d] rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center text-white animate-in zoom-in-95 duration-200"
         >
           <button
             onClick={handleCloseModal}
             type="button"
-            className="absolute top-3.5 right-3.5 w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition cursor-pointer"
+            className="absolute top-3.5 right-3.5 w-7 h-7 rounded-full bg-[#0b0e14] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] flex items-center justify-center transition cursor-pointer"
             title="Cerrar"
           >
             <X className="w-3.5 h-3.5" />
           </button>
 
-          <div className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto mb-3">
-            <Lock className="w-5 h-5 text-amber-600" />
+          <div className="w-11 h-11 rounded-xl bg-[#0b0e14] border border-[#30363d] flex items-center justify-center mx-auto mb-3">
+            <Lock className="w-5 h-5 text-[#d9b114]" />
           </div>
 
-          <h3 className="text-base font-bold text-slate-900 tracking-tight mb-1">
+          <h3 className="text-base font-bold text-white tracking-tight mb-1">
             {showRecoveryMode ? 'Recuperación de Acceso' : 'Verificación de Seguridad'}
           </h3>
-          <p className="text-xs text-slate-500 mb-4">
+          <p className="text-xs text-[#8b949e] mb-4">
             {showRecoveryMode
               ? 'Solicita tu código de recuperación por WhatsApp o ingresa tu clave.'
               : 'Ingresa el código de autorización para continuar.'}
@@ -505,21 +509,21 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
                   }}
                   placeholder="••••••"
                   autoFocus
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-4 pr-11 py-2.5 text-center text-lg font-mono tabular-nums tracking-widest text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white transition"
+                  className="w-full bg-[#0b0e14] border border-[#30363d] rounded-xl pl-4 pr-11 py-2.5 text-center text-lg font-mono tabular-nums tracking-widest text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114] focus:bg-[#0b0e14] transition"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPinInput(!showPinInput)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-700 cursor-pointer"
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-[#8b949e] hover:text-white cursor-pointer"
                   title={showPinInput ? 'Ocultar PIN' : 'Ver PIN'}
                 >
-                  {showPinInput ? <EyeOff className="w-4 h-4 text-emerald-600" /> : <Eye className="w-4 h-4" />}
+                  {showPinInput ? <EyeOff className="w-4 h-4 text-[#d9b114]" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
 
               {pinError && (
                 <div className="space-y-2">
-                  <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 py-2 px-3 rounded-lg font-medium">
+                  <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 py-2 px-3 rounded-lg font-medium">
                     {pinError}
                   </div>
                   <button
@@ -529,7 +533,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
                       setRecoveryError(null);
                       setRecoverySuccessMsg(null);
                     }}
-                    className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-2 transition cursor-pointer"
+                    className="text-[11px] font-semibold text-[#d9b114] hover:underline underline-offset-2 transition cursor-pointer"
                   >
                     ¿Olvidaste tu código? Recuperar acceso
                   </button>
@@ -540,13 +544,13 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs bg-[#0b0e14] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] transition cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-900 hover:bg-slate-800 text-white transition shadow-xs active:scale-95 cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-[#161b22] hover:bg-[#21262d] text-white border border-[#30363d] hover:border-[#d9b114]/50 transition shadow-xs active:scale-95 cursor-pointer"
                 >
                   Verificar
                 </button>
@@ -662,21 +666,26 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
     );
   }
 
-  // STATE 2: Full Authenticated Admin Panel (Fintech Light White)
+  // STATE 2: Full Authenticated Admin Panel (Cyber-Fintech Dark)
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl w-full max-w-4xl lg:max-w-5xl max-h-[95vh] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden relative text-slate-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
+      {/* Backdrop blur independiente (fondo visible y difuminado cristalino) */}
+      <div
+        onClick={handleCloseModal}
+        className="fixed inset-0 bg-black/25 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+      />
+      <div className="relative z-10 bg-[#161b22] border border-[#30363d] rounded-2xl sm:rounded-3xl w-full max-w-4xl lg:max-w-5xl max-h-[95vh] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden text-white animate-in zoom-in-95 duration-200">
         {/* Top Header */}
-        <div className="p-3 sm:p-4 border-b border-slate-200/80 flex items-center justify-between bg-slate-50/90 shrink-0">
+        <div className="p-3 sm:p-4 border-b border-[#30363d] flex items-center justify-between bg-[#0b0e14] shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
-              <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#161b22] border border-[#30363d] flex items-center justify-center shrink-0">
+              <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-[#d9b114]" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-xs sm:text-base font-bold text-slate-900 flex items-center gap-2 truncate">
+              <h2 className="text-xs sm:text-base font-bold text-white flex items-center gap-2 truncate">
                 <span>Panel de Administración · G METRICS</span>
               </h2>
-              <p className="text-[10px] sm:text-xs text-slate-500 font-mono truncate">
+              <p className="text-[10px] sm:text-xs text-[#8b949e] font-mono truncate">
                 Sesión Propietario · Modo Privado
               </p>
             </div>
@@ -684,15 +693,15 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
           <div className="flex items-center gap-2 shrink-0 ml-2">
             <button
               onClick={handleLogoutAdmin}
-              className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 transition text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
+              className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 transition text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
               title="Bloquear panel y cerrar sesión"
             >
-              <Power className="w-3.5 h-3.5 text-rose-600" />
+              <Power className="w-3.5 h-3.5 text-rose-400" />
               <span className="hidden sm:inline">Cerrar Sesión</span>
             </button>
             <button
               onClick={handleCloseModal}
-              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-100 hover:bg-slate-200/80 text-slate-500 hover:text-slate-900 flex items-center justify-center transition cursor-pointer shrink-0"
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#0b0e14] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] flex items-center justify-center transition cursor-pointer shrink-0"
               title="Cerrar panel"
             >
               <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -703,16 +712,16 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
         {/* Authenticated Panel Content */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Pinned Responsive Tabs Bar (Sin cortes, espacio amplio para todas las pestañas) */}
-          <div className="sticky top-0 z-20 border-b border-slate-200/80 bg-slate-100/70 px-3 sm:px-5 pt-1.5 pb-0 flex items-center gap-1 sm:gap-2 text-xs font-semibold overflow-x-auto scrollbar-thin shrink-0 pr-6">
+          <div className="sticky top-0 z-20 border-b border-[#30363d] bg-[#0b0e14] px-3 sm:px-5 pt-1.5 pb-0 flex items-center gap-1 sm:gap-2 text-xs font-semibold overflow-x-auto scrollbar-thin shrink-0 pr-6">
             <button
               onClick={() => setActiveTab('USERS')}
               className={`px-3 py-2 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer text-xs ${
                 activeTab === 'USERS'
-                  ? 'border-indigo-600 text-indigo-800 bg-white font-bold shadow-2xs'
-                  : 'border-transparent text-slate-600 hover:text-slate-900'
+                  ? 'border-[#d9b114] text-white bg-[#161b22] font-bold shadow-2xs'
+                  : 'border-transparent text-[#8b949e] hover:text-white'
               }`}
             >
-              <Users className="w-3.5 h-3.5 text-indigo-600" />
+              <Users className="w-3.5 h-3.5 text-[#d9b114]" />
               <span>Usuarios ({appUsersList.length})</span>
             </button>
             <button
@@ -722,13 +731,13 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
               }}
               className={`px-3 py-2 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer text-xs ${
                 activeTab === 'MONITOR'
-                  ? 'border-amber-600 text-amber-900 bg-white font-bold shadow-2xs'
-                  : 'border-transparent text-slate-600 hover:text-slate-900'
+                  ? 'border-[#d9b114] text-white bg-[#161b22] font-bold shadow-2xs'
+                  : 'border-transparent text-[#8b949e] hover:text-white'
               }`}
             >
-              <Database className="w-3.5 h-3.5 text-amber-600" />
+              <Database className="w-3.5 h-3.5 text-[#d9b114]" />
               <span>Monitor & API</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-800">
+              <span className="px-1.5 py-0.2 rounded-full bg-[#161b22] border border-[#30363d] text-[10px] font-bold text-[#00ff66] tabular-nums">
                 🟢 {serverTelemetry?.onlineNowCount ?? 1}
               </span>
             </button>
@@ -736,24 +745,24 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
               onClick={() => setActiveTab('AUDIT')}
               className={`px-3 py-2 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer text-xs ${
                 activeTab === 'AUDIT'
-                  ? 'border-emerald-600 text-emerald-800 bg-white font-bold shadow-2xs'
-                  : 'border-transparent text-slate-600 hover:text-slate-900'
+                  ? 'border-[#d9b114] text-white bg-[#161b22] font-bold shadow-2xs'
+                  : 'border-transparent text-[#8b949e] hover:text-white'
               }`}
             >
-              <BarChart2 className="w-3.5 h-3.5 text-emerald-600" />
+              <BarChart2 className="w-3.5 h-3.5 text-[#d9b114]" />
               <span>Eficiencia (+EV)</span>
             </button>
             <button
               onClick={() => setActiveTab('PARLAYS_BETA')}
               className={`px-3 py-2 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer text-xs ${
                 activeTab === 'PARLAYS_BETA'
-                  ? 'border-amber-500 text-amber-900 bg-amber-50/80 font-extrabold shadow-2xs'
-                  : 'border-transparent text-slate-600 hover:text-slate-900'
+                  ? 'border-[#d9b114] text-[#d9b114] bg-[#161b22] font-extrabold shadow-2xs'
+                  : 'border-transparent text-[#8b949e] hover:text-white'
               }`}
             >
-              <Ticket className="w-3.5 h-3.5 text-amber-600" />
+              <Ticket className="w-3.5 h-3.5 text-[#d9b114]" />
               <span>Parlays (Beta)</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 font-mono text-[9px] font-black uppercase">
+              <span className="px-1.5 py-0.2 rounded-full bg-[#d9b114] text-slate-950 font-mono text-[9px] font-black uppercase">
                 BETA
               </span>
             </button>
@@ -761,28 +770,28 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
               onClick={() => setActiveTab('FEEDBACK')}
               className={`px-3 py-2 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer text-xs ${
                 activeTab === 'FEEDBACK'
-                  ? 'border-amber-500 text-amber-900 bg-white font-bold shadow-2xs'
-                  : 'border-transparent text-slate-600 hover:text-slate-900'
+                  ? 'border-[#d9b114] text-white bg-[#161b22] font-bold shadow-2xs'
+                  : 'border-transparent text-[#8b949e] hover:text-white'
               }`}
             >
-              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+              <Star className="w-3.5 h-3.5 text-[#d9b114] fill-[#d9b114]" />
               <span>Feedback</span>
             </button>
             <button
               onClick={() => setActiveTab('CONFIG')}
               className={`px-3 py-2 rounded-t-xl transition border-b-2 flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer text-xs mr-2 ${
                 activeTab === 'CONFIG'
-                  ? 'border-cyan-600 text-cyan-800 bg-white font-bold shadow-2xs'
-                  : 'border-transparent text-slate-600 hover:text-slate-900'
+                  ? 'border-[#d9b114] text-white bg-[#161b22] font-bold shadow-2xs'
+                  : 'border-transparent text-[#8b949e] hover:text-white'
               }`}
             >
-              <Shield className="w-3.5 h-3.5 text-cyan-600" />
+              <Shield className="w-3.5 h-3.5 text-[#d9b114]" />
               <span>Seguridad & PIN</span>
             </button>
           </div>
 
           {/* Tab Content Body (Scrollable independently) */}
-          <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 bg-white">
+          <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 bg-[#0b0e14]/50 text-white">
             {/* TAB 0: SUPABASE USERS */}
             {activeTab === 'USERS' && (
               <AdminUsersTab
@@ -816,6 +825,8 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
                 setPinInput={setPinInput}
                 adminWhatsApp={adminWhatsApp}
                 setAdminWhatsApp={setAdminWhatsApp}
+                freeAccessMode={freeAccessMode}
+                setFreeAccessMode={setFreeAccessMode}
                 supabaseConfigured={supabaseConfigured}
                 supabaseProject={supabaseProject}
                 supabaseSqlSchema={supabaseSqlSchema}

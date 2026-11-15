@@ -257,18 +257,21 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
   const returnPercentage = (((calcOdd || 1) - 1) * 100).toFixed(0);
 
   return (
-    <div
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in"
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4">
+      {/* Backdrop Blur independiente (fondo visible y difuminado cristalino) */}
+      <div
+        onClick={onClose}
+        className="fixed inset-0 bg-black/25 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+      />
+
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-3xl max-h-[90vh] bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden text-slate-800"
+        className="relative z-10 w-full max-w-3xl max-h-[90vh] bg-[#161b22] border border-[#30363d] rounded-3xl shadow-2xl flex flex-col overflow-hidden text-white animate-in zoom-in-95 duration-200"
       >
         {/* Header */}
-        <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200/80 bg-slate-50/90 flex items-center justify-between gap-3">
+        <div className="px-4 sm:px-5 py-3.5 border-b border-[#30363d] bg-[#0b0e14] flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white border border-slate-200/90 shadow-2xs flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#161b22] border border-[#30363d] shadow-2xs flex items-center justify-center shrink-0">
               {activeTab === 'LEGAL' ? (
                 <Scale className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
               ) : activeTab === 'GLOSSARY' ? (
@@ -278,89 +281,91 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
               )}
             </div>
             <div className="min-w-0">
-              <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+              <h2 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-1.5 flex-wrap">
                 <span>Centro de Ayuda y Glosario</span>
-                <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="bento-pill-emerald text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full">
                   +18
                 </span>
               </h2>
-              <p className="text-[11px] text-slate-500 truncate">
+              <p className="text-[11px] text-[#8b949e] truncate">
                 Guía práctica, glosario técnico A-Z y aviso legal.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200/80 flex items-center justify-center text-slate-500 hover:text-slate-900 transition-colors cursor-pointer shrink-0"
+            className="w-8 h-8 rounded-xl bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] flex items-center justify-center text-[#8b949e] hover:text-white transition-colors cursor-pointer shrink-0"
             title="Cerrar ventana"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Navigation Tabs: 3 columnas simétricas que caben al 100% en cualquier móvil sin cortarse */}
-        <div className="px-3 sm:px-5 py-1.5 bg-slate-100/80 border-b border-slate-200/80 grid grid-cols-3 gap-1.5">
-          <button
-            type="button"
-            onClick={() => setActiveTab('GUIDE')}
-            className={`py-1.5 px-1.5 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer border min-w-0 ${
-              activeTab === 'GUIDE'
-                ? 'bg-white text-emerald-800 border-emerald-300 shadow-2xs font-bold'
-                : 'bg-transparent text-slate-600 border-transparent hover:text-slate-900 hover:bg-white/60'
-            }`}
-          >
-            <Calculator className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span className="truncate">Guía Rápida</span>
-          </button>
+        {/* Navigation Tabs: Segmented Bento Pill Dock */}
+        <div className="px-3 sm:px-5 py-2 bg-[#0b0e14] border-b border-[#30363d]">
+          <div className="p-1 rounded-2xl bg-[#161b22] border border-[#30363d] grid grid-cols-3 gap-1.5">
+            <button
+              type="button"
+              onClick={() => setActiveTab('GUIDE')}
+              className={`py-1.5 px-1.5 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer min-w-0 ${
+                activeTab === 'GUIDE'
+                  ? 'bg-[#0b0e14] text-white border border-[#d9b114]/60 shadow-xs font-bold'
+                  : 'bg-transparent text-[#8b949e] border border-transparent hover:text-white hover:bg-[#1c2129]'
+              }`}
+            >
+              <Calculator className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span className="truncate">Guía Rápida</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('GLOSSARY')}
-            className={`py-1.5 px-1.5 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer border min-w-0 ${
-              activeTab === 'GLOSSARY'
-                ? 'bg-white text-cyan-800 border-cyan-300 shadow-2xs font-bold'
-                : 'bg-transparent text-slate-600 border-transparent hover:text-slate-900 hover:bg-white/60'
-            }`}
-          >
-            <BookMarked className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
-            <span className="truncate">Glosario</span>
-            <span className="px-1 py-0.2 rounded-full text-[9px] bg-cyan-50 text-cyan-700 border border-cyan-200 font-mono shrink-0">
-              {GLOSSARY_ITEMS.length}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('GLOSSARY')}
+              className={`py-1.5 px-1.5 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer min-w-0 ${
+                activeTab === 'GLOSSARY'
+                  ? 'bg-[#0b0e14] text-white border border-[#d9b114]/60 shadow-xs font-bold'
+                  : 'bg-transparent text-[#8b949e] border border-transparent hover:text-white hover:bg-[#1c2129]'
+              }`}
+            >
+              <BookMarked className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
+              <span className="truncate">Glosario</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-cyan-50 text-cyan-700 border border-cyan-200 font-mono shrink-0">
+                {GLOSSARY_ITEMS.length}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('LEGAL')}
-            className={`py-1.5 px-1.5 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer border min-w-0 ${
-              activeTab === 'LEGAL'
-                ? 'bg-white text-amber-800 border-amber-300 shadow-2xs font-bold'
-                : 'bg-transparent text-slate-600 border-transparent hover:text-slate-900 hover:bg-white/60'
-            }`}
-          >
-            <Scale className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-            <span className="truncate">Aviso Legal</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('LEGAL')}
+              className={`py-1.5 px-1.5 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer min-w-0 ${
+                activeTab === 'LEGAL'
+                  ? 'bg-[#0b0e14] text-white border border-[#d9b114]/60 shadow-xs font-bold'
+                  : 'bg-transparent text-[#8b949e] border border-transparent hover:text-white hover:bg-[#1c2129]'
+              }`}
+            >
+              <Scale className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span className="truncate">Aviso Legal</span>
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs sm:text-sm bg-white">
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 text-xs sm:text-sm bg-[#0b0e14]/70">
           {/* =========================================================
               TAB 1: GUÍA RÁPIDA PARA PRINCIPIANTES
              ========================================================= */}
           {activeTab === 'GUIDE' && (
             <>
               {/* 1. CALCULADORA INTERACTIVA DE CUOTAS */}
-              <section className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/90 border border-slate-200/90 space-y-3">
-                <div className="flex items-center gap-1.5 text-emerald-700 font-bold">
-                  <DollarSign className="w-4 h-4 shrink-0" />
-                  <span className="text-xs sm:text-sm font-bold text-slate-900">
+              <section className="bg-[#161b22] border border-[#30363d] p-3.5 sm:p-4 rounded-2xl space-y-3 shadow-md">
+                <div className="flex items-center gap-1.5 text-[#00ff66] font-bold">
+                  <DollarSign className="w-4 h-4 shrink-0 text-[#00ff66]" />
+                  <span className="text-xs sm:text-sm font-bold text-white">
                     1. Simulador Rápido de Cuota y Retorno
                   </span>
                 </div>
-                <p className="text-[11px] sm:text-xs text-slate-600 leading-relaxed">
+                <p className="text-[11px] sm:text-xs text-[#8b949e] leading-relaxed">
                   Una cuota (ej.{' '}
-                  <code className="text-amber-800 font-mono bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-semibold">
+                  <code className="bg-[#0b0e14] border border-[#d9b114]/60 text-[#d9b114] font-mono px-1.5 py-0.2 rounded font-semibold">
                     @1.85
                   </code>
                   ) multiplica el monto asignado según la probabilidad estimada:
@@ -368,51 +373,51 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
 
                 <div className="grid grid-cols-2 gap-2.5">
                   <div>
-                    <label className="text-[11px] text-slate-600 block mb-1 font-medium">
+                    <label className="text-[11px] text-[#8b949e] block mb-1 font-medium">
                       Monto simulado (Stake):
                     </label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8b949e] font-bold">$</span>
                       <input
                         type="number"
                         min="1"
                         value={calcStake}
                         onChange={(e) => setCalcStake(Math.max(1, parseFloat(e.target.value) || 1))}
-                        className="w-full bg-white border border-slate-200 rounded-xl py-1.5 pl-7 pr-2.5 text-slate-900 font-mono text-xs sm:text-sm font-semibold focus:outline-none focus:border-emerald-500"
+                        className="w-full bg-[#0b0e14] border border-[#30363d] rounded-xl py-1.5 pl-7 pr-2.5 text-white font-mono text-xs sm:text-sm font-semibold focus:outline-none focus:border-[#d9b114]"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-[11px] text-slate-600 block mb-1 font-medium">Cuota decimal:</label>
+                    <label className="text-[11px] text-[#8b949e] block mb-1 font-medium">Cuota decimal:</label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-600 font-bold">@</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#d9b114] font-bold">@</span>
                       <input
                         type="number"
                         step="0.05"
                         min="1.01"
                         value={calcOdd}
                         onChange={(e) => setCalcOdd(Math.max(1.01, parseFloat(e.target.value) || 1.01))}
-                        className="w-full bg-white border border-slate-200 rounded-xl py-1.5 pl-7 pr-2.5 text-amber-800 font-mono text-xs sm:text-sm font-semibold focus:outline-none focus:border-emerald-500"
+                        className="w-full bg-[#0b0e14] border border-[#30363d] rounded-xl py-1.5 pl-7 pr-2.5 text-[#d9b114] font-mono text-xs sm:text-sm font-semibold focus:outline-none focus:border-[#d9b114]"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* Resultado Financiero */}
-                <div className="p-3 rounded-xl bg-white border border-emerald-200/90 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                <div className="bg-[#0b0e14] border border-[#30363d] p-3 rounded-xl flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <span className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider block">
+                    <span className="text-[10px] text-[#8b949e] uppercase font-bold tracking-wider block">
                       Retorno Total:
                     </span>
-                    <span className="text-base sm:text-lg font-bold font-mono text-emerald-700">${totalReturn}</span>
+                    <span className="text-base sm:text-lg font-black font-mono tabular-nums text-[#00ff66]">${totalReturn}</span>
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider block">
+                    <span className="text-[10px] text-[#8b949e] uppercase font-bold tracking-wider block">
                       Ganancia Neta:
                     </span>
-                    <span className="text-sm sm:text-base font-bold font-mono text-slate-900">
-                      +${netProfit} <span className="text-emerald-600 text-xs">({returnPercentage}%)</span>
+                    <span className="text-sm sm:text-base font-black font-mono tabular-nums text-white">
+                      +${netProfit} <span className="text-[#00ff66] text-xs">({returnPercentage}%)</span>
                     </span>
                   </div>
                 </div>
@@ -420,40 +425,40 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
 
               {/* 2. EL SISTEMA DE SEMÁFOROS DIDÁCTICOS */}
               <section className="space-y-2.5">
-                <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 px-0.5">
+                  <Sparkles className="w-4 h-4 text-[#d9b114] shrink-0" />
                   <span>2. Semáforo Estadístico de Confianza</span>
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {/* Verde */}
-                  <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-1">
-                    <div className="flex items-center gap-1.5 text-emerald-800 font-bold text-xs">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <div className="bg-[#161b22] p-3.5 rounded-2xl border border-emerald-500/40 space-y-1.5 shadow-xs">
+                    <div className="flex items-center gap-1.5 text-[#00ff66] font-bold text-xs">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#00ff66] shrink-0" />
                       <span>🟢 Favorable (+EV)</span>
                     </div>
-                    <p className="text-[11px] text-slate-600 leading-snug">
+                    <p className="text-[11px] text-[#8b949e] leading-snug">
                       Probabilidad sólida (&ge;68%) o ventaja matemática positiva frente al mercado.
                     </p>
                   </div>
 
                   {/* Amarillo */}
-                  <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 space-y-1">
-                    <div className="flex items-center gap-1.5 text-amber-800 font-bold text-xs">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <div className="bg-[#161b22] p-3.5 rounded-2xl border border-[#d9b114]/40 space-y-1.5 shadow-xs">
+                    <div className="flex items-center gap-1.5 text-[#d9b114] font-bold text-xs">
+                      <AlertTriangle className="w-3.5 h-3.5 text-[#d9b114] shrink-0" />
                       <span>🟡 Parejo / Moderado</span>
                     </div>
-                    <p className="text-[11px] text-slate-600 leading-snug">
+                    <p className="text-[11px] text-[#8b949e] leading-snug">
                       Margen ajustado. Se sugiere revisar mercados de goles, puntos o doble oportunidad.
                     </p>
                   </div>
 
                   {/* Rojo */}
-                  <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-200 space-y-1">
-                    <div className="flex items-center gap-1.5 text-rose-800 font-bold text-xs">
-                      <XCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <div className="bg-[#161b22] p-3.5 rounded-2xl border border-rose-500/40 space-y-1.5 shadow-xs">
+                    <div className="flex items-center gap-1.5 text-rose-400 font-bold text-xs">
+                      <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                       <span>🔴 Alta Varianza</span>
                     </div>
-                    <p className="text-[11px] text-slate-600 leading-snug">
+                    <p className="text-[11px] text-[#8b949e] leading-snug">
                       Incertidumbre elevada o cuota baja para el riesgo. Conviene descartar el encuentro.
                     </p>
                   </div>
@@ -461,30 +466,30 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
               </section>
 
               {/* 3. ACCESO RÁPIDO AL GLOSARIO COMPLETO */}
-              <section className="p-3.5 rounded-2xl bg-cyan-50/60 border border-cyan-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+              <section className="bg-[#161b22] border border-[#30363d] p-3.5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-md">
                 <div className="space-y-0.5">
-                  <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                    <HelpCircle className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
+                  <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <HelpCircle className="w-3.5 h-3.5 text-[#d9b114] shrink-0" />
                     <span>¿Dudas con términos como xG, BTTS, Pace, ORTG o +EV?</span>
                   </h3>
-                  <p className="text-[11px] text-slate-600">
+                  <p className="text-[11px] text-[#8b949e]">
                     Explora el diccionario interactivo con buscador y ejemplos prácticos de Fútbol y Baloncesto.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setActiveTab('GLOSSARY')}
-                  className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition shrink-0 cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl bg-[#d9b114] hover:bg-[#c5a013] text-slate-950 font-bold text-xs transition shrink-0 cursor-pointer shadow-sm"
                 >
                   Ver Glosario A-Z →
                 </button>
               </section>
 
               {/* 4. REGLA DE ORO Y RESPONSABILIDAD */}
-              <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200/80 flex items-start gap-2.5">
-                <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <p className="text-[11px] text-slate-700 leading-relaxed">
-                  <strong className="text-slate-900">Juego Responsable (+18):</strong> Herramienta exclusivamente estadística e informativa. No somos casa de apuestas ni garantizamos resultados.
+              <div className="bg-[#161b22] border border-[#d9b114]/40 p-3.5 rounded-2xl flex items-start gap-2.5 shadow-xs">
+                <ShieldAlert className="w-4 h-4 text-[#d9b114] shrink-0 mt-0.5" />
+                <p className="text-[11px] text-[#8b949e] leading-relaxed">
+                  <strong className="text-[#d9b114]">Juego Responsable (+18):</strong> Herramienta exclusivamente estadística e informativa. No somos casa de apuestas ni garantizamos resultados.
                 </p>
               </div>
             </>
@@ -496,21 +501,21 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
           {activeTab === 'GLOSSARY' && (
             <div className="space-y-3.5">
               {/* Search & Category Filter Bar */}
-              <div className="space-y-2.5 bg-slate-50 p-3 rounded-2xl border border-slate-200/90">
+              <div className="bg-[#161b22] border border-[#30363d] space-y-2.5 p-3.5 rounded-2xl">
                 <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Search className="w-4 h-4 text-[#8b949e] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
                     value={glossarySearch}
                     onChange={(e) => setGlossarySearch(e.target.value)}
                     placeholder="Buscar sigla o término (ej: xG, +EV, BTTS, Pace, Spread, Stake...)"
-                    className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-cyan-500 transition"
+                    className="w-full bg-[#0b0e14] border border-[#30363d] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-[#8b949e] focus:bg-[#0b0e14] focus:outline-none focus:border-[#d9b114] transition"
                   />
                   {glossarySearch && (
                     <button
                       type="button"
                       onClick={() => setGlossarySearch('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8b949e] hover:text-white p-1 cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -521,10 +526,10 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setGlossaryCategory('ALL')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold transition cursor-pointer ${
                       glossaryCategory === 'ALL'
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                        ? 'bg-[#0b0e14] text-[#d9b114] border border-[#d9b114]/60 shadow-2xs'
+                        : 'bg-[#0b0e14] text-[#8b949e] hover:text-white hover:bg-[#1c2129] border border-[#30363d]'
                     }`}
                   >
                     Todos ({GLOSSARY_ITEMS.length})
@@ -532,10 +537,10 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setGlossaryCategory('MATH')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold transition cursor-pointer ${
                       glossaryCategory === 'MATH'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                        ? 'bg-[#0b0e14] text-[#d9b114] border border-[#d9b114]/60 shadow-2xs'
+                        : 'bg-[#0b0e14] text-[#8b949e] hover:text-white hover:bg-[#1c2129] border border-[#30363d]'
                     }`}
                   >
                     🧮 Matemática & Valor
@@ -543,10 +548,10 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setGlossaryCategory('SOCCER')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold transition cursor-pointer ${
                       glossaryCategory === 'SOCCER'
-                        ? 'bg-teal-600 text-white'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                        ? 'bg-[#0b0e14] text-[#d9b114] border border-[#d9b114]/60 shadow-2xs'
+                        : 'bg-[#0b0e14] text-[#8b949e] hover:text-white hover:bg-[#1c2129] border border-[#30363d]'
                     }`}
                   >
                     ⚽ Fútbol
@@ -554,10 +559,10 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setGlossaryCategory('NBA')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold transition cursor-pointer ${
                       glossaryCategory === 'NBA'
-                        ? 'bg-amber-500 text-slate-950 font-bold'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                        ? 'bg-[#0b0e14] text-[#d9b114] border border-[#d9b114]/60 shadow-2xs'
+                        : 'bg-[#0b0e14] text-[#8b949e] hover:text-white hover:bg-[#1c2129] border border-[#30363d]'
                     }`}
                   >
                     🏀 Baloncesto
@@ -565,10 +570,10 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
                 </div>
               </div>
 
-              {/* Glossary Cards List */}
+              {/* Glossary Cards Grid (2 Cols PC / 1 Col Móvil) */}
               {filteredGlossary.length === 0 ? (
-                <div className="p-6 text-center rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                  <p className="text-xs sm:text-sm font-semibold text-slate-700">
+                <div className="bg-[#161b22] border border-[#30363d] p-6 text-center rounded-2xl space-y-2">
+                  <p className="text-xs sm:text-sm font-semibold text-[#8b949e]">
                     No se encontraron términos para "{glossarySearch}".
                   </p>
                   <button
@@ -577,34 +582,36 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
                       setGlossarySearch('');
                       setGlossaryCategory('ALL');
                     }}
-                    className="text-xs text-cyan-700 hover:underline font-semibold cursor-pointer"
+                    className="text-xs text-[#d9b114] hover:underline font-semibold cursor-pointer"
                   >
                     Mostrar todos los términos
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-2.5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {filteredGlossary.map((item) => (
                     <div
                       key={item.shortCode}
-                      className="p-3.5 rounded-2xl bg-slate-50/70 border border-slate-200/90 hover:border-cyan-300 transition space-y-1.5"
+                      className="bg-[#161b22] border border-[#30363d] p-3.5 rounded-2xl hover:border-[#d9b114]/50 transition flex flex-col justify-between gap-2"
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded-lg bg-cyan-50 border border-cyan-200 text-cyan-800 font-mono font-bold text-xs">
-                            {item.shortCode}
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="bg-[#00ff66]/10 text-[#00ff66] border border-[#00ff66]/30 px-2 py-0.5 rounded-lg font-mono font-bold text-xs shrink-0">
+                              {item.shortCode}
+                            </span>
+                            <h4 className="font-bold text-white text-xs sm:text-sm truncate">{item.term}</h4>
+                          </div>
+                          <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-md bg-[#0b0e14] text-[#8b949e] border border-[#30363d] shrink-0">
+                            {item.categoryLabel}
                           </span>
-                          <h4 className="font-bold text-slate-900 text-xs sm:text-sm">{item.term}</h4>
                         </div>
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-white text-slate-500 border border-slate-200">
-                          {item.categoryLabel}
-                        </span>
+
+                        <p className="text-xs text-[#8b949e] leading-relaxed">{item.definition}</p>
                       </div>
 
-                      <p className="text-xs text-slate-600 leading-relaxed">{item.definition}</p>
-
-                      <div className="p-2 rounded-xl bg-white border border-slate-200/80 text-[11px] text-slate-600">
-                        <span className="font-semibold text-emerald-700">Ejemplo: </span>
+                      <div className="p-2.5 rounded-xl bg-[#0b0e14] border border-[#30363d] text-[11px] text-[#8b949e]">
+                        <span className="font-semibold text-[#00ff66]">Ejemplo: </span>
                         {item.example}
                       </div>
                     </div>
@@ -620,15 +627,15 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
           {activeTab === 'LEGAL' && (
             <div className="space-y-3">
               {/* Banner Principal +18 y Naturaleza del Software */}
-              <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-800 font-black text-xs shrink-0">
+              <div className="bg-[#161b22] border border-[#30363d] p-3.5 sm:p-4 rounded-2xl flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#0b0e14] border border-[#d9b114]/40 flex items-center justify-center text-[#d9b114] font-black text-xs shrink-0">
                   +18
                 </div>
                 <div className="space-y-0.5">
-                  <h3 className="text-xs sm:text-sm font-bold text-slate-900">
+                  <h3 className="text-xs sm:text-sm font-bold text-white">
                     Marco Legal, Términos de Servicio y Protección de Datos (Ley 1581)
                   </h3>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                  <p className="text-[11px] text-[#8b949e] leading-relaxed">
                     G METRICS es una herramienta analítica y de software estadístico basada en modelos matemáticos y telemetría de eventos deportivos. No somos una casa de apuestas, no operamos juegos de azar ni recibimos fondos destinados a apuestas. La información y métricas presentadas son de carácter exclusivamente informativo y educativo. El usuario es el único responsable de sus decisiones personales. Servicio exclusivo para mayores de edad (+18). Todos los nombres comerciales, escudos y marcas deportivas mostradas pertenecen a sus respectivos titulares y se utilizan con fines meramente identificativos y descriptivos (Uso Legítimo / Nominative Fair Use).
                   </p>
                 </div>
@@ -637,36 +644,36 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
               {/* Bloques Jurídicos Principales */}
               <div className="space-y-2.5">
                 {/* 1. Términos de Servicio */}
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1.5">
-                  <h4 className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <div className="bg-[#161b22] border border-[#30363d] p-3.5 rounded-2xl space-y-1.5">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-[#d9b114] shrink-0" />
                     <span>1. Términos de Servicio (Licencia de Acceso a Software SaaS)</span>
                   </h4>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    <strong>G METRICS</strong> comercializa exclusivamente <strong>licencias temporales de acceso a un software de análisis matemático y estadístico</strong>. Los pagos realizados por el usuario corresponden única y exclusivamente a la suscripción tecnológica de uso de la plataforma. G METRICS no capta dinero para apuestas, no intermedia jugadas, <strong>no garantiza utilidades financieras ni aciertos seguros</strong>, y se deslinda de cualquier responsabilidad patrimonial, directa o indirecta, derivada de las decisiones deportivas o recreativas tomadas de manera autónoma por el usuario.
+                  <p className="text-[11px] text-[#8b949e] leading-relaxed">
+                    <strong className="text-white">G METRICS</strong> comercializa exclusivamente <strong className="text-white">licencias temporales de acceso a un software de análisis matemático y estadístico</strong>. Los pagos realizados por el usuario corresponden única y exclusivamente a la suscripción tecnológica de uso de la plataforma. G METRICS no capta dinero para apuestas, no intermedia jugadas, <strong className="text-white">no garantiza utilidades financieras ni aciertos seguros</strong>, y se deslinda de cualquier responsabilidad patrimonial, directa o indirecta, derivada de las decisiones deportivas o recreativas tomadas de manera autónoma por el usuario.
                   </p>
                 </div>
 
                 {/* 2. Política de Tratamiento de Datos (Ley 1581 / Habeas Data) */}
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1.5">
-                  <h4 className="text-xs font-bold text-cyan-800 flex items-center gap-1.5">
-                    <Lock className="w-4 h-4 text-cyan-600 shrink-0" />
+                <div className="bg-[#161b22] border border-[#30363d] p-3.5 rounded-2xl space-y-1.5">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Lock className="w-4 h-4 text-[#d9b114] shrink-0" />
                     <span>2. Política de Tratamiento de Datos Personales (Ley 1581 de 2012 / Habeas Data)</span>
                   </h4>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    En cumplimiento del régimen de protección de datos personales (Ley Estatutaria 1581 de 2012 y normas concordantes), informamos que los datos solicitados en el registro (<strong>nombre de usuario o alias, número de contacto de WhatsApp e identificador técnico de dispositivo / Device ID</strong>) se recopilan y tratan con el <strong>único propósito de validar la activación de la licencia de software, prevenir el uso simultáneo o multicuentas en un mismo acceso (Política 1/1) y brindar soporte técnico directo</strong>. No compartimos, vendemos ni cedemos datos a terceros.
+                  <p className="text-[11px] text-[#8b949e] leading-relaxed">
+                    En cumplimiento del régimen de protección de datos personales (Ley Estatutaria 1581 de 2012 y normas concordantes), informamos que los datos solicitados en el registro (<strong className="text-white">nombre de usuario o alias, número de contacto de WhatsApp e identificador técnico de dispositivo / Device ID</strong>) se recopilan y tratan con el <strong className="text-white">único propósito de validar la activación de la licencia de software, prevenir el uso simultáneo o multicuentas en un mismo acceso (Política 1/1) y brindar soporte técnico directo</strong>. No compartimos, vendemos ni cedemos datos a terceros.
                   </p>
-                  <div className="p-2.5 rounded-lg bg-white border border-slate-200 text-[11px] text-slate-700 space-y-1">
-                    <span className="font-bold text-slate-900 block">
+                  <div className="p-2.5 rounded-xl bg-[#0b0e14] border border-[#30363d] text-[11px] text-[#8b949e] space-y-1">
+                    <span className="font-bold text-white block">
                       Canales Oficiales para Derechos ARCO (Consulta, Actualización, Rectificación y Supresión de Datos):
                     </span>
-                    <p className="text-[10.5px] text-slate-600">
+                    <p className="text-[10.5px] text-[#8b949e]">
                       El titular puede ejercer en cualquier momento sus derechos de conocer, actualizar, rectificar o solicitar la eliminación de sus datos enviando su solicitud a:
                     </p>
                     <div className="flex flex-wrap items-center gap-3 pt-0.5 font-mono text-[11px]">
                       <a
                         href="mailto:dgcontrerasb@gmail.com"
-                        className="text-indigo-700 hover:underline font-bold"
+                        className="text-[#d9b114] hover:underline font-bold"
                       >
                         ✉️ dgcontrerasb@gmail.com
                       </a>
@@ -674,7 +681,7 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
                         href="https://wa.me/573213902708"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-emerald-700 hover:underline font-bold"
+                        className="text-[#00ff66] hover:underline font-bold"
                       >
                         📱 WhatsApp Oficial: +57 321 390 2708
                       </a>
@@ -683,13 +690,13 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
                 </div>
 
                 {/* 3. Propiedad Intelectual y Nominative Fair Use */}
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1">
-                  <h4 className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
-                    <Scale className="w-4 h-4 text-amber-600 shrink-0" />
+                <div className="bg-[#161b22] border border-[#30363d] p-3.5 rounded-2xl space-y-1">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Scale className="w-4 h-4 text-[#d9b114] shrink-0" />
                     <span>3. Uso Legítimo de Signos Distintivos (Nominative Fair Use) y Mayoría de Edad (+18)</span>
                   </h4>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Todos los nombres de ligas, clubes, escudos y marcas deportivas que aparecen en las tablas estadísticas pertenecen a sus respectivos propietarios legítimos y se emplean con carácter estrictamente descriptivo, informativo y referencial (<em>Nominative Fair Use</em>), sin reclamar afiliación ni patrocinio oficial. El acceso al software está estrictamente restringido a personas <strong>mayores de 18 años (+18)</strong>.
+                  <p className="text-[11px] text-[#8b949e] leading-relaxed">
+                    Todos los nombres de ligas, clubes, escudos y marcas deportivas que aparecen en las tablas estadísticas pertenecen a sus respectivos propietarios legítimos y se emplean con carácter estrictamente descriptivo, informativo y referencial (<em>Nominative Fair Use</em>), sin reclamar afiliación ni patrocinio oficial. El acceso al software está estrictamente restringido a personas <strong className="text-white">mayores de 18 años (+18)</strong>.
                   </p>
                 </div>
               </div>
@@ -698,13 +705,13 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-4 sm:px-5 py-3 border-t border-slate-200/80 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-[10.5px] text-slate-500">
+        <div className="px-4 sm:px-5 py-3 border-t border-[#30363d] bg-[#0b0e14] flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[10.5px] text-[#8b949e]">
             Software estadístico informativo (+18) · Soporte Habeas Data: dgcontrerasb@gmail.com
           </span>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors cursor-pointer"
+            className="px-4 py-1.5 rounded-xl bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] text-white font-semibold text-xs transition-colors cursor-pointer"
           >
             Entendido
           </button>

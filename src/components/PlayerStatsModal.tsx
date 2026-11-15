@@ -120,65 +120,58 @@ export const PlayerStatsModal: React.FC<PlayerStatsModalProps> = React.memo(({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/50 backdrop-blur-md animate-fade-in transition-all"
-      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4"
       role="dialog"
       aria-modal="true"
     >
+      {/* Backdrop blur independiente (fondo visible y difuminado) */}
+      <div
+        onClick={onClose}
+        className="fixed inset-0 bg-black/40 backdrop-blur-md transition-opacity animate-in fade-in duration-200"
+      />
+
       {/* Floating Modal Window */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[90vh] my-auto bg-white border border-slate-200/90 rounded-2xl shadow-2xl flex flex-col overflow-hidden overscroll-contain text-slate-900"
+        className="relative z-10 w-full max-w-lg max-h-[90vh] my-auto bg-[#161b22] border border-[#30363d] rounded-2xl shadow-2xl flex flex-col overflow-hidden overscroll-contain text-white animate-in zoom-in-95 duration-200"
       >
         {/* 1. Header: Datos del Jugador y Equipo */}
-        <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b border-slate-200/90 bg-white shrink-0 space-y-1.5">
+        <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b border-[#30363d] bg-[#0b0e14] shrink-0 space-y-1.5">
           <div className="flex items-start justify-between gap-2.5">
             <div className="flex items-center gap-3 min-w-0 flex-1">
               {/* Dorsal Badge */}
-              <div
-                className={`w-10 h-10 rounded-xl flex items-center justify-center font-mono font-bold text-sm shrink-0 border ${
-                  isSoccer
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                    : 'bg-amber-50 text-amber-800 border-amber-200'
-                }`}
-              >
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center font-mono font-bold text-sm shrink-0 border bg-[#161b22] text-[#d9b114] border-[#d9b114]/40">
                 #{player.number}
               </div>
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <h3 className="font-sans font-semibold text-sm sm:text-base text-slate-900 leading-tight break-words">
+                  <h3 className="font-sans font-semibold text-sm sm:text-base text-white leading-tight break-words">
                     {player.name}
                   </h3>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold uppercase shrink-0 border ${
-                      isSoccer
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                        : 'bg-amber-50 text-amber-800 border-amber-200'
-                    }`}
-                  >
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold uppercase shrink-0 border bg-[#161b22] text-[#8b949e] border-[#30363d]">
                     {player.position}
                   </span>
                   {isLive && (
-                    <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-mono text-[9.5px] font-bold animate-pulse">
+                    <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 font-mono text-[9.5px] font-bold animate-pulse">
                       ● EN VIVO
                     </span>
                   )}
                   {isFinished && (
-                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-300 font-mono text-[9.5px] font-bold">
+                    <span className="px-2 py-0.5 rounded-full bg-[#161b22] text-[#8b949e] border border-[#30363d] font-mono text-[9.5px] font-bold">
                       FINALIZADO
                     </span>
                   )}
                   {isSoccer && (player as SoccerPlayerPayload).isCaptain && (
-                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-mono text-[9px] font-bold shrink-0">
+                    <span className="px-1.5 py-0.5 rounded bg-[#d9b114]/10 text-[#d9b114] border border-[#d9b114]/30 font-mono text-[9px] font-bold shrink-0">
                       Capitán
                     </span>
                   )}
                 </div>
-                <div className="text-[11px] text-slate-500 font-sans mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                  <span className="font-medium text-slate-700">{player.teamName}</span>
-                  <span className="text-slate-300">·</span>
-                  <span className="text-slate-500 font-mono text-[10px]">{payload.matchTitle}</span>
+                <div className="text-[11px] text-[#8b949e] font-sans mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span className="font-medium text-white">{player.teamName}</span>
+                  <span className="text-[#30363d]">·</span>
+                  <span className="text-[#8b949e] font-mono text-[10px]">{payload.matchTitle}</span>
                 </div>
               </div>
             </div>
@@ -186,7 +179,7 @@ export const PlayerStatsModal: React.FC<PlayerStatsModalProps> = React.memo(({
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-600 hover:text-slate-900 border border-slate-200/90 transition-colors cursor-pointer shrink-0 mt-0.5"
+              className="p-1.5 rounded-lg bg-[#161b22] hover:bg-[#21262d] active:scale-95 text-[#8b949e] hover:text-white border border-[#30363d] transition-colors cursor-pointer shrink-0 mt-0.5"
               aria-label="Cerrar modal"
               title="Cerrar (ESC)"
             >
@@ -196,15 +189,15 @@ export const PlayerStatsModal: React.FC<PlayerStatsModalProps> = React.memo(({
         </div>
 
         {/* 2. Scrollable Body: Estadísticas Recientes + Mercados de Casas de Apuestas */}
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-3.5 bg-slate-50/60 text-slate-800 overscroll-contain pb-6">
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-3.5 bg-[#0b0e14]/60 text-white overscroll-contain pb-6">
           {/* A. SECCIÓN DE ESTADÍSTICAS Y PROMEDIOS BASE */}
-          <div className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
+          <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d] shadow-2xs space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-1">
-              <span className="text-xs font-mono font-semibold text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
-                <BarChart2 className={`w-4 h-4 ${isSoccer ? 'text-emerald-600' : 'text-amber-600'}`} />
+              <span className="text-xs font-mono font-semibold text-white uppercase tracking-tight flex items-center gap-1.5">
+                <BarChart2 className="w-4 h-4 text-[#d9b114]" />
                 <span>Estadísticas & Promedios Temporada</span>
               </span>
-              <span className="text-[10px] font-mono text-slate-500">Datos Oficiales Opta/ESPN</span>
+              <span className="text-[10px] font-mono text-[#8b949e]">Datos Oficiales Opta/ESPN</span>
             </div>
 
             {isSoccer ? (
@@ -219,11 +212,11 @@ export const PlayerStatsModal: React.FC<PlayerStatsModalProps> = React.memo(({
           {/* B. SECCIÓN DE MERCADOS DISPONIBLES PARA EL PARLAY BUILDER */}
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-1 px-1">
-              <span className="text-xs font-mono font-semibold text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
-                <Target className={`w-4 h-4 ${isSoccer ? 'text-emerald-600' : 'text-amber-600'}`} />
+              <span className="text-xs font-mono font-semibold text-white uppercase tracking-tight flex items-center gap-1.5">
+                <Target className="w-4 h-4 text-[#d9b114]" />
                 <span>Mercados Individuales del Jugador</span>
               </span>
-              <span className="text-[10px] font-mono text-slate-500">
+              <span className="text-[10px] font-mono text-[#8b949e]">
                 Añade elecciones al Boleto
               </span>
             </div>
@@ -245,14 +238,14 @@ export const PlayerStatsModal: React.FC<PlayerStatsModalProps> = React.memo(({
         </div>
 
         {/* 3. Footer Informativo */}
-        <div className="px-4 py-2.5 bg-white border-t border-slate-200/90 shrink-0 flex flex-row items-center justify-between gap-3 text-[11px] text-slate-500 font-mono">
+        <div className="px-4 py-2.5 bg-[#0b0e14] border-t border-[#30363d] shrink-0 flex flex-row items-center justify-between gap-3 text-[11px] text-[#8b949e] font-mono">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="shrink-0">💡</span>
             <span className="truncate">Selecciona mercados para tu Boleto Combinada</span>
           </div>
           <button
             onClick={onClose}
-            className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-semibold transition-all cursor-pointer shrink-0 text-xs shadow-2xs"
+            className="px-3.5 py-1.5 rounded-lg bg-[#161b22] hover:bg-[#21262d] active:scale-95 text-white border border-[#30363d] hover:border-[#d9b114]/50 font-semibold transition-all cursor-pointer shrink-0 text-xs shadow-2xs"
           >
             Listo / Volver
           </button>
@@ -277,21 +270,21 @@ const SoccerStatsGrid: React.FC<{ player: SoccerPlayerPayload }> = ({ player }) 
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono">
-      <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/90">
-        <span className="text-[9px] text-slate-500 uppercase block">Goles / Part.</span>
-        <span className="text-xs font-bold text-emerald-700 mt-0.5 block">{gpg} GPG</span>
+      <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d]">
+        <span className="text-[9px] text-[#8b949e] uppercase block">Goles / Part.</span>
+        <span className="text-xs font-bold text-[#00ff66] tabular-nums mt-0.5 block">{gpg} GPG</span>
       </div>
-      <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/90">
-        <span className="text-[9px] text-slate-500 uppercase block">Tiros Arco/90'</span>
-        <span className="text-xs font-bold text-slate-900 mt-0.5 block">{sot} SOT</span>
+      <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d]">
+        <span className="text-[9px] text-[#8b949e] uppercase block">Tiros Arco/90'</span>
+        <span className="text-xs font-bold text-white tabular-nums mt-0.5 block">{sot} SOT</span>
       </div>
-      <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/90">
-        <span className="text-[9px] text-slate-500 uppercase block">Faltas Recibidas</span>
-        <span className="text-xs font-bold text-amber-700 mt-0.5 block">{fouls} / part.</span>
+      <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d]">
+        <span className="text-[9px] text-[#8b949e] uppercase block">Faltas Recibidas</span>
+        <span className="text-xs font-bold text-[#d9b114] tabular-nums mt-0.5 block">{fouls} / part.</span>
       </div>
-      <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/90">
-        <span className="text-[9px] text-slate-500 uppercase block">Amarillas Temp.</span>
-        <span className="text-xs font-bold text-amber-700 mt-0.5 block">🟨 {cards}</span>
+      <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d]">
+        <span className="text-[9px] text-[#8b949e] uppercase block">Amarillas Temp.</span>
+        <span className="text-xs font-bold text-[#d9b114] tabular-nums mt-0.5 block">🟨 {cards}</span>
       </div>
     </div>
   );
@@ -305,21 +298,21 @@ const NBAStatsGrid: React.FC<{ player: NBAPlayerPayload }> = ({ player }) => {
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono">
-      <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/90">
-        <span className="text-[9px] text-slate-500 uppercase block">Puntos Promedio</span>
-        <span className="text-xs font-bold text-amber-700 mt-0.5 block">{ppg} PPG</span>
+      <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d]">
+        <span className="text-[9px] text-[#8b949e] uppercase block">Puntos Promedio</span>
+        <span className="text-xs font-bold text-[#d9b114] tabular-nums mt-0.5 block">{ppg} PPG</span>
       </div>
-      <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/90">
-        <span className="text-[9px] text-slate-500 uppercase block">Triples Encestados</span>
-        <span className="text-xs font-bold text-amber-800 mt-0.5 block">{threePm} 3PM</span>
+      <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d]">
+        <span className="text-[9px] text-[#8b949e] uppercase block">Triples Encestados</span>
+        <span className="text-xs font-bold text-[#d9b114] tabular-nums mt-0.5 block">{threePm} 3PM</span>
       </div>
-      <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/90">
-        <span className="text-[9px] text-slate-500 uppercase block">Asistencias</span>
-        <span className="text-xs font-bold text-slate-900 mt-0.5 block">{apg} APG</span>
+      <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d]">
+        <span className="text-[9px] text-[#8b949e] uppercase block">Asistencias</span>
+        <span className="text-xs font-bold text-white tabular-nums mt-0.5 block">{apg} APG</span>
       </div>
-      <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/90">
-        <span className="text-[9px] text-slate-500 uppercase block">Rebotes</span>
-        <span className="text-xs font-bold text-slate-700 mt-0.5 block">{rpg} RPG</span>
+      <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d]">
+        <span className="text-[9px] text-[#8b949e] uppercase block">Rebotes</span>
+        <span className="text-xs font-bold text-white tabular-nums mt-0.5 block">{rpg} RPG</span>
       </div>
     </div>
   );
@@ -377,23 +370,23 @@ const SoccerMarketsList: React.FC<{
             key={m.key}
             className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs ${
               inParlay
-                ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-200'
-                : 'bg-white hover:bg-slate-50 border-slate-200/90'
+                ? 'bg-[#161b22] border-[#d9b114] ring-1 ring-[#d9b114]/30'
+                : 'bg-[#161b22] hover:bg-[#1c2129] border-[#30363d]'
             }`}
           >
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[10px] font-mono font-semibold text-emerald-800 bg-white px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">
+                <span className="text-[10px] font-mono font-semibold text-[#8b949e] bg-[#0b0e14] px-2 py-0.5 rounded-full border border-[#30363d] shrink-0">
                   {m.category}
                 </span>
-                <span className="text-xs font-sans font-semibold text-slate-900 leading-snug break-words">
+                <span className="text-xs font-sans font-semibold text-white leading-snug break-words">
                   {m.label}
                 </span>
               </div>
-              <div className="text-[11px] font-mono text-slate-600 mt-1 flex items-center gap-2 flex-wrap">
-                <span>Probabilidad: <strong className="text-emerald-700">{m.prob}%</strong></span>
-                <span className="text-slate-300">·</span>
-                <span>Cuota ref: <strong className="text-slate-900">@{m.odd.toFixed(2)}</strong></span>
+              <div className="text-[11px] font-mono text-[#8b949e] mt-1 flex items-center gap-2 flex-wrap">
+                <span>Probabilidad: <strong className="text-[#00ff66] tabular-nums">{m.prob}%</strong></span>
+                <span className="text-[#30363d]">·</span>
+                <span>Cuota ref: <strong className="text-white tabular-nums">@{m.odd.toFixed(2)}</strong></span>
               </div>
             </div>
 
@@ -419,8 +412,8 @@ const SoccerMarketsList: React.FC<{
               }}
               className={`w-full sm:w-auto px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 border ${
                 inParlay
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                  : 'bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-300'
+                  ? 'bg-[#d9b114] text-slate-950 border-[#d9b114] shadow-2xs font-bold'
+                  : 'bg-[#0b0e14] hover:bg-[#161b22] text-white border-[#30363d] hover:border-[#d9b114]/50'
               }`}
             >
               <Ticket className="w-3.5 h-3.5" />
@@ -504,23 +497,23 @@ const NBAMarketsList: React.FC<{
             key={m.key}
             className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs ${
               inParlay
-                ? 'bg-amber-50 border-amber-400 ring-1 ring-amber-200'
-                : 'bg-white hover:bg-slate-50 border-slate-200/90'
+                ? 'bg-[#161b22] border-[#d9b114] ring-1 ring-[#d9b114]/30'
+                : 'bg-[#161b22] hover:bg-[#1c2129] border-[#30363d]'
             }`}
           >
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[10px] font-mono font-semibold text-amber-900 bg-white px-2 py-0.5 rounded-full border border-amber-200 shrink-0">
+                <span className="text-[10px] font-mono font-semibold text-[#8b949e] bg-[#0b0e14] px-2 py-0.5 rounded-full border border-[#30363d] shrink-0">
                   {m.category}
                 </span>
-                <span className="text-xs font-sans font-semibold text-slate-900 leading-snug break-words">
+                <span className="text-xs font-sans font-semibold text-white leading-snug break-words">
                   {m.label}
                 </span>
               </div>
-              <div className="text-[11px] font-mono text-slate-600 mt-1 flex items-center gap-2 flex-wrap">
-                <span>Probabilidad: <strong className="text-amber-800">{m.prob}%</strong></span>
-                <span className="text-slate-300">·</span>
-                <span>Cuota ref: <strong className="text-slate-900">@{m.odd.toFixed(2)}</strong></span>
+              <div className="text-[11px] font-mono text-[#8b949e] mt-1 flex items-center gap-2 flex-wrap">
+                <span>Probabilidad: <strong className="text-[#00ff66] tabular-nums">{m.prob}%</strong></span>
+                <span className="text-[#30363d]">·</span>
+                <span>Cuota ref: <strong className="text-white tabular-nums">@{m.odd.toFixed(2)}</strong></span>
               </div>
             </div>
 
@@ -546,8 +539,8 @@ const NBAMarketsList: React.FC<{
               }}
               className={`w-full sm:w-auto px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 border ${
                 inParlay
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                  : 'bg-white hover:bg-amber-50 text-amber-900 border-amber-300'
+                  ? 'bg-[#d9b114] text-slate-950 border-[#d9b114] shadow-2xs font-bold'
+                  : 'bg-[#0b0e14] hover:bg-[#161b22] text-white border-[#30363d] hover:border-[#d9b114]/50'
               }`}
             >
               <Ticket className="w-3.5 h-3.5" />

@@ -118,22 +118,28 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
   const winRate = evaluatedCount > 0 ? Math.round((wonCount / evaluatedCount) * 100) : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/45 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white border border-slate-200 rounded-2xl sm:rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-[0_24px_60px_rgba(15,23,42,0.18)] overflow-hidden relative font-sans text-slate-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
+      {/* Backdrop blur independiente (fondo visible y difuminado cristalino) */}
+      <div
+        onClick={onClose}
+        className="fixed inset-0 bg-black/25 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+      />
+
+      <div className="relative z-10 bg-[#161b22] border border-[#30363d] rounded-2xl sm:rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden font-sans text-white animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="p-3.5 sm:p-4 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
+        <div className="p-3.5 sm:p-4 border-b border-[#30363d] flex items-center justify-between bg-[#0b0e14] shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0">
-              <Ticket className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#161b22] border border-[#30363d] flex items-center justify-center shrink-0">
+              <Ticket className="w-4 h-4 sm:w-5 sm:h-5 text-[#d9b114]" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm sm:text-base font-bold text-slate-900 truncate">Historial de Boletos Guardados</h3>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 font-mono text-[10px] font-bold shrink-0">
+                <h3 className="text-sm sm:text-base font-bold text-white truncate">Historial de Boletos Guardados</h3>
+                <span className="px-2 py-0.5 rounded-full bg-[#0b0e14] border border-[#30363d] text-[#8b949e] font-mono text-[10px] font-bold shrink-0">
                   {totalCount} {totalCount === 1 ? 'boleto' : 'boletos'}
                 </span>
               </div>
-              <p className="text-[10px] sm:text-xs text-slate-500 truncate">
+              <p className="text-[10px] sm:text-xs text-[#8b949e] truncate">
                 Gestiona tus boletos combinados, reenvía a WhatsApp y lleva control.
               </p>
             </div>
@@ -142,7 +148,7 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
           <button
             onClick={onClose}
             type="button"
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition cursor-pointer shrink-0"
+            className="w-8 h-8 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] text-[#8b949e] hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
             aria-label="Cerrar historial"
           >
             <X className="w-4 h-4" />
@@ -158,27 +164,27 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
         )}
 
         {/* Overview Stat Bar */}
-        <div className="p-2.5 bg-slate-50 border-b border-slate-200 grid grid-cols-4 gap-2 text-center text-xs font-mono shrink-0">
-          <div className="p-2 rounded-xl bg-white border border-slate-200">
-            <span className="text-[10px] text-slate-500 block uppercase font-sans font-semibold">Guardados</span>
-            <span className="font-bold text-slate-900 text-sm">{totalCount}</span>
+        <div className="p-2.5 bg-[#0b0e14] border-b border-[#30363d] grid grid-cols-4 gap-2 text-center text-xs font-mono shrink-0">
+          <div className="p-2 rounded-xl bg-[#161b22] border border-[#30363d]">
+            <span className="text-[10px] text-[#8b949e] block uppercase font-sans font-semibold">Guardados</span>
+            <span className="font-bold text-white tabular-nums text-sm">{totalCount}</span>
           </div>
-          <div className="p-2 rounded-xl bg-amber-50/70 border border-amber-200">
-            <span className="text-[10px] text-amber-800 block uppercase font-sans font-semibold">Pendientes</span>
-            <span className="font-bold text-amber-800 text-sm">{pendingCount}</span>
+          <div className="p-2 rounded-xl bg-[#161b22] border border-[#30363d]">
+            <span className="text-[10px] text-[#d9b114] block uppercase font-sans font-semibold">Pendientes</span>
+            <span className="font-bold text-[#d9b114] tabular-nums text-sm">{pendingCount}</span>
           </div>
-          <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-200">
-            <span className="text-[10px] text-emerald-800 block uppercase font-sans font-semibold">Ganados</span>
-            <span className="font-bold text-emerald-700 text-sm">{wonCount}</span>
+          <div className="p-2 rounded-xl bg-[#161b22] border border-[#30363d]">
+            <span className="text-[10px] text-[#00ff66] block uppercase font-sans font-semibold">Ganados</span>
+            <span className="font-bold text-[#00ff66] tabular-nums text-sm">{wonCount}</span>
           </div>
-          <div className="p-2 rounded-xl bg-indigo-50/70 border border-indigo-200">
-            <span className="text-[10px] text-indigo-800 block uppercase font-sans font-semibold">Efectividad</span>
-            <span className="font-bold text-indigo-700 text-sm">{winRate}%</span>
+          <div className="p-2 rounded-xl bg-[#161b22] border border-[#30363d]">
+            <span className="text-[10px] text-[#8b949e] block uppercase font-sans font-semibold">Efectividad</span>
+            <span className="font-bold text-white tabular-nums text-sm">{winRate}%</span>
           </div>
         </div>
 
         {/* Filter & Search Toolbar */}
-        <div className="p-2.5 bg-white border-b border-slate-200 space-y-2 shrink-0">
+        <div className="p-2.5 bg-[#0b0e14] border-b border-[#30363d] space-y-2 shrink-0">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
             {/* Status Tabs */}
             <div className="flex items-center gap-1 overflow-x-auto scrollbar-none text-[11px] font-semibold w-full sm:w-auto">
@@ -192,10 +198,10 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                   key={f.id}
                   type="button"
                   onClick={() => setStatusFilter(f.id as any)}
-                  className={`px-2.5 py-1 rounded-xl whitespace-nowrap transition cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-xl whitespace-nowrap transition cursor-pointer border ${
                     statusFilter === f.id
-                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs font-bold'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                      ? 'bg-[#161b22] text-white border-[#d9b114]/60 shadow-xs font-bold'
+                      : 'text-[#8b949e] hover:text-white hover:bg-[#1c2129] border-transparent'
                   }`}
                 >
                   {f.label}
@@ -204,12 +210,12 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
             </div>
 
             {/* Sport Filter Pills */}
-            <div className="flex items-center p-0.5 rounded-xl bg-slate-100 border border-slate-200 shrink-0">
+            <div className="flex items-center p-0.5 rounded-xl bg-[#161b22] border border-[#30363d] shrink-0">
               <button
                 type="button"
                 onClick={() => setSportFilter('ALL')}
                 className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition cursor-pointer ${
-                  sportFilter === 'ALL' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                  sportFilter === 'ALL' ? 'bg-[#0b0e14] text-white shadow-2xs' : 'text-[#8b949e] hover:text-white'
                 }`}
               >
                 🌐 Todos
@@ -218,7 +224,7 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                 type="button"
                 onClick={() => setSportFilter('SOCCER')}
                 className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition cursor-pointer ${
-                  sportFilter === 'SOCCER' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                  sportFilter === 'SOCCER' ? 'bg-[#0b0e14] text-[#00ff66] shadow-2xs' : 'text-[#8b949e] hover:text-white'
                 }`}
               >
                 ⚽ Fútbol
@@ -227,7 +233,7 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                 type="button"
                 onClick={() => setSportFilter('NBA')}
                 className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition cursor-pointer ${
-                  sportFilter === 'NBA' ? 'bg-white text-amber-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                  sportFilter === 'NBA' ? 'bg-[#0b0e14] text-[#d9b114] shadow-2xs' : 'text-[#8b949e] hover:text-white'
                 }`}
               >
                 🏀 NBA
@@ -237,18 +243,18 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
 
           {/* Search Bar */}
           <div className="relative w-full">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#8b949e] pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar por equipo o partido en boletos guardados..."
-              className="w-full bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl py-1.5 pl-8 pr-8 text-xs text-slate-900 placeholder-slate-400 focus:outline-none transition-all"
+              className="w-full bg-[#161b22] border border-[#30363d] focus:border-[#d9b114] rounded-xl py-1.5 pl-8 pr-8 text-xs text-white placeholder-[#8b949e] focus:outline-none transition-all"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800 text-xs cursor-pointer"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8b949e] hover:text-white text-xs cursor-pointer"
               >
                 ✕
               </button>
@@ -257,7 +263,7 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
         </div>
 
         {/* Scrollable Slips List */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-2.5 custom-scrollbar bg-slate-50/70">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-2.5 custom-scrollbar bg-[#0b0e14]/70">
           {filteredSlips.length === 0 ? (
             <div className="py-12 px-4 text-center space-y-2.5">
               <div className="w-12 h-12 mx-auto rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-2xs">
@@ -295,19 +301,19 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                   key={slip.id}
                   className={`p-3 rounded-2xl border space-y-2.5 transition shadow-2xs ${
                     slip.status === 'WON'
-                      ? 'bg-emerald-50/50 border-emerald-200'
+                      ? 'bg-[#161b22] border-[#00ff66]/50'
                       : slip.status === 'LOST'
-                      ? 'bg-rose-50/50 border-rose-200'
-                      : 'bg-white border-slate-200'
+                      ? 'bg-[#161b22] border-rose-500/40'
+                      : 'bg-[#161b22] border-[#30363d]'
                   }`}
                 >
                   {/* Header Row: Date, Title, Status Switcher */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#30363d] pb-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono font-black text-sm text-emerald-700">
+                      <span className="font-mono font-black text-sm text-white">
                         {slip.title}
                       </span>
-                      <span className="text-[10px] text-slate-400 font-mono">
+                      <span className="text-[10px] text-[#8b949e] font-mono">
                         {dateStr}
                       </span>
                     </div>
@@ -319,8 +325,8 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                         onClick={() => handleUpdateStatus(slip.id, 'PENDING')}
                         className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition cursor-pointer border ${
                           slip.status === 'PENDING'
-                            ? 'bg-amber-50 text-amber-800 border-amber-300'
-                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900'
+                            ? 'bg-[#0b0e14] text-[#d9b114] border-[#d9b114]/40'
+                            : 'bg-[#0b0e14] border-[#30363d] text-[#8b949e] hover:text-white'
                         }`}
                         title="Marcar como pendiente"
                       >
@@ -331,8 +337,8 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                         onClick={() => handleUpdateStatus(slip.id, 'WON')}
                         className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition cursor-pointer border ${
                           slip.status === 'WON'
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900'
+                            ? 'bg-[#0b0e14] text-[#00ff66] border-[#00ff66]/40'
+                            : 'bg-[#0b0e14] border-[#30363d] text-[#8b949e] hover:text-white'
                         }`}
                         title="Marcar como ganado"
                       >
@@ -343,8 +349,8 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                         onClick={() => handleUpdateStatus(slip.id, 'LOST')}
                         className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition cursor-pointer border ${
                           slip.status === 'LOST'
-                            ? 'bg-rose-50 text-rose-800 border-rose-300'
-                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900'
+                            ? 'bg-[#0b0e14] text-rose-400 border-rose-500/40'
+                            : 'bg-[#0b0e14] border-[#30363d] text-[#8b949e] hover:text-white'
                         }`}
                         title="Marcar como perdido"
                       >
@@ -354,7 +360,7 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                       <button
                         type="button"
                         onClick={() => handleDeleteSlip(slip.id)}
-                        className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer shrink-0 ml-1"
+                        className="p-1 rounded-md text-[#8b949e] hover:text-rose-400 hover:bg-[#1c2129] transition cursor-pointer shrink-0 ml-1"
                         title="Eliminar boleto"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -367,25 +373,25 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                     {slip.picks.map((pick, pIdx) => (
                       <div
                         key={pick.id || pIdx}
-                        className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-50 border border-slate-200/80 text-xs"
+                        className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-[#0b0e14] border border-[#30363d] text-xs"
                       >
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="w-4 h-4 rounded-full bg-white border border-slate-200 text-[9px] font-mono font-bold text-slate-700 flex items-center justify-center shrink-0">
+                          <span className="w-4 h-4 rounded-full bg-[#161b22] border border-[#30363d] text-[9px] font-mono font-bold text-white flex items-center justify-center shrink-0">
                             {pIdx + 1}
                           </span>
                           <span className="text-xs shrink-0">
                             {pick.sport === 'NBA' ? '🏀' : '⚽'}
                           </span>
-                          <span className="font-semibold text-slate-900 truncate">
+                          <span className="font-semibold text-white truncate">
                             {pick.matchTitle}
                           </span>
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0 font-mono">
-                          <span className="font-bold text-emerald-700 text-[11px]">
+                          <span className="font-bold text-[#00ff66] text-[11px]">
                             {pick.selectionLabel}
                           </span>
-                          <span className="px-1.5 py-0.2 rounded bg-white text-slate-800 text-[10px] font-bold border border-slate-200">
+                          <span className="px-1.5 py-0.2 rounded bg-[#161b22] text-[#d9b114] text-[10px] font-bold border border-[#30363d]">
                             @{pick.userOdd.toFixed(2)}
                           </span>
                         </div>
@@ -394,21 +400,21 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                   </div>
 
                   {/* Footer Bar: Metrics & Actions */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs bg-slate-50 p-2 rounded-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-[#30363d] text-xs bg-[#0b0e14] p-2 rounded-xl">
                     <div className="flex items-center gap-3 overflow-x-auto font-mono text-[11px]">
                       <div>
-                        <span className="text-[9px] text-slate-500 uppercase block">Stake</span>
-                        <span className="font-bold text-slate-900">{formattedStake}</span>
+                        <span className="text-[9px] text-[#8b949e] uppercase block">Stake</span>
+                        <span className="font-bold text-white tabular-nums">{formattedStake}</span>
                       </div>
-                      <div className="w-px h-5 bg-slate-200 shrink-0" />
+                      <div className="w-px h-5 bg-[#30363d] shrink-0" />
                       <div>
-                        <span className="text-[9px] text-slate-500 uppercase block">Cuota Total</span>
-                        <span className="font-bold text-emerald-700">{slip.totalOdds.toFixed(2)}x</span>
+                        <span className="text-[9px] text-[#8b949e] uppercase block">Cuota Total</span>
+                        <span className="font-bold text-[#00ff66] tabular-nums">{slip.totalOdds.toFixed(2)}x</span>
                       </div>
-                      <div className="w-px h-5 bg-slate-200 shrink-0" />
+                      <div className="w-px h-5 bg-[#30363d] shrink-0" />
                       <div>
-                        <span className="text-[9px] text-slate-500 uppercase block">Retorno</span>
-                        <span className="font-bold text-emerald-700">{formattedPayout}</span>
+                        <span className="text-[9px] text-[#8b949e] uppercase block">Retorno</span>
+                        <span className="font-bold text-[#00ff66] tabular-nums">{formattedPayout}</span>
                       </div>
                     </div>
 
@@ -416,17 +422,17 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                       <button
                         type="button"
                         onClick={() => handleLoadIntoParlay(slip)}
-                        className="py-1 px-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-bold transition cursor-pointer flex items-center gap-1"
+                        className="py-1 px-2.5 rounded-lg bg-[#161b22] hover:bg-[#1c2129] text-white border border-[#30363d] text-[11px] font-bold transition cursor-pointer flex items-center gap-1"
                         title="Cargar esta combinación de nuevo al boleto activo"
                       >
-                        <RefreshCw className="w-3 h-3" />
+                        <RefreshCw className="w-3 h-3 text-[#d9b114]" />
                         <span>Cargar al Boleto</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => handleShareWhatsApp(slip)}
-                        className="py-1 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                        className="py-1 px-2.5 rounded-lg bg-[#161b22] hover:bg-[#1c2129] text-[#00ff66] border border-[#00ff66]/40 text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs"
                       >
                         <Share2 className="w-3 h-3" />
                         <span>WhatsApp</span>
@@ -435,13 +441,13 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
                       <button
                         type="button"
                         onClick={() => handleCopySummary(slip)}
-                        className="py-1 px-2 rounded-lg bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-bold transition cursor-pointer border border-slate-200"
+                        className="py-1 px-2 rounded-lg bg-[#161b22] hover:bg-[#1c2129] text-white text-[11px] font-bold transition cursor-pointer border border-[#30363d]"
                         title="Copiar resumen"
                       >
                         {copiedSlipId === slip.id ? (
-                          <Check className="w-3 h-3 text-emerald-600" />
+                          <Check className="w-3 h-3 text-[#00ff66]" />
                         ) : (
-                          <Copy className="w-3 h-3" />
+                          <Copy className="w-3 h-3 text-[#8b949e]" />
                         )}
                       </button>
                     </div>

@@ -16,6 +16,11 @@ export const SubscriptionAlertBanner: React.FC = () => {
         return;
       }
 
+      const isFreeMode = typeof window !== 'undefined'
+        ? localStorage.getItem('gmetrics_free_access_mode') !== 'false'
+        : true;
+      if (isFreeMode) return;
+
       const rawUser = localStorage.getItem('sportstats_auth_user');
       if (!rawUser) return;
       const user = JSON.parse(rawUser);

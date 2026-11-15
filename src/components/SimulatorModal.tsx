@@ -180,35 +180,41 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-      <div className="bg-white border border-slate-200 w-full max-w-4xl rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.18)] overflow-hidden my-auto max-h-[90vh] flex flex-col text-slate-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+      {/* Backdrop blur independiente (fondo visible y difuminado) */}
+      <div
+        onClick={onClose}
+        className="fixed inset-0 bg-black/40 backdrop-blur-md transition-opacity animate-in fade-in duration-200"
+      />
+
+      <div className="relative z-10 bg-[#161b22] border border-[#30363d] w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden my-auto max-h-[90vh] flex flex-col text-white animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="px-5 py-3.5 bg-white border-b border-slate-200 flex items-center justify-between">
+        <div className="px-5 py-3.5 bg-[#0b0e14] border-b border-[#30363d] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
-              <Sliders className="w-4 h-4 text-emerald-600" />
+            <div className="w-8 h-8 rounded-xl bg-[#161b22] border border-[#30363d] flex items-center justify-center">
+              <Sliders className="w-4 h-4 text-[#d9b114]" />
             </div>
             <div>
-              <h3 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+              <h3 className="text-sm sm:text-base font-bold text-white tracking-tight">
                 Laboratorio Táctico &amp; Simulador G METRICS
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-[#8b949e]">
                 Ajusta parámetros tácticos y observa el recálculo en tiempo real.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+            className="p-1.5 text-[#8b949e] hover:text-white rounded-lg hover:bg-[#1c2129] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 bg-slate-50/50">
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 bg-[#0b0e14]/70">
           {/* 1. Barra Compacta de Escenarios Rápidos */}
-          <div className="p-3 rounded-xl bg-white border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d] flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] uppercase font-mono font-bold text-slate-500 flex items-center gap-1 mr-1">
                 <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
@@ -259,27 +265,27 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
           {/* Team Names Inputs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-mono font-bold text-emerald-700 block mb-1">Equipo Local</label>
+              <label className="text-xs font-mono font-bold text-[#d9b114] block mb-1">Equipo Local</label>
               <input
                 type="text"
                 value={homeName}
                 onChange={(e) => setHomeName(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-sm text-slate-900 px-3 py-1.5 rounded-lg focus:outline-none focus:border-emerald-500"
+                className="w-full bg-[#0b0e14] border border-[#30363d] text-sm text-white px-3 py-1.5 rounded-lg focus:outline-none focus:border-[#d9b114]"
               />
             </div>
             <div>
-              <label className="text-xs font-mono font-bold text-indigo-700 block mb-1">Equipo Visitante</label>
+              <label className="text-xs font-mono font-bold text-[#8b949e] block mb-1">Equipo Visitante</label>
               <input
                 type="text"
                 value={awayName}
                 onChange={(e) => setAwayName(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-sm text-slate-900 px-3 py-1.5 rounded-lg focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[#0b0e14] border border-[#30363d] text-sm text-white px-3 py-1.5 rounded-lg focus:outline-none focus:border-[#d9b114]"
               />
             </div>
           </div>
 
           {/* Sliders Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs font-mono bg-white p-4 rounded-xl border border-slate-200">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs font-mono bg-[#161b22] p-4 rounded-xl border border-[#30363d]">
             {/* Home Attack */}
             <div>
               <div className="flex justify-between mb-1">
@@ -438,52 +444,52 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
           </div>
 
           {/* Quick Result Preview Bar */}
-          <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-3">
+          <div className="p-4 bg-[#161b22] rounded-xl border border-[#30363d] space-y-3">
             <div className="flex items-center justify-between text-xs font-mono">
-              <span className="text-emerald-700 font-bold">
+              <span className="text-[#00ff66] font-bold">
                 1 ({homeName}): {analysis.dixonColes.pHomeWin}% (@{analysis.dixonColes.fairOddsHome.toFixed(2)})
               </span>
-              <span className="text-slate-600 font-bold">
+              <span className="text-[#8b949e] font-bold">
                 X: {analysis.dixonColes.pDraw}% (@{analysis.dixonColes.fairOddsDraw.toFixed(2)})
               </span>
-              <span className="text-indigo-700 font-bold">
+              <span className="text-[#d9b114] font-bold">
                 2 ({awayName}): {analysis.dixonColes.pAwayWin}% (@{analysis.dixonColes.fairOddsAway.toFixed(2)})
               </span>
             </div>
 
-            <div className="h-3 w-full rounded-full bg-slate-100 overflow-hidden flex">
-              <div style={{ width: `${analysis.dixonColes.pHomeWin}%` }} className="bg-emerald-500" />
-              <div style={{ width: `${analysis.dixonColes.pDraw}%` }} className="bg-slate-400" />
-              <div style={{ width: `${analysis.dixonColes.pAwayWin}%` }} className="bg-indigo-500" />
+            <div className="h-3 w-full rounded-full bg-[#0b0e14] overflow-hidden flex border border-[#30363d]">
+              <div style={{ width: `${analysis.dixonColes.pHomeWin}%` }} className="bg-[#00ff66]" />
+              <div style={{ width: `${analysis.dixonColes.pDraw}%` }} className="bg-[#8b949e]" />
+              <div style={{ width: `${analysis.dixonColes.pAwayWin}%` }} className="bg-[#d9b114]" />
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono text-slate-600 pt-1">
-              <div>xG Local: <strong className="text-emerald-700">{analysis.dixonColes.lambdaHome.toFixed(2)}</strong></div>
-              <div>xG Visita: <strong className="text-indigo-700">{analysis.dixonColes.lambdaAway.toFixed(2)}</strong></div>
-              <div>BTTS Sí: <strong className="text-slate-900">{analysis.goalsMarket.bttsYes}%</strong></div>
-              <div>Amarillas: <strong className="text-amber-700">{analysis.refereeCards.expectedYellowCards}</strong></div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono text-[#8b949e] pt-1">
+              <div>xG Local: <strong className="text-white tabular-nums">{analysis.dixonColes.lambdaHome.toFixed(2)}</strong></div>
+              <div>xG Visita: <strong className="text-white tabular-nums">{analysis.dixonColes.lambdaAway.toFixed(2)}</strong></div>
+              <div>BTTS Sí: <strong className="text-white tabular-nums">{analysis.goalsMarket.bttsYes}%</strong></div>
+              <div>Amarillas: <strong className="text-[#d9b114] tabular-nums">{analysis.refereeCards.expectedYellowCards}</strong></div>
             </div>
           </div>
 
           {/* Score Matrix Component */}
           <div>
-            <h4 className="text-xs font-mono uppercase text-slate-500 font-bold mb-2">Matriz de Marcadores Recalculada:</h4>
+            <h4 className="text-xs font-mono uppercase text-[#8b949e] font-bold mb-2">Matriz de Marcadores Recalculada:</h4>
             <DixonColesMatrix dixonColes={analysis.dixonColes} fixture={simulatedFixture} />
           </div>
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 bg-white border-t border-slate-200 flex items-center justify-between">
+        <div className="px-5 py-3 bg-[#0b0e14] border-t border-[#30363d] flex items-center justify-between">
           <button
             onClick={resetDefaults}
-            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 text-xs text-[#8b949e] hover:text-white transition-colors cursor-pointer"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-3.5 h-3.5 text-[#d9b114]" />
             <span>Restablecer valores por defecto</span>
           </button>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors cursor-pointer"
+            className="px-4 py-1.5 text-xs font-bold text-white bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] rounded-lg transition-colors cursor-pointer"
           >
             Aplicar y Cerrar
           </button>

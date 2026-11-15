@@ -119,24 +119,24 @@ export const NBAPredictionCard: React.FC<NBAPredictionCardProps> = React.memo(({
     <div
       className={`transition-all rounded-xl ${
         isRecentlyUpdated
-          ? 'ring-2 ring-amber-400 bg-amber-50/90 shadow-md animate-pulse'
+          ? 'ring-2 ring-[#00ff66] shadow-md animate-pulse'
           : isSelected
-          ? 'ring-2 ring-amber-500 shadow-sm'
+          ? 'ring-2 ring-[#d9b114] shadow-sm'
           : isValueBet
-          ? 'ring-1.5 ring-amber-400/80 shadow-sm'
+          ? 'ring-1.5 ring-[#00ff66]/60 shadow-sm'
           : ''
       }`}
     >
-      <div className="bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-xl overflow-hidden shadow-xs hover:shadow-md transition-shadow">
+      <div className="bg-[#161b22] backdrop-blur-md border border-[#30363d] rounded-xl overflow-hidden shadow-md hover:border-[#8b949e]/50 transition-all">
         {/* 1. Header: Estado (En Vivo vs Pre-Partido), Hora Colombia y Competición */}
-        <div className="px-4 sm:px-5 py-2.5 bg-slate-50/90 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="px-4 sm:px-5 py-2.5 bg-[#161b22] border-b border-[#21262d] flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-base shrink-0">🏀</span>
-            <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 font-mono tracking-tight font-bold text-[10px] uppercase">
+            <span className="px-2 py-0.5 rounded-md bg-[#d9b114]/15 text-[#d9b114] border border-[#d9b114]/40 font-mono tracking-tight font-bold text-[10px] uppercase">
               {fixture.league?.name || 'NBA'}
             </span>
-            <span className="text-slate-300">·</span>
-            <span className="text-slate-600 text-[11px] truncate font-sans font-medium">
+            <span className="text-[#30363d]">·</span>
+            <span className="text-[#8b949e] text-[11px] truncate font-sans font-medium">
               {fixture.league?.name === 'NBA' ? `${homeTeam.conference} vs ${awayTeam.conference}` : (fixture.league?.country || 'Baloncesto')}
             </span>
             <span className="text-slate-300 hidden sm:inline">·</span>

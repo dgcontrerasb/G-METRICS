@@ -17,22 +17,22 @@ export const AppFooter: React.FC<AppFooterProps> = ({
   const [isLegalExpanded, setIsLegalExpanded] = useState(false);
 
   const capsuleClass =
-    'px-2.5 py-1 rounded-lg bg-slate-100/90 hover:bg-slate-200/80 text-slate-700 hover:text-slate-900 border border-slate-200/90 text-[10px] font-semibold transition cursor-pointer inline-flex items-center justify-center gap-1 whitespace-nowrap';
+    'px-2.5 py-1.5 rounded-xl bg-[#161b22] hover:bg-[#1c2129] text-[#8b949e] hover:text-white border border-[#30363d] text-[10.5px] font-semibold transition cursor-pointer inline-flex items-center justify-center gap-1 whitespace-nowrap';
 
   return (
-    <footer className="border-t border-slate-200/80 bg-white/95 backdrop-blur-md py-2.5 px-3 sm:px-5 mt-5 text-xs text-slate-600 relative z-10 shadow-2xs">
+    <footer className="border-t border-[#21262d] bg-[#0b0e14]/95 backdrop-blur-md py-3 px-3 sm:px-5 mt-5 text-xs text-[#8b949e] relative z-10">
       <div className="max-w-4xl mx-auto space-y-2">
         {/* Fila 1: Identidad Centrada + Cápsulas Simétricas en 1 Sola Fila */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pb-2 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pb-2 border-b border-[#21262d]">
           <div className="flex items-center justify-center gap-2 text-center sm:text-left">
-            <span className="px-1.5 py-0.5 rounded bg-amber-50 border border-amber-300 text-amber-800 font-extrabold text-[9.5px] leading-none">
+            <span className="px-1.5 py-0.5 rounded-lg bg-[#d9b114]/12 border border-[#d9b114]/45 text-[#d9b114] font-extrabold text-[9.5px] leading-none font-mono tabular-nums">
               +18
             </span>
             <div className="flex flex-col items-center sm:items-start justify-center">
               <span className="gmetrics-brand-title text-[12px] leading-none whitespace-nowrap">
                 G METRICS
               </span>
-              <span className="text-[6.5px] sm:text-[7px] font-extrabold uppercase tracking-tight text-slate-500 whitespace-nowrap leading-none mt-1">
+              <span className="text-[6.5px] sm:text-[7px] font-bold uppercase tracking-tight text-[#8b949e] whitespace-nowrap leading-none mt-1">
                 LA CIENCIA DETRÁS DE LA VICTORIA ({activeSport === 'NBA' ? 'Baloncesto' : 'Fútbol'})
               </span>
             </div>
@@ -74,7 +74,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
         </div>
 
         {/* Fila 2: Descargo Legal Ultra-Compacto con Acordeón Desplegable */}
-        <div className="text-[9.5px] text-slate-500 leading-snug text-center sm:text-left flex flex-col sm:flex-row sm:items-start justify-between gap-1.5">
+        <div className="text-[9.5px] text-[#6e7681] leading-snug text-center sm:text-left flex flex-col sm:flex-row sm:items-start justify-between gap-1.5">
           <div className="flex-1">
             <p>
               G METRICS es una herramienta analítica y de software estadístico basada en modelos matemáticos y telemetría de eventos deportivos. No somos una casa de apuestas ni recibimos fondos.{' '}
@@ -86,21 +86,21 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               <button
                 type="button"
                 onClick={() => setIsLegalExpanded(!isLegalExpanded)}
-                className="text-amber-800 hover:text-amber-900 font-semibold underline decoration-dotted ml-1 cursor-pointer transition"
+                className="text-[#d9b114] hover:text-white font-semibold underline decoration-dotted ml-1 cursor-pointer transition"
               >
                 {isLegalExpanded ? 'Ver menos ▲' : 'Leer más ▼'}
               </button>
-              <span className="mx-1.5 text-slate-300">|</span>
+              <span className="mx-1.5 text-[#30363d]">|</span>
               <button
                 type="button"
                 onClick={() => onOpenGuideModal('LEGAL')}
-                className="text-emerald-700 hover:text-emerald-800 hover:underline font-semibold cursor-pointer transition"
+                className="text-[#8b949e] hover:text-white hover:underline font-semibold cursor-pointer transition"
               >
                 Términos y Habeas Data (Ley 1581) →
               </button>
             </p>
           </div>
-          <span className="shrink-0 font-mono text-[9px] text-slate-400">
+          <span className="shrink-0 font-mono text-[9px] text-[#6e7681]">
             COT (UTC-5) · Ley 1581
           </span>
         </div>

@@ -130,11 +130,19 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
     if (!showGuideModal) return null;
 
     return (
-      <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 backdrop-blur-md p-4 animate-in fade-in">
-        <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-white/15 p-5 shadow-2xl text-slate-100">
-          <div className="flex items-center justify-between pb-3 border-b border-white/10">
+      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+        {/* Backdrop blur (fondo muy visible y difuminado) */}
+        <div
+          onClick={() => {
+            setShowGuideModal(null);
+            if (variant === 'floating') setFloatingStage('fading');
+          }}
+          className="fixed inset-0 bg-black/40 backdrop-blur-md transition-opacity animate-in fade-in duration-200"
+        />
+        <div className="relative z-10 w-full max-w-sm rounded-2xl bg-[#161b22] border border-[#30363d] p-5 shadow-2xl text-[#e6edf3] animate-in zoom-in-95 duration-200">
+          <div className="flex items-center justify-between pb-3 border-b border-[#21262d]">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Smartphone className="w-4 h-4 text-emerald-400" />
+              <Smartphone className="w-4 h-4 text-[#d9b114]" strokeWidth={2} />
               {showGuideModal === 'IOS' ? 'Instalar Web App en iPhone / iPad' : 'Instalar Web App en Android'}
             </h3>
             <button
@@ -143,16 +151,16 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 setShowGuideModal(null);
                 if (variant === 'floating') setFloatingStage('fading');
               }}
-              className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+              className="p-1 rounded-lg text-[#8b949e] hover:text-white cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4" strokeWidth={2} />
             </button>
           </div>
 
           {showGuideModal === 'IOS' ? (
             <div className="mt-3 text-xs text-slate-300 space-y-2.5 leading-relaxed">
               <p className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                <span className="w-5 h-5 rounded-full bg-[#d9b114]/15 border border-[#d9b114]/40 text-[#d9b114] font-mono tabular-nums font-bold flex items-center justify-center shrink-0 text-[11px]">
                   1
                 </span>
                 <span>
@@ -160,7 +168,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 </span>
               </p>
               <p className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                <span className="w-5 h-5 rounded-full bg-[#d9b114]/15 border border-[#d9b114]/40 text-[#d9b114] font-mono tabular-nums font-bold flex items-center justify-center shrink-0 text-[11px]">
                   2
                 </span>
                 <span>
@@ -171,15 +179,15 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
           ) : (
             <div className="mt-3 text-xs text-slate-300 space-y-2.5 leading-relaxed">
               <p className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                <span className="w-5 h-5 rounded-full bg-[#d9b114]/15 border border-[#d9b114]/40 text-[#d9b114] font-mono tabular-nums font-bold flex items-center justify-center shrink-0 text-[11px]">
                   1
                 </span>
                 <span className="flex items-center gap-1 flex-wrap">
-                  Toca el menú de Chrome <MoreVertical className="w-3.5 h-3.5 inline text-emerald-400" /> arriba a la derecha.
+                  Toca el menú de Chrome <MoreVertical className="w-3.5 h-3.5 inline text-[#d9b114]" strokeWidth={2} /> arriba a la derecha.
                 </span>
               </p>
               <p className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                <span className="w-5 h-5 rounded-full bg-[#d9b114]/15 border border-[#d9b114]/40 text-[#d9b114] font-mono tabular-nums font-bold flex items-center justify-center shrink-0 text-[11px]">
                   2
                 </span>
                 <span>
@@ -197,7 +205,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 if (variant === 'floating') setFloatingStage('fading');
                 onAfterAction?.();
               }}
-              className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-500 py-2 text-xs font-bold text-white cursor-pointer transition-colors"
+              className="w-full cyber-chrome-chip cyber-chrome-chip-active py-2 text-xs font-bold cursor-pointer justify-center"
             >
               Entendido
             </button>
@@ -209,9 +217,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 setFloatingStage('gone');
                 onAfterAction?.();
               }}
-              className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 py-1.5 text-[11px] font-medium text-slate-400 hover:text-slate-200 cursor-pointer transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-[#0b0e14] hover:bg-[#1c2129] border border-[#30363d] py-1.5 text-[11px] font-medium text-[#8b949e] hover:text-white cursor-pointer transition-colors"
             >
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-[#d9b114]" strokeWidth={2} />
               <span>Ya la tengo instalada (no volver a mostrar)</span>
             </button>
           </div>
@@ -227,9 +235,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         <button
           type="button"
           onClick={handleInstallClick}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-semibold transition text-left cursor-pointer"
+          className="w-full cyber-chrome-chip cyber-chrome-chip-gold justify-start px-3 py-2.5 h-auto text-xs font-semibold cursor-pointer"
         >
-          <Download className="w-4 h-4 text-emerald-600 shrink-0" />
+          <Download className="w-4 h-4 text-[#d9b114] shrink-0" strokeWidth={2} />
           <span>Instalar Web App</span>
         </button>
         {renderGuideModal()}
@@ -237,17 +245,17 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
     );
   }
 
-  // Variante 2: Botón discreto en el pie de página (PC y Móvil) con alto contraste sobre fondo claro
+  // Variante 2: Botón discreto en el pie de página (PC y Móvil) unificado al chrome oscuro
   if (variant === 'footer') {
     return (
       <>
         <button
           type="button"
           onClick={handleInstallClick}
-          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 text-[10.5px] font-semibold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+          className="cyber-chrome-chip cyber-chrome-chip-gold h-7 px-2.5 text-[10.5px] font-semibold cursor-pointer"
           title="Instalar G METRICS como aplicación en tu dispositivo"
         >
-          <Download className="w-3.5 h-3.5 text-white shrink-0" />
+          <Download className="w-3.5 h-3.5 text-[#d9b114] shrink-0" strokeWidth={2} />
           <span>Instalar App</span>
         </button>
         {renderGuideModal()}
@@ -269,16 +277,16 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             : 'opacity-0 translate-y-3 pointer-events-none'
         }`}
       >
-        <div className="relative overflow-hidden rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-emerald-500/35 shadow-2xl shadow-black/70 p-3 flex items-center justify-between gap-3">
+        <div className="relative overflow-hidden rounded-2xl bg-[#161b22]/95 backdrop-blur-xl border border-[#d9b114]/45 shadow-2xl shadow-black/70 p-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500/25 to-cyan-500/20 border border-emerald-400/35 flex items-center justify-center shrink-0">
-              <Smartphone className="w-4 h-4 text-emerald-400" />
+            <div className="w-9 h-9 rounded-xl bg-[#0b0e14] border border-[#d9b114]/40 flex items-center justify-center shrink-0">
+              <Smartphone className="w-4 h-4 text-[#d9b114]" strokeWidth={2} />
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-white truncate">
                 Instalar G METRICS
               </p>
-              <p className="text-[11px] text-slate-300 truncate">
+              <p className="text-[11px] text-[#8b949e] truncate">
                 Acceso directo y pantalla completa en 1 clic
               </p>
             </div>
@@ -288,18 +296,18 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             <button
               type="button"
               onClick={handleInstallClick}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[11px] font-bold shadow-md shadow-emerald-950/50 cursor-pointer transition-all active:scale-95"
+              className="cyber-chrome-chip cyber-chrome-chip-gold h-7 px-3 text-[11px] font-bold cursor-pointer"
             >
-              <Download className="w-3 h-3" />
+              <Download className="w-3 h-3 text-[#d9b114]" strokeWidth={2} />
               <span>Instalar</span>
             </button>
             <button
               type="button"
               onClick={() => setFloatingStage('fading')}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer transition-colors"
+              className="p-1.5 rounded-lg text-[#8b949e] hover:text-white hover:bg-[#1c2129] cursor-pointer transition-colors"
               title="Cerrar recomendación"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-3.5 h-3.5" strokeWidth={2} />
             </button>
           </div>
         </div>

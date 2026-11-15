@@ -23,6 +23,7 @@ import { AppModalsContainer } from './components/AppModalsContainer';
 import { UserFeedbackWidget } from './components/UserFeedbackWidget';
 import { SoccerWorkspaceView } from './components/workspace/SoccerWorkspaceView';
 import { NBAWorkspaceView } from './components/workspace/NBAWorkspaceView';
+import { MatchSpotlightPanel, SpotlightPayload } from './components/MatchSpotlightPanel';
 
 const VipPaymentModal = React.lazy(() =>
   import('./components/VipPaymentModal').then((m) => ({ default: m.VipPaymentModal }))
@@ -101,11 +102,32 @@ export default function App() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [isVipModalOpen, setIsVipModalOpen] = useState(false);
+  const [freeAccessMode, setFreeAccessMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('gmetrics_free_access_mode') !== 'false';
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
-    const handleOpenVip = () => setIsVipModalOpen(true);
+    const handleOpenVip = () => {
+      const isFree = localStorage.getItem('gmetrics_free_access_mode') !== 'false';
+      if (!isFree) setIsVipModalOpen(true);
+    };
     window.addEventListener('open-vip-payment-modal', handleOpenVip);
     return () => window.removeEventListener('open-vip-payment-modal', handleOpenVip);
+  }, []);
+  useEffect(() => {
+    fetch('/api/license/config')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && typeof d.freeAccessMode === 'boolean') {
+          setFreeAccessMode(d.freeAccessMode);
+          localStorage.setItem('gmetrics_free_access_mode', String(d.freeAccessMode));
+        }
+      })
+      .catch(() => {});
   }, []);
   const [mobileActiveTab, setMobileActiveTab] = useState<MobileTab>('MATCHES');
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState<boolean>(false);
@@ -307,6 +329,10 @@ export default function App() {
       if (sessionRes.ok) {
         const sessionData = await sessionRes.json();
         if (sessionData?.authenticated && sessionData?.user) {
+          if (typeof sessionData.freeAccessMode === 'boolean') {
+            setFreeAccessMode(sessionData.freeAccessMode);
+            localStorage.setItem('gmetrics_free_access_mode', String(sessionData.freeAccessMode));
+          }
           const isVip = Boolean(sessionData.isVip);
           const exp = sessionData.user.expiresAt;
           const expFormatted = exp
@@ -327,7 +353,7 @@ export default function App() {
             expiryDateFormatted: expFormatted,
             daysRemaining,
             targetDeviceId: sessionData.user.deviceId || '',
-            planLabel: isVip ? 'Pase Activo (VIP)' : 'Plan Vencido',
+            planLabel: (typeof window !== 'undefined' && JSON.parse(localStorage.getItem('sportstats_auth_user') || '{}')?.planLabel === 'Acceso Libre Promocional') ? 'Acceso Libre Promocional' : (isVip ? 'Pase Activo (VIP)' : 'Plan Vencido'),
             clientName: sessionData.user.username || ''
           });
 
@@ -1956,10 +1982,83 @@ export default function App() {
   const hasSelection = selectedFixtureIds.size > 0;
   const currentTotalVisible = activeSport === 'NBA' ? filteredNBAFixtures.length : filteredFixtures.length;
 
+  // Desktop Right-Hand Panel ("Showcase Match Spotlight + Tactical Wire") State & Onboarding
+  const [spotlightFixtureId, setSpotlightFixtureId] = useState<string | null>(null);
+  const [isSpotlightClosedByUser, setIsSpotlightClosedByUser] = useState<boolean>(false);
+  const [showSpotlightOnboarding, setShowSpotlightOnboarding] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('gmetrics_spotlight_onboarding_v1') !== 'seen';
+    } catch {
+      return true;
+    }
+  });
+
+  const handleDismissSpotlightOnboarding = useCallback(() => {
+    setShowSpotlightOnboarding(false);
+    try {
+      localStorage.setItem('gmetrics_spotlight_onboarding_v1', 'seen');
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleReopenSpotlightOnboarding = useCallback(() => {
+    setShowSpotlightOnboarding(true);
+  }, []);
+
+  const handleSelectSoccerSpotlight = useCallback((fixture: MatchFixture) => {
+    setSpotlightFixtureId(fixture.id);
+    setIsSpotlightClosedByUser(false);
+  }, []);
+
+  const handleSelectNBASpotlight = useCallback((fixture: NBAMatchFixture) => {
+    setSpotlightFixtureId(fixture.id);
+    setIsSpotlightClosedByUser(false);
+  }, []);
+
+  const activeSpotlightPayload: SpotlightPayload | null = useMemo(() => {
+    if (isSpotlightClosedByUser) return null;
+    if (activeSport === 'SOCCER') {
+      const target =
+        (spotlightFixtureId && filteredFixtures.find((f) => f.id === spotlightFixtureId)) ||
+        (spotlightFixtureId && fixtures.find((f) => f.id === spotlightFixtureId)) ||
+        soccerLiveFixtures[0] ||
+        filteredFixtures[0] ||
+        null;
+      if (!target) return null;
+      const analysis = analysesMap[target.id] || calculateMatchAnalysis(target);
+      return { type: 'SOCCER', fixture: target, analysis };
+    } else {
+      const target =
+        (spotlightFixtureId && filteredNBAFixtures.find((f) => f.id === spotlightFixtureId)) ||
+        (spotlightFixtureId && nbaFixtures.find((f) => f.id === spotlightFixtureId)) ||
+        nbaLiveFixtures[0] ||
+        filteredNBAFixtures[0] ||
+        null;
+      if (!target) return null;
+      const analysis = nbaAnalysesMap[target.id] || calculateNBAAnalysis(target);
+      return { type: 'NBA', fixture: target, analysis };
+    }
+  }, [
+    isSpotlightClosedByUser,
+    activeSport,
+    spotlightFixtureId,
+    filteredFixtures,
+    fixtures,
+    soccerLiveFixtures,
+    analysesMap,
+    filteredNBAFixtures,
+    nbaFixtures,
+    nbaLiveFixtures,
+    nbaAnalysesMap
+  ]);
+
   return (
     <>
       {!isAppUnlocked ? (
         <AccessLockScreen
+          fixtures={fixtures}
+          nbaFixtures={nbaFixtures}
           onUnlock={(result) => {
             setAuthTransition('LOGIN');
             setTimeout(() => {
@@ -2047,6 +2146,7 @@ export default function App() {
             {/* 1. Minimalist Top Bar */}
             <MainAppHeader
               activeSport={activeSport}
+              freeAccessMode={freeAccessMode}
               onSelectSport={handleSelectSport}
               viewMode={viewMode}
               onToggleViewMode={handleToggleViewMode}
@@ -2082,86 +2182,154 @@ export default function App() {
               onOpenMobileDrawer={() => setIsMobileDrawerOpen(true)}
             />
 
-            {activeSport === 'SOCCER' ? (
-              <SoccerWorkspaceView
-                isLoading={isLoading}
-                fixtures={fixtures}
-                filteredFixtures={filteredFixtures}
-                displayFixtures={displayFixtures}
-                availableCompetitionGroups={availableCompetitionGroups}
-                groupedFilteredFixtures={groupedFilteredFixtures}
-                selectedLeague={selectedLeague}
-                onSelectLeague={setSelectedLeague}
-                activeLeagueLabel={activeLeagueLabel}
-                searchQuery={searchQuery}
-                onClearFilters={() => {
-                  setSearchQuery('');
-                  setSelectedFilter('ALL');
-                  setSelectedLeague('ALL');
-                }}
-                currentDate={currentDate}
-                onSmartDateChange={handleSmartDateChange}
-                isSearchingOtherDays={isSearchingOtherDays}
-                crossDaySearchMatches={crossDaySearchMatches}
-                mainTab={mainTab}
-                onSelectMainTab={handleSelectMainTab}
-                soccerTopPicks={soccerTopPicks}
-                soccerLiveFixtures={soccerLiveFixtures}
-                analysesMap={analysesMap}
-                selectedFixtureIds={selectedFixtureIds}
-                onToggleSelect={handleToggleSelect}
-                onToggleSelectGroupFixtures={handleToggleSelectGroupFixtures}
-                onSelectAll={handleSelectAll}
-                expandedCardIds={expandedCardIds}
-                onToggleCardExpand={handleToggleCardExpand}
-                collapsedGroupKeys={collapsedGroupKeys}
-                onToggleGroupCollapse={handleToggleGroupCollapse}
-                onToggleAllGroupsCollapse={handleToggleAllGroupsCollapse}
-                favoriteFixtureIds={favoriteFixtureIds}
-                onToggleFavorite={handleToggleFavorite}
-                showFavoritesOnly={showFavoritesOnly}
-                onToggleShowFavoritesOnly={() => setShowFavoritesOnly((prev) => !prev)}
-                visibleMatchLimit={visibleMatchLimit}
-                setVisibleMatchLimit={setVisibleMatchLimit}
-                viewMode={viewMode}
-                densityView={densityView}
-                isLightweightMode={isLightweightMode}
-                recentlyUpdatedFixtureIds={recentlyUpdatedFixtureIds}
-                onOpenSoccerDetail={handleOpenSoccerDetail}
-                onOpenSimulator={handleOpenSimulator}
-              />
-            ) : (
-              <NBAWorkspaceView
-                isNBALoading={isNBALoading}
-                nbaFixtures={nbaFixtures}
-                filteredNBAFixtures={filteredNBAFixtures}
-                nbaAnalysesMap={nbaAnalysesMap}
-                nbaTopPicks={nbaTopPicks}
-                nbaLiveFixtures={nbaLiveFixtures}
-                mainTab={mainTab}
-                onSelectMainTab={handleSelectMainTab}
-                selectedFixtureIds={selectedFixtureIds}
-                onToggleSelect={handleToggleSelect}
-                onSelectAll={handleSelectAll}
-                expandedCardIds={expandedCardIds}
-                onToggleCardExpand={handleToggleCardExpand}
-                favoriteFixtureIds={favoriteFixtureIds}
-                onToggleFavorite={handleToggleFavorite}
-                showFavoritesOnly={showFavoritesOnly}
-                onToggleShowFavoritesOnly={() => setShowFavoritesOnly((prev) => !prev)}
-                visibleMatchLimit={visibleMatchLimit}
-                setVisibleMatchLimit={setVisibleMatchLimit}
-                viewMode={viewMode}
-                densityView={densityView}
-                recentlyUpdatedFixtureIds={recentlyUpdatedFixtureIds}
-                onOpenNBADetail={handleOpenNBADetail}
-                onClearNBAFilters={() => {
-                  setNbaSearchQuery('');
-                  setSelectedNBAConference('ALL');
-                  setSelectedNBAFilter('ALL');
-                }}
-              />
-            )}
+            {/* 2. Responsive Dual-Column Desktop Workspace (Left: Match Feed Slides Left | Right: Spotlight + Tactical Wire Above Footer) */}
+            <div className="flex-1 w-full max-w-[1480px] mx-auto px-3 sm:px-5 py-4 sm:py-6 flex flex-col xl:flex-row items-start justify-center gap-4 2xl:gap-5 transition-all duration-300">
+              <div className="flex-1 min-w-0 w-full transition-all duration-300 ease-out">
+                {/* Floating Interactive Coachmark Banner on Match List for First-Time Users */}
+                {showSpotlightOnboarding && Boolean(activeSpotlightPayload) && (
+                  <div className="hidden xl:flex mb-3 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white border border-emerald-400/50 shadow-md items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0 text-xs">
+                      <span className="flex h-2.5 w-2.5 relative shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400" />
+                      </span>
+                      <p className="truncate">
+                        <strong className="text-emerald-300 font-bold">Guía Interactiva:</strong> Haz clic en cualquier partido para desplegar su radiografía en el{' '}
+                        <strong className="text-white underline decoration-emerald-400">Panel Derecho (Match Spotlight)</strong>, o toca{' '}
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-200 font-mono text-[10.5px]">Ver Cuotas y Datos</span> para abrir la Cancha 2D.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDismissSpotlightOnboarding}
+                      className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-[11px] transition-colors cursor-pointer"
+                    >
+                      Entendido
+                    </button>
+                  </div>
+                )}
+
+                {isSpotlightClosedByUser && (
+                  <div className="hidden xl:flex justify-end mb-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsSpotlightClosedByUser(false)}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-emerald-300 border border-emerald-400/40 text-xs font-bold shadow-sm transition-all cursor-pointer"
+                    >
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>Desplegar Panel Match Spotlight & Tactical Wire</span>
+                    </button>
+                  </div>
+                )}
+
+                {activeSport === 'SOCCER' ? (
+                  <SoccerWorkspaceView
+                    isLoading={isLoading}
+                    fixtures={fixtures}
+                    filteredFixtures={filteredFixtures}
+                    displayFixtures={displayFixtures}
+                    availableCompetitionGroups={availableCompetitionGroups}
+                    groupedFilteredFixtures={groupedFilteredFixtures}
+                    selectedLeague={selectedLeague}
+                    onSelectLeague={setSelectedLeague}
+                    activeLeagueLabel={activeLeagueLabel}
+                    searchQuery={searchQuery}
+                    onClearFilters={() => {
+                      setSearchQuery('');
+                      setSelectedFilter('ALL');
+                      setSelectedLeague('ALL');
+                    }}
+                    currentDate={currentDate}
+                    onSmartDateChange={handleSmartDateChange}
+                    isSearchingOtherDays={isSearchingOtherDays}
+                    crossDaySearchMatches={crossDaySearchMatches}
+                    mainTab={mainTab}
+                    onSelectMainTab={handleSelectMainTab}
+                    soccerTopPicks={soccerTopPicks}
+                    soccerLiveFixtures={soccerLiveFixtures}
+                    analysesMap={analysesMap}
+                    selectedFixtureIds={selectedFixtureIds}
+                    onToggleSelect={handleToggleSelect}
+                    onToggleSelectGroupFixtures={handleToggleSelectGroupFixtures}
+                    onSelectAll={handleSelectAll}
+                    expandedCardIds={expandedCardIds}
+                    onToggleCardExpand={handleToggleCardExpand}
+                    collapsedGroupKeys={collapsedGroupKeys}
+                    onToggleGroupCollapse={handleToggleGroupCollapse}
+                    onToggleAllGroupsCollapse={handleToggleAllGroupsCollapse}
+                    favoriteFixtureIds={favoriteFixtureIds}
+                    onToggleFavorite={handleToggleFavorite}
+                    showFavoritesOnly={showFavoritesOnly}
+                    onToggleShowFavoritesOnly={() => setShowFavoritesOnly((prev) => !prev)}
+                    visibleMatchLimit={visibleMatchLimit}
+                    setVisibleMatchLimit={setVisibleMatchLimit}
+                    viewMode={viewMode}
+                    densityView={densityView}
+                    isLightweightMode={isLightweightMode}
+                    recentlyUpdatedFixtureIds={recentlyUpdatedFixtureIds}
+                    onOpenSoccerDetail={handleOpenSoccerDetail}
+                    onSelectSpotlight={handleSelectSoccerSpotlight}
+                    activeSpotlightFixtureId={activeSpotlightPayload?.fixture.id || null}
+                    isSpotlightOpen={Boolean(activeSpotlightPayload)}
+                    onOpenSimulator={handleOpenSimulator}
+                  />
+                ) : (
+                  <NBAWorkspaceView
+                    isNBALoading={isNBALoading}
+                    nbaFixtures={nbaFixtures}
+                    filteredNBAFixtures={filteredNBAFixtures}
+                    nbaAnalysesMap={nbaAnalysesMap}
+                    nbaTopPicks={nbaTopPicks}
+                    nbaLiveFixtures={nbaLiveFixtures}
+                    mainTab={mainTab}
+                    onSelectMainTab={handleSelectMainTab}
+                    selectedFixtureIds={selectedFixtureIds}
+                    onToggleSelect={handleToggleSelect}
+                    onSelectAll={handleSelectAll}
+                    expandedCardIds={expandedCardIds}
+                    onToggleCardExpand={handleToggleCardExpand}
+                    favoriteFixtureIds={favoriteFixtureIds}
+                    onToggleFavorite={handleToggleFavorite}
+                    showFavoritesOnly={showFavoritesOnly}
+                    onToggleShowFavoritesOnly={() => setShowFavoritesOnly((prev) => !prev)}
+                    visibleMatchLimit={visibleMatchLimit}
+                    setVisibleMatchLimit={setVisibleMatchLimit}
+                    viewMode={viewMode}
+                    densityView={densityView}
+                    recentlyUpdatedFixtureIds={recentlyUpdatedFixtureIds}
+                    onOpenNBADetail={handleOpenNBADetail}
+                    onSelectNBASpotlight={handleSelectNBASpotlight}
+                    activeSpotlightFixtureId={activeSpotlightPayload?.fixture.id || null}
+                    isSpotlightOpen={Boolean(activeSpotlightPayload)}
+                    onClearNBAFilters={() => {
+                      setNbaSearchQuery('');
+                      setSelectedNBAConference('ALL');
+                      setSelectedNBAFilter('ALL');
+                    }}
+                  />
+                )}
+              </div>
+
+              {/* Right Column on Desktop (xl+): Sticky Match Spotlight + Tactical Wire Panel (Never Overlaps Footer) */}
+              {activeSpotlightPayload && (
+                <div className="hidden xl:block xl:sticky xl:top-4 self-start shrink-0 transition-all duration-300">
+                  <MatchSpotlightPanel
+                    payload={activeSpotlightPayload}
+                    onClose={() => setIsSpotlightClosedByUser(true)}
+                    onOpenFullModal={(p) => {
+                      if (p.type === 'SOCCER') {
+                        handleOpenSoccerDetail(p.fixture, p.analysis);
+                      } else {
+                        handleOpenNBADetail(p.fixture, p.analysis);
+                      }
+                    }}
+                    showOnboardingTip={showSpotlightOnboarding}
+                    onDismissOnboardingTip={handleDismissSpotlightOnboarding}
+                    onReopenOnboardingTip={handleReopenSpotlightOnboarding}
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Two-Tier Institutional & Legal Shield Footer */}
             <AppFooter

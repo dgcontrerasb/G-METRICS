@@ -3273,6 +3273,7 @@ interface AdminConfig {
   supportName: string;
   customLogoUrl?: string;
   colorTheme?: string;
+  freeAccessMode?: boolean;
 }
 
 const MASTER_RECOVERY_CODE = process.env.ADMIN_MASTER_KEY || 'MASTER-2708';
@@ -3284,7 +3285,8 @@ function getAdminConfig(): AdminConfig {
     adminWhatsApp: process.env.ADMIN_WHATSAPP || '573213902708',
     supportName: 'Administrador G METRICS',
     customLogoUrl: '/custom-logo.png',
-    colorTheme: 'cyan-emerald'
+    colorTheme: 'cyan-emerald',
+    freeAccessMode: process.env.FREE_ACCESS_MODE === 'false' ? false : true // Por defecto activo para acceso libre promocional
   };
   if (memoryAdminConfig) {
     return memoryAdminConfig;
@@ -3524,6 +3526,7 @@ app.get('/api/license/config', (req, res) => {
     supportName: cfg.supportName,
     customLogoUrl: cfg.customLogoUrl,
     colorTheme: cfg.colorTheme || 'cyan-emerald',
+    freeAccessMode: cfg.freeAccessMode !== undefined ? Boolean(cfg.freeAccessMode) : true,
     currentPin: isAuthenticated ? cfg.adminPin : undefined,
     requiresAuth: true
   });
@@ -3532,7 +3535,7 @@ app.get('/api/license/config', (req, res) => {
 app.post('/api/license/config', async (req, res) => {
   if (checkAuthLockout(req, res)) return;
 
-  const { currentPin, newPin, adminWhatsApp, supportName, customLogoUrl, colorTheme } = req.body || {};
+  const { currentPin, newPin, adminWhatsApp, supportName, customLogoUrl, colorTheme, freeAccessMode } = req.body || {};
   const currentCfg = getAdminConfig();
   const cred = extractAdminCredential(req, currentPin);
 
@@ -3557,6 +3560,9 @@ app.post('/api/license/config', async (req, res) => {
   if (typeof colorTheme === 'string') {
     currentCfg.colorTheme = sanitizeText(colorTheme, 32);
   }
+  if (typeof freeAccessMode === 'boolean') {
+    currentCfg.freeAccessMode = freeAccessMode;
+  }
 
   saveAdminConfig(currentCfg);
   return res.json({
@@ -3567,7 +3573,8 @@ app.post('/api/license/config', async (req, res) => {
       adminWhatsApp: currentCfg.adminWhatsApp,
       supportName: currentCfg.supportName,
       customLogoUrl: currentCfg.customLogoUrl,
-      colorTheme: currentCfg.colorTheme
+      colorTheme: currentCfg.colorTheme,
+      freeAccessMode: Boolean(currentCfg.freeAccessMode)
     }
   });
 });
@@ -4089,7 +4096,9 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     const { username, pin, deviceId, deviceName } = req.body || {};
-    const result = await loginAppUser(username, pin, deviceId, deviceName);
+    const cfg = getAdminConfig();
+    const isFreeMode = cfg.freeAccessMode !== undefined ? Boolean(cfg.freeAccessMode) : true;
+    const result = await loginAppUser(username, pin, deviceId, deviceName, isFreeMode);
     if (!result.success && (result.code === 'INVALID_PIN' || result.code === 'USER_NOT_FOUND')) {
       await recordAuthFailure(req);
     } else if (result.success) {
@@ -4174,8 +4183,12 @@ app.get('/api/auth/session', async (req, res) => {
     });
   }
 
+  const cfg = getAdminConfig();
+  const isFreePromoActive = cfg.freeAccessMode !== undefined ? Boolean(cfg.freeAccessMode) : true;
   const isVip = Boolean(
-    latestRole === 'admin' || (latestExpiresAt ? latestExpiresAt > Date.now() : true)
+    latestRole === 'admin' ||
+    (latestExpiresAt !== null && latestExpiresAt !== undefined && Number(latestExpiresAt) > Date.now()) ||
+    (isFreePromoActive && (session.authProvider === 'google' || latestRole === 'client'))
   );
 
   // Si los datos de suscripción cambiaron en Supabase, re-emitir la Cookie con el JWT actualizado
@@ -4196,6 +4209,7 @@ app.get('/api/auth/session', async (req, res) => {
     success: true,
     authenticated: true,
     isVip,
+    freeAccessMode: isFreePromoActive,
     user: {
       id: session.sub,
       username: latestUsername,
@@ -4222,9 +4236,11 @@ app.get('/api/auth/config', (req, res) => {
 
 app.post('/api/auth/google', async (req, res) => {
   try {
-    const { email, displayName, deviceId, deviceName, fingerprint, accessToken, providerToken } = req.body || {};
+    const { email, displayName, deviceId, deviceName, fingerprint, accessToken, providerToken, customUsername, customPin } = req.body || {};
     const clientIp = getClientIp(req);
     const subnetHash = calculateSubnetHash(clientIp);
+    const cfg = getAdminConfig();
+    const isFreeMode = cfg.freeAccessMode !== undefined ? Boolean(cfg.freeAccessMode) : true;
     const result = await loginOrRegisterGoogleUser(
       email,
       displayName,
@@ -4233,7 +4249,10 @@ app.post('/api/auth/google', async (req, res) => {
       fingerprint,
       accessToken,
       providerToken,
-      subnetHash
+      subnetHash,
+      isFreeMode,
+      customUsername,
+      customPin
     );
     if (result.success && result.user) {
       if (result.sessionToken) {

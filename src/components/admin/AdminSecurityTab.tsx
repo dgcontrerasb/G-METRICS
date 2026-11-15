@@ -7,7 +7,10 @@ import {
   MessageCircle,
   Database,
   Eye,
-  EyeOff
+  EyeOff,
+  Sparkles,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
 
 interface AdminSecurityTabProps {
@@ -17,6 +20,8 @@ interface AdminSecurityTabProps {
   setPinInput: React.Dispatch<React.SetStateAction<string>>;
   adminWhatsApp: string;
   setAdminWhatsApp: React.Dispatch<React.SetStateAction<string>>;
+  freeAccessMode?: boolean;
+  setFreeAccessMode?: React.Dispatch<React.SetStateAction<boolean>>;
   supabaseConfigured: boolean;
   supabaseProject: string | null;
   supabaseSqlSchema: string | null;
@@ -30,6 +35,8 @@ export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({
   setPinInput,
   adminWhatsApp,
   setAdminWhatsApp,
+  freeAccessMode = true,
+  setFreeAccessMode,
   supabaseConfigured,
   supabaseProject,
   supabaseSqlSchema,
@@ -44,6 +51,45 @@ export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({
   const [copiedCurrentPin, setCopiedCurrentPin] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
   const [showSqlGuide, setShowSqlGuide] = useState(false);
+  const [isTogglingFreeMode, setIsTogglingFreeMode] = useState(false);
+
+  const handleToggleFreeAccessMode = async () => {
+    const nextMode = !freeAccessMode;
+    setIsTogglingFreeMode(true);
+    setConfigSuccess(null);
+    setConfigError(null);
+    const currentPin =
+      pinInput.trim() ||
+      sessionStorage.getItem('futbolstats_admin_pin') ||
+      localStorage.getItem('sportstats_admin_saved_pin') ||
+      activeServerPin;
+    try {
+      const res = await fetch('/api/license/config', {
+        method: 'POST',
+        headers: buildAdminHeaders(currentPin, true, true),
+        body: JSON.stringify({
+          freeAccessMode: nextMode
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        localStorage.setItem('gmetrics_free_access_mode', String(nextMode));
+        if (setFreeAccessMode) setFreeAccessMode(nextMode);
+        setConfigSuccess(
+          nextMode
+            ? '¡Modo Acceso Libre ACTIVADO! Cualquier usuario con cuenta Google tiene acceso Pro ilimitado sin pagos ni conteo de días.'
+            : '¡Modo Acceso Libre DESACTIVADO! Todos los usuarios promocionales vuelven inmediatamente al bloqueo VIP normal.'
+        );
+        setTimeout(() => setConfigSuccess(null), 6000);
+      } else {
+        setConfigError(data.error || 'No se pudo actualizar el modo de acceso.');
+      }
+    } catch {
+      setConfigError('Error de red al actualizar el modo de acceso.');
+    } finally {
+      setIsTogglingFreeMode(false);
+    }
+  };
 
   const handleSendCredentialsToWhatsApp = (pinToSend: string) => {
     const cleanPhone = (adminWhatsApp || '573213902708').replace(/[^0-9]/g, '');
@@ -162,6 +208,60 @@ export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({
               <span>Enviar</span>
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* MODO ACCESO LIBRE (COMUNIDAD / APERTURA TOTAL) */}
+      <div className={`p-4 rounded-2xl border transition-all ${
+        freeAccessMode
+          ? 'bg-emerald-50/70 border-emerald-300/80 shadow-xs'
+          : 'bg-slate-50 border-slate-200/90'
+      }`}>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <div className={`p-2 rounded-xl ${freeAccessMode ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Modo Acceso Libre (Comunidad)
+                </h4>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
+                  freeAccessMode
+                    ? 'bg-emerald-500 text-white border-emerald-600'
+                    : 'bg-slate-200 text-slate-700 border-slate-300'
+                }`}>
+                  {freeAccessMode ? 'ACTIVO (100% LIBRE)' : 'DESACTIVADO (PAGO VIP)'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 mt-0.5 max-w-xl">
+                {freeAccessMode
+                  ? '✨ Cualquier usuario que inicie sesión con su cuenta Google (Gmail) tiene acceso Pro completo e ilimitado. Se suspenden pagos y conteos de 3 días.'
+                  : '🔒 Acceso Pro restringido. Solo pueden entrar usuarios con pase VIP activo o a quienes les asignes días manualmente desde la pestaña Usuarios.'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleToggleFreeAccessMode}
+            disabled={isTogglingFreeMode}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer shadow-xs disabled:opacity-50 active:scale-95 ${
+              freeAccessMode
+                ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+            }`}
+          >
+            {isTogglingFreeMode ? (
+              <span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full" />
+            ) : freeAccessMode ? (
+              <ToggleRight className="w-4 h-4" />
+            ) : (
+              <ToggleLeft className="w-4 h-4" />
+            )}
+            <span>{freeAccessMode ? 'Desactivar Modo Libre' : 'Activar Modo Libre'}</span>
+          </button>
         </div>
       </div>
 

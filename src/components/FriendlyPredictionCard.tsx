@@ -150,25 +150,25 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
 
   return (
     <div
-      className={`relative rounded-2xl bg-white/95 backdrop-blur-md border transition-all duration-200 overflow-hidden shadow-xs ${
+      className={`relative rounded-2xl bg-[#161b22] backdrop-blur-md border transition-all duration-200 overflow-hidden shadow-md ${
         isRecentlyUpdated
-          ? 'ring-2 ring-emerald-500 border-emerald-500 bg-emerald-50/90'
+          ? 'ring-2 ring-[#00ff66] border-[#00ff66]'
           : isSelected
-          ? 'ring-2 ring-emerald-500/80 border-emerald-500/70'
+          ? 'ring-2 ring-[#d9b114] border-[#d9b114]'
           : isValueBet
-          ? 'border-amber-300/90 ring-1 ring-amber-300/40'
-          : 'border-slate-200/80 hover:border-slate-300'
+          ? 'border-[#00ff66]/50 ring-1 ring-[#00ff66]/40'
+          : 'border-[#30363d] hover:border-[#8b949e]/50'
       }`}
     >
       <div className="flex flex-col">
         {/* 1. Header: Competición y Hora Colombia */}
-        <div className="px-4 py-2.5 bg-slate-50/95 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="px-4 py-2.5 bg-[#161b22] border-b border-[#21262d] flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2 min-w-0">
             {fixture.league.flag && fixture.league.flag.startsWith('http') ? (
               <img
                 src={fixture.league.flag}
                 alt={fixture.league.country || fixture.league.name}
-                className="w-4 h-3 object-cover rounded shadow-2xs inline-block shrink-0 border border-slate-200"
+                className="w-4 h-3 object-cover rounded shadow-2xs inline-block shrink-0 border border-[#30363d]"
                 loading="lazy"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
@@ -177,11 +177,11 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
             ) : (
               <CountryFlag country={fixture.league.country || fixture.league.name} fallbackEmoji={fixture.league.flag} size="xs" />
             )}
-            <span className="font-bold text-slate-900 tracking-tight text-xs">
+            <span className="font-bold text-white tracking-tight text-xs">
               {fixture.league.name}
             </span>
-            <span className="text-slate-300">·</span>
-            <span className="text-slate-500 text-[11px] truncate">{fixture.league.round}</span>
+            <span className="text-[#30363d]">·</span>
+            <span className="text-[#8b949e] text-[11px] truncate">{fixture.league.round}</span>
           </div>
 
           <div className="flex items-center gap-2.5">

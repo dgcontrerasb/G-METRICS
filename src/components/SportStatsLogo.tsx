@@ -20,21 +20,21 @@ export const SportStatsLogo: React.FC<SportStatsLogoProps> = ({
   const [logoSrc, setLogoSrc] = useState('/icon.png');
 
   const sizeDimensions = {
-    xs: 'w-7 h-7 text-xs',
-    sm: 'w-8 h-8 sm:w-9 sm:h-9 text-xs',
-    md: 'w-10 h-10 sm:w-11 sm:h-11 text-sm',
-    lg: 'w-12 h-12 sm:w-14 sm:h-14 text-base',
-    xl: 'w-16 h-16 sm:w-20 sm:h-20 text-lg'
+    xs: 'w-8 h-8 text-xs',
+    sm: 'w-10 h-10 text-xs',
+    md: 'w-11 h-11 sm:w-12 sm:h-12 text-sm',
+    lg: 'w-14 h-14 sm:w-16 sm:h-16 text-base',
+    xl: 'w-18 h-18 sm:w-22 sm:h-22 text-lg'
   };
 
   const glowStyles = withGlow
-    ? 'shadow-lg shadow-amber-500/25 ring-1 ring-amber-500/40 dark:shadow-amber-500/20'
+    ? 'shadow-lg shadow-[#d9b114]/20 ring-1 ring-[#d9b114]/50'
     : '';
 
   return (
     <div className={`inline-flex items-center gap-2.5 ${className}`}>
       <div
-        className={`${sizeDimensions[size]} rounded-2xl flex items-center justify-center shrink-0 relative overflow-hidden transition-all duration-300 ${glowStyles} bg-slate-900 border border-amber-500/40`}
+        className={`${sizeDimensions[size]} rounded-full flex items-center justify-center shrink-0 relative overflow-hidden transition-all duration-300 ${glowStyles} bg-[#0b0e14] border border-[#d9b114]/70`}
       >
         <img
           src={logoSrc}
@@ -44,19 +44,19 @@ export const SportStatsLogo: React.FC<SportStatsLogoProps> = ({
               setLogoSrc('/logo.png');
             }
           }}
-          className="w-full h-full object-cover rounded-xl"
+          className="w-full h-full object-cover scale-[2.28] rounded-full"
         />
       </div>
 
       {withText && (
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-sm sm:text-base font-black tracking-tight text-slate-900 dark:text-white uppercase truncate">
-              G <span className="text-cyan-500 dark:text-cyan-400">METRICS</span>
+            <span className="text-sm sm:text-base font-black tracking-tight text-white uppercase truncate">
+              G <span className="text-[#d9b114]">METRICS</span>
             </span>
           </div>
           {subtitle && (
-            <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+            <p className="text-[10px] sm:text-[11px] text-[#8b949e] truncate">
               {subtitle}
             </p>
           )}

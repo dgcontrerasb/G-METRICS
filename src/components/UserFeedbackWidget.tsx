@@ -40,6 +40,10 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const isFreeMode = typeof window !== 'undefined'
+    ? localStorage.getItem('gmetrics_free_access_mode') !== 'false'
+    : true;
+
   // Trigger inteligente no intrusivo: aparece tras 22 segundos de uso activo si no ha calificado antes
   useEffect(() => {
     try {
@@ -197,7 +201,7 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
                 ¿Te gusta G-METRICS?
               </span>
               <span className="text-[11px] text-emerald-600 font-semibold block mt-0.5">
-                Califica y gana +1 día VIP gratis ⭐
+                {isFreeMode ? 'Tu opinión nos ayuda a mejorar ⭐' : 'Califica y gana +1 día VIP gratis ⭐'}
               </span>
             </div>
           </button>
@@ -264,9 +268,11 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
                 <h4 className="text-sm font-bold text-slate-900">
                   ¡Gracias por tu calificación! 🎉
                 </h4>
-                <p className="text-xs text-emerald-600 font-semibold max-w-xs mx-auto">
-                  ¡Se ha sumado +1 día adicional a tu prueba gratuita!
-                </p>
+                {!isFreeMode && (
+                  <p className="text-xs text-emerald-600 font-semibold max-w-xs mx-auto">
+                    ¡Se ha sumado +1 día adicional a tu prueba gratuita!
+                  </p>
+                )}
                 <p className="text-[11px] text-slate-500 max-w-xs mx-auto mt-0.5">
                   Tu opinión nos ayuda a perfeccionar las métricas de la plataforma.
                 </p>

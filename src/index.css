@@ -16,6 +16,10 @@
   --accent-cyber-glow: rgba(0, 255, 102, 0.22);
   --accent-cyber-subtle: rgba(0, 255, 102, 0.08);
   --accent-cyber-border: rgba(0, 255, 102, 0.35);
+  --brand-gold: #d9b114;
+  --brand-gold-glow: rgba(217, 177, 20, 0.22);
+  --brand-gold-subtle: rgba(217, 177, 20, 0.10);
+  --brand-gold-border: rgba(217, 177, 20, 0.45);
 }
 
 [data-palette="emerald"] {
@@ -26,10 +30,10 @@
 }
 
 [data-palette="gold"] {
-  --accent-cyber: #f59e0b;
-  --accent-cyber-glow: rgba(245, 158, 11, 0.22);
-  --accent-cyber-subtle: rgba(245, 158, 11, 0.08);
-  --accent-cyber-border: rgba(245, 158, 11, 0.35);
+  --accent-cyber: #d9b114;
+  --accent-cyber-glow: rgba(217, 177, 20, 0.22);
+  --accent-cyber-subtle: rgba(217, 177, 20, 0.10);
+  --accent-cyber-border: rgba(217, 177, 20, 0.45);
 }
 
 [data-palette="sapphire"] {
@@ -64,8 +68,8 @@ body {
   max-width: 100%;
   overflow-x: hidden;
   box-sizing: border-box;
-  background-color: #f1f5f9 !important;
-  color: #0f172a;
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary);
   font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum" 1;
   -webkit-font-smoothing: antialiased;
@@ -76,7 +80,7 @@ body {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
-  background-color: #f1f5f9;
+  background-color: var(--bg-primary);
 }
 
 /* 1. Global Tabular Figures for All Numerical Blocks, Odds & Stats */
@@ -91,10 +95,10 @@ input[type="text"].font-mono {
   font-feature-settings: "tnum" 1, "zero" 1 !important;
 }
 
-/* 2. Fintech Clean Deck Background Canvas with Wallpaper Support */
+/* 2. Cyber-Fintech Dark Deck Background Canvas with Wallpaper Support */
 .cr7-cinematic-bg {
   position: relative;
-  background-color: #f1f5f9;
+  background-color: #0b0e14;
   min-height: 100vh;
   width: 100%;
   max-width: 100%;
@@ -109,8 +113,8 @@ input[type="text"].font-mono {
   background-size: cover;
   background-position: center top;
   background-repeat: no-repeat;
-  opacity: var(--wallpaper-opacity, 0.36);
-  filter: brightness(1.03) contrast(1.06) saturate(1.08) blur(var(--wallpaper-blur, 0px));
+  opacity: var(--wallpaper-opacity, 0.18);
+  filter: brightness(0.65) contrast(1.08) saturate(0.9) blur(var(--wallpaper-blur, 0px));
   pointer-events: none;
   z-index: 0;
 }
@@ -119,7 +123,7 @@ input[type="text"].font-mono {
   content: '';
   position: fixed;
   inset: 0;
-  background: radial-gradient(circle at 50% 12%, rgba(248, 250, 252, 0.25) 0%, rgba(241, 245, 249, 0.62) 100%);
+  background: radial-gradient(circle at 50% 12%, rgba(11, 14, 20, 0.62) 0%, rgba(11, 14, 20, 0.92) 100%);
   pointer-events: none;
   z-index: 0;
 }
@@ -252,37 +256,37 @@ select:focus {
   outline: none !important;
 }
 
-/* 9. Scrollbars in Clean Fintech Light Style */
+/* 9. Scrollbars in Cyber-Fintech Dark Style */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #0b0e14;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #30363d;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #484f58;
 }
 
-/* 10. G METRICS Official 3D Charcoal & Metallic Gold Bevel Typography */
+/* 10. G METRICS Official Charcoal & Metallic Gold (#d9b114) Brand Typography */
 .gmetrics-brand-title {
   font-family: 'Orbitron', 'Cinzel', 'Plus Jakarta Sans', sans-serif;
   font-weight: 900;
   letter-spacing: 0.045em;
   text-transform: uppercase;
-  color: #1a212b;
-  -webkit-text-stroke: 0.85px #c89d28;
+  color: #ffffff;
+  -webkit-text-stroke: 0.7px #d9b114;
   paint-order: stroke fill;
   text-shadow:
-    0 1px 0 #f8e28c,
-    0 2px 3px rgba(15, 23, 42, 0.35);
+    0 1px 0 rgba(217, 177, 20, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.75);
 }
 
 /* 11. Minimal Black Typography Loaders (Uiverse.io by faheemmehdi) */
@@ -405,4 +409,100 @@ select:focus {
     background-position-y: 0;
   }
 }
+
+/* ============================================================
+   12. Cyber-Fintech Dark Modular Grid Tokens (#0b0e14 / #161b22 / #d9b114)
+   ============================================================ */
+.bento-card-light {
+  background: rgba(22, 27, 34, 0.92);
+  border: 1px solid #30363d;
+  box-shadow:
+    0 14px 34px -10px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.bento-card-light:hover {
+  background: rgba(28, 33, 41, 0.96);
+  border-color: rgba(217, 177, 20, 0.35);
+  box-shadow:
+    0 18px 40px -12px rgba(0, 0, 0, 0.65),
+    0 0 18px -6px rgba(217, 177, 20, 0.12);
+}
+
+.bento-card-gold {
+  background: linear-gradient(135deg, rgba(22, 27, 34, 0.97) 0%, rgba(28, 33, 41, 0.96) 100%);
+  border: 1px solid rgba(217, 177, 20, 0.48);
+  box-shadow:
+    0 16px 38px -12px rgba(0, 0, 0, 0.65),
+    0 0 22px -6px rgba(217, 177, 20, 0.16),
+    inset 0 1px 0 0 rgba(217, 177, 20, 0.12);
+}
+
+.bento-floating-dock {
+  background: rgba(11, 14, 20, 0.94);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid #30363d;
+  box-shadow:
+    0 20px 45px -15px rgba(0, 0, 0, 0.72),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+.bento-pill-gold {
+  background: rgba(217, 177, 20, 0.12);
+  border: 1px solid rgba(217, 177, 20, 0.45);
+  color: #d9b114;
+}
+
+.bento-pill-emerald {
+  background: rgba(0, 255, 102, 0.10);
+  border: 1px solid rgba(0, 255, 102, 0.35);
+  color: #00ff66;
+}
+
+/* Unified Chrome Button / Chip System (Paso 2.5) */
+.cyber-chrome-chip {
+  height: 2rem;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  border-radius: 0.75rem;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  cursor: pointer;
+}
+
+.cyber-chrome-chip:hover {
+  background-color: #1c2129;
+  border-color: #484f58;
+  color: #ffffff;
+}
+
+.cyber-chrome-chip-active {
+  background-color: #1c2129;
+  border: 1px solid rgba(217, 177, 20, 0.65);
+  color: #ffffff;
+  box-shadow: 0 0 14px -4px rgba(217, 177, 20, 0.25);
+}
+
+.cyber-chrome-chip-gold {
+  background-color: #161b22;
+  border: 1px solid rgba(217, 177, 20, 0.55);
+  color: #d9b114;
+}
+
+.cyber-chrome-chip-gold:hover {
+  background-color: #1c2129;
+  border-color: #d9b114;
+  color: #ffffff;
+}
+
 

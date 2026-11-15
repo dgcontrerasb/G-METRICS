@@ -720,15 +720,15 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
   return (
     <div className="space-y-3 pb-6">
       {/* Banner Informativo + Resumen de Cumplimiento en Cancha */}
-      <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200/90 flex items-start gap-2.5 shadow-2xs">
-        <div className="w-8 h-8 rounded-xl bg-white border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0 mt-0.5">
+      <div className="p-3 rounded-2xl bg-[#161b22] border border-[#30363d] flex items-start gap-2.5 shadow-md">
+        <div className="w-8 h-8 rounded-xl bg-[#0b0e14] border border-[#30363d] flex items-center justify-center text-[#d9b114] shrink-0 mt-0.5">
           <Sparkles className="w-4 h-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-sans font-bold text-slate-900 flex items-center justify-between gap-1.5 flex-wrap">
+          <div className="text-xs font-sans font-bold text-white flex items-center justify-between gap-1.5 flex-wrap">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span>Pronósticos Fijos Pre-Partido (+EV)</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
+              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-[#0b0e14] text-[#d9b114] border border-[#d9b114]/30">
                 6 Mercados
               </span>
             </div>
@@ -743,8 +743,8 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
               </div>
             )}
           </div>
-          <p className="text-[11px] text-slate-600 leading-relaxed mt-1">
-            <span className="text-amber-800 font-semibold">Integridad Estadística:</span> Las probabilidades y cuotas corresponden al cálculo fijo pre-partido. En vivo puedes ver cuáles líneas ya se cumplen y cuáles no.
+          <p className="text-[11px] text-[#8b949e] leading-relaxed mt-1">
+            <span className="text-[#d9b114] font-semibold">Integridad Estadística:</span> Las probabilidades y cuotas corresponden al cálculo fijo pre-partido. En vivo puedes ver cuáles líneas ya se cumplen y cuáles no.
           </p>
         </div>
       </div>
@@ -763,20 +763,20 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
               className={`rounded-2xl border transition-all p-3 sm:p-3.5 space-y-2.5 ${
                 liveStatus
                   ? liveStatus.fulfilled
-                    ? 'bg-gradient-to-b from-emerald-50/70 to-white border-emerald-300 shadow-xs'
-                    : 'bg-gradient-to-b from-rose-50/50 to-white border-rose-200/90 shadow-2xs'
+                    ? 'bg-[#161b22] border-[#00ff66]/50 ring-1 ring-[#00ff66]/20 shadow-md'
+                    : 'bg-[#161b22] border-rose-500/40 shadow-xs'
                   : isFirst
-                  ? 'bg-gradient-to-b from-emerald-50/60 to-white border-emerald-300 shadow-xs'
+                  ? 'bg-[#161b22] border-[#30363d] shadow-md'
                   : inParlay
-                  ? 'bg-amber-50/50 border-amber-300 ring-1 ring-amber-300/60 shadow-xs'
-                  : 'bg-white border-slate-200/90 hover:border-slate-300 shadow-2xs'
+                  ? 'bg-[#161b22] border-[#d9b114] ring-1 ring-[#d9b114]/30 shadow-md'
+                  : 'bg-[#161b22] border-[#30363d] hover:border-[#8b949e]/40 shadow-xs'
               }`}
             >
               {/* Header de la Cápsula: Categoría + Estado en Cancha + Badge */}
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="text-base shrink-0 leading-none">{item.icon}</span>
-                  <span className="text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-wider text-slate-600 truncate">
+                  <span className="text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-wider text-[#8b949e] truncate">
                     {item.category}
                   </span>
                 </div>
@@ -786,15 +786,15 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
                     <span
                       className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold border ${
                         liveStatus.fulfilled
-                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                          : 'bg-rose-100 text-rose-800 border-rose-300'
+                          ? 'bg-[#00ff66]/15 text-[#00ff66] border-[#00ff66]/30'
+                          : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
                       }`}
                     >
                       {liveStatus.label}
                     </span>
                   )}
                   {isFirst && item.badge.label !== '⭐ Más Probable' && (
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-[#0b0e14] text-[#d9b114] border border-[#d9b114]/30">
                       ⭐ Más Probable
                     </span>
                   )}
@@ -805,29 +805,29 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
               </div>
 
               {/* Título de la Selección */}
-              <div className="text-xs sm:text-sm font-sans font-bold text-slate-900 leading-snug">
+              <div className="text-xs sm:text-sm font-sans font-bold text-white leading-snug">
                 {item.selectionTitle}
               </div>
 
               {/* Fila Protegida: Probabilidad y Cuota a la izquierda, Botón Boleto a la derecha */}
-              <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+              <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#0b0e14] border border-[#30363d]">
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                   <div>
-                    <span className="text-[9px] font-mono text-slate-500 block uppercase leading-none mb-0.5">
+                    <span className="text-[9px] font-mono text-[#8b949e] block uppercase leading-none mb-0.5">
                       Prob. Pre-Partido
                     </span>
-                    <span className="text-xs sm:text-sm font-mono font-bold text-emerald-700 whitespace-nowrap">
+                    <span className="text-xs sm:text-sm font-mono tabular-nums font-bold text-[#00ff66] whitespace-nowrap">
                       {item.probability}%
                     </span>
                   </div>
 
-                  <div className="h-6 w-px bg-slate-200 shrink-0" />
+                  <div className="h-6 w-px bg-[#30363d] shrink-0" />
 
                   <div>
-                    <span className="text-[9px] font-mono text-slate-500 block uppercase leading-none mb-0.5">
+                    <span className="text-[9px] font-mono text-[#8b949e] block uppercase leading-none mb-0.5">
                       Cuota Prom.
                     </span>
-                    <span className="text-xs sm:text-sm font-mono font-bold text-amber-700 whitespace-nowrap">
+                    <span className="text-xs sm:text-sm font-mono tabular-nums font-bold text-[#d9b114] whitespace-nowrap">
                       @{item.fairOdd.toFixed(2)}
                     </span>
                   </div>
@@ -838,8 +838,8 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
                   onClick={() => handleToggle(item)}
                   className={`py-2 px-3 rounded-xl font-sans font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shrink-0 min-h-[36px] ${
                     inParlay
-                      ? 'bg-slate-900 text-white shadow-2xs'
-                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs active:scale-95'
+                      ? 'bg-[#0b0e14] text-[#d9b114] border-[#d9b114]/50 shadow-2xs'
+                      : 'bg-[#161b22] hover:bg-[#1c2129] text-white border border-[#30363d] shadow-2xs'
                   }`}
                   title={inParlay ? 'Quitar del boleto de combinadas' : 'Añadir esta selección al boleto'}
                   aria-label={inParlay ? 'Quitar del boleto' : 'Añadir al boleto'}
@@ -856,7 +856,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
                 <button
                   type="button"
                   onClick={() => handleAccordionToggle(idx)}
-                  className="w-full flex items-center justify-between py-1 px-1.5 rounded-lg text-[11px] font-mono text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors cursor-pointer"
+                  className="w-full flex items-center justify-between py-1 px-1.5 rounded-lg text-[11px] font-mono text-[#8b949e] hover:text-white hover:bg-[#1c2129] transition-colors cursor-pointer"
                 >
                   <span className="flex items-center gap-1">
                     <Info className="w-3.5 h-3.5 text-slate-400" />
@@ -864,7 +864,7 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
                   </span>
                   <ChevronDown
                     className={`w-4 h-4 transition-transform duration-200 ${
-                      isExpanded ? 'rotate-180 text-emerald-600' : 'text-slate-400'
+                      isExpanded ? 'rotate-180 text-[#d9b114]' : 'text-[#8b949e]'
                     }`}
                   />
                 </button>
@@ -872,9 +872,9 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
 
               {/* Contenido Desplegable */}
               {isExpanded && (
-                <div className="space-y-2 pt-1.5 border-t border-slate-100 animate-fade-in">
-                  <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/80 text-[11px] text-slate-700 leading-relaxed">
-                    <span className="text-emerald-700 font-bold font-mono mr-1">Análisis Pro:</span>
+                <div className="space-y-2 pt-1.5 border-t border-[#30363d] animate-fade-in">
+                  <div className="p-2.5 rounded-xl bg-[#0b0e14] border border-[#30363d] text-[11px] text-[#8b949e] leading-relaxed">
+                    <span className="text-[#00ff66] font-bold font-mono mr-1">Análisis Pro:</span>
                     {item.rationale}
                   </div>
 
@@ -882,12 +882,12 @@ export const LiveMarketCapsules: React.FC<LiveMarketCapsulesProps> = ({
                     {item.metrics.map((metric, mIdx) => (
                       <div
                         key={mIdx}
-                        className="p-1.5 rounded-lg bg-slate-50 border border-slate-200/80 text-center"
+                        className="p-1.5 rounded-lg bg-[#0b0e14] border border-[#30363d] text-center"
                       >
-                        <div className="text-[9px] font-mono text-slate-500 uppercase truncate">
+                        <div className="text-[9px] font-mono text-[#8b949e] uppercase truncate">
                           {metric.label}
                         </div>
-                        <div className="text-[11px] font-mono font-bold text-slate-900 mt-0.5 truncate">
+                        <div className="text-[11px] font-mono tabular-nums font-bold text-white mt-0.5 truncate">
                           {metric.value}
                         </div>
                       </div>

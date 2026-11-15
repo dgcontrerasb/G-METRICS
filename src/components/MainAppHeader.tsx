@@ -4,6 +4,7 @@ import { PWAInstallButton } from './PWAInstallButton';
 import { GuideModalTab } from './DidacticGuideModal';
 import { LicenseValidationResult } from '../services/licenseService';
 import { getColombiaDateString } from '../services/apiService';
+import { SportStatsLogo } from './SportStatsLogo';
 import {
   ShieldCheck,
   BookOpen,
@@ -14,15 +15,14 @@ import {
   History,
   Image as ImageIcon,
   Power,
-  Menu,
   Search,
   Download,
   Clock,
-  Crown,
-  Sparkles
+  Crown
 } from 'lucide-react';
 
 export interface MainAppHeaderProps {
+  freeAccessMode?: boolean;
   activeSport: ActiveSport;
   onSelectSport: (sport: ActiveSport) => void;
   viewMode: 'SIMPLE' | 'EXPERT';
@@ -71,6 +71,7 @@ function getShortDayLabel(offset: number, dateStr: string): string {
 }
 
 export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
+  freeAccessMode = true,
   activeSport,
   activeLicenseInfo,
   onSecretAdminLogoClick,
@@ -138,6 +139,22 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
       return { daysRemaining: null, isPermanent: true, isExpired: false, label: 'VIP Vitalicio' };
     }
 
+    // 1b. Acceso Libre Promocional para la comunidad
+    const isFreePromoUser = Boolean(
+      storedUser?.planType === 'FREE_PROMO' ||
+      storedUser?.planLabel === 'Acceso Libre Promocional' ||
+      activeLicenseInfo?.planLabel === 'Acceso Libre Promocional'
+    );
+    if (isFreePromoUser) {
+      return {
+        daysRemaining: null,
+        isPermanent: true,
+        isExpired: false,
+        isFreePromo: true,
+        label: 'Acceso Libre Promocional'
+      };
+    }
+
     // 2. Calcular días restantes desde expiryTimestamp o activeLicenseInfo
     let expiryTimestamp: number | null = null;
     if (activeLicenseInfo?.expiryTimestamp) {
@@ -189,75 +206,79 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/90 shadow-2xs transition-colors duration-200">
+    <header className="sticky top-0 z-30 w-full cyber-glass-nav transition-colors duration-200">
       {/* Fila 1: Cabecera Principal Compacta */}
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-1.5 sm:py-2 flex items-center justify-between gap-2 sm:gap-4">
-        {/* Left Zone: Brand */}
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2 flex items-center justify-between gap-2 sm:gap-4">
+        {/* Left Zone: Isotipo compacto solo en móvil (en PC el lockup canónico vive en el Sidebar) */}
         <div className="flex items-center gap-2 shrink-0">
           <div
-            className="flex items-center select-none"
-            title="G METRICS · La Ciencia Detrás de la Victoria"
+            className="lg:hidden flex items-center gap-2 select-none"
+            title="G METRICS"
           >
-            <img
-              src="/logo.png"
-              alt="G METRICS · La Ciencia Detrás de la Victoria"
-              className="h-8 sm:h-9 w-auto max-w-[170px] sm:max-w-[220px] object-contain drop-shadow-xs"
-              onError={(e) => {
-                e.currentTarget.src = '/icon.png';
-              }}
-            />
+            <SportStatsLogo size="xs" activeSport={activeSport} withGlow={false} />
+            <span className="gmetrics-brand-title text-[12px] leading-none whitespace-nowrap">
+              G METRICS
+            </span>
+          </div>
+          <div className="hidden lg:flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-[#8b949e] select-none">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#d9b114]" />
+            <span>
+              Terminal Cuantitativo · <strong className="text-white">{activeSport === 'NBA' ? 'NBA' : 'Fútbol'}</strong>
+            </span>
           </div>
         </div>
 
-        {/* Center Zone: Espaciador o Botón de Admin (Solo visible cuando la sesión es Administrador) */}
+        {/* Center Zone: Botón Admin unificado con el sistema de chips */}
         <div className="flex-1 flex items-center justify-center">
           {isAdminVisible && (
             <button
               type="button"
               onClick={onOpenAdminModal}
-              className="h-8 px-3 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300"
+              className="cyber-chrome-chip cyber-chrome-chip-gold active:scale-95"
               title="Abrir Panel de Administración"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+              <ShieldCheck className="w-3.5 h-3.5 text-[#d9b114] shrink-0" strokeWidth={2} />
               <span className="font-mono text-xs font-bold tracking-tight">Admin</span>
             </button>
           )}
         </div>
 
-        {/* Right Zone: Tiempo VIP + Sincronizar + Fondo + Exportar */}
+        {/* Right Zone: Membresía + Sincronizar + Fondo + Exportar (Lenguaje unificado .cyber-chrome-chip) */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Indicador de Tiempo de Membresía / Prueba VIP */}
-          {userPlanData && (
+          {/* Indicador de Tiempo de Membresía / Prueba VIP (Oculto mientras el cobro esté suspendido) */}
+          {!freeAccessMode && userPlanData && (
             userPlanData.isPermanent ? (
               <div
-                className="h-8 px-2 sm:px-2.5 rounded-lg bg-amber-50 border border-amber-200/90 text-amber-800 text-xs font-bold flex items-center gap-1.5 shadow-2xs select-none"
+                className="cyber-chrome-chip cyber-chrome-chip-gold cursor-default select-none"
                 title="Acceso Propietario / Vitalicio Activo"
               >
-                <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span className="hidden sm:inline font-mono">Vitalicio</span>
-                <span className="sm:hidden font-mono text-[11px]">VIP</span>
+                <Crown className="w-3.5 h-3.5 text-[#d9b114] shrink-0" strokeWidth={2} />
+                <span className="hidden sm:inline font-mono tabular-nums font-bold">Vitalicio</span>
+                <span className="sm:hidden font-mono tabular-nums text-[11px] font-bold">VIP</span>
               </div>
             ) : userPlanData.isExpired || userPlanData.daysRemaining === 0 ? (
               <button
                 type="button"
                 onClick={() => window.dispatchEvent(new CustomEvent('open-vip-payment-modal'))}
-                className="h-8 px-2 sm:px-2.5 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs animate-pulse"
+                className="cyber-chrome-chip cyber-chrome-chip-gold"
                 title="Tu acceso VIP ha finalizado. Clic para reactivar tu pase"
               >
-                <Clock className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                <span className="font-mono text-xs">0d</span>
-                <span className="hidden sm:inline font-sans text-[11px] font-semibold text-rose-700">Renovar</span>
+                <Clock className="w-3.5 h-3.5 text-[#d9b114] shrink-0" strokeWidth={2} />
+                <span className="font-mono tabular-nums font-bold text-white text-xs">0d</span>
+                <span className="hidden sm:inline font-sans text-[11px] font-semibold">Renovar</span>
               </button>
             ) : (
               <button
                 type="button"
                 onClick={() => window.dispatchEvent(new CustomEvent('open-vip-payment-modal'))}
-                className="h-8 px-2 sm:px-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/90 text-emerald-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                className="cyber-chrome-chip cyber-chrome-chip-gold"
                 title={`Te quedan ${userPlanData.daysRemaining ?? 0} ${(userPlanData.daysRemaining ?? 0) === 1 ? 'día' : 'días'} de acceso VIP. Clic para recargar o ver opciones`}
               >
-                <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span className="font-mono text-xs">{userPlanData.daysRemaining ?? 0}d</span>
-                <span className="hidden sm:inline font-sans text-[11px] font-semibold text-emerald-700">VIP</span>
+                <Clock className="w-3.5 h-3.5 text-[#d9b114] shrink-0" strokeWidth={2} />
+                <span className="font-mono tabular-nums font-bold text-white text-xs">
+                  {userPlanData.daysRemaining ?? 0}d
+                </span>
+                <span className="hidden sm:inline font-sans text-[11px] font-semibold">VIP</span>
               </button>
             )
           )}
@@ -267,7 +288,7 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
             type="button"
             onClick={onRefreshMatches}
             disabled={isLoading || refreshCooldown > 0}
-            className="h-8 px-2.5 sm:px-3 rounded-lg bg-slate-100 hover:bg-slate-200/80 disabled:opacity-50 text-slate-800 border border-slate-200/90 text-xs font-mono tabular-nums font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="cyber-chrome-chip disabled:opacity-50 font-mono tabular-nums"
             title={
               refreshCooldown > 0
                 ? `Sincronizado hace poco. Espera ${refreshCooldown}s`
@@ -275,11 +296,10 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
             }
           >
             <RefreshCw
-              className={`w-3.5 h-3.5 ${
-                activeSport === 'NBA' ? 'text-amber-600' : 'text-emerald-600'
-              } ${isLoading ? 'animate-spin' : ''}`}
+              className={`w-3.5 h-3.5 text-[#d9b114] ${isLoading ? 'animate-spin' : ''}`}
+              strokeWidth={2}
             />
-            <span className="hidden md:inline">
+            <span className="hidden md:inline font-sans">
               {refreshCooldown > 0 ? `${refreshCooldown}s` : 'Sincronizar'}
             </span>
           </button>
@@ -288,33 +308,38 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
           <button
             type="button"
             onClick={onOpenWallpaperModal}
-            className="hidden sm:flex h-8 px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200/90 text-xs font-medium items-center gap-1.5 transition-colors cursor-pointer"
+            className="hidden sm:inline-flex cyber-chrome-chip"
             title="Personalizar fondo de pantalla y opacidad"
           >
-            <ImageIcon className="w-3.5 h-3.5 text-slate-600" />
+            <ImageIcon className="w-3.5 h-3.5 text-[#8b949e]" strokeWidth={2} />
             <span className="hidden xl:inline">Fondo</span>
           </button>
 
-          {/* Export Dropdown (Excel / PDF) - Rediseñado armónico con tema claro */}
+          {/* Export Dropdown (Excel / PDF) */}
           <div className="relative" ref={downloadMenuRef}>
             <button
               type="button"
               onClick={() => setIsDownloadMenuOpen(!isDownloadMenuOpen)}
               disabled={currentTotalVisible === 0}
-              className="h-8 px-2.5 sm:px-3 rounded-lg bg-slate-100 hover:bg-slate-200/80 disabled:opacity-40 text-slate-700 hover:text-slate-900 border border-slate-200/90 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+              className="cyber-chrome-chip disabled:opacity-40"
               title="Exportar pronósticos y estadísticas a Excel o PDF"
             >
-              <Download className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span className="hidden md:inline">
+              <Download className="w-3.5 h-3.5 text-[#d9b114] shrink-0" strokeWidth={2} />
+              <span className="hidden md:inline font-mono tabular-nums">
                 {hasSelection ? `Exportar (${selectedCount})` : 'Exportar'}
               </span>
-              <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isDownloadMenuOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown
+                className={`w-3 h-3 text-[#6e7681] transition-transform ${
+                  isDownloadMenuOpen ? 'rotate-180' : ''
+                }`}
+                strokeWidth={2}
+              />
             </button>
 
             {isDownloadMenuOpen && (
-              <div className="absolute right-0 mt-1.5 w-60 rounded-2xl bg-white border border-slate-200 shadow-xl py-2 z-50 text-slate-800">
-                <div className="px-3.5 py-1.5 border-b border-slate-100 flex items-center justify-between">
-                  <span className="text-[11px] font-mono font-bold text-slate-500">
+              <div className="absolute right-0 mt-1.5 w-60 rounded-xl cyber-glass-dropdown py-2 z-50 text-white shadow-2xl">
+                <div className="px-3.5 py-1.5 border-b border-[#30363d] flex items-center justify-between">
+                  <span className="text-[11px] font-mono tabular-nums font-bold text-[#8b949e]">
                     {hasSelection ? `${selectedCount} seleccionados` : `Todos (${currentTotalVisible})`}
                   </span>
                   {hasSelection && (
@@ -324,7 +349,7 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
                         onClearSelection();
                         setIsDownloadMenuOpen(false);
                       }}
-                      className="text-[11px] text-rose-600 hover:underline font-medium cursor-pointer"
+                      className="text-[11px] text-[#d9b114] hover:underline font-medium cursor-pointer"
                     >
                       Limpiar
                     </button>
@@ -337,12 +362,12 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
                     onDownloadExcel(hasSelection);
                     setIsDownloadMenuOpen(false);
                   }}
-                  className="w-full px-3.5 py-2.5 text-left text-xs hover:bg-slate-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  className="w-full px-3.5 py-2.5 text-left text-xs hover:bg-[#1c2129] flex items-center gap-2.5 transition-colors cursor-pointer"
                 >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <FileSpreadsheet className="w-4 h-4 text-[#d9b114] shrink-0" strokeWidth={2} />
                   <div>
-                    <div className="font-semibold text-slate-900">Descargar Excel (.csv)</div>
-                    <div className="text-[10px] text-slate-500">Tabla completa de probabilidades</div>
+                    <div className="font-semibold text-white">Descargar Excel (.csv)</div>
+                    <div className="text-[10px] text-[#8b949e]">Tabla completa de probabilidades</div>
                   </div>
                 </button>
 
@@ -352,25 +377,25 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
                     onDownloadPDF(hasSelection);
                     setIsDownloadMenuOpen(false);
                   }}
-                  className="w-full px-3.5 py-2.5 text-left text-xs hover:bg-slate-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  className="w-full px-3.5 py-2.5 text-left text-xs hover:bg-[#1c2129] flex items-center gap-2.5 transition-colors cursor-pointer"
                 >
-                  <FileText className="w-4 h-4 text-rose-600 shrink-0" />
+                  <FileText className="w-4 h-4 text-[#8b949e] shrink-0" strokeWidth={2} />
                   <div>
-                    <div className="font-semibold text-slate-900">Descargar Informe PDF</div>
-                    <div className="text-[10px] text-slate-500">Resumen ejecutivo listo para compartir</div>
+                    <div className="font-semibold text-white">Descargar Informe PDF</div>
+                    <div className="text-[10px] text-[#8b949e]">Resumen ejecutivo listo para compartir</div>
                   </div>
                 </button>
 
-                <div className="border-t border-slate-100 mt-1 pt-1">
+                <div className="border-t border-[#30363d] mt-1 pt-1">
                   <button
                     type="button"
                     onClick={() => {
                       onOpenSavedSlips();
                       setIsDownloadMenuOpen(false);
                     }}
-                    className="w-full px-3.5 py-2 text-left text-xs hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 cursor-pointer"
+                    className="w-full px-3.5 py-2 text-left text-xs hover:bg-[#1c2129] flex items-center gap-2.5 text-[#8b949e] hover:text-white cursor-pointer"
                   >
-                    <History className="w-3.5 h-3.5 text-emerald-600" />
+                    <History className="w-3.5 h-3.5 text-[#d9b114]" strokeWidth={2} />
                     <span>Mis Boletos Guardados</span>
                   </button>
                   <button
@@ -379,9 +404,9 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
                       onOpenGuideModal('GUIDE');
                       setIsDownloadMenuOpen(false);
                     }}
-                    className="w-full px-3.5 py-2 text-left text-xs hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 cursor-pointer"
+                    className="w-full px-3.5 py-2 text-left text-xs hover:bg-[#1c2129] flex items-center gap-2.5 text-[#8b949e] hover:text-white cursor-pointer"
                   >
-                    <BookOpen className="w-3.5 h-3.5 text-amber-600" />
+                    <BookOpen className="w-3.5 h-3.5 text-[#d9b114]" strokeWidth={2} />
                     <span>Guía y Glosario A-Z</span>
                   </button>
                   <button
@@ -390,9 +415,9 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
                       onLogoutSession();
                       setIsDownloadMenuOpen(false);
                     }}
-                    className="w-full px-3.5 py-2 text-left text-xs hover:bg-rose-50 flex items-center gap-2.5 text-rose-600 font-medium cursor-pointer"
+                    className="w-full px-3.5 py-2 text-left text-xs hover:bg-[#1c2129] flex items-center gap-2.5 text-[#8b949e] hover:text-white font-medium cursor-pointer"
                   >
-                    <Power className="w-3.5 h-3.5" />
+                    <Power className="w-3.5 h-3.5" strokeWidth={2} />
                     <span>Cerrar Sesión</span>
                   </button>
                 </div>
@@ -405,11 +430,14 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
       </div>
 
       {/* Fila 2: Sub-barra Compacta de Búsqueda y Selector de Días */}
-      <div className="border-t border-slate-100 bg-slate-50/90 px-3 sm:px-6 py-1.5 transition-colors">
+      <div className="border-t border-[#21262d] bg-[#0b0e14]/90 px-3 sm:px-6 py-1.5 transition-colors">
         <div className="max-w-6xl mx-auto flex items-center gap-2">
           {onSearchChange && (
             <div className="relative flex-1 min-w-0">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <Search
+                className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7681] pointer-events-none"
+                strokeWidth={2}
+              />
               <input
                 type="text"
                 value={searchQuery}
@@ -419,14 +447,13 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
                     ? 'Buscar equipo o jugador NBA (ej. Lakers, Curry)...'
                     : 'Buscar equipo o competición (ej. Real Madrid, Premier)...'
                 }
-                style={{ color: '#0f172a' }}
-                className="w-full h-8 bg-white border border-slate-200/90 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 rounded-lg pl-8 pr-7 text-xs font-sans text-slate-900 placeholder-slate-400 focus:outline-none transition-all"
+                className="w-full h-8 bg-[#161b22] border border-[#30363d] focus:border-[#d9b114] rounded-xl pl-8 pr-7 text-xs font-sans text-white placeholder-[#6e7681] focus:outline-none transition-all"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => onSearchChange('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800 text-xs p-0.5 cursor-pointer"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8b949e] hover:text-white text-xs p-0.5 cursor-pointer"
                   aria-label="Limpiar búsqueda"
                 >
                   ✕
@@ -439,12 +466,11 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
             <select
               value={currentDate}
               onChange={(e) => onDateChange(e.target.value)}
-              style={{ color: '#0f172a' }}
-              className="h-8 bg-white hover:bg-slate-50 border border-slate-200/90 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 rounded-lg px-2.5 text-xs font-mono tabular-nums font-semibold text-slate-800 focus:outline-none cursor-pointer shrink-0 transition-colors"
+              className="h-8 bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] focus:border-[#d9b114] rounded-xl px-3 text-xs font-mono tabular-nums font-bold text-white focus:outline-none cursor-pointer shrink-0 transition-colors"
               title="Consultar programación (hasta 5 días)"
             >
               {fiveDays.map((d) => (
-                <option key={d.dateStr} value={d.dateStr} className="bg-white text-slate-900">
+                <option key={d.dateStr} value={d.dateStr} className="bg-[#161b22] text-white">
                   {d.label}
                 </option>
               ))}

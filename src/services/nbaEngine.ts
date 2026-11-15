@@ -10,6 +10,12 @@ import {
   BetMarketCategory
 } from '../types';
 import { getNBALineupData, sanitizePlayerName } from './lineupService';
+import {
+  evaluateNBAMultipleAndLogisticRegression,
+  shrinkLambdaBayesian,
+  evaluateBayesianCredibility,
+  logisticSigmoid
+} from './math';
 
 // Standard normal cumulative distribution function (CDF approximation)
 function normalCDF(z: number): number {
@@ -142,11 +148,44 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
   }
 
   // 2. IMMUTABLE PRE-MATCH BASELINES & LIVE IN-PLAY ADAPTIVE RE-ESTIMATION
-  const preMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
+  const rawPreMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
   const preMatchDiff = baseHomeScore - baseAwayScore;
   const fairSpread = Math.round(-preMatchDiff * 2) / 2; // Home favored is negative (e.g. -6.5)
   // Recommended safe line includes a 6.5 pt statistical safety cushion for high accuracy
-  const fairTotalLine = Math.floor(preMatchTotalPoints - 6.5) + 0.5;
+  const fairTotalLine = Math.floor(rawPreMatchTotalPoints - 6.5) + 0.5;
+
+  // Multiple Linear & Logistic Regression Calibration + Bayesian Shrinkage (Layers 3 & 6)
+  const homeWinPct = homeTeam.wins && (homeTeam.wins + homeTeam.losses) > 0
+    ? homeTeam.wins / (homeTeam.wins + homeTeam.losses)
+    : 0.52;
+  const awayWinPct = awayTeam.wins && (awayTeam.wins + awayTeam.losses) > 0
+    ? awayTeam.wins / (awayTeam.wins + awayTeam.losses)
+    : 0.48;
+
+  const nbaReg = evaluateNBAMultipleAndLogisticRegression(
+    {
+      homePace: homeTeam.pace,
+      awayPace: awayTeam.pace,
+      homeOffensiveRating: homeTeam.offensiveRating,
+      awayOffensiveRating: awayTeam.offensiveRating,
+      homeDefensiveRating: homeTeam.defensiveRating,
+      awayDefensiveRating: awayTeam.defensiveRating,
+      homeThreePointPct: (homeTeam.threePointPct || 36.5) / 100,
+      awayThreePointPct: (awayTeam.threePointPct || 36.5) / 100,
+      homeRestDays: homeTeam.restDays,
+      awayRestDays: awayTeam.restDays,
+      isFibaLeague,
+      homeWinPct,
+      awayWinPct
+    },
+    baseHomeScore,
+    baseAwayScore,
+    fairTotalLine
+  );
+
+  baseHomeScore = shrinkLambdaBayesian(nbaReg.regressedHomeScore, LEAGUE_AVG_ORTG, 75);
+  baseAwayScore = shrinkLambdaBayesian(nbaReg.regressedAwayScore, LEAGUE_AVG_ORTG, 75);
+  const preMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
 
   let projectedHomeScore = baseHomeScore;
   let projectedAwayScore = baseAwayScore;
@@ -198,14 +237,26 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
 
   const projectedTotalPoints = Math.round((projectedHomeScore + projectedAwayScore) * 10) / 10;
 
-  // 3. Pre-Match Win Probability via Normal Distribution
+  // 3. Pre-Match Win Probability via Normal Distribution + Elo/Bradley-Terry + Bayesian Shrinkage
   const preMatchZScore = (baseHomeScore - baseAwayScore) / 11.2;
-  const pHomeWinRaw = normalCDF(preMatchZScore);
-  const pHomeWin = Math.round(pHomeWinRaw * 1000) / 10;
+  const pHomeWinRawNormal = normalCDF(preMatchZScore) * 100;
+  const pHomeWinEnsemble = pHomeWinRawNormal * 0.70 + nbaReg.eloBradleyTerryHomeWinProb * 0.30;
+  const bayesWin = evaluateBayesianCredibility({
+    observedProbability: pHomeWinEnsemble,
+    category: '1X2',
+    derbyOrRivalry: false,
+    fatiguePenalty: (homeTeam.restDays === 0 ? 0.05 : 0) + (awayTeam.restDays === 0 ? 0.06 : 0)
+  });
+  const pHomeWin = Math.round(bayesWin.posteriorProbability * 10) / 10;
   const pAwayWin = Math.round((100 - pHomeWin) * 10) / 10;
 
-  // Over / Under Total probability (relative to safe total line)
-  const overTotalProb = preMatchTotalPoints >= fairTotalLine ? 64.5 : 52.4;
+  // Over / Under Total probability calibrated with Logistic Sigmoid Regression and Bayesian Credibility
+  const bayesTotal = evaluateBayesianCredibility({
+    observedProbability: nbaReg.logisticOverTotalProb,
+    category: 'SAFE_GOALS',
+    derbyOrRivalry: false
+  });
+  const overTotalProb = Math.round(bayesTotal.posteriorProbability * 10) / 10;
   const underTotalProb = Math.round((100 - overTotalProb) * 10) / 10;
 
   // 4. Quarter Projections Breakdown (1Q, 2Q, 3Q, 4Q and Halves)
@@ -335,18 +386,31 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
     const basePaceRatio = basePace / playerTeam.pace;
     const defFactor = opponentTeam.defensiveRating / LEAGUE_AVG_ORTG;
 
-    // Projected Points (Pre-match immutable line)
+    // Projected Points (Pre-match immutable line) calibrated with logistic sigmoid and Bayesian credibility
     const projPoints = Math.round((player.seasonPpg * basePaceRatio * defFactor) * 10) / 10;
     const pointsLine = Math.max(8.5, Math.floor(projPoints) - 0.5);
-    const overPtsProb = projPoints > pointsLine ? 58.4 : 47.2;
+    const zPoints = (projPoints - pointsLine) / 3.8;
+    const rawPtsProb = logisticSigmoid(zPoints) * 100;
+    const bayesPts = evaluateBayesianCredibility({
+      observedProbability: rawPtsProb,
+      category: 'SHOTS',
+      derbyOrRivalry: false
+    });
+    const overPtsProb = Math.round(bayesPts.posteriorProbability * 10) / 10;
 
-    // Projected 3PM (Triples) with POISSON CALCULATION
+    // Projected 3PM (Triples) with POISSON CALCULATION + Bayesian Credibility
     const lambda3pm = Math.max(0.8, player.season3pm * basePaceRatio * (opponentTeam.threePointAttemptRate > 0.40 ? 1.06 : 0.96));
     const threePointersLine = Math.max(0.5, Math.floor(lambda3pm) + 0.5);
-    const over3pmProb = poissonOver(lambda3pm, threePointersLine);
+    const raw3pmProb = poissonOver(lambda3pm, threePointersLine);
+    const bayes3pm = evaluateBayesianCredibility({
+      observedProbability: raw3pmProb,
+      category: 'SHOTS',
+      derbyOrRivalry: false
+    });
+    const over3pmProb = Math.round(bayes3pm.posteriorProbability * 10) / 10;
     const under3pmProb = Math.round((100 - over3pmProb) * 10) / 10;
 
-    // Assists, Rebounds & Combo PRA Lines
+    // Assists, Rebounds & Combo PRA Lines calibrated with Logistic Sigmoid & Bayesian Credibility
     const isGuard = player.position === 'PG' || player.position === 'SG';
     const isBig = player.position === 'PF' || player.position === 'C';
     const baseAst = isGuard ? 6.2 : isBig ? 2.8 : 4.2;
@@ -354,9 +418,16 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
     const astLine = Math.floor(baseAst) + 0.5;
     const rebLine = Math.floor(baseReb) + 0.5;
     const praLine = Math.floor(projPoints + baseAst + baseReb) - 0.5;
+    const zPra = ((projPoints + baseAst + baseReb) - praLine) / 4.5;
+    const rawPraProb = logisticSigmoid(zPra) * 100;
+    const bayesPra = evaluateBayesianCredibility({
+      observedProbability: rawPraProb,
+      category: 'SHOTS',
+      derbyOrRivalry: false
+    });
     const overAstProb = 60.5;
     const overRebProb = 58.0;
-    const overPraProb = 63.5;
+    const overPraProb = Math.round(bayesPra.posteriorProbability * 10) / 10;
 
     // Live or Final Box-Score Stats for Player Prop Hit/Miss Auditing
     let liveCurrentPoints: number | undefined;
