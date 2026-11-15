@@ -22,6 +22,7 @@ import { MatchFixture, NBAMatchFixture } from '../types';
 import { calculateMatchAnalysis } from '../services/mathEngine';
 import { getLocalUpcomingCache, getColombiaDateString, fetchUpcomingFixtures } from '../services/apiService';
 import { fetchNBAFixtures } from '../services/nbaApiService';
+import { getHistoricalAuditSummary } from '../services/historicalAuditService';
 
 interface AccessLockScreenProps {
   fixtures?: MatchFixture[];
@@ -234,8 +235,9 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
   const [isAutoRotating, setIsAutoRotating] = useState<boolean>(true);
   const [gatewaySport, setGatewaySport] = useState<'SOCCER' | 'NBA'>('SOCCER');
 
-  // Información semanal calculada dinámicamente
+  // Información semanal y eficiencia auditada calculada dinámicamente
   const weekInfo = getISOWeekInfo();
+  const auditSummary = useMemo(() => getHistoricalAuditSummary(), []);
 
   // Partidos cargados de forma proactiva si la pantalla de login monta antes que el padre
   const [loadedSoccer, setLoadedSoccer] = useState<MatchFixture[]>([]);
@@ -991,7 +993,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
                 <span className="text-[#8b949e] font-normal">(Sem. {weekInfo.weekNo}):</span>
               </span>
               <span className="text-[#00ff66] font-mono font-black tracking-wide">
-                84.6% Acierto
+                {auditSummary.globalAccuracy}% Acierto
               </span>
               <span className="hidden sm:inline text-slate-600 font-mono">•</span>
               <span className="hidden sm:inline text-[#d9b114] font-bold text-[10.5px] group-hover:underline">

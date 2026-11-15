@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp,
   ShieldCheck,
@@ -14,24 +14,44 @@ import {
   Sparkles
 } from 'lucide-react';
 import {
-  HISTORICAL_AUDIT_DATA,
+  getHistoricalAuditSummary,
+  syncLatestFinishedAudit,
   AuditPickItem,
-  WeeklyAuditSummary
+  WeeklyAuditSummary,
+  HistoricalAuditOverview
 } from '../services/historicalAuditService';
 
 export const HistoricalAuditView: React.FC = () => {
-  const [selectedWeekNo, setSelectedWeekNo] = useState<number>(46);
+  const [auditData, setAuditData] = useState<HistoricalAuditOverview>(getHistoricalAuditSummary());
+  const [selectedWeekNo, setSelectedWeekNo] = useState<number>(() => {
+    const summary = getHistoricalAuditSummary();
+    return summary.weeks[0]?.weekNo || 45;
+  });
   const [sportFilter, setSportFilter] = useState<'ALL' | 'SOCCER' | 'NBA'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  // Sincronización en caliente con los partidos finalizados de las últimas jornadas oficiales
+  useEffect(() => {
+    let isMounted = true;
+    syncLatestFinishedAudit().then((latest) => {
+      if (isMounted) {
+        setAuditData(latest);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const currentWeek: WeeklyAuditSummary = useMemo(() => {
     return (
-      HISTORICAL_AUDIT_DATA.weeks.find((w) => w.weekNo === selectedWeekNo) ||
-      HISTORICAL_AUDIT_DATA.weeks[0]
+      auditData.weeks.find((w) => w.weekNo === selectedWeekNo) ||
+      auditData.weeks[0]
     );
-  }, [selectedWeekNo]);
+  }, [auditData, selectedWeekNo]);
 
   const filteredPicks: AuditPickItem[] = useMemo(() => {
+    if (!currentWeek?.picks) return [];
     let list = currentWeek.picks;
     if (sportFilter !== 'ALL') {
       list = list.filter((p) => p.sport === sportFilter);
@@ -80,7 +100,7 @@ export const HistoricalAuditView: React.FC = () => {
                 Eficacia Global
               </span>
               <span className="text-lg sm:text-xl font-black font-mono text-[#00ff66] leading-tight">
-                {HISTORICAL_AUDIT_DATA.globalAccuracy}%
+                {auditData.globalAccuracy}%
               </span>
             </div>
           </div>
@@ -94,10 +114,10 @@ export const HistoricalAuditView: React.FC = () => {
               <span>Total Auditados</span>
             </span>
             <span className="text-base sm:text-lg font-black font-mono text-white mt-0.5">
-              {HISTORICAL_AUDIT_DATA.totalPicksWon} / {HISTORICAL_AUDIT_DATA.totalPicksAudited}
+              {auditData.totalPicksWon} / {auditData.totalPicksAudited}
             </span>
             <span className="text-[9px] text-[#00ff66] font-mono font-bold mt-auto">
-              {HISTORICAL_AUDIT_DATA.globalAccuracy}% de acierto
+              {auditData.globalAccuracy}% de acierto
             </span>
           </div>
 
@@ -107,7 +127,7 @@ export const HistoricalAuditView: React.FC = () => {
               <span>Retorno (ROI)</span>
             </span>
             <span className="text-base sm:text-lg font-black font-mono text-[#00ff66] mt-0.5">
-              +{HISTORICAL_AUDIT_DATA.accumulatedROI}%
+              +{auditData.accumulatedROI}%
             </span>
             <span className="text-[9px] text-[#8b949e] font-mono mt-auto">Stake plano 1 ud.</span>
           </div>
@@ -118,7 +138,7 @@ export const HistoricalAuditView: React.FC = () => {
               <span>Racha Récord</span>
             </span>
             <span className="text-base sm:text-lg font-black font-mono text-cyan-300 mt-0.5">
-              {HISTORICAL_AUDIT_DATA.maxConsecutiveStreak} Picks
+              {auditData.maxConsecutiveStreak} Picks
             </span>
             <span className="text-[9px] text-[#8b949e] font-mono mt-auto">Aciertos sin fallo</span>
           </div>
@@ -129,7 +149,7 @@ export const HistoricalAuditView: React.FC = () => {
               <span>Cuota Promedio</span>
             </span>
             <span className="text-base sm:text-lg font-black font-mono text-[#d9b114] mt-0.5">
-              @{HISTORICAL_AUDIT_DATA.avgWinningOdd.toFixed(2)}
+              @{auditData.avgWinningOdd.toFixed(2)}
             </span>
             <span className="text-[9px] text-emerald-400 font-mono mt-auto">+EV matemático</span>
           </div>
@@ -143,11 +163,13 @@ export const HistoricalAuditView: React.FC = () => {
             <BarChart3 className="w-3.5 h-3.5 text-[#d9b114]" />
             <span>Rendimiento por Tipología de Mercado</span>
           </span>
-          <span className="text-[10px] font-mono text-[#8b949e]">293 muestras analizadas</span>
+          <span className="text-[10px] font-mono text-[#8b949e]">
+            {auditData.totalPicksAudited} muestras analizadas
+          </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {HISTORICAL_AUDIT_DATA.marketAccuracy.map((m, idx) => (
+          {auditData.marketAccuracy.map((m, idx) => (
             <div
               key={idx}
               className="p-2.5 rounded-xl bg-[#0b0e14] border border-[#30363d]/80 flex flex-col justify-between space-y-1.5"
@@ -176,7 +198,7 @@ export const HistoricalAuditView: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           {/* Selector de Semanas */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-            {HISTORICAL_AUDIT_DATA.weeks.map((w) => {
+            {auditData.weeks.map((w) => {
               const isSelected = w.weekNo === selectedWeekNo;
               return (
                 <button
