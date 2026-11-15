@@ -22,7 +22,7 @@ import { MatchFixture, NBAMatchFixture } from '../types';
 import { calculateMatchAnalysis } from '../services/mathEngine';
 import { getLocalUpcomingCache, getColombiaDateString, fetchUpcomingFixtures } from '../services/apiService';
 import { fetchNBAFixtures } from '../services/nbaApiService';
-import { getHistoricalAuditSummary } from '../services/historicalAuditService';
+import { useHistoricalAudit } from '../services/historicalAuditService';
 
 interface AccessLockScreenProps {
   fixtures?: MatchFixture[];
@@ -235,9 +235,9 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
   const [isAutoRotating, setIsAutoRotating] = useState<boolean>(true);
   const [gatewaySport, setGatewaySport] = useState<'SOCCER' | 'NBA'>('SOCCER');
 
-  // Información semanal y eficiencia auditada calculada dinámicamente
+  // Información semanal y eficiencia auditada calculada en tiempo real
   const weekInfo = getISOWeekInfo();
-  const auditSummary = useMemo(() => getHistoricalAuditSummary(), []);
+  const auditSummary = useHistoricalAudit();
 
   // Partidos cargados de forma proactiva si la pantalla de login monta antes que el padre
   const [loadedSoccer, setLoadedSoccer] = useState<MatchFixture[]>([]);

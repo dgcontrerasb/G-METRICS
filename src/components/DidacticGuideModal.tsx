@@ -18,7 +18,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { HistoricalAuditView } from './HistoricalAuditView';
-import { getHistoricalAuditSummary } from '../services/historicalAuditService';
+import { useHistoricalAudit } from '../services/historicalAuditService';
 
 export type GuideModalTab = 'GUIDE' | 'GLOSSARY' | 'LEGAL' | 'AUDIT';
 
@@ -226,7 +226,7 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
   initialTab = 'GUIDE'
 }) => {
   const [activeTab, setActiveTab] = useState<GuideModalTab>(initialTab);
-  const auditSummary = useMemo(() => getHistoricalAuditSummary(), []);
+  const auditSummary = useHistoricalAudit();
   const [calcStake, setCalcStake] = useState<number>(10);
   const [calcOdd, setCalcOdd] = useState<number>(1.85);
 

@@ -15,34 +15,19 @@ import {
   Info
 } from 'lucide-react';
 import {
-  getHistoricalAuditSummary,
-  syncLatestFinishedAudit,
+  useHistoricalAudit,
   AuditPickItem,
   WeeklyAuditSummary,
   HistoricalAuditOverview
 } from '../services/historicalAuditService';
 
 export const HistoricalAuditView: React.FC = () => {
-  const [auditData, setAuditData] = useState<HistoricalAuditOverview>(getHistoricalAuditSummary());
+  const auditData = useHistoricalAudit();
   const [selectedWeekNo, setSelectedWeekNo] = useState<number>(() => {
-    const summary = getHistoricalAuditSummary();
-    return summary.weeks[0]?.weekNo || 45;
+    return auditData.weeks[0]?.weekNo || 45;
   });
   const [sportFilter, setSportFilter] = useState<'ALL' | 'SOCCER' | 'NBA'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
-
-  // Sincronización en caliente con los partidos finalizados de las últimas jornadas oficiales
-  useEffect(() => {
-    let isMounted = true;
-    syncLatestFinishedAudit().then((latest) => {
-      if (isMounted) {
-        setAuditData(latest);
-      }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   const currentWeek: WeeklyAuditSummary = useMemo(() => {
     return (
