@@ -964,8 +964,29 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
 
       {/* ================= HERO GATEWAY CENTRADO (OPCIÓN B - FIDELIDAD MOCKUP & CERO SCROLL) ================= */}
       <main className="relative z-10 w-full max-w-5xl mx-auto px-4 flex-1 flex flex-col justify-evenly items-center min-h-0 py-2 sm:py-3">
-        {/* 1. Titular Grande y Tipografía de Impacto */}
-        <div className="text-center space-y-1 sm:space-y-2 max-w-3xl mx-auto shrink-0">
+        {/* 1. Eficiencia Semanal Auditada + Titular de Alto Impacto */}
+        <div className="text-center space-y-1.5 sm:space-y-2 max-w-3xl mx-auto shrink-0">
+          {/* Badge de Eficiencia Semanal Auditada */}
+          <div className="flex items-center justify-center">
+            <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-0.5 sm:py-1 rounded-full bg-[#161b22]/90 border border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.2)] text-[10.5px] sm:text-xs backdrop-blur-md">
+              <span className="flex h-2 w-2 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span className="text-slate-300 font-semibold">
+                Eficiencia Semanal{' '}
+                <span className="text-[#8b949e] font-normal">(Sem. {weekInfo.weekNo}):</span>
+              </span>
+              <span className="text-[#00ff66] font-mono font-black tracking-wide">
+                84.6% Acierto
+              </span>
+              <span className="hidden sm:inline text-slate-600 font-mono">•</span>
+              <span className="hidden sm:inline text-[#d9b114] font-bold text-[10.5px]">
+                Top Picks Auditados
+              </span>
+            </div>
+          </div>
+
           <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white leading-[1.12]">
             Deja el azar a un lado.<br className="hidden sm:inline" />{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-[#d9b114] to-yellow-200">
