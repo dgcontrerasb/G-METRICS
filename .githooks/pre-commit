@@ -1,0 +1,9 @@
+#!/bin/sh
+echo "🛡️ G-METRICS Pre-Commit: Verificando integridad de tipos TypeScript..."
+npx tsc --noEmit
+if [ $? -ne 0 ]; then
+  echo "❌ Error: Se detectaron errores de TypeScript. Corrige los tipos antes de hacer commit."
+  exit 1
+fi
+echo "✅ TypeScript validado con 0 errores. Procediendo con el commit..."
+exit 0
