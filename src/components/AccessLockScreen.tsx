@@ -517,14 +517,18 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
     return subset.length > 0 ? subset : dynamicFeaturedDuels;
   }, [dynamicFeaturedDuels, gatewaySport]);
 
-  const currentDuel = filteredDuels[selectedDuelIndex % filteredDuels.length] || dynamicFeaturedDuels[0];
+  const duel1 = filteredDuels[selectedDuelIndex % filteredDuels.length] || dynamicFeaturedDuels[0];
+  const duel2 =
+    filteredDuels.length > 1
+      ? filteredDuels[(selectedDuelIndex + 1) % filteredDuels.length]
+      : dynamicFeaturedDuels.find((d) => d.id !== duel1.id) || duel1;
 
-  // Rotación automática suave de partidos estelares cada 6.5 segundos
+  // Rotación automática suave de partidos estelares cada 7 segundos
   useEffect(() => {
     if (!isAutoRotating || filteredDuels.length <= 1) return;
     const timer = setInterval(() => {
       setSelectedDuelIndex((prev) => (prev + 1) % filteredDuels.length);
-    }, 6500);
+    }, 7000);
     return () => clearInterval(timer);
   }, [isAutoRotating, filteredDuels.length]);
 
@@ -808,104 +812,97 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
     }
   };
 
+  // Renderizado de tarjeta estelar de partido con escudos y pick predictivo
+  const renderMatchCard = (duel: FeaturedMarqueeDuel, isSecondary = false) => (
+    <div
+      key={`${duel.id}-${isSecondary ? 'sec' : 'pri'}`}
+      className={`rounded-2xl bg-[#161b22]/90 border border-[#30363d] p-3 sm:p-3.5 backdrop-blur-xl shadow-xl flex flex-col justify-between hover:border-emerald-500/40 transition-all duration-300 ${
+        isSecondary ? 'hidden sm:flex' : 'flex'
+      }`}
+    >
+      {/* Header de la tarjeta */}
+      <div className="flex items-center justify-between pb-1.5 border-b border-[#30363d]/60 text-[10.5px]">
+        <div className="flex items-center gap-1.5 text-white font-bold truncate">
+          <span className="text-xs">{duel.sport === 'NBA' ? '🏀' : '⚽'}</span>
+          <span className="truncate">{duel.league.split('·')[0].trim()}</span>
+        </div>
+        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-400 font-extrabold text-[9px]">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+          <span>{duel.isLive ? 'EN VIVO' : 'HOY'}</span>
+        </div>
+      </div>
+
+      {/* Duelo de Equipos y xG */}
+      <div className="py-2 flex items-center justify-between gap-2">
+        {/* Equipo Local */}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {duel.homeTeam.logo ? (
+            <img
+              src={duel.homeTeam.logo}
+              alt=""
+              className="w-7 h-7 sm:w-8 sm:h-8 object-contain shrink-0"
+            />
+          ) : null}
+          <span className="font-extrabold text-white text-xs sm:text-sm truncate">
+            {duel.homeTeam.name || duel.homeTeam.shortName}
+          </span>
+        </div>
+
+        {/* Marcador / xG */}
+        <div className="flex flex-col items-center justify-center shrink-0 px-1 sm:px-2">
+          <span className="font-mono font-black text-white text-xs sm:text-sm tracking-wider">
+            {duel.homeTeam.score !== undefined && duel.awayTeam.score !== undefined
+              ? `${duel.homeTeam.score} - ${duel.awayTeam.score}`
+              : 'VS'}
+          </span>
+          <span className="text-[9px] font-mono text-[#8b949e] whitespace-nowrap mt-0.5">
+            xG {duel.homeTeam.xg?.toFixed(2) || '1.82'} - {duel.awayTeam.xg?.toFixed(2) || '1.10'}
+          </span>
+        </div>
+
+        {/* Equipo Visitante */}
+        <div className="flex items-center justify-end gap-2 flex-1 min-w-0">
+          <span className="font-extrabold text-white text-xs sm:text-sm truncate text-right">
+            {duel.awayTeam.name || duel.awayTeam.shortName}
+          </span>
+          {duel.awayTeam.logo ? (
+            <img
+              src={duel.awayTeam.logo}
+              alt=""
+              className="w-7 h-7 sm:w-8 sm:h-8 object-contain shrink-0"
+            />
+          ) : null}
+        </div>
+      </div>
+
+      {/* Banner Inferior: G METRICS Pick con Certeza */}
+      <div className="mt-1 px-2.5 py-1.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[10px] text-emerald-400 font-black whitespace-nowrap">
+            G METRICS Pick:
+          </span>
+          <span className="text-[10px] sm:text-[11px] text-white font-extrabold truncate">
+            {duel.topPick.label}
+          </span>
+          <span className="text-[9.5px] font-mono text-[#d9b114] shrink-0 font-bold">
+            @{duel.topPick.odd.toFixed(2)}
+          </span>
+        </div>
+        <div className="px-2 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-500/50 text-[10px] font-mono font-black text-[#00ff66] shrink-0">
+          {Math.round(duel.topPick.certainty)}%
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="h-[100dvh] max-h-[100dvh] w-full cr7-cinematic-bg bg-[#0b0e14] flex flex-col justify-between relative overflow-hidden text-white font-sans select-none">
-      {/* Estilos Antigravity Design: Glassmorphism, Rayos Láser Cyber-Neon y Ticker Continuo */}
-      <style>{`
-        .gmetrics-neon-cta-box {
-          position: relative;
-          border-radius: 24px;
-          overflow: hidden;
-          background: rgba(22, 27, 34, 0.92);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
-          border: 1px solid #30363d;
-          box-shadow:
-            0 18px 45px -12px rgba(0, 0, 0, 0.75),
-            0 0 25px rgba(217, 177, 20, 0.12),
-            inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-        }
-        .sp-laser {
-          position: absolute;
-          z-index: 10;
-          pointer-events: none;
-        }
-        .sp-t {
-          top: 0;
-          right: 0;
-          width: 200px;
-          height: 2.5px;
-          background: linear-gradient(to left, transparent, #10b981, #d9b114);
-          animation: laser-top 2.6s linear infinite;
-          animation-delay: 0.6s;
-        }
-        .sp-r {
-          bottom: 0;
-          right: 0;
-          width: 2.5px;
-          height: 160px;
-          background: linear-gradient(to top, transparent, #d9b114, #10b981);
-          animation: laser-right 2.6s linear infinite;
-        }
-        .sp-b {
-          right: 0;
-          bottom: 0;
-          width: 200px;
-          height: 2.5px;
-          background: linear-gradient(to left, transparent, #10b981, #d9b114);
-          animation: laser-bottom 2.6s linear infinite;
-        }
-        .sp-l {
-          left: 0;
-          top: 0;
-          width: 2.5px;
-          height: 160px;
-          background: linear-gradient(to top, transparent, #d9b114, #10b981);
-          animation: laser-left 2.6s linear infinite;
-          animation-delay: 1.3s;
-        }
-        @keyframes laser-right {
-          0% { transform: translateY(250%); }
-          100% { transform: translateY(-250%); }
-        }
-        @keyframes laser-left {
-          0% { transform: translateY(-250%); }
-          100% { transform: translateY(250%); }
-        }
-        @keyframes laser-bottom {
-          0% { transform: translateX(250%); }
-          100% { transform: translateX(-250%); }
-        }
-        @keyframes laser-top {
-          0% { transform: translateX(-250%); }
-          100% { transform: translateX(250%); }
-        }
-        .gmetrics-ticker-track {
-          display: flex;
-          width: max-content;
-          animation: tickerScroll 34s linear infinite;
-        }
-        .gmetrics-ticker-track:hover {
-          animation-play-state: paused;
-        }
-        @keyframes tickerScroll {
-          0% { transform: translate3d(0, 0, 0); }
-          100% { transform: translate3d(-50%, 0, 0); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .sp-laser,
-          .gmetrics-ticker-track {
-            animation: none !important;
-          }
-        }
-      `}</style>
-
       {/* Resplandores ambientales de fondo */}
       <div className="absolute top-[8%] left-[12%] w-[450px] h-[450px] rounded-full bg-emerald-500/10 blur-[130px] pointer-events-none -z-10" />
       <div className="absolute bottom-[8%] right-[8%] w-[450px] h-[450px] rounded-full bg-[#d9b114]/8 blur-[130px] pointer-events-none -z-10" />
 
       {/* ================= BARRA SUPERIOR INSTITUCIONAL GLASS ================= */}
-      <header className="relative z-20 w-full max-w-6xl mx-auto px-3 sm:px-6 pt-2 sm:pt-3 shrink-0">
+      <header className="relative z-20 w-full max-w-6xl mx-auto px-4 pt-2 sm:pt-3 shrink-0">
         <div className="w-full px-3.5 sm:px-5 py-2 rounded-2xl bg-[#0b0e14]/90 backdrop-blur-xl border border-[#30363d] shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)] flex items-center justify-between gap-3">
           {/* Logo y Tipografía Original de G METRICS (con 3 clics secretos para Admin) */}
           <div
@@ -924,189 +921,99 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
             </div>
           </div>
 
-          {/* Botones de Navegación Derecha */}
-          {onOpenGuide && (
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <button
-                type="button"
-                onClick={() => onOpenGuide('GLOSSARY')}
-                className="px-2.5 sm:px-3.5 py-1 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] hover:border-[#8b949e]/40 text-[10.5px] sm:text-xs font-bold text-white shadow-2xs transition cursor-pointer"
-              >
-                Glosario A-Z
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenGuide('GUIDE')}
-                className="hidden sm:inline-flex px-3.5 py-1 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] hover:border-[#8b949e]/40 text-xs font-bold text-white shadow-2xs transition cursor-pointer"
-              >
-                Cómo Funciona
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenGuide('LEGAL')}
-                className="px-2.5 sm:px-3.5 py-1 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#d9b114]/40 text-[10.5px] sm:text-xs font-bold text-[#d9b114] shadow-2xs transition cursor-pointer"
-              >
-                +18 Legal
-              </button>
-            </div>
-          )}
+          {/* Menú Central estilo Cápsula (Visible en pantallas medianas y PC) */}
+          <div className="hidden md:flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#161b22]/80 border border-[#30363d] text-xs font-semibold text-[#8b949e]">
+            <span className="px-3 py-0.5 rounded-full bg-[#0b0e14] text-white font-bold cursor-default shadow-xs">
+              Inicio
+            </span>
+            <button
+              type="button"
+              onClick={() => onOpenGuide?.('GUIDE')}
+              className="px-3 py-0.5 hover:text-white transition cursor-pointer"
+            >
+              Análisis
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenGuide?.('GLOSSARY')}
+              className="px-3 py-0.5 hover:text-white transition cursor-pointer"
+            >
+              Live
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenGuide?.('LEGAL')}
+              className="px-3 py-0.5 hover:text-white transition cursor-pointer"
+            >
+              Suscripción
+            </button>
+          </div>
+
+          {/* Botón de Acceso Legal / Guía */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenGuide?.('LEGAL')}
+              className="px-3 py-1 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#d9b114]/50 text-xs font-bold text-[#d9b114] shadow-xs transition cursor-pointer"
+            >
+              +18 Legal
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* ================= MARQUESINA CINÉTICA DE TELEMETRÍA EN VIVO ================= */}
-      <div className="relative z-20 w-full max-w-6xl mx-auto px-3 sm:px-6 pt-1 sm:pt-1.5 pb-0.5 overflow-hidden shrink-0">
-        <div className="flex items-center gap-2 overflow-hidden rounded-xl bg-[#0b0e14]/85 border border-[#30363d] py-1 px-2.5 backdrop-blur-md shadow-xs">
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#161b22] border border-[#d9b114]/50 text-[#d9b114] text-[9px] font-black uppercase tracking-wider shrink-0 shadow-xs">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Telemetría</span>
-          </div>
-
-          <div className="relative flex-1 overflow-hidden">
-            <div className="gmetrics-ticker-track flex items-center gap-4 whitespace-nowrap">
-              {/* Duplicado para bucle infinito perfecto sin cortes */}
-              {[...dynamicTickerMatches, ...dynamicTickerMatches].map((item, idx) => (
-                <div
-                  key={`${item.id}-${idx}`}
-                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[#161b22]/70 border border-[#30363d]/70 text-[10px] text-white shrink-0 hover:border-[#d9b114]/60 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    <img src={item.crestHome} alt="" className="w-3.5 h-3.5 object-contain" />
-                    <span className="font-bold">{item.match}</span>
-                    <img src={item.crestAway} alt="" className="w-3.5 h-3.5 object-contain" />
-                  </div>
-                  <span className="px-1 py-0.2 rounded bg-[#0b0e14] text-[8.5px] font-mono font-extrabold text-[#d9b114] border border-[#30363d]">
-                    {item.score}
-                  </span>
-                  <span className="text-[9.5px] text-[#00ff66] font-extrabold font-mono">
-                    {item.certainty}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ================= HERO GATEWAY CENTRADO (OPCIÓN B - ZERO SCROLL) ================= */}
-      <main className="relative z-10 w-full max-w-3xl mx-auto px-3 sm:px-6 flex-1 flex flex-col items-center justify-center my-auto min-h-0 py-1">
-        {/* 1. Header Centrado: Badge + Titular + Píldoras de Confianza */}
-        <div className="text-center space-y-1 sm:space-y-1.5 max-w-2xl mx-auto shrink-0">
-          {/* Badge superior */}
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#161b22] border border-[#30363d] shadow-2xs">
-            <Zap className="w-3 h-3 text-[#d9b114] fill-[#d9b114]" />
-            <span className="text-[8.5px] sm:text-[9.5px] font-extrabold uppercase tracking-wider text-[#d9b114]">
-              MOTOR PREDICTIVO DE ALTA PRECISIÓN · FÚTBOL &amp; NBA
-            </span>
-          </div>
-
-          {/* Titular */}
-          <h1 className="text-lg sm:text-2xl md:text-3xl font-black tracking-tight text-white leading-[1.15]">
-            Deja el azar a un lado.{' '}
-            <span className="text-[#d9b114] block sm:inline">
-              Toma decisiones con ventaja estadística real.
+      {/* ================= HERO GATEWAY CENTRADO (OPCIÓN B - FIDELIDAD MOCKUP & CERO SCROLL) ================= */}
+      <main className="relative z-10 w-full max-w-5xl mx-auto px-4 flex-1 flex flex-col justify-evenly items-center min-h-0 py-2 sm:py-3">
+        {/* 1. Titular Grande y Tipografía de Impacto */}
+        <div className="text-center space-y-1 sm:space-y-2 max-w-3xl mx-auto shrink-0">
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white leading-[1.12]">
+            Deja el azar a un lado.<br className="hidden sm:inline" />{' '}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-[#d9b114] to-yellow-200">
+              Toma decisiones con ventaja estadística.
             </span>
           </h1>
-
-          {/* Subtítulo breve (visible en PC y móvil mediano) */}
-          <p className="text-[10.5px] sm:text-xs text-[#8b949e] font-medium max-w-lg mx-auto leading-tight hidden xs:block">
-            Inteligencia deportiva cuantitativa, modelos de gol esperado (xG) y valor (+EV) en tiempo real.
+          <p className="text-[11px] sm:text-xs md:text-sm text-[#8b949e] font-medium max-w-xl mx-auto leading-tight hidden xs:block">
+            Inteligencia deportiva en tiempo real: modelos de gol esperado (xG), probabilidades Poisson y selecciones +EV verificadas.
           </p>
-
-          {/* Píldoras de Confianza */}
-          <div className="flex items-center justify-center gap-1.5 pt-0.5">
-            <div className="px-2.5 py-0.5 rounded-full bg-[#161b22] border border-emerald-500/40 text-[9px] sm:text-[10px] font-extrabold text-[#00ff66] flex items-center gap-1 shadow-2xs">
-              <TrendingUp className="w-3 h-3 text-[#00ff66]" />
-              <span>Auditoría Semanal (Sem. {weekInfo.weekNo}): 84.6% Certeza</span>
-            </div>
-            <div className="px-2 py-0.5 rounded-full bg-[#161b22] border border-[#30363d] text-[9px] font-bold text-white flex items-center gap-1">
-              <Layers className="w-3 h-3 text-[#d9b114]" />
-              <span>7 Modelos</span>
-            </div>
-            <div className="px-2 py-0.5 rounded-full bg-[#161b22] border border-[#30363d] text-[9px] font-bold text-white flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-cyan-400" />
-              <span>100% Gratuito</span>
-            </div>
-          </div>
         </div>
 
-        {/* 2. Tarjeta Centrada de Acceso Único con Google (Foco Principal sin saturación) */}
-        <div className="gmetrics-neon-cta-box p-3 sm:p-4 w-full max-w-md mx-auto my-1.5 sm:my-2.5 shrink-0">
-          <span className="sp-laser sp-t" />
-          <span className="sp-laser sp-r" />
-          <span className="sp-laser sp-b" />
-          <span className="sp-laser sp-l" />
+        {/* 2. Botón de Acceso Google Luminous Pill (Centro de Conversión sin saturación) */}
+        <div className="flex flex-col items-center gap-1.5 w-full max-w-md shrink-0">
+          <button
+            type="button"
+            onClick={handleContinueWithGoogle}
+            disabled={googleLoading}
+            className="group relative px-7 sm:px-10 py-3 sm:py-3.5 rounded-full bg-[#0b0e14] hover:bg-[#161b22] border-2 border-emerald-400 text-white font-black text-sm sm:text-base flex items-center justify-center gap-3 transition-all duration-300 shadow-[0_0_25px_rgba(16,185,129,0.4)] hover:shadow-[0_0_40px_rgba(16,185,129,0.7)] hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-65 w-full sm:w-auto"
+          >
+            <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+              />
+            </svg>
+            <span>{googleLoading ? 'Conectando con Google...' : 'Continuar con Google'}</span>
+          </button>
 
-          <div className="relative z-10 space-y-2">
-            {/* Botón Principal de Google */}
-            <button
-              type="button"
-              onClick={handleContinueWithGoogle}
-              disabled={googleLoading}
-              className="w-full py-2.5 sm:py-3 px-4 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-900 font-black text-xs sm:text-sm flex items-center justify-center gap-2.5 transition-all duration-200 shadow-[0_6px_20px_-4px_rgba(0,0,0,0.4)] hover:shadow-[0_10px_25px_-4px_rgba(217,177,20,0.3)] hover:-translate-y-0.5 active:translate-y-0 cursor-pointer disabled:opacity-65"
-            >
-              <svg className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>
-                {googleLoading
-                  ? 'Conectando con tu cuenta Google...'
-                  : 'Continuar con Google — Acceso Instantáneo'}
-              </span>
-            </button>
-
-            {/* Subtítulo explicativo */}
-            <div className="flex flex-col items-center text-center space-y-0.5">
-              <div className="flex items-center justify-center gap-1 text-[10px] sm:text-[10.5px] font-extrabold text-white">
-                <span>Ingreso único inteligente en 1 clic</span>
-                <CheckCircle2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-              </div>
-              <p className="text-[9px] sm:text-[9.5px] text-[#8b949e] font-medium leading-tight">
-                Activación y acceso automático sin contraseñas ni formularios.
-              </p>
-            </div>
-
-            {/* Mensaje de error si ocurre */}
-            {authError && (
-              <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[10.5px] flex items-center gap-2 animate-fadeIn">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
-                <span>{authError}</span>
-              </div>
-            )}
-
-            {/* Dock Dual-Device */}
-            <div className="w-full py-1 px-2.5 rounded-xl bg-[#0b0e14] border border-[#30363d] text-white flex items-center justify-between gap-2 shadow-xs">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-xs">💻</span>
-                <span className="text-[9px] font-bold text-[#8b949e] truncate">
-                  Modo Widescreen 3 Col. en PC
-                </span>
-              </div>
-              <span className="text-slate-600 font-mono text-[9px]">•</span>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-xs">📱</span>
-                <span className="text-[9px] font-bold text-[#00ff66]">
-                  100% Sincronizado en Móvil
-                </span>
-              </div>
-            </div>
-
-            {/* Casilla de Términos */}
-            <label className="flex items-center justify-center gap-1.5 text-[10px] text-[#8b949e] cursor-pointer select-none pt-0.5">
+          {/* Micro-legal y términos en 1 línea limpia */}
+          <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] sm:text-[10.5px] text-[#8b949e]">
+            <span className="flex items-center gap-1 text-[#00ff66] font-bold">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              Acceso 1-clic instantáneo
+            </span>
+            <span>•</span>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={acceptedLegal}
@@ -1114,7 +1021,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
                 className="rounded accent-emerald-500 cursor-pointer w-3.5 h-3.5"
               />
               <span>
-                Acepto los{' '}
+                Acepto{' '}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -1124,83 +1031,61 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
                   }}
                   className="text-[#d9b114] underline font-bold hover:text-white cursor-pointer"
                 >
-                  Términos y Habeas Data
-                </button>{' '}
-                (+18).
+                  Términos y +18
+                </button>
               </span>
             </label>
           </div>
+
+          {authError && (
+            <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2 animate-fadeIn">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+              <span>{authError}</span>
+            </div>
+          )}
         </div>
 
-        {/* 3. Live Pulse Showcase Horizontal (Opción B: Compacto, limpio y sin scroll) */}
-        <div className="w-full max-w-2xl mx-auto space-y-1.5 shrink-0">
-          {/* Selector Segmentado de Deporte */}
-          <div className="flex items-center justify-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                setGatewaySport('SOCCER');
-                setSelectedDuelIndex(0);
-              }}
-              className={`px-3 py-0.5 rounded-full text-[9.5px] sm:text-[10px] font-mono font-bold transition-all cursor-pointer border flex items-center gap-1 ${
-                gatewaySport === 'SOCCER'
-                  ? 'bg-[#161b22] text-[#d9b114] border-[#d9b114]/60 shadow-xs'
-                  : 'bg-[#0b0e14] text-[#8b949e] border-[#30363d] hover:text-white'
-              }`}
-            >
-              <span>⚽ Fútbol Hoy ({allSoccerFixtures.length || 4})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setGatewaySport('NBA');
-                setSelectedDuelIndex(0);
-              }}
-              className={`px-3 py-0.5 rounded-full text-[9.5px] sm:text-[10px] font-mono font-bold transition-all cursor-pointer border flex items-center gap-1 ${
-                gatewaySport === 'NBA'
-                  ? 'bg-[#161b22] text-[#d9b114] border-[#d9b114]/60 shadow-xs'
-                  : 'bg-[#0b0e14] text-[#8b949e] border-[#30363d] hover:text-white'
-              }`}
-            >
-              <span>🏀 NBA Hoy ({allNbaFixtures.length || 2})</span>
-            </button>
-          </div>
-
-          {/* Tarjeta Live Pulse Única Compacta (Visible en PC y Móvil sin provocar scroll) */}
-          <div
-            onMouseEnter={() => setIsAutoRotating(false)}
-            onMouseLeave={() => setIsAutoRotating(true)}
-            className="p-2 sm:p-2.5 rounded-2xl bg-[#161b22]/90 border border-[#30363d] shadow-md flex items-center justify-between gap-2.5 backdrop-blur-md"
+        {/* 3. Selector Segmentado de Deporte */}
+        <div className="flex items-center justify-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setGatewaySport('SOCCER');
+              setSelectedDuelIndex(0);
+            }}
+            className={`px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all duration-200 cursor-pointer border flex items-center gap-1.5 ${
+              gatewaySport === 'SOCCER'
+                ? 'bg-emerald-500/15 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] scale-105'
+                : 'bg-[#161b22]/70 border-[#30363d] text-[#8b949e] hover:text-white'
+            }`}
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="flex items-center gap-1 shrink-0">
-                {currentDuel.homeTeam.logo ? (
-                  <img src={currentDuel.homeTeam.logo} alt="" className="w-4 h-4 sm:w-5 sm:h-5 object-contain" />
-                ) : null}
-                <span className="text-[10px] sm:text-xs font-black text-white">{currentDuel.homeTeam.shortName}</span>
-                <span className="text-[8.5px] text-[#8b949e] font-mono mx-0.5">vs</span>
-                <span className="text-[10px] sm:text-xs font-black text-white">{currentDuel.awayTeam.shortName}</span>
-                {currentDuel.awayTeam.logo ? (
-                  <img src={currentDuel.awayTeam.logo} alt="" className="w-4 h-4 sm:w-5 sm:h-5 object-contain" />
-                ) : null}
-              </div>
+            <span>⚽ Fútbol Hoy ({allSoccerFixtures.length || 4})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setGatewaySport('NBA');
+              setSelectedDuelIndex(0);
+            }}
+            className={`px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all duration-200 cursor-pointer border flex items-center gap-1.5 ${
+              gatewaySport === 'NBA'
+                ? 'bg-emerald-500/15 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] scale-105'
+                : 'bg-[#161b22]/70 border-[#30363d] text-[#8b949e] hover:text-white'
+            }`}
+          >
+            <span>🏀 NBA Hoy ({allNbaFixtures.length || 2})</span>
+          </button>
+        </div>
 
-              <div className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#0b0e14] border border-[#30363d] text-[9px] font-mono text-[#8b949e]">
-                <span>xG {currentDuel.homeTeam.xg?.toFixed(1) || '1.8'} - {currentDuel.awayTeam.xg?.toFixed(1) || '1.1'}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="text-right">
-                <span className="text-[9px] font-mono text-[#d9b114] block leading-tight truncate max-w-[125px] sm:max-w-none">
-                  {currentDuel.topPick.label}
-                </span>
-                <span className="text-[8.5px] font-mono text-[#8b949e]">@{currentDuel.topPick.odd.toFixed(2)} Cuota</span>
-              </div>
-              <div className="px-2 py-0.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-[9.5px] font-mono font-black text-[#00ff66] shrink-0">
-                {Math.round(currentDuel.topPick.certainty)}% Certeza
-              </div>
-            </div>
+        {/* 4. Vitrina de Partidos Reales (2 en Paralelo en PC, 1 en Móvil) */}
+        <div
+          onMouseEnter={() => setIsAutoRotating(false)}
+          onMouseLeave={() => setIsAutoRotating(true)}
+          className="w-full max-w-4xl mx-auto shrink-0"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 w-full">
+            {renderMatchCard(duel1)}
+            {renderMatchCard(duel2, true)}
           </div>
         </div>
       </main>
