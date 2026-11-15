@@ -91,8 +91,12 @@ export const HistoricalAuditView: React.FC = () => {
 
           <div className="flex items-center gap-2 shrink-0">
             <div className="px-3 py-1.5 rounded-xl bg-[#0b0e14] border border-emerald-500/40 text-right">
-              <span className="text-[9px] uppercase font-bold text-[#8b949e] block leading-none">
-                Eficacia Global
+              <span className="text-[9px] uppercase font-bold text-[#8b949e] flex items-center justify-end gap-1 leading-none mb-0.5">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                </span>
+                <span>En Vivo</span>
               </span>
               <span className="text-lg sm:text-xl font-black font-mono text-[#00ff66] leading-tight">
                 {auditData.globalAccuracy}%
@@ -269,10 +273,19 @@ export const HistoricalAuditView: React.FC = () => {
 
       {/* ================= 4. BITÁCORA DE PICKS AUDITADOS ================= */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between text-[11px] text-[#8b949e] px-1">
-          <span>
-            Mostrando <b>{filteredPicks.length}</b> de <b>{currentWeek.picks.length}</b> picks de la {currentWeek.label}
-          </span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-[11px] text-[#8b949e] px-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span>
+              Mostrando <b>{filteredPicks.length}</b> de <b>{currentWeek.picks.length}</b> picks de la {currentWeek.label}
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+              </span>
+              <span>Actualizado en vivo</span>
+            </span>
+          </div>
           <span className="font-mono text-[#00ff66] font-bold">
             {currentWeek.wonPicks} Acertados · {currentWeek.totalPicks - currentWeek.wonPicks} Fallados
           </span>
