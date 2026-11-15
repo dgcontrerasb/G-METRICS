@@ -1,9 +1,35 @@
 #!/bin/sh
-echo "🛡️ G-METRICS Pre-Commit: Verificando integridad de tipos TypeScript..."
-npx tsc --noEmit
-if [ $? -ne 0 ]; then
-  echo "❌ Error: Se detectaron errores de TypeScript. Corrige los tipos antes de hacer commit."
+echo "🛡️ G-METRICS Pre-Commit Shield: Iniciando verificaciones de seguridad..."
+
+# 1. Verificación contra fuga accidental de archivos de entorno y secretos
+STAGED_FILES=$(git diff --cached --name-only)
+
+for FILE in $STAGED_FILES; do
+  case "$FILE" in
+    .env|.env.local|.env.production|.env.development)
+      echo "❌ SEGURIDAD: Intento de commitear archivo de entorno confidencial: $FILE"
+      echo "⚠️ Acción bloqueada para proteger credenciales. Deshaz el staging con: git reset HEAD $FILE"
+      exit 1
+      ;;
+  esac
+done
+
+# Verificación de que no se staged llaves maestras en archivos del cliente frontend (src/)
+SUSPICIOUS_SECRETS=$(git diff --cached -S"SUPABASE_SERVICE_ROLE_KEY" --name-only src/)
+if [ -n "$SUSPICIOUS_SECRETS" ]; then
+  echo "❌ SEGURIDAD: Se detectó referencia a SUPABASE_SERVICE_ROLE_KEY en el cliente (src/):"
+  echo "$SUSPICIOUS_SECRETS"
+  echo "⚠️ Las llaves de servicio maestras nunca deben residir en el frontend. Abortando commit."
   exit 1
 fi
-echo "✅ TypeScript validado con 0 errores. Procediendo con el commit..."
+
+# 2. Verificación estricta de tipos TypeScript
+echo "🔍 Validando integridad de tipos TypeScript..."
+npx tsc --noEmit
+if [ $? -ne 0 ]; then
+  echo "❌ Error: La compilación de TypeScript falló. Corrige los tipos antes de hacer commit."
+  exit 1
+fi
+
+echo "✅ Verificaciones superadas con éxito (0 secretos expuestos, 0 errores TypeScript). Procediendo..."
 exit 0
