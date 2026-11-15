@@ -28,7 +28,7 @@ interface AccessLockScreenProps {
   nbaFixtures?: NBAMatchFixture[];
   onUnlock: (result: LicenseValidationResult, key: string) => void;
   onOpenAdmin: () => void;
-  onOpenGuide?: (tab: 'GUIDE' | 'GLOSSARY' | 'LEGAL') => void;
+  onOpenGuide?: (tab: 'GUIDE' | 'GLOSSARY' | 'LEGAL' | 'AUDIT') => void;
 }
 
 // Cálculo dinámico de la semana ISO actual para la auditoría de certeza
@@ -928,6 +928,14 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
             </span>
             <button
               type="button"
+              onClick={() => onOpenGuide?.('AUDIT')}
+              className="px-3 py-0.5 text-emerald-400 hover:text-emerald-300 transition cursor-pointer flex items-center gap-1 font-bold"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Auditoría</span>
+            </button>
+            <button
+              type="button"
               onClick={() => onOpenGuide?.('GUIDE')}
               className="px-3 py-0.5 hover:text-white transition cursor-pointer"
             >
@@ -938,7 +946,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
               onClick={() => onOpenGuide?.('GLOSSARY')}
               className="px-3 py-0.5 hover:text-white transition cursor-pointer"
             >
-              Live
+              Glosario
             </button>
             <button
               type="button"
@@ -966,14 +974,19 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
       <main className="relative z-10 w-full max-w-5xl mx-auto px-4 flex-1 flex flex-col justify-evenly items-center min-h-0 py-2 sm:py-3">
         {/* 1. Eficiencia Semanal Auditada + Titular de Alto Impacto */}
         <div className="text-center space-y-1.5 sm:space-y-2 max-w-3xl mx-auto shrink-0">
-          {/* Badge de Eficiencia Semanal Auditada */}
+          {/* Badge de Eficiencia Semanal Auditada (Abre la Auditoría Histórica al hacer click) */}
           <div className="flex items-center justify-center">
-            <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-0.5 sm:py-1 rounded-full bg-[#161b22]/90 border border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.2)] text-[10.5px] sm:text-xs backdrop-blur-md">
+            <button
+              type="button"
+              onClick={() => onOpenGuide?.('AUDIT')}
+              className="inline-flex items-center gap-2 px-3 sm:px-4 py-0.5 sm:py-1 rounded-full bg-[#161b22]/90 hover:bg-[#1c2129] border border-emerald-500/50 hover:border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_25px_rgba(16,185,129,0.35)] text-[10.5px] sm:text-xs backdrop-blur-md transition-all duration-200 cursor-pointer group hover:scale-[1.02] active:scale-[0.98]"
+              title="Click para revisar la Auditoría Histórica de Certeza y Registro de Picks"
+            >
               <span className="flex h-2 w-2 relative shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
               </span>
-              <span className="text-slate-300 font-semibold">
+              <span className="text-slate-300 font-semibold group-hover:text-white transition-colors">
                 Eficiencia Semanal{' '}
                 <span className="text-[#8b949e] font-normal">(Sem. {weekInfo.weekNo}):</span>
               </span>
@@ -981,10 +994,10 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
                 84.6% Acierto
               </span>
               <span className="hidden sm:inline text-slate-600 font-mono">•</span>
-              <span className="hidden sm:inline text-[#d9b114] font-bold text-[10.5px]">
-                Top Picks Auditados
+              <span className="hidden sm:inline text-[#d9b114] font-bold text-[10.5px] group-hover:underline">
+                Verificar Auditoría ↗
               </span>
-            </div>
+            </button>
           </div>
 
           <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white leading-[1.12]">

@@ -14,10 +14,12 @@ import {
   Calculator,
   BookMarked,
   ShieldCheck,
-  Lock
+  Lock,
+  TrendingUp
 } from 'lucide-react';
+import { HistoricalAuditView } from './HistoricalAuditView';
 
-export type GuideModalTab = 'GUIDE' | 'GLOSSARY' | 'LEGAL';
+export type GuideModalTab = 'GUIDE' | 'GLOSSARY' | 'LEGAL' | 'AUDIT';
 
 interface DidacticGuideModalProps {
   isOpen: boolean;
@@ -272,23 +274,39 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
         <div className="px-4 sm:px-5 py-3.5 border-b border-[#30363d] bg-[#0b0e14] flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#161b22] border border-[#30363d] shadow-2xs flex items-center justify-center shrink-0">
-              {activeTab === 'LEGAL' ? (
-                <Scale className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
+              {activeTab === 'AUDIT' ? (
+                <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
+              ) : activeTab === 'LEGAL' ? (
+                <Scale className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500" />
               ) : activeTab === 'GLOSSARY' ? (
-                <BookMarked className="w-4 h-4 sm:w-5 sm:h-5 text-cyan-600" />
+                <BookMarked className="w-4 h-4 sm:w-5 sm:h-5 text-cyan-400" />
               ) : (
-                <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />
+                <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
               )}
             </div>
             <div className="min-w-0">
               <h2 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-1.5 flex-wrap">
-                <span>Centro de Ayuda y Glosario</span>
+                <span>
+                  {activeTab === 'AUDIT'
+                    ? 'Auditoría Histórica de Certeza'
+                    : activeTab === 'GLOSSARY'
+                    ? 'Glosario Técnico A-Z'
+                    : activeTab === 'LEGAL'
+                    ? 'Marco Legal y Habeas Data'
+                    : 'Centro Didáctico y Guía Rápida'}
+                </span>
                 <span className="bento-pill-emerald text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full">
                   +18
                 </span>
               </h2>
               <p className="text-[11px] text-[#8b949e] truncate">
-                Guía práctica, glosario técnico A-Z y aviso legal.
+                {activeTab === 'AUDIT'
+                  ? 'Registro semanal verificado de aciertos, cuotas y modelos predictivos.'
+                  : activeTab === 'GLOSSARY'
+                  ? 'Diccionario completo de términos matemáticos, fútbol y NBA.'
+                  : activeTab === 'LEGAL'
+                  ? 'Cumplimiento normativo para mayores de edad y protección de datos.'
+                  : 'Guía práctica para comprender cuotas, valor (+EV) y gestión de banca.'}
               </p>
             </div>
           </div>
@@ -303,32 +321,48 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
 
         {/* Navigation Tabs: Segmented Bento Pill Dock */}
         <div className="px-3 sm:px-5 py-2 bg-[#0b0e14] border-b border-[#30363d]">
-          <div className="p-1 rounded-2xl bg-[#161b22] border border-[#30363d] grid grid-cols-3 gap-1.5">
+          <div className="p-1 rounded-2xl bg-[#161b22] border border-[#30363d] grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            <button
+              type="button"
+              onClick={() => setActiveTab('AUDIT')}
+              className={`py-1.5 px-2 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer min-w-0 ${
+                activeTab === 'AUDIT'
+                  ? 'bg-[#0b0e14] text-white border border-emerald-500/70 shadow-xs font-bold'
+                  : 'bg-transparent text-[#8b949e] border border-transparent hover:text-white hover:bg-[#1c2129]'
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="truncate">Auditoría</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-emerald-500/20 text-[#00ff66] font-mono font-bold shrink-0">
+                84.6%
+              </span>
+            </button>
+
             <button
               type="button"
               onClick={() => setActiveTab('GUIDE')}
-              className={`py-1.5 px-1.5 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer min-w-0 ${
+              className={`py-1.5 px-2 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer min-w-0 ${
                 activeTab === 'GUIDE'
                   ? 'bg-[#0b0e14] text-white border border-[#d9b114]/60 shadow-xs font-bold'
                   : 'bg-transparent text-[#8b949e] border border-transparent hover:text-white hover:bg-[#1c2129]'
               }`}
             >
-              <Calculator className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <Calculator className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
               <span className="truncate">Guía Rápida</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('GLOSSARY')}
-              className={`py-1.5 px-1.5 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer min-w-0 ${
+              className={`py-1.5 px-2 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer min-w-0 ${
                 activeTab === 'GLOSSARY'
                   ? 'bg-[#0b0e14] text-white border border-[#d9b114]/60 shadow-xs font-bold'
                   : 'bg-transparent text-[#8b949e] border border-transparent hover:text-white hover:bg-[#1c2129]'
               }`}
             >
-              <BookMarked className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
+              <BookMarked className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span className="truncate">Glosario</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-cyan-50 text-cyan-700 border border-cyan-200 font-mono shrink-0">
+              <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-cyan-900/40 text-cyan-300 border border-cyan-700/50 font-mono shrink-0">
                 {GLOSSARY_ITEMS.length}
               </span>
             </button>
@@ -336,13 +370,13 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('LEGAL')}
-              className={`py-1.5 px-1.5 sm:px-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer min-w-0 ${
+              className={`py-1.5 px-2 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer min-w-0 ${
                 activeTab === 'LEGAL'
                   ? 'bg-[#0b0e14] text-white border border-[#d9b114]/60 shadow-xs font-bold'
                   : 'bg-transparent text-[#8b949e] border border-transparent hover:text-white hover:bg-[#1c2129]'
               }`}
             >
-              <Scale className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <Scale className="w-3.5 h-3.5 text-amber-500 shrink-0" />
               <span className="truncate">Aviso Legal</span>
             </button>
           </div>
@@ -350,6 +384,11 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 text-xs sm:text-sm bg-[#0b0e14]/70">
+          {/* =========================================================
+              TAB 0: AUDITORÍA HISTÓRICA DE EFICIENCIA CUANTITATIVA
+             ========================================================= */}
+          {activeTab === 'AUDIT' && <HistoricalAuditView />}
+
           {/* =========================================================
               TAB 1: GUÍA RÁPIDA PARA PRINCIPIANTES
              ========================================================= */}
