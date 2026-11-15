@@ -232,6 +232,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
   const [acceptedLegal, setAcceptedLegal] = useState<boolean>(true);
   const [selectedDuelIndex, setSelectedDuelIndex] = useState<number>(0);
   const [isAutoRotating, setIsAutoRotating] = useState<boolean>(true);
+  const [gatewaySport, setGatewaySport] = useState<'SOCCER' | 'NBA'>('SOCCER');
 
   // Información semanal calculada dinámicamente
   const weekInfo = getISOWeekInfo();
@@ -511,16 +512,21 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
     return FALLBACK_FEATURED_DUELS;
   }, [allSoccerFixtures, allNbaFixtures]);
 
-  const currentDuel = dynamicFeaturedDuels[selectedDuelIndex] || dynamicFeaturedDuels[0];
+  const filteredDuels = useMemo(() => {
+    const subset = dynamicFeaturedDuels.filter((d) => d.sport === gatewaySport);
+    return subset.length > 0 ? subset : dynamicFeaturedDuels;
+  }, [dynamicFeaturedDuels, gatewaySport]);
 
-  // Rotación automática suave de partidos estelares cada 7.5 segundos
+  const currentDuel = filteredDuels[selectedDuelIndex % filteredDuels.length] || dynamicFeaturedDuels[0];
+
+  // Rotación automática suave de partidos estelares cada 6.5 segundos
   useEffect(() => {
-    if (!isAutoRotating || dynamicFeaturedDuels.length <= 1) return;
+    if (!isAutoRotating || filteredDuels.length <= 1) return;
     const timer = setInterval(() => {
-      setSelectedDuelIndex((prev) => (prev + 1) % dynamicFeaturedDuels.length);
-    }, 7500);
+      setSelectedDuelIndex((prev) => (prev + 1) % filteredDuels.length);
+    }, 6500);
     return () => clearInterval(timer);
-  }, [isAutoRotating, dynamicFeaturedDuels.length]);
+  }, [isAutoRotating, filteredDuels.length]);
 
   // Detector secreto de 3 clics en el logo original para abrir el panel de Administrador
   const tapCountRef = useRef(0);
@@ -803,19 +809,19 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
   };
 
   return (
-    <div className="min-h-screen lg:h-screen lg:overflow-hidden cr7-cinematic-bg bg-[#0b0e14] flex flex-col justify-between relative overflow-x-hidden text-white font-sans select-none">
+    <div className="h-[100dvh] max-h-[100dvh] w-full cr7-cinematic-bg bg-[#0b0e14] flex flex-col justify-between relative overflow-hidden text-white font-sans select-none">
       {/* Estilos Antigravity Design: Glassmorphism, Rayos Láser Cyber-Neon y Ticker Continuo */}
       <style>{`
         .gmetrics-neon-cta-box {
           position: relative;
-          border-radius: 26px;
+          border-radius: 24px;
           overflow: hidden;
-          background: rgba(22, 27, 34, 0.90);
+          background: rgba(22, 27, 34, 0.92);
           backdrop-filter: blur(24px);
           -webkit-backdrop-filter: blur(24px);
           border: 1px solid #30363d;
           box-shadow:
-            0 22px 55px -12px rgba(0, 0, 0, 0.75),
+            0 18px 45px -12px rgba(0, 0, 0, 0.75),
             0 0 25px rgba(217, 177, 20, 0.12),
             inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
         }
@@ -827,8 +833,8 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
         .sp-t {
           top: 0;
           right: 0;
-          width: 220px;
-          height: 3px;
+          width: 200px;
+          height: 2.5px;
           background: linear-gradient(to left, transparent, #10b981, #d9b114);
           animation: laser-top 2.6s linear infinite;
           animation-delay: 0.6s;
@@ -836,24 +842,24 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
         .sp-r {
           bottom: 0;
           right: 0;
-          width: 3px;
-          height: 180px;
+          width: 2.5px;
+          height: 160px;
           background: linear-gradient(to top, transparent, #d9b114, #10b981);
           animation: laser-right 2.6s linear infinite;
         }
         .sp-b {
           right: 0;
           bottom: 0;
-          width: 220px;
-          height: 3px;
+          width: 200px;
+          height: 2.5px;
           background: linear-gradient(to left, transparent, #10b981, #d9b114);
           animation: laser-bottom 2.6s linear infinite;
         }
         .sp-l {
           left: 0;
           top: 0;
-          width: 3px;
-          height: 180px;
+          width: 2.5px;
+          height: 160px;
           background: linear-gradient(to top, transparent, #d9b114, #10b981);
           animation: laser-left 2.6s linear infinite;
           animation-delay: 1.3s;
@@ -895,12 +901,12 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
       `}</style>
 
       {/* Resplandores ambientales de fondo */}
-      <div className="absolute top-[8%] left-[12%] w-[550px] h-[550px] rounded-full bg-emerald-500/10 blur-[140px] pointer-events-none -z-10" />
-      <div className="absolute bottom-[8%] right-[8%] w-[550px] h-[550px] rounded-full bg-[#d9b114]/8 blur-[140px] pointer-events-none -z-10" />
+      <div className="absolute top-[8%] left-[12%] w-[450px] h-[450px] rounded-full bg-emerald-500/10 blur-[130px] pointer-events-none -z-10" />
+      <div className="absolute bottom-[8%] right-[8%] w-[450px] h-[450px] rounded-full bg-[#d9b114]/8 blur-[130px] pointer-events-none -z-10" />
 
       {/* ================= BARRA SUPERIOR INSTITUCIONAL GLASS ================= */}
-      <header className="relative z-20 w-full max-w-7xl mx-auto px-3 sm:px-6 pt-2.5 sm:pt-4">
-        <div className="w-full px-4 sm:px-6 py-2.5 rounded-2xl bg-[#0b0e14]/90 backdrop-blur-xl border border-[#30363d] shadow-[0_12px_35px_-10px_rgba(0,0,0,0.5)] flex items-center justify-between gap-3">
+      <header className="relative z-20 w-full max-w-6xl mx-auto px-3 sm:px-6 pt-2 sm:pt-3 shrink-0">
+        <div className="w-full px-3.5 sm:px-5 py-2 rounded-2xl bg-[#0b0e14]/90 backdrop-blur-xl border border-[#30363d] shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)] flex items-center justify-between gap-3">
           {/* Logo y Tipografía Original de G METRICS (con 3 clics secretos para Admin) */}
           <div
             onClick={handleSecretLogoClick}
@@ -909,10 +915,10 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
           >
             <SportStatsLogo size="md" withGlow={false} />
             <div className="min-w-0 flex flex-col justify-center text-left">
-              <span className="gmetrics-brand-title text-lg sm:text-2xl leading-none block whitespace-nowrap">
+              <span className="gmetrics-brand-title text-base sm:text-xl leading-none block whitespace-nowrap">
                 G METRICS
               </span>
-              <span className="text-[7px] sm:text-[8.5px] font-extrabold uppercase tracking-[0.12em] text-[#8b949e] block whitespace-nowrap leading-none mt-1">
+              <span className="text-[7px] sm:text-[8px] font-extrabold uppercase tracking-[0.12em] text-[#8b949e] block whitespace-nowrap leading-none mt-1">
                 LA CIENCIA DETRÁS DE LA VICTORIA
               </span>
             </div>
@@ -920,25 +926,25 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
 
           {/* Botones de Navegación Derecha */}
           {onOpenGuide && (
-            <div className="flex items-center gap-1.5 sm:gap-2.5">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => onOpenGuide('GLOSSARY')}
-                className="px-3 sm:px-4 py-1.5 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] hover:border-[#8b949e]/40 text-[11px] sm:text-xs font-bold text-white shadow-2xs transition cursor-pointer"
+                className="px-2.5 sm:px-3.5 py-1 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] hover:border-[#8b949e]/40 text-[10.5px] sm:text-xs font-bold text-white shadow-2xs transition cursor-pointer"
               >
                 Glosario A-Z
               </button>
               <button
                 type="button"
                 onClick={() => onOpenGuide('GUIDE')}
-                className="hidden sm:inline-flex px-4 py-1.5 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] hover:border-[#8b949e]/40 text-xs font-bold text-white shadow-2xs transition cursor-pointer"
+                className="hidden sm:inline-flex px-3.5 py-1 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#30363d] hover:border-[#8b949e]/40 text-xs font-bold text-white shadow-2xs transition cursor-pointer"
               >
                 Cómo Funciona
               </button>
               <button
                 type="button"
                 onClick={() => onOpenGuide('LEGAL')}
-                className="px-3 sm:px-4 py-1.5 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#d9b114]/40 text-[11px] sm:text-xs font-bold text-[#d9b114] shadow-2xs transition cursor-pointer"
+                className="px-2.5 sm:px-3.5 py-1 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#d9b114]/40 text-[10.5px] sm:text-xs font-bold text-[#d9b114] shadow-2xs transition cursor-pointer"
               >
                 +18 Legal
               </button>
@@ -948,11 +954,11 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
       </header>
 
       {/* ================= MARQUESINA CINÉTICA DE TELEMETRÍA EN VIVO ================= */}
-      <div className="relative z-20 w-full max-w-7xl mx-auto px-3 sm:px-6 pt-2 pb-0.5 overflow-hidden">
-        <div className="flex items-center gap-2 overflow-hidden rounded-xl bg-[#0b0e14]/85 border border-[#30363d] py-1.5 px-2.5 backdrop-blur-md shadow-xs">
-          <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#161b22] border border-[#d9b114]/50 text-[#d9b114] text-[9.5px] font-black uppercase tracking-wider shrink-0 shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Telemetría en Vivo</span>
+      <div className="relative z-20 w-full max-w-6xl mx-auto px-3 sm:px-6 pt-1 sm:pt-1.5 pb-0.5 overflow-hidden shrink-0">
+        <div className="flex items-center gap-2 overflow-hidden rounded-xl bg-[#0b0e14]/85 border border-[#30363d] py-1 px-2.5 backdrop-blur-md shadow-xs">
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#161b22] border border-[#d9b114]/50 text-[#d9b114] text-[9px] font-black uppercase tracking-wider shrink-0 shadow-xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Telemetría</span>
           </div>
 
           <div className="relative flex-1 overflow-hidden">
@@ -961,17 +967,17 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
               {[...dynamicTickerMatches, ...dynamicTickerMatches].map((item, idx) => (
                 <div
                   key={`${item.id}-${idx}`}
-                  className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-lg bg-[#161b22]/70 border border-[#30363d]/70 text-[10.5px] text-white shrink-0 hover:border-[#d9b114]/60 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[#161b22]/70 border border-[#30363d]/70 text-[10px] text-white shrink-0 hover:border-[#d9b114]/60 transition-colors"
                 >
                   <div className="flex items-center gap-1">
                     <img src={item.crestHome} alt="" className="w-3.5 h-3.5 object-contain" />
                     <span className="font-bold">{item.match}</span>
                     <img src={item.crestAway} alt="" className="w-3.5 h-3.5 object-contain" />
                   </div>
-                  <span className="px-1.5 py-0.2 rounded bg-[#0b0e14] text-[9px] font-mono font-extrabold text-[#d9b114] border border-[#30363d]">
+                  <span className="px-1 py-0.2 rounded bg-[#0b0e14] text-[8.5px] font-mono font-extrabold text-[#d9b114] border border-[#30363d]">
                     {item.score}
                   </span>
-                  <span className="text-[10px] text-[#00ff66] font-extrabold font-mono">
+                  <span className="text-[9.5px] text-[#00ff66] font-extrabold font-mono">
                     {item.certainty}
                   </span>
                 </div>
@@ -981,462 +987,218 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
         </div>
       </div>
 
-      {/* ================= HERO PRINCIPAL ================= */}
-      <main className="relative z-10 w-full max-w-7xl mx-auto px-3 sm:px-6 py-2 lg:py-0 flex-1 flex items-center">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-7 items-center w-full">
-          {/* COLUMNA IZQUIERDA: Propuesta de Valor & Acceso Google */}
-          <div className="lg:col-span-5 xl:col-span-5 space-y-3 sm:space-y-3.5">
-            {/* Insignia del Motor Predictivo */}
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#161b22] border border-[#30363d] shadow-2xs">
-              <Zap className="w-3.5 h-3.5 text-[#d9b114] fill-[#d9b114]" />
-              <span className="text-[9.5px] sm:text-[10px] font-extrabold uppercase tracking-wider text-[#d9b114]">
-                MOTOR PREDICTIVO DE ALTA PRECISIÓN · FÚTBOL &amp; NBA
-              </span>
-            </div>
+      {/* ================= HERO GATEWAY CENTRADO (OPCIÓN B - ZERO SCROLL) ================= */}
+      <main className="relative z-10 w-full max-w-3xl mx-auto px-3 sm:px-6 flex-1 flex flex-col items-center justify-center my-auto min-h-0 py-1">
+        {/* 1. Header Centrado: Badge + Titular + Píldoras de Confianza */}
+        <div className="text-center space-y-1 sm:space-y-1.5 max-w-2xl mx-auto shrink-0">
+          {/* Badge superior */}
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#161b22] border border-[#30363d] shadow-2xs">
+            <Zap className="w-3 h-3 text-[#d9b114] fill-[#d9b114]" />
+            <span className="text-[8.5px] sm:text-[9.5px] font-extrabold uppercase tracking-wider text-[#d9b114]">
+              MOTOR PREDICTIVO DE ALTA PRECISIÓN · FÚTBOL &amp; NBA
+            </span>
+          </div>
 
-            {/* Titular de Impacto */}
-            <div className="space-y-1 sm:space-y-1.5">
-              <h1 className="text-2xl sm:text-3xl lg:text-[31px] xl:text-[34px] font-black tracking-tight text-white leading-[1.12]">
-                Deja el azar a un lado.
-                <span className="block text-[#d9b114]">
-                  Toma decisiones con ventaja estadística real.
-                </span>
-              </h1>
-              <p className="text-[11.5px] sm:text-xs text-[#8b949e] font-medium max-w-lg leading-relaxed">
-                Plataforma de inteligencia deportiva en tiempo real. Explora probabilidades exactas, modelos de gol esperado (xG) y pronósticos de valor (+EV) antes de cada partido.
+          {/* Titular */}
+          <h1 className="text-lg sm:text-2xl md:text-3xl font-black tracking-tight text-white leading-[1.15]">
+            Deja el azar a un lado.{' '}
+            <span className="text-[#d9b114] block sm:inline">
+              Toma decisiones con ventaja estadística real.
+            </span>
+          </h1>
+
+          {/* Subtítulo breve (visible en PC y móvil mediano) */}
+          <p className="text-[10.5px] sm:text-xs text-[#8b949e] font-medium max-w-lg mx-auto leading-tight hidden xs:block">
+            Inteligencia deportiva cuantitativa, modelos de gol esperado (xG) y valor (+EV) en tiempo real.
+          </p>
+
+          {/* Píldoras de Confianza */}
+          <div className="flex items-center justify-center gap-1.5 pt-0.5">
+            <div className="px-2.5 py-0.5 rounded-full bg-[#161b22] border border-emerald-500/40 text-[9px] sm:text-[10px] font-extrabold text-[#00ff66] flex items-center gap-1 shadow-2xs">
+              <TrendingUp className="w-3 h-3 text-[#00ff66]" />
+              <span>Auditoría Semanal (Sem. {weekInfo.weekNo}): 84.6% Certeza</span>
+            </div>
+            <div className="px-2 py-0.5 rounded-full bg-[#161b22] border border-[#30363d] text-[9px] font-bold text-white flex items-center gap-1">
+              <Layers className="w-3 h-3 text-[#d9b114]" />
+              <span>7 Modelos</span>
+            </div>
+            <div className="px-2 py-0.5 rounded-full bg-[#161b22] border border-[#30363d] text-[9px] font-bold text-white flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-cyan-400" />
+              <span>100% Gratuito</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Tarjeta Centrada de Acceso Único con Google (Foco Principal sin saturación) */}
+        <div className="gmetrics-neon-cta-box p-3 sm:p-4 w-full max-w-md mx-auto my-1.5 sm:my-2.5 shrink-0">
+          <span className="sp-laser sp-t" />
+          <span className="sp-laser sp-r" />
+          <span className="sp-laser sp-b" />
+          <span className="sp-laser sp-l" />
+
+          <div className="relative z-10 space-y-2">
+            {/* Botón Principal de Google */}
+            <button
+              type="button"
+              onClick={handleContinueWithGoogle}
+              disabled={googleLoading}
+              className="w-full py-2.5 sm:py-3 px-4 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-900 font-black text-xs sm:text-sm flex items-center justify-center gap-2.5 transition-all duration-200 shadow-[0_6px_20px_-4px_rgba(0,0,0,0.4)] hover:shadow-[0_10px_25px_-4px_rgba(217,177,20,0.3)] hover:-translate-y-0.5 active:translate-y-0 cursor-pointer disabled:opacity-65"
+            >
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                />
+              </svg>
+              <span>
+                {googleLoading
+                  ? 'Conectando con tu cuenta Google...'
+                  : 'Continuar con Google — Acceso Instantáneo'}
+              </span>
+            </button>
+
+            {/* Subtítulo explicativo */}
+            <div className="flex flex-col items-center text-center space-y-0.5">
+              <div className="flex items-center justify-center gap-1 text-[10px] sm:text-[10.5px] font-extrabold text-white">
+                <span>Ingreso único inteligente en 1 clic</span>
+                <CheckCircle2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+              </div>
+              <p className="text-[9px] sm:text-[9.5px] text-[#8b949e] font-medium leading-tight">
+                Activación y acceso automático sin contraseñas ni formularios.
               </p>
             </div>
 
-            {/* Píldoras de Confianza y Auditoría Semanal */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              <div className="px-3 py-1 rounded-full bg-[#161b22] border border-emerald-500/40 text-[10px] sm:text-[10.5px] font-extrabold text-[#00ff66] flex items-center gap-1.5 shadow-2xs">
-                <TrendingUp className="w-3 h-3 text-[#00ff66]" />
-                <span>Auditoría Semanal (Sem. {weekInfo.weekNo}): 84.6% Certeza</span>
+            {/* Mensaje de error si ocurre */}
+            {authError && (
+              <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[10.5px] flex items-center gap-2 animate-fadeIn">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                <span>{authError}</span>
               </div>
-              <div className="px-2.5 py-1 rounded-full bg-[#161b22] border border-[#30363d] text-[10px] font-bold text-white flex items-center gap-1">
-                <Layers className="w-3 h-3 text-[#d9b114]" />
-                <span>7 Modelos</span>
+            )}
+
+            {/* Dock Dual-Device */}
+            <div className="w-full py-1 px-2.5 rounded-xl bg-[#0b0e14] border border-[#30363d] text-white flex items-center justify-between gap-2 shadow-xs">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-xs">💻</span>
+                <span className="text-[9px] font-bold text-[#8b949e] truncate">
+                  Modo Widescreen 3 Col. en PC
+                </span>
               </div>
-              <div className="px-2.5 py-1 rounded-full bg-[#161b22] border border-[#30363d] text-[10px] font-bold text-white flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-cyan-400" />
-                <span>100% Gratuito</span>
+              <span className="text-slate-600 font-mono text-[9px]">•</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs">📱</span>
+                <span className="text-[9px] font-bold text-[#00ff66]">
+                  100% Sincronizado en Móvil
+                </span>
               </div>
             </div>
 
-            {/* TARJETA CYBER-NEON GLASS DE ACCESO ÚNICO CON GOOGLE */}
-            <div className="gmetrics-neon-cta-box p-4 sm:p-5 max-w-lg">
-              <span className="sp-laser sp-t" />
-              <span className="sp-laser sp-r" />
-              <span className="sp-laser sp-b" />
-              <span className="sp-laser sp-l" />
-
-              <div className="relative z-10 space-y-2.5">
-                {/* Botón Principal de Doble Propósito (Registro Automático + Inicio de Sesión) */}
+            {/* Casilla de Términos */}
+            <label className="flex items-center justify-center gap-1.5 text-[10px] text-[#8b949e] cursor-pointer select-none pt-0.5">
+              <input
+                type="checkbox"
+                checked={acceptedLegal}
+                onChange={(e) => setAcceptedLegal(e.target.checked)}
+                className="rounded accent-emerald-500 cursor-pointer w-3.5 h-3.5"
+              />
+              <span>
+                Acepto los{' '}
                 <button
                   type="button"
-                  onClick={handleContinueWithGoogle}
-                  disabled={googleLoading}
-                  className="w-full py-3 sm:py-3.5 px-4 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-900 font-black text-xs sm:text-sm flex items-center justify-center gap-2.5 transition-all duration-200 shadow-[0_6px_20px_-4px_rgba(0,0,0,0.4)] hover:shadow-[0_10px_25px_-4px_rgba(217,177,20,0.3)] hover:-translate-y-0.5 active:translate-y-0 cursor-pointer disabled:opacity-65"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onOpenGuide && onOpenGuide('LEGAL');
+                  }}
+                  className="text-[#d9b114] underline font-bold hover:text-white cursor-pointer"
                 >
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                    />
-                  </svg>
-                  <span>
-                    {googleLoading
-                      ? 'Conectando con tu cuenta Google...'
-                      : 'Continuar con Google — Acceso Instantáneo'}
-                  </span>
-                </button>
+                  Términos y Habeas Data
+                </button>{' '}
+                (+18).
+              </span>
+            </label>
+          </div>
+        </div>
 
-                {/* Subtítulo explicativo */}
-                <div className="flex flex-col items-center text-center space-y-0.5">
-                  <div className="flex items-center justify-center gap-1.5 text-[11px] font-extrabold text-white">
-                    <span>Ingreso único inteligente en 1 clic</span>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                  </div>
-                  <p className="text-[10px] text-[#8b949e] font-medium leading-tight">
-                    Si eres nuevo, tu cuenta se activa automáticamente; si ya estás registrado, entras al instante sin claves.
-                  </p>
-                </div>
-
-                {/* Mensaje de error si ocurre algún problema */}
-                {authError && (
-                  <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[11px] flex items-center gap-2 animate-fadeIn">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
-                    <span>{authError}</span>
-                  </div>
-                )}
-
-                {/* Dock Dual-Device Integrado */}
-                <div className="w-full py-1.5 px-3 rounded-xl bg-[#0b0e14] border border-[#30363d] text-white flex items-center justify-between gap-2 shadow-xs">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-xs">💻</span>
-                    <span className="text-[9.5px] font-bold text-[#8b949e] truncate">
-                      Modo Widescreen 3 Col. en PC
-                    </span>
-                  </div>
-                  <span className="text-slate-600 font-mono text-[9px]">•</span>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-xs">📱</span>
-                    <span className="text-[9.5px] font-bold text-[#00ff66]">
-                      100% Sincronizado en Móvil
-                    </span>
-                  </div>
-                </div>
-
-                {/* Casilla de Aceptación Legal */}
-                <label className="flex items-center justify-center gap-2 text-[10.5px] text-[#8b949e] cursor-pointer select-none pt-0.5">
-                  <input
-                    type="checkbox"
-                    checked={acceptedLegal}
-                    onChange={(e) => setAcceptedLegal(e.target.checked)}
-                    className="rounded accent-emerald-500 cursor-pointer"
-                  />
-                  <span>
-                    Acepto los{' '}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onOpenGuide && onOpenGuide('LEGAL');
-                      }}
-                      className="text-[#d9b114] underline font-bold hover:text-white cursor-pointer"
-                    >
-                      Términos de Servicio y Habeas Data
-                    </button>{' '}
-                    (+18).
-                  </span>
-                </label>
-              </div>
-            </div>
+        {/* 3. Live Pulse Showcase Horizontal (Opción B: Compacto, limpio y sin scroll) */}
+        <div className="w-full max-w-2xl mx-auto space-y-1.5 shrink-0">
+          {/* Selector Segmentado de Deporte */}
+          <div className="flex items-center justify-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setGatewaySport('SOCCER');
+                setSelectedDuelIndex(0);
+              }}
+              className={`px-3 py-0.5 rounded-full text-[9.5px] sm:text-[10px] font-mono font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                gatewaySport === 'SOCCER'
+                  ? 'bg-[#161b22] text-[#d9b114] border-[#d9b114]/60 shadow-xs'
+                  : 'bg-[#0b0e14] text-[#8b949e] border-[#30363d] hover:text-white'
+              }`}
+            >
+              <span>⚽ Fútbol Hoy ({allSoccerFixtures.length || 4})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setGatewaySport('NBA');
+                setSelectedDuelIndex(0);
+              }}
+              className={`px-3 py-0.5 rounded-full text-[9.5px] sm:text-[10px] font-mono font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                gatewaySport === 'NBA'
+                  ? 'bg-[#161b22] text-[#d9b114] border-[#d9b114]/60 shadow-xs'
+                  : 'bg-[#0b0e14] text-[#8b949e] border-[#30363d] hover:text-white'
+              }`}
+            >
+              <span>🏀 NBA Hoy ({allNbaFixtures.length || 2})</span>
+            </button>
           </div>
 
-          {/* COLUMNA DERECHA: Escaparate Dinámico con Equipos y Estrellas Reales */}
-          <div className="lg:col-span-7 xl:col-span-7 flex flex-col gap-2.5 sm:gap-3 py-1">
-            {/* Cabecera del Escaparate: Selector de Duelos Estelares */}
-            <div className="flex items-center justify-between gap-2 px-1">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span className="text-xs font-black text-white uppercase tracking-tight">
-                  Duelo Estelar Analizado
-                </span>
+          {/* Tarjeta Live Pulse Única Compacta (Visible en PC y Móvil sin provocar scroll) */}
+          <div
+            onMouseEnter={() => setIsAutoRotating(false)}
+            onMouseLeave={() => setIsAutoRotating(true)}
+            className="p-2 sm:p-2.5 rounded-2xl bg-[#161b22]/90 border border-[#30363d] shadow-md flex items-center justify-between gap-2.5 backdrop-blur-md"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1 shrink-0">
+                {currentDuel.homeTeam.logo ? (
+                  <img src={currentDuel.homeTeam.logo} alt="" className="w-4 h-4 sm:w-5 sm:h-5 object-contain" />
+                ) : null}
+                <span className="text-[10px] sm:text-xs font-black text-white">{currentDuel.homeTeam.shortName}</span>
+                <span className="text-[8.5px] text-[#8b949e] font-mono mx-0.5">vs</span>
+                <span className="text-[10px] sm:text-xs font-black text-white">{currentDuel.awayTeam.shortName}</span>
+                {currentDuel.awayTeam.logo ? (
+                  <img src={currentDuel.awayTeam.logo} alt="" className="w-4 h-4 sm:w-5 sm:h-5 object-contain" />
+                ) : null}
               </div>
 
-              {/* Selector de Duelos (Rotación o Clic Directo) */}
-              <div className="flex items-center gap-1">
-                {dynamicFeaturedDuels.map((duel, idx) => (
-                  <button
-                    key={duel.id}
-                    type="button"
-                    onClick={() => {
-                      setIsAutoRotating(false);
-                      setSelectedDuelIndex(idx);
-                    }}
-                    className={`px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-bold transition-all cursor-pointer border ${
-                      selectedDuelIndex === idx
-                        ? 'bg-[#161b22] text-[#d9b114] border-[#d9b114] shadow-xs'
-                        : 'bg-[#0b0e14] text-[#8b949e] border-[#30363d] hover:text-white'
-                    }`}
-                  >
-                    {duel.pillLabel}
-                  </button>
-                ))}
+              <div className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#0b0e14] border border-[#30363d] text-[9px] font-mono text-[#8b949e]">
+                <span>xG {currentDuel.homeTeam.xg?.toFixed(1) || '1.8'} - {currentDuel.awayTeam.xg?.toFixed(1) || '1.1'}</span>
               </div>
             </div>
 
-            {/* TARJETA 1 PRINCIPAL: Duelo con Escudos Reales + Foto de Jugador Estrella */}
-            <div
-              onMouseEnter={() => setIsAutoRotating(false)}
-              onMouseLeave={() => setIsAutoRotating(true)}
-              className="rounded-2xl bg-[#161b22] border border-[#30363d] p-3.5 sm:p-4 shadow-xl transition-all relative overflow-hidden"
-            >
-              {/* Top Banner de la Competición */}
-              <div className="flex items-center justify-between gap-2 mb-2.5">
-                <span className="px-2.5 py-0.5 rounded-full bg-[#0b0e14] border border-[#30363d] text-[10px] font-mono uppercase tracking-wider text-[#d9b114] font-bold">
-                  {currentDuel.league}
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="text-right">
+                <span className="text-[9px] font-mono text-[#d9b114] block leading-tight truncate max-w-[125px] sm:max-w-none">
+                  {currentDuel.topPick.label}
                 </span>
-                <span className="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30 text-[9.5px] font-mono font-black uppercase tracking-wider flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
-                  {currentDuel.statusText}
-                </span>
+                <span className="text-[8.5px] font-mono text-[#8b949e]">@{currentDuel.topPick.odd.toFixed(2)} Cuota</span>
               </div>
-
-              {/* Sección de Equipos Enfrentados + Foto de Jugador Estrella */}
-              <div className="grid grid-cols-12 gap-3 items-center pb-2.5 border-b border-[#30363d]">
-                {/* Equipo Local */}
-                <div className="col-span-4 flex items-center gap-2 min-w-0">
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-[#0b0e14] border border-[#30363d] p-1.5 flex items-center justify-center shrink-0 shadow-md">
-                    <img
-                      src={currentDuel.homeTeam.logo}
-                      alt={currentDuel.homeTeam.name}
-                      className="w-8 h-8 sm:w-9 sm:h-9 object-contain"
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="font-extrabold text-white text-xs sm:text-sm block truncate">
-                      {currentDuel.homeTeam.name}
-                    </span>
-                    <span className="font-mono text-[10px] font-bold text-[#8b949e]">
-                      {currentDuel.homeTeam.xg ? `${currentDuel.homeTeam.xg.toFixed(2)} xG` : currentDuel.homeTeam.shortName}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Marcador Central */}
-                <div className="col-span-3 flex flex-col items-center justify-center">
-                  <div className="px-3 py-1 rounded-xl bg-[#0b0e14] border border-[#30363d] font-mono tabular-nums text-sm sm:text-base font-black text-white shadow-inner">
-                    {currentDuel.homeTeam.score ?? 0} - {currentDuel.awayTeam.score ?? 0}
-                  </div>
-                  <span className="text-[9px] font-bold text-[#8b949e] uppercase mt-0.5">
-                    {currentDuel.sport === 'SOCCER' ? 'Goles Esperados' : 'Marcador Real'}
-                  </span>
-                </div>
-
-                {/* Equipo Visitante */}
-                <div className="col-span-5 flex items-center justify-end gap-2 min-w-0 text-right">
-                  <div className="min-w-0">
-                    <span className="font-extrabold text-white text-xs sm:text-sm block truncate">
-                      {currentDuel.awayTeam.name}
-                    </span>
-                    <span className="font-mono text-[10px] font-bold text-[#8b949e]">
-                      {currentDuel.awayTeam.xg ? `${currentDuel.awayTeam.xg.toFixed(2)} xG` : currentDuel.awayTeam.shortName}
-                    </span>
-                  </div>
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-[#0b0e14] border border-[#30363d] p-1.5 flex items-center justify-center shrink-0 shadow-md">
-                    <img
-                      src={currentDuel.awayTeam.logo}
-                      alt={currentDuel.awayTeam.name}
-                      className="w-8 h-8 sm:w-9 sm:h-9 object-contain"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Fila Inferior de la Tarjeta: Jugador Estrella + Pick Recomendado con Certeza */}
-              <div className="pt-2.5 grid grid-cols-12 gap-2.5 items-center">
-                {/* Jugador Estrella */}
-                <div className="col-span-7 flex items-center gap-2 bg-[#0b0e14] p-2 rounded-xl border border-[#30363d]">
-                  <div className="w-8 h-8 rounded-lg bg-[#161b22] border border-[#30363d] overflow-hidden shrink-0 flex items-center justify-center">
-                    <img
-                      src={currentDuel.starPlayer.photo}
-                      alt={currentDuel.starPlayer.name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        // Fallback discreto si la imagen externa tarda en cargar
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="text-[11px] font-black text-white block truncate">
-                      ⭐ {currentDuel.starPlayer.name}
-                    </span>
-                    <span className="text-[9.5px] text-[#8b949e] block truncate">
-                      {currentDuel.starPlayer.role}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Pick Recomendado (+EV) con Anillo de Certeza */}
-                <div className="col-span-5 bg-[#0b0e14] p-1.5 sm:p-2 rounded-xl border border-emerald-500/40 flex items-center justify-between gap-1.5">
-                  <div className="min-w-0">
-                    <span className="text-[9px] font-mono uppercase font-bold text-[#d9b114] block">
-                      Pick Recomendado
-                    </span>
-                    <span className="text-[10.5px] font-black text-white truncate block">
-                      {currentDuel.topPick.label}
-                    </span>
-                    <span className="text-[9px] font-mono text-[#8b949e]">
-                      @{currentDuel.topPick.odd.toFixed(2)} Cuota
-                    </span>
-                  </div>
-
-                  {/* Anillo de Certeza */}
-                  <div className="relative w-9 h-9 flex items-center justify-center shrink-0">
-                    <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                      <circle cx="18" cy="18" r="14.5" fill="none" stroke="#30363d" strokeWidth="3" />
-                      <circle
-                        cx="18"
-                        cy="18"
-                        r="14.5"
-                        fill="none"
-                        stroke="#00ff66"
-                        strokeWidth="3"
-                        strokeDasharray={`${currentDuel.topPick.certainty * 0.91} 100`}
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <span className="absolute text-[8.5px] font-mono tabular-nums font-black text-[#00ff66]">
-                      {Math.round(currentDuel.topPick.certainty)}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* FILA INFERIOR BENTO 2x2: Tarjeta 2 (Cancha 2D & Córners) + Tarjeta 3 (NBA Player Props) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
-              {/* Cuadrante Izquierdo: Cancha 2D & Córners */}
-              <div className="rounded-2xl bg-[#161b22] border border-[#30363d] p-3 sm:p-3.5 shadow-md flex flex-col justify-between">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-full bg-[#0b0e14] border border-[#30363d] text-[#d9b114] font-black text-[9px] flex items-center justify-center shadow-2xs">
-                      ⚽
-                    </span>
-                    <span className="text-[10.5px] font-black text-white uppercase tracking-tight">
-                      Cancha 2D &amp; Córners
-                    </span>
-                  </div>
-                  <span className="text-[9px] font-bold text-[#00ff66] bg-[#0b0e14] px-1.5 py-0.2 rounded border border-[#00ff66]/30">
-                    Telemetría
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-12 gap-2 items-center">
-                  {/* Mini Cancha 2D Táctica */}
-                  <div className="col-span-7 bg-[#0b0e14] rounded-lg p-1.5 border border-[#30363d] shadow-inner relative overflow-hidden">
-                    <svg className="w-full h-15" viewBox="0 0 200 120">
-                      <rect x="6" y="6" width="188" height="108" rx="4" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.2" />
-                      <line x1="100" y1="6" x2="100" y2="114" stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
-                      <circle cx="100" cy="60" r="18" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
-                      <circle cx="45" cy="40" r="3.5" fill="#00ff66" stroke="#fff" strokeWidth="1" />
-                      <circle cx="45" cy="80" r="3.5" fill="#00ff66" stroke="#fff" strokeWidth="1" />
-                      <circle cx="85" cy="60" r="4" fill="#00ff66" stroke="#fff" strokeWidth="1" />
-                      <circle cx="140" cy="40" r="3.5" fill="#38bdf8" stroke="#fff" strokeWidth="1" />
-                      <circle cx="140" cy="80" r="3.5" fill="#38bdf8" stroke="#fff" strokeWidth="1" />
-                      <circle cx="160" cy="60" r="4" fill="#d9b114" stroke="#fff" strokeWidth="1" />
-                    </svg>
-                  </div>
-
-                  {/* Proyecciones de Córners y Goles */}
-                  <div className="col-span-5 flex flex-col gap-1.5">
-                    <div className="bg-[#0b0e14] px-2 py-1 rounded-lg border border-[#30363d] flex items-center justify-between">
-                      <span className="text-[9px] font-bold text-[#8b949e]">Córners +9.5</span>
-                      <span className="text-[10px] font-mono tabular-nums font-black text-[#00ff66]">82%</span>
-                    </div>
-                    <div className="bg-[#0b0e14] px-2 py-1 rounded-lg border border-[#30363d] flex items-center justify-between">
-                      <span className="text-[9px] font-bold text-[#8b949e]">Ambos Anotan</span>
-                      <span className="text-[10px] font-mono tabular-nums font-black text-[#00ff66]">76%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Cuadrante Derecho: NBA Player Props */}
-              <div className="rounded-2xl bg-[#161b22] border border-[#30363d] p-3 sm:p-3.5 shadow-md flex flex-col justify-between">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-full bg-[#0b0e14] border border-[#30363d] text-[#d9b114] font-black text-[9px] flex items-center justify-center shadow-2xs">
-                      🏀
-                    </span>
-                    <h4 className="text-[10.5px] font-black text-white tracking-tight">
-                      NBA Player Props +EV
-                    </h4>
-                  </div>
-                  <span className="text-[9px] font-bold text-[#d9b114] bg-[#0b0e14] border border-[#d9b114]/30 px-1.5 py-0.2 rounded font-mono">
-                    En Vivo
-                  </span>
-                </div>
-
-                <div className="space-y-1">
-                  {allNbaFixtures.length > 0 ? (
-                    <>
-                      <div className="flex items-center justify-between px-2 py-1 rounded-lg bg-[#0b0e14] border border-[#30363d] text-[10px]">
-                        <div className="flex items-center gap-1.5 truncate">
-                          {allNbaFixtures[0].homeTeam.logo ? (
-                            <img
-                              src={allNbaFixtures[0].homeTeam.logo}
-                              alt=""
-                              className="w-4 h-4 object-contain"
-                            />
-                          ) : null}
-                          <span className="font-extrabold text-white truncate">
-                            {allNbaFixtures[0].homeTeam.shortName} · Victoria (+EV)
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 font-mono shrink-0">
-                          <span className="text-[#00ff66] font-bold">78.4%</span>
-                          <span className="px-1.5 py-0.2 rounded bg-[#161b22] text-[#d9b114] border border-[#d9b114]/30 font-black text-[9px]">
-                            @1.88
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between px-2 py-1 rounded-lg bg-[#0b0e14] border border-[#30363d] text-[10px]">
-                        <div className="flex items-center gap-1.5 truncate">
-                          {allNbaFixtures[0].awayTeam.logo ? (
-                            <img
-                              src={allNbaFixtures[0].awayTeam.logo}
-                              alt=""
-                              className="w-4 h-4 object-contain"
-                            />
-                          ) : null}
-                          <span className="font-extrabold text-white truncate">
-                            {allNbaFixtures[0].awayTeam.shortName} · Spread {allNbaFixtures[0].externalOdds?.spreadPoint ?? '+3.5'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 font-mono shrink-0">
-                          <span className="text-[#00ff66] font-bold">74.1%</span>
-                          <span className="px-1.5 py-0.2 rounded bg-[#161b22] text-[#d9b114] border border-[#d9b114]/30 font-black text-[9px]">
-                            @1.90
-                          </span>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between px-2 py-1 rounded-lg bg-[#0b0e14] border border-[#30363d] text-[10px]">
-                        <div className="flex items-center gap-1.5 truncate">
-                          <img
-                            src="https://cdn.nba.com/logos/nba/1610612748/primary/L/logo.svg"
-                            alt=""
-                            className="w-4 h-4 object-contain"
-                          />
-                          <span className="font-extrabold text-white truncate">MIA Heat · Victoria (+EV)</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 font-mono shrink-0">
-                          <span className="text-[#00ff66] font-bold">78.4%</span>
-                          <span className="px-1.5 py-0.2 rounded bg-[#161b22] text-[#d9b114] border border-[#d9b114]/30 font-black text-[9px]">
-                            @1.88
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between px-2 py-1 rounded-lg bg-[#0b0e14] border border-[#30363d] text-[10px]">
-                        <div className="flex items-center gap-1.5 truncate">
-                          <img
-                            src="https://cdn.nba.com/logos/nba/1610612765/primary/L/logo.svg"
-                            alt=""
-                            className="w-4 h-4 object-contain"
-                          />
-                          <span className="font-extrabold text-white truncate">DET Pistons · Spread +3.5</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 font-mono shrink-0">
-                          <span className="text-[#00ff66] font-bold">74.1%</span>
-                          <span className="px-1.5 py-0.2 rounded bg-[#161b22] text-[#d9b114] border border-[#d9b114]/30 font-black text-[9px]">
-                            @1.90
-                          </span>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
+              <div className="px-2 py-0.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-[9.5px] font-mono font-black text-[#00ff66] shrink-0">
+                {Math.round(currentDuel.topPick.certainty)}% Certeza
               </div>
             </div>
           </div>
@@ -1444,10 +1206,10 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
       </main>
 
       {/* ================= PIE DE PÁGINA LEGAL ================= */}
-      <footer className="relative z-10 w-full max-w-7xl mx-auto px-4 py-2.5 text-center">
-        <p className="text-[10px] sm:text-[11px] text-[#8b949e] font-medium">
+      <footer className="relative z-10 w-full max-w-6xl mx-auto px-4 py-1.5 text-center shrink-0">
+        <p className="text-[9.5px] sm:text-[10px] text-[#8b949e] font-medium leading-none">
           <span className="font-extrabold text-white">+18</span> ·{' '}
-          <span className="gmetrics-brand-title text-[10px] mr-1">G METRICS</span> es una
+          <span className="gmetrics-brand-title text-[9.5px] mr-1">G METRICS</span> es una
           herramienta analítica y de software estadístico basada en modelos cuantitativos. No somos
           una casa de apuestas ni captamos fondos.
         </p>
