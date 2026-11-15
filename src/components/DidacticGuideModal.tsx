@@ -18,6 +18,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { HistoricalAuditView } from './HistoricalAuditView';
+import { getHistoricalAuditSummary } from '../services/historicalAuditService';
 
 export type GuideModalTab = 'GUIDE' | 'GLOSSARY' | 'LEGAL' | 'AUDIT';
 
@@ -225,6 +226,7 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
   initialTab = 'GUIDE'
 }) => {
   const [activeTab, setActiveTab] = useState<GuideModalTab>(initialTab);
+  const auditSummary = useMemo(() => getHistoricalAuditSummary(), []);
   const [calcStake, setCalcStake] = useState<number>(10);
   const [calcOdd, setCalcOdd] = useState<number>(1.85);
 
@@ -334,7 +336,7 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
               <TrendingUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span className="truncate">Auditoría</span>
               <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-emerald-500/20 text-[#00ff66] font-mono font-bold shrink-0">
-                84.6%
+                {auditSummary.globalAccuracy}%
               </span>
             </button>
 
