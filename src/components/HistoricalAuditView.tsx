@@ -11,7 +11,8 @@ import {
   Lock,
   ArrowUpRight,
   Search,
-  Sparkles
+  Sparkles,
+  Info
 } from 'lucide-react';
 import {
   getHistoricalAuditSummary,
@@ -92,6 +93,15 @@ export const HistoricalAuditView: React.FC = () => {
               Cada predicción se sella con firma temporal antes del inicio del evento. Cero
               modificaciones retroactivas: ventaja estadística honesta y verificable.
             </p>
+
+            {/* Aclaración metodológica del Pick #1 */}
+            <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0b0e14] border border-emerald-500/30 text-[10.5px] sm:text-[11px] text-[#8b949e]">
+              <Info className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>
+                <strong className="text-white font-bold">Rigor 1 Partido = 1 Veredicto:</strong> La auditoría se basa exclusivamente en el{' '}
+                <span className="text-[#00ff66] font-bold font-mono">Pick #1 Estelar</span> (Top Safe Pick). No promediamos selecciones secundarias para evitar inflar artificialmente la efectividad.
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -343,9 +353,14 @@ export const HistoricalAuditView: React.FC = () => {
                 {/* Selección y Modelo Cuantitativo */}
                 <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d] flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <span className="text-[9px] uppercase font-bold text-[#8b949e] block leading-tight">
-                      Selección {pick.market}
-                    </span>
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-[#00ff66] font-mono font-bold text-[8.5px] border border-emerald-500/30">
+                        ⭐ Pick #1 Estelar
+                      </span>
+                      <span className="text-[9px] uppercase font-bold text-[#8b949e]">
+                        {pick.market}
+                      </span>
+                    </div>
                     <span className="text-xs font-black text-white truncate block">
                       {pick.pick}
                     </span>
