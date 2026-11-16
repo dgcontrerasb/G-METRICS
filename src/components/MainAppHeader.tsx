@@ -215,6 +215,7 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
         {/* Left Zone: Isotipo compacto solo en móvil (en PC el lockup canónico vive en el Sidebar) */}
         <div className="flex items-center gap-2 shrink-0">
           <div
+            data-tour="tour-sports-mobile"
             className="lg:hidden flex items-center gap-2 select-none"
             title="G METRICS"
           >
@@ -247,7 +248,7 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
         </div>
 
         {/* Right Zone: Membresía + Sincronizar + Fondo + Exportar (Lenguaje unificado .cyber-chrome-chip) */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div data-tour="tour-header-actions" className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Indicador de Tiempo de Membresía / Prueba VIP (Oculto mientras el cobro esté suspendido) */}
           {!freeAccessMode && userPlanData && (
             userPlanData.isPermanent ? (
@@ -446,7 +447,7 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
       </div>
 
       {/* Fila 2: Sub-barra Compacta de Búsqueda y Selector de Días */}
-      <div className="border-t border-[#21262d] bg-[#0b0e14]/90 px-3 sm:px-6 py-1.5 transition-colors">
+      <div data-tour="tour-search-date" className="border-t border-[#21262d] bg-[#0b0e14]/90 px-3 sm:px-6 py-1.5 transition-colors">
         <div className="max-w-6xl mx-auto flex items-center gap-2">
           {onSearchChange && (
             <div className="relative flex-1 min-w-0">

@@ -55,7 +55,7 @@ export const CompactNBAMatchRow: React.FC<CompactNBAMatchRowProps> = React.memo(
   const inParlay = isPickInParlay(fixture.id, 'NBA_ML');
 
   return (
-    <div className={`transition-all duration-200 rounded-2xl overflow-hidden bg-[#161b22] border ${
+    <div data-tour="tour-match-card" className={`transition-all duration-200 rounded-2xl overflow-hidden bg-[#161b22] border ${
       isFullWidthDesktop ? 'md:col-span-2' : ''
     } ${
       isRecentlyUpdated
@@ -197,6 +197,7 @@ export const CompactNBAMatchRow: React.FC<CompactNBAMatchRowProps> = React.memo(
             {/* Derecha: Botón Cuotas (compacto en móvil) + Estrella Favorito + Checkbox fino de 20px */}
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <button
+                data-tour="tour-h2h-btn"
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -293,6 +294,7 @@ export const CompactNBAMatchRow: React.FC<CompactNBAMatchRowProps> = React.memo(
               </span>
 
               <button
+                data-tour="tour-h2h-btn"
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();

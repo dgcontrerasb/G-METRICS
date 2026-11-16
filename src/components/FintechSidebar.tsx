@@ -418,7 +418,7 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
             </div>
 
             {/* Sport Switcher Vectorial */}
-            <div className="p-1 rounded-2xl bg-[#161b22] border border-[#30363d] flex flex-col gap-1 w-11 items-center">
+            <div data-tour="tour-sports" className="p-1 rounded-2xl bg-[#161b22] border border-[#30363d] flex flex-col gap-1 w-11 items-center">
               {/* Fútbol */}
               <div className="group relative flex items-center justify-center w-full">
                 <button
