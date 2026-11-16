@@ -266,14 +266,14 @@ export const SavedSlipsHistoryModal: React.FC<SavedSlipsHistoryModalProps> = ({ 
         <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-2.5 custom-scrollbar bg-[#0b0e14]/70">
           {filteredSlips.length === 0 ? (
             <div className="py-12 px-4 text-center space-y-2.5">
-              <div className="w-12 h-12 mx-auto rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-2xs">
-                <Ticket className="w-6 h-6" />
+              <div className="w-12 h-12 mx-auto rounded-2xl bg-[#161b22] border border-[#30363d] flex items-center justify-center text-[#8b949e] shadow-lg">
+                <Ticket className="w-6 h-6 text-[#d9b114]" />
               </div>
-              <h4 className="font-bold text-slate-800 text-sm">
+              <h4 className="font-black text-white text-sm">
                 No hay boletos guardados {statusFilter !== 'ALL' ? 'en esta categoría' : ''}
               </h4>
-              <p className="text-slate-500 text-xs max-w-xs mx-auto">
-                Arma un boleto combinado desde la cartelera y presiona <strong className="text-emerald-700 font-mono">Guardar</strong> para almacenarlo en tu historial.
+              <p className="text-[#8b949e] text-xs max-w-xs mx-auto">
+                Arma un boleto combinado desde la cartelera y presiona <strong className="text-[#00ff66] font-mono">Guardar</strong> para almacenarlo en tu historial.
               </p>
             </div>
           ) : (

@@ -214,10 +214,10 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
         {/* Content Body */}
         <div className="p-4 sm:p-5 overflow-y-auto space-y-4 bg-[#0b0e14]/70">
           {/* 1. Barra Compacta de Escenarios Rápidos */}
-          <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d] flex flex-wrap items-center justify-between gap-2">
+          <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d] flex flex-wrap items-center justify-between gap-2 shadow-lg">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] uppercase font-mono font-bold text-slate-500 flex items-center gap-1 mr-1">
-                <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="text-[10px] uppercase font-mono font-bold text-[#8b949e] flex items-center gap-1 mr-1">
+                <BookOpen className="w-3.5 h-3.5 text-[#00ff66]" />
                 Escenarios Rápidos:
               </span>
               <button
@@ -226,7 +226,7 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
                   setAwayRest(48);
                   setAwayTravelKm(1200);
                 }}
-                className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-[10px] font-mono font-semibold cursor-pointer transition-colors"
+                className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-mono font-semibold cursor-pointer transition-colors"
               >
                 ⚡ Visita Cansada (48h + 1200km)
               </button>
@@ -235,7 +235,7 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
                 onClick={() => {
                   setHomeAttack((prev) => Math.min(2.0, prev * 1.15));
                 }}
-                className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[10px] font-mono font-semibold cursor-pointer transition-colors"
+                className="px-2.5 py-1 rounded-lg bg-[#00ff66]/10 hover:bg-[#00ff66]/20 border border-[#00ff66]/30 text-[#00ff66] text-[10px] font-mono font-semibold cursor-pointer transition-colors"
               >
                 🔥 Impulso Local (+15% Ataque)
               </button>
@@ -245,7 +245,7 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
                   setIsDerby(true);
                   setRefereeRigor('Severo');
                 }}
-                className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 text-[10px] font-mono font-semibold cursor-pointer transition-colors"
+                className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] font-mono font-semibold cursor-pointer transition-colors"
               >
                 🟨 Clásico Picado (Derbi + Árbitro Severo)
               </button>
@@ -254,10 +254,10 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
             <button
               type="button"
               onClick={resetDefaults}
-              className="text-[11px] font-mono text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg border border-slate-200"
+              className="text-[11px] font-mono text-[#8b949e] hover:text-white flex items-center gap-1 cursor-pointer bg-[#0b0e14] hover:bg-[#161b22] px-2.5 py-1 rounded-lg border border-[#30363d] transition-colors"
               title="Restablecer datos originales del partido"
             >
-              <RotateCcw className="w-3 h-3 text-emerald-600" />
+              <RotateCcw className="w-3 h-3 text-[#00ff66]" />
               <span>Restablecer Reales</span>
             </button>
           </div>
@@ -289,8 +289,8 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
             {/* Home Attack */}
             <div>
               <div className="flex justify-between mb-1">
-                <span className="text-slate-600">Poder Ofensivo Local</span>
-                <span className="text-emerald-700 font-bold">{homeAttack.toFixed(2)}x</span>
+                <span className="text-[#8b949e]">Poder Ofensivo Local</span>
+                <span className="text-[#00ff66] font-bold">{homeAttack.toFixed(2)}x</span>
               </div>
               <input
                 type="range"
@@ -299,15 +299,15 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
                 step="0.05"
                 value={homeAttack}
                 onChange={(e) => setHomeAttack(parseFloat(e.target.value))}
-                className="w-full accent-emerald-600 cursor-pointer"
+                className="w-full accent-[#00ff66] cursor-pointer"
               />
             </div>
 
             {/* Home Defense */}
             <div>
               <div className="flex justify-between mb-1">
-                <span className="text-slate-600">Vulnerabilidad Def. Local</span>
-                <span className="text-slate-900 font-bold">{homeDefense.toFixed(2)}x</span>
+                <span className="text-[#8b949e]">Vulnerabilidad Def. Local</span>
+                <span className="text-white font-bold">{homeDefense.toFixed(2)}x</span>
               </div>
               <input
                 type="range"
@@ -316,15 +316,15 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
                 step="0.05"
                 value={homeDefense}
                 onChange={(e) => setHomeDefense(parseFloat(e.target.value))}
-                className="w-full accent-slate-600 cursor-pointer"
+                className="w-full accent-[#30363d] cursor-pointer"
               />
             </div>
 
             {/* Home Advantage */}
             <div>
               <div className="flex justify-between mb-1">
-                <span className="text-slate-600">Ventaja de Localía</span>
-                <span className="text-emerald-700 font-bold">+{homeAdvantage}%</span>
+                <span className="text-[#8b949e]">Ventaja de Localía</span>
+                <span className="text-[#00ff66] font-bold">+{homeAdvantage}%</span>
               </div>
               <input
                 type="range"
@@ -333,15 +333,15 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
                 step="1"
                 value={homeAdvantage}
                 onChange={(e) => setHomeAdvantage(parseInt(e.target.value, 10))}
-                className="w-full accent-emerald-600 cursor-pointer"
+                className="w-full accent-[#00ff66] cursor-pointer"
               />
             </div>
 
             {/* Away Attack */}
             <div>
               <div className="flex justify-between mb-1">
-                <span className="text-slate-600">Poder Ofensivo Visita</span>
-                <span className="text-indigo-700 font-bold">{awayAttack.toFixed(2)}x</span>
+                <span className="text-[#8b949e]">Poder Ofensivo Visita</span>
+                <span className="text-sky-400 font-bold">{awayAttack.toFixed(2)}x</span>
               </div>
               <input
                 type="range"
@@ -350,15 +350,15 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
                 step="0.05"
                 value={awayAttack}
                 onChange={(e) => setAwayAttack(parseFloat(e.target.value))}
-                className="w-full accent-indigo-600 cursor-pointer"
+                className="w-full accent-sky-400 cursor-pointer"
               />
             </div>
 
             {/* Away Defense */}
             <div>
               <div className="flex justify-between mb-1">
-                <span className="text-slate-600">Vulnerabilidad Def. Visita</span>
-                <span className="text-slate-900 font-bold">{awayDefense.toFixed(2)}x</span>
+                <span className="text-[#8b949e]">Vulnerabilidad Def. Visita</span>
+                <span className="text-white font-bold">{awayDefense.toFixed(2)}x</span>
               </div>
               <input
                 type="range"
@@ -367,15 +367,15 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
                 step="0.05"
                 value={awayDefense}
                 onChange={(e) => setAwayDefense(parseFloat(e.target.value))}
-                className="w-full accent-slate-600 cursor-pointer"
+                className="w-full accent-[#30363d] cursor-pointer"
               />
             </div>
 
             {/* Away Rest Hours */}
             <div>
               <div className="flex justify-between mb-1">
-                <span className="text-slate-600">Descanso Visitante</span>
-                <span className={awayRest < 72 ? 'text-amber-700 font-bold' : 'text-slate-900'}>
+                <span className="text-[#8b949e]">Descanso Visitante</span>
+                <span className={awayRest < 72 ? 'text-amber-400 font-bold' : 'text-white'}>
                   {awayRest}h {awayRest < 72 && '(Fatiga)'}
                 </span>
               </div>
@@ -386,15 +386,15 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
                 step="4"
                 value={awayRest}
                 onChange={(e) => setAwayRest(parseInt(e.target.value, 10))}
-                className="w-full accent-amber-600 cursor-pointer"
+                className="w-full accent-amber-500 cursor-pointer"
               />
             </div>
 
             {/* Away Travel */}
             <div>
               <div className="flex justify-between mb-1">
-                <span className="text-slate-600">Traslado Visitante (km)</span>
-                <span className="text-slate-900 font-bold">{awayTravelKm} km</span>
+                <span className="text-[#8b949e]">Traslado Visitante (km)</span>
+                <span className="text-white font-bold">{awayTravelKm} km</span>
               </div>
               <input
                 type="range"
@@ -403,13 +403,13 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
                 step="50"
                 value={awayTravelKm}
                 onChange={(e) => setAwayTravelKm(parseInt(e.target.value, 10))}
-                className="w-full accent-indigo-600 cursor-pointer"
+                className="w-full accent-sky-400 cursor-pointer"
               />
             </div>
 
             {/* Referee Rigor */}
             <div>
-              <span className="text-slate-600 block mb-1">Rigor del Árbitro</span>
+              <span className="text-[#8b949e] block mb-1">Rigor del Árbitro</span>
               <div className="flex gap-1">
                 {(['Flexible', 'Moderado', 'Severo'] as const).map((r) => (
                   <button
@@ -418,8 +418,8 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
                     onClick={() => setRefereeRigor(r)}
                     className={`flex-1 py-1 text-center rounded border transition-colors cursor-pointer ${
                       refereeRigor === r
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:text-slate-900'
+                        ? 'bg-[#00ff66]/15 text-[#00ff66] border-[#00ff66]/40 font-bold'
+                        : 'bg-[#0b0e14] text-[#8b949e] border-[#30363d] hover:text-white'
                     }`}
                   >
                     {r}
@@ -430,12 +430,14 @@ export const SimulatorModal: React.FC<SimulatorModalProps> = ({
 
             {/* Derby toggle */}
             <div className="flex items-center justify-between pt-3">
-              <span className="text-slate-600">¿Tensión de Derbi?</span>
+              <span className="text-[#8b949e]">¿Tensión de Derbi?</span>
               <button
                 type="button"
                 onClick={() => setIsDerby(!isDerby)}
-                className={`px-3 py-1 rounded font-bold transition-colors cursor-pointer ${
-                  isDerby ? 'bg-amber-50 text-amber-800 border border-amber-300' : 'bg-slate-100 text-slate-600 border border-slate-200'
+                className={`px-3 py-1 rounded font-bold transition-colors cursor-pointer border ${
+                  isDerby
+                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/40'
+                    : 'bg-[#0b0e14] text-[#8b949e] border-[#30363d] hover:text-white'
                 }`}
               >
                 {isDerby ? 'SÍ (+25% fricción)' : 'NO (Estándar)'}

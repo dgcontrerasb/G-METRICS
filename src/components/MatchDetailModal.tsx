@@ -612,31 +612,33 @@ const NBAHeader: React.FC<{
                 showToast('Análisis NBA copiado al portapapeles para compartir', 'success');
               }
             }}
-            className="p-1.5 rounded-lg bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg bg-[#0b0e14] text-[#8b949e] hover:text-white hover:bg-[#1c2129] border border-[#30363d] transition-colors cursor-pointer"
             title="Compartir pronóstico NBA en WhatsApp / Redes"
           >
-            <Share2 className="w-3.5 h-3.5 text-amber-600" />
+            <Share2 className="w-3.5 h-3.5 text-[#d9b114]" strokeWidth={2} />
           </button>
 
           {onToggleSelect && (
             <button
               onClick={() => onToggleSelect(fixture.id)}
-              className={`p-1.5 rounded-lg transition-all cursor-pointer flex items-center border ${
+              className={`p-1.5 rounded-lg text-xs transition-all cursor-pointer flex items-center border ${
                 isSelected
-                  ? 'bg-amber-500 text-slate-950 border-amber-500 font-bold shadow-2xs'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200/90'
+                  ? 'bg-[#d9b114] text-slate-950 border-[#d9b114] font-bold shadow-2xs'
+                  : 'bg-[#0b0e14] hover:bg-[#1c2129] text-[#8b949e] border-[#30363d]'
               }`}
+              title={isSelected ? 'Quitar de mi selección' : 'Añadir a selección'}
             >
-              <Check className={`w-3.5 h-3.5 ${isSelected ? 'stroke-[3] text-slate-950' : 'text-slate-500'}`} />
+              <Check className={`w-3.5 h-3.5 ${isSelected ? 'stroke-[3] text-slate-950' : 'text-[#8b949e]'}`} strokeWidth={2} />
             </button>
           )}
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200/80 transition-colors cursor-pointer ml-0.5"
+            className="p-1.5 rounded-lg bg-[#0b0e14] hover:bg-[#1c2129] text-[#8b949e] hover:text-white border border-[#30363d] transition-colors cursor-pointer ml-0.5"
             aria-label="Cerrar modal"
+            title="Cerrar (ESC)"
           >
-            <X className="w-4 h-4" />
+            <X className="w-4 h-4" strokeWidth={2} />
           </button>
         </div>
       </div>
@@ -644,10 +646,10 @@ const NBAHeader: React.FC<{
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-3 pt-1">
         <div className="flex items-center justify-end gap-2 sm:gap-2.5 min-w-0">
           <div className="min-w-0 text-right flex-1">
-            <div className="text-[9px] font-mono text-amber-700 font-semibold uppercase truncate">
+            <div className="text-[9px] font-mono text-[#d9b114] font-semibold uppercase truncate">
               Local · {fixture.homeTeam.wins}V-{fixture.homeTeam.losses}D
             </div>
-            <div className="font-sans font-bold text-xs sm:text-sm text-slate-900 leading-tight truncate" title={fixture.homeTeam.name}>
+            <div className="font-sans font-bold text-xs sm:text-sm text-white leading-tight truncate" title={fixture.homeTeam.name}>
               {formatCompactTeamName(fixture.homeTeam.name)}
             </div>
           </div>
@@ -664,13 +666,13 @@ const NBAHeader: React.FC<{
         </div>
 
         <div className="text-center flex items-center justify-center shrink-0 px-1">
-          <div className="px-3 py-1 rounded-xl bg-slate-900 text-white border border-slate-800 font-mono font-bold text-xs sm:text-sm whitespace-nowrap inline-flex items-center justify-center gap-1.5 min-w-[54px] shadow-xs">
+          <div className="px-3 py-1 rounded-xl bg-[#0b0e14] text-white border border-[#30363d] font-mono font-bold text-xs sm:text-sm whitespace-nowrap inline-flex items-center justify-center gap-1.5 min-w-[54px] shadow-xs">
             {isLive || isFinished ? (
               <span className={isLive ? 'text-amber-300 font-bold' : 'text-white'}>
                 {fixture.currentScore ? `${fixture.currentScore.home} - ${fixture.currentScore.away}` : '0 - 0'}
               </span>
             ) : (
-              <span className="text-amber-400 text-[10px] font-bold tracking-wider">VS</span>
+              <span className="text-[#d9b114] text-[10px] font-bold tracking-wider">VS</span>
             )}
           </div>
         </div>
@@ -687,10 +689,10 @@ const NBAHeader: React.FC<{
             />
           ) : null}
           <div className="min-w-0 text-left flex-1">
-            <div className="text-[9px] font-mono text-sky-700 font-semibold uppercase truncate">
+            <div className="text-[9px] font-mono text-sky-400 font-semibold uppercase truncate">
               Visita · {fixture.awayTeam.wins}V-{fixture.awayTeam.losses}D
             </div>
-            <div className="font-sans font-bold text-xs sm:text-sm text-slate-900 leading-tight truncate" title={fixture.awayTeam.name}>
+            <div className="font-sans font-bold text-xs sm:text-sm text-white leading-tight truncate" title={fixture.awayTeam.name}>
               {formatCompactTeamName(fixture.awayTeam.name)}
             </div>
           </div>
@@ -784,19 +786,19 @@ const SoccerTabContent: React.FC<{
                 <span className="text-emerald-200/90 font-sans text-[10px]">Dominio xG: </span>
                 <strong className="text-white font-bold">{homePossShare}% vs {awayPossShare}%</strong>
               </div>
-              <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-200 font-bold border border-slate-700">
+              <span className="px-2 py-0.5 rounded-md bg-[#161b22] text-[#8b949e] font-bold border border-[#30363d]">
                 4-4-2
               </span>
             </div>
 
             {/* Barra de Choque de Posesión / xG */}
-            <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden flex">
+            <div className="w-full h-1.5 rounded-full bg-[#0b0e14] overflow-hidden flex border border-[#30363d]/60">
               <div
-                className="h-full bg-emerald-400 transition-all"
+                className="h-full bg-[#00ff66] transition-all"
                 style={{ width: `${homePossShare}%` }}
               />
               <div
-                className="h-full bg-slate-300 transition-all"
+                className="h-full bg-sky-400 transition-all"
                 style={{ width: `${awayPossShare}%` }}
               />
             </div>
@@ -1257,27 +1259,27 @@ const NBATabContent: React.FC<{
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2 px-1">
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-mono font-bold text-slate-800 uppercase tracking-tight">
+              <span className="text-xs font-mono font-bold text-white uppercase tracking-tight">
                 🏀 6 Mercados Generales del Partido
               </span>
               {isLive && (
-                <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-mono text-[9.5px] font-bold animate-pulse">
+                <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 font-mono text-[9.5px] font-bold animate-pulse">
                   EN VIVO
                 </span>
               )}
               {isFinished && (
-                <span className="px-2 py-0.5 rounded-full bg-slate-900 text-white font-mono text-[9.5px] font-bold">
+                <span className="px-2 py-0.5 rounded-full bg-[#0b0e14] border border-[#30363d] text-[#8b949e] font-mono text-[9.5px] font-bold">
                   RESULTADO FINAL
                 </span>
               )}
             </div>
 
             {hasStarted && (
-              <div className="flex items-center gap-2 text-[10.5px] font-mono font-bold bg-slate-900 text-white px-2.5 py-1 rounded-lg">
-                <span className="text-emerald-400">✅ {teamHits} {isFinished ? 'Acertadas' : 'En Ritmo'}</span>
+              <div className="flex items-center gap-2 text-[10.5px] font-mono font-bold bg-[#0b0e14] border border-[#30363d] text-white px-2.5 py-1 rounded-lg">
+                <span className="text-[#00ff66]">✅ {teamHits} {isFinished ? 'Acertadas' : 'En Ritmo'}</span>
                 {teamMisses > 0 && (
                   <>
-                    <span className="text-slate-500">·</span>
+                    <span className="text-[#30363d]">·</span>
                     <span className="text-rose-400">❌ {teamMisses} {isFinished ? 'No se dieron' : 'Bajo Ritmo'}</span>
                   </>
                 )}
@@ -1738,21 +1740,21 @@ const NBATabContent: React.FC<{
   return (
     <div className="space-y-2.5 text-center">
       {/* 1. RESUMEN EJECUTIVO DE LA SERIE H2H (HEAD TO HEAD) */}
-      <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5 text-left">
+      <div className="p-3 sm:p-3.5 rounded-2xl bg-[#161b22] border border-[#30363d] shadow-lg space-y-2.5 text-left">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="text-xs">⚔️</span>
-            <span className="text-[10px] font-mono font-bold text-slate-700 uppercase tracking-wider">
+            <span className="text-[10px] font-mono font-bold text-white uppercase tracking-wider">
               Historial Directo (H2H · Últimos {h2hData.totalMatches} Duelos)
             </span>
           </div>
-          <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold border border-slate-200">
+          <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-[#0b0e14] text-[#8b949e] font-semibold border border-[#30363d]">
             Línea Ref: ~{h2hData.referenceLine} pts
           </span>
         </div>
 
         {/* Marcador de Serie / Balance de Victorias */}
-        <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/80">
+        <div className="p-2.5 rounded-xl bg-[#0b0e14] border border-[#30363d]">
           <div className="flex items-center justify-between gap-2">
             {/* Equipo Local */}
             <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1763,21 +1765,21 @@ const NBATabContent: React.FC<{
                 onError={(e) => { e.currentTarget.style.display = 'none'; }}
               />
               <div className="min-w-0 text-left">
-                <div className="font-bold text-[11px] sm:text-xs text-slate-900 truncate">
+                <div className="font-bold text-[11px] sm:text-xs text-white truncate">
                   {fixture.homeTeam.shortName}
                 </div>
-                <div className="text-[9px] font-mono font-semibold text-emerald-700">
+                <div className="text-[9px] font-mono font-bold text-[#00ff66]">
                   {h2hData.homeWins}V ({h2hData.homeWinPct}%)
                 </div>
               </div>
             </div>
 
             {/* Marcador Central */}
-            <div className="shrink-0 text-center px-2.5 py-0.5 rounded-lg bg-white border border-slate-200 shadow-2xs">
-              <span className="text-xs sm:text-sm font-mono font-black text-slate-900 tracking-tight">
+            <div className="shrink-0 text-center px-2.5 py-0.5 rounded-lg bg-[#161b22] border border-[#30363d] shadow-md">
+              <span className="text-xs sm:text-sm font-mono font-black text-white tracking-tight">
                 {h2hData.homeWins} - {h2hData.awayWins}
               </span>
-              <span className="block text-[7.5px] font-mono uppercase text-slate-500 font-bold tracking-tight">
+              <span className="block text-[7.5px] font-mono uppercase text-[#8b949e] font-bold tracking-tight">
                 SERIE
               </span>
             </div>
@@ -1785,10 +1787,10 @@ const NBATabContent: React.FC<{
             {/* Equipo Visita */}
             <div className="flex items-center justify-end gap-2 min-w-0 flex-1 text-right">
               <div className="min-w-0">
-                <div className="font-bold text-[11px] sm:text-xs text-slate-900 truncate">
+                <div className="font-bold text-[11px] sm:text-xs text-white truncate">
                   {fixture.awayTeam.shortName}
                 </div>
-                <div className="text-[9px] font-mono font-semibold text-sky-700">
+                <div className="text-[9px] font-mono font-bold text-sky-400">
                   {h2hData.awayWins}V ({h2hData.awayWinPct}%)
                 </div>
               </div>
@@ -1802,14 +1804,14 @@ const NBATabContent: React.FC<{
           </div>
 
           {/* Barra de proporción visual */}
-          <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-2.5 flex">
+          <div className="w-full bg-[#21262d] h-1.5 rounded-full overflow-hidden mt-2.5 flex">
             <div
-              className="bg-emerald-500 h-full transition-all"
+              className="bg-[#00ff66] h-full transition-all"
               style={{ width: `${h2hData.homeWinPct}%` }}
               title={`${fixture.homeTeam.shortName}: ${h2hData.homeWinPct}%`}
             />
             <div
-              className="bg-sky-500 h-full transition-all"
+              className="bg-sky-400 h-full transition-all"
               style={{ width: `${h2hData.awayWinPct}%` }}
               title={`${fixture.awayTeam.shortName}: ${h2hData.awayWinPct}%`}
             />
@@ -1838,12 +1840,12 @@ const NBATabContent: React.FC<{
       </div>
 
       {/* 2. LISTADO DETALLADO DE LOS ÚLTIMOS 5 ENFRENTAMIENTOS DIRECTOS */}
-      <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2 text-left">
+      <div className="p-3 sm:p-3.5 rounded-2xl bg-[#161b22] border border-[#30363d] shadow-lg space-y-2 text-left">
         <div className="flex items-center justify-between gap-2 px-1">
-          <span className="text-[10px] font-mono font-bold text-slate-700 uppercase tracking-wider">
+          <span className="text-[10px] font-mono font-bold text-white uppercase tracking-wider">
             Detalle de los Últimos Partidos Cara a Cara
           </span>
-          <span className="text-[9px] font-sans text-slate-500">
+          <span className="text-[9px] font-sans text-[#8b949e]">
             Resaltado en negrita el ganador
           </span>
         </div>
@@ -1855,15 +1857,15 @@ const NBATabContent: React.FC<{
             return (
               <div
                 key={m.id}
-                className="p-2 sm:p-2.5 rounded-xl bg-slate-50/90 hover:bg-slate-100/80 border border-slate-200/90 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2"
+                className="p-2 sm:p-2.5 rounded-xl bg-[#0b0e14] hover:bg-[#21262d]/50 border border-[#30363d] transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2"
               >
                 {/* Meta de fecha y sede */}
                 <div className="flex items-center justify-between sm:justify-start gap-1.5 shrink-0 sm:w-28">
                   <div className="text-left leading-tight">
-                    <span className="text-[9.5px] font-mono font-bold text-slate-800 block">
+                    <span className="text-[9.5px] font-mono font-bold text-white block">
                       {m.date}
                     </span>
-                    <span className="text-[8px] font-sans text-slate-500 block truncate max-w-[105px]" title={m.venueName}>
+                    <span className="text-[8px] font-sans text-[#8b949e] block truncate max-w-[105px]" title={m.venueName}>
                       {m.venueName}
                     </span>
                   </div>
@@ -1872,7 +1874,7 @@ const NBATabContent: React.FC<{
                 {/* Duelo de Marcador Central con Logos (Sin cortes, proporciones fluidas) */}
                 <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-1 min-w-0 py-0.5">
                   {/* Local en ese partido */}
-                  <div className={`flex items-center gap-1 text-right justify-end flex-1 min-w-0 ${homeWon ? 'font-bold text-slate-950' : 'text-slate-600 font-normal'}`}>
+                  <div className={`flex items-center gap-1 text-right justify-end flex-1 min-w-0 ${homeWon ? 'font-bold text-white' : 'text-[#8b949e] font-normal'}`}>
                     <span className="text-[10.5px] sm:text-[11px] truncate leading-tight">{m.homeShortName}</span>
                     <img
                       src={m.homeLogo}
@@ -1883,10 +1885,10 @@ const NBATabContent: React.FC<{
                     <span className="font-mono text-xs font-bold shrink-0">{m.homeScore}</span>
                   </div>
 
-                  <span className="text-slate-300 font-mono text-[9px] font-bold shrink-0">-</span>
+                  <span className="text-[#30363d] font-mono text-[9px] font-bold shrink-0">-</span>
 
                   {/* Visitante en ese partido */}
-                  <div className={`flex items-center gap-1 text-left justify-start flex-1 min-w-0 ${!homeWon ? 'font-bold text-slate-950' : 'text-slate-600 font-normal'}`}>
+                  <div className={`flex items-center gap-1 text-left justify-start flex-1 min-w-0 ${!homeWon ? 'font-bold text-white' : 'text-[#8b949e] font-normal'}`}>
                     <span className="font-mono text-xs font-bold shrink-0">{m.awayScore}</span>
                     <img
                       src={m.awayLogo}
@@ -1899,20 +1901,20 @@ const NBATabContent: React.FC<{
                 </div>
 
                 {/* Badge de resultado y tendencia O/U */}
-                <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 border-t sm:border-t-0 pt-1 sm:pt-0 border-slate-200/80">
-                  <span className="text-[8.5px] font-mono text-slate-600 shrink-0">
+                <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 border-t sm:border-t-0 pt-1 sm:pt-0 border-[#30363d]">
+                  <span className="text-[8.5px] font-mono text-[#8b949e] shrink-0">
                     {m.totalPoints} pts
                   </span>
                   <span
                     className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold border shrink-0 ${
                       m.overUnderResult === 'OVER'
-                        ? 'bg-amber-50 text-amber-800 border-amber-200'
-                        : 'bg-sky-50 text-sky-800 border-sky-200'
+                        ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                        : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
                     }`}
                   >
                     {m.overUnderResult === 'OVER' ? '🔥 Alta' : '❄️ Baja'}
                   </span>
-                  <span className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-slate-200/80 text-slate-800 shrink-0">
+                  <span className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-[#161b22] text-white border border-[#30363d] shrink-0">
                     +{m.margin} {m.winnerShortName.slice(0, 3)}
                   </span>
                 </div>
@@ -1923,78 +1925,78 @@ const NBATabContent: React.FC<{
       </div>
 
       {/* 3. RITMO DE POSESIONES (PACE) Y EFICIENCIA OFENSIVA/DEFENSIVA */}
-      <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5 text-left">
+      <div className="p-3 sm:p-3.5 rounded-2xl bg-[#161b22] border border-[#30363d] shadow-lg space-y-2.5 text-left">
         <div className="flex items-center justify-between gap-2 flex-wrap px-1">
           <div className="flex items-center gap-1.5">
-            <Zap className="w-3.5 h-3.5 text-amber-500" />
-            <span className="text-[10px] font-mono font-bold text-slate-700 uppercase tracking-wider">
+            <Zap className="w-3.5 h-3.5 text-[#d9b114]" />
+            <span className="text-[10px] font-mono font-bold text-white uppercase tracking-wider">
               Ritmo de Posesiones (Pace) y Eficiencia
             </span>
           </div>
-          <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+          <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#d9b114]/15 text-[#d9b114] border border-[#d9b114]/30">
             Ritmo Conjunto: {combinedPace} pos.
           </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {/* Local */}
-          <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/90 text-left space-y-1.5">
+          <div className="p-2.5 rounded-xl bg-[#0b0e14] border border-[#30363d] text-left space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-900 truncate">
+              <span className="text-[11px] font-bold text-white truncate">
                 {fixture.homeTeam.name}
               </span>
-              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-white border border-slate-200 text-slate-700">
+              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-[#161b22] border border-[#30363d] text-white">
                 Racha: {fixture.homeTeam.streak}
               </span>
             </div>
             <div className="grid grid-cols-3 gap-1 text-center">
-              <div className="p-1 rounded-lg bg-white border border-slate-200">
-                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Pace</span>
-                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.homeTeam.pace}</span>
+              <div className="p-1 rounded-lg bg-[#161b22] border border-[#30363d]">
+                <span className="text-[7.5px] font-mono text-[#8b949e] uppercase block">Pace</span>
+                <span className="text-[11px] font-mono font-bold text-white">{fixture.homeTeam.pace}</span>
               </div>
-              <div className="p-1 rounded-lg bg-white border border-slate-200">
-                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Off Rtg</span>
-                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.homeTeam.offensiveRating}</span>
+              <div className="p-1 rounded-lg bg-[#161b22] border border-[#30363d]">
+                <span className="text-[7.5px] font-mono text-[#8b949e] uppercase block">Off Rtg</span>
+                <span className="text-[11px] font-mono font-bold text-white">{fixture.homeTeam.offensiveRating}</span>
               </div>
-              <div className="p-1 rounded-lg bg-white border border-slate-200">
-                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Def Rtg</span>
-                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.homeTeam.defensiveRating}</span>
+              <div className="p-1 rounded-lg bg-[#161b22] border border-[#30363d]">
+                <span className="text-[7.5px] font-mono text-[#8b949e] uppercase block">Def Rtg</span>
+                <span className="text-[11px] font-mono font-bold text-white">{fixture.homeTeam.defensiveRating}</span>
               </div>
             </div>
           </div>
 
           {/* Visita */}
-          <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/90 text-left space-y-1.5">
+          <div className="p-2.5 rounded-xl bg-[#0b0e14] border border-[#30363d] text-left space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-900 truncate">
+              <span className="text-[11px] font-bold text-white truncate">
                 {fixture.awayTeam.name}
               </span>
-              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-white border border-slate-200 text-slate-700">
+              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-[#161b22] border border-[#30363d] text-white">
                 Racha: {fixture.awayTeam.streak}
               </span>
             </div>
             <div className="grid grid-cols-3 gap-1 text-center">
-              <div className="p-1 rounded-lg bg-white border border-slate-200">
-                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Pace</span>
-                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.awayTeam.pace}</span>
+              <div className="p-1 rounded-lg bg-[#161b22] border border-[#30363d]">
+                <span className="text-[7.5px] font-mono text-[#8b949e] uppercase block">Pace</span>
+                <span className="text-[11px] font-mono font-bold text-white">{fixture.awayTeam.pace}</span>
               </div>
-              <div className="p-1 rounded-lg bg-white border border-slate-200">
-                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Off Rtg</span>
-                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.awayTeam.offensiveRating}</span>
+              <div className="p-1 rounded-lg bg-[#161b22] border border-[#30363d]">
+                <span className="text-[7.5px] font-mono text-[#8b949e] uppercase block">Off Rtg</span>
+                <span className="text-[11px] font-mono font-bold text-white">{fixture.awayTeam.offensiveRating}</span>
               </div>
-              <div className="p-1 rounded-lg bg-white border border-slate-200">
-                <span className="text-[7.5px] font-mono text-slate-500 uppercase block">Def Rtg</span>
-                <span className="text-[11px] font-mono font-bold text-slate-900">{fixture.awayTeam.defensiveRating}</span>
+              <div className="p-1 rounded-lg bg-[#161b22] border border-[#30363d]">
+                <span className="text-[7.5px] font-mono text-[#8b949e] uppercase block">Def Rtg</span>
+                <span className="text-[11px] font-mono font-bold text-white">{fixture.awayTeam.defensiveRating}</span>
               </div>
             </div>
           </div>
         </div>
 
         {/* Diagnóstico de Ritmo */}
-        <div className="p-2 rounded-xl bg-amber-50/60 border border-amber-200/80 text-[10px] font-sans text-amber-950 flex items-start gap-1.5 text-left">
-          <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+        <div className="p-2.5 rounded-xl bg-[#0b0e14] border border-[#d9b114]/40 text-[10.5px] font-sans text-white/90 flex items-start gap-1.5 text-left">
+          <Sparkles className="w-3.5 h-3.5 text-[#d9b114] shrink-0 mt-0.5" />
           <div>
-            <strong>Lectura Analítica:</strong>{' '}
+            <strong className="text-[#d9b114]">Lectura Analítica:</strong>{' '}
             {isFastPace ? (
               <span>Ritmo Alto ({combinedPace} pos/48m). Mayor volumen de tiros y transición rápida. Favorable a líneas Over de puntos y triples.</span>
             ) : isSlowPace ? (

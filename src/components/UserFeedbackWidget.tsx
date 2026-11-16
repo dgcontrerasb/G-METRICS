@@ -187,20 +187,20 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
     <>
       {/* 1. Notificación Micro-Cápsula Sutil y Compacta para invitar a calificar */}
       {showFloatingPrompt && !isOpen && (
-        <div className="fixed bottom-16 sm:bottom-5 left-3 sm:left-5 z-40 max-w-[340px] sm:max-w-sm bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-xl px-3 py-2 text-slate-800 animate-fadeIn flex items-center justify-between gap-2.5">
+        <div className="fixed bottom-16 sm:bottom-5 left-3 sm:left-5 z-40 max-w-[340px] sm:max-w-sm bg-[#161b22]/95 backdrop-blur-md border border-[#30363d] rounded-2xl shadow-2xl px-3 py-2 text-white animate-fadeIn flex items-center justify-between gap-2.5">
           <button
             type="button"
             onClick={handleOpenModalFromPrompt}
             className="flex items-center gap-2.5 min-w-0 text-left group cursor-pointer"
           >
-            <span className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-200/90 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
-              <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
+            <span className="w-8 h-8 rounded-xl bg-[#d9b114]/10 border border-[#d9b114]/30 flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+              <Star className="w-4 h-4 text-[#d9b114] fill-[#d9b114]" />
             </span>
             <div className="min-w-0 leading-tight">
-              <span className="text-xs font-bold text-slate-900 group-hover:text-emerald-700 transition block">
+              <span className="text-xs font-black text-white group-hover:text-[#d9b114] transition block">
                 ¿Te gusta G-METRICS?
               </span>
-              <span className="text-[11px] text-emerald-600 font-semibold block mt-0.5">
+              <span className="text-[11px] text-[#00ff66] font-semibold block mt-0.5">
                 {isFreeMode ? 'Tu opinión nos ayuda a mejorar ⭐' : 'Califica y gana +1 día VIP gratis ⭐'}
               </span>
             </div>
@@ -210,14 +210,14 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
             <button
               type="button"
               onClick={handleOpenModalFromPrompt}
-              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-2xs cursor-pointer active:scale-95"
+              className="px-3 py-1.5 rounded-xl bg-[#00ff66] hover:bg-[#00ff66]/90 text-black font-black text-xs transition shadow-md cursor-pointer active:scale-95"
             >
               Opinar
             </button>
             <button
               type="button"
               onClick={handleDismissPrompt}
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              className="p-1 rounded-lg text-[#8b949e] hover:text-white hover:bg-[#0b0e14] transition cursor-pointer"
               title="Cerrar aviso"
               aria-label="Cerrar aviso"
             >
@@ -231,22 +231,22 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white border border-slate-200/90 rounded-2xl w-full max-w-md p-5 shadow-2xl relative text-slate-800 space-y-4"
+            className="bg-[#161b22] border border-[#30363d] rounded-2xl w-full max-w-md p-5 shadow-2xl relative text-white space-y-4"
           >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center justify-between border-b border-[#30363d] pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center">
-                  <Sparkles className="w-4 h-4 text-amber-600" />
+                <div className="w-9 h-9 rounded-xl bg-[#d9b114]/10 border border-[#d9b114]/30 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-[#d9b114]" />
                 </div>
                 <div>
-                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900 leading-tight">
+                  <h3 className="text-sm sm:text-base font-black text-white leading-tight">
                     Califica tu Experiencia · G METRICS
                   </h3>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-[#8b949e]">
                     Buzón privado de mejora continua para el Administrador
                   </p>
                 </div>
@@ -254,7 +254,7 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition cursor-pointer"
+                className="w-7 h-7 rounded-full bg-[#0b0e14] hover:bg-[#30363d] text-[#8b949e] hover:text-white flex items-center justify-center transition cursor-pointer border border-[#30363d]"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -262,26 +262,26 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
 
             {submittedSuccess ? (
               <div className="py-6 text-center space-y-2 animate-fadeIn">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto">
-                  <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                <div className="w-12 h-12 rounded-2xl bg-[#00ff66]/10 border border-[#00ff66]/30 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6 text-[#00ff66]" />
                 </div>
-                <h4 className="text-sm font-bold text-slate-900">
+                <h4 className="text-sm font-black text-white">
                   ¡Gracias por tu calificación! 🎉
                 </h4>
                 {!isFreeMode && (
-                  <p className="text-xs text-emerald-600 font-semibold max-w-xs mx-auto">
+                  <p className="text-xs text-[#00ff66] font-semibold max-w-xs mx-auto">
                     ¡Se ha sumado +1 día adicional a tu prueba gratuita!
                   </p>
                 )}
-                <p className="text-[11px] text-slate-500 max-w-xs mx-auto mt-0.5">
+                <p className="text-[11px] text-[#8b949e] max-w-xs mx-auto mt-0.5">
                   Tu opinión nos ayuda a perfeccionar las métricas de la plataforma.
                 </p>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
                 {/* Selector de Estrellas (1 a 5) */}
-                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 text-center space-y-2">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+                <div className="bg-[#0b0e14] border border-[#30363d] rounded-2xl p-3.5 text-center space-y-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8b949e] block">
                     1. ¿Cómo calificas el rendimiento de la página?
                   </span>
                   <div className="flex items-center justify-center gap-2">
@@ -294,27 +294,27 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
                           onClick={() => setRating(star)}
                           onMouseEnter={() => setHoverRating(star)}
                           onMouseLeave={() => setHoverRating(0)}
-                          className="p-1.5 rounded-xl hover:bg-amber-50 transition transform active:scale-90 cursor-pointer"
+                          className="p-1.5 rounded-xl hover:bg-[#161b22] transition transform active:scale-90 cursor-pointer"
                         >
                           <Star
                             className={`w-7 h-7 transition ${
                               active
-                                ? 'text-amber-400 fill-amber-400 drop-shadow-2xs'
-                                : 'text-slate-300'
+                                ? 'text-[#d9b114] fill-[#d9b114] drop-shadow-sm'
+                                : 'text-[#30363d]'
                             }`}
                           />
                         </button>
                       );
                     })}
                   </div>
-                  <span className="inline-block px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
+                  <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#d9b114]/10 border border-[#d9b114]/30 text-[#d9b114] text-[11px] font-bold">
                     {RATING_LABELS[hoverRating || rating]} ({hoverRating || rating}/5 ⭐)
                   </span>
                 </div>
 
                 {/* Etiquetas Rápidas */}
                 <div className="space-y-1.5">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8b949e]">
                     2. Aspecto principal:
                   </label>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -325,8 +325,8 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
                         onClick={() => setCategory(cat.id)}
                         className={`py-2 px-2.5 rounded-xl text-xs font-semibold border text-left transition cursor-pointer ${
                           category === cat.id
-                            ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                            ? 'bg-[#d9b114] text-black font-black border-[#d9b114] shadow-md'
+                            : 'bg-[#0b0e14] hover:bg-[#161b22] text-[#8b949e] hover:text-white border-[#30363d]'
                         }`}
                       >
                         {cat.label}
@@ -338,10 +338,10 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
                 {/* Comentario o Sugerencia */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#8b949e]">
                       3. Tu comentario o sugerencia (Opcional):
                     </label>
-                    <span className="text-[10px] font-mono text-slate-400">
+                    <span className="text-[10px] font-mono text-[#8b949e]">
                       {comment.length}/250
                     </span>
                   </div>
@@ -351,12 +351,12 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     placeholder="Escribe qué te gusta más o qué función te gustaría ver en G METRICS..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white transition resize-none"
+                    className="w-full bg-[#0b0e14] border border-[#30363d] rounded-xl p-2.5 text-xs text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114] transition resize-none"
                   />
                 </div>
 
                 {errorMsg && (
-                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+                  <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold">
                     {errorMsg}
                   </div>
                 )}
@@ -365,16 +365,16 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition cursor-pointer"
+                    className="px-3.5 py-2 rounded-xl bg-[#0b0e14] hover:bg-[#30363d] text-[#8b949e] hover:text-white font-semibold text-xs transition cursor-pointer border border-[#30363d]"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer disabled:opacity-50"
+                    className="px-4 py-2 rounded-xl bg-[#00ff66] hover:bg-[#00ff66]/90 text-black font-black text-xs flex items-center gap-1.5 shadow-md transition cursor-pointer disabled:opacity-50"
                   >
-                    <Send className="w-3.5 h-3.5" />
+                    <Send className="w-3.5 h-3.5 text-black" />
                     <span>{isSubmitting ? 'Enviando...' : 'Enviar Calificación'}</span>
                   </button>
                 </div>
