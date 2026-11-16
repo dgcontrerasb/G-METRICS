@@ -4,10 +4,12 @@
   "description": "Modelos probabilísticos avanzados y analítica deportiva de precisión. Deja el azar a un lado y toma decisiones con ventaja estadística.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "background_color": "#0b0e14",
+  "theme_color": "#0b0e14",
   "orientation": "portrait-primary",
   "icons": [
+    { "src": "/favicon.png", "sizes": "64x64", "type": "image/png", "purpose": "any" },
+    { "src": "/icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
@@ -17,14 +19,14 @@
       "short_name": "Top Picks",
       "description": "Ver joyas de hoy con valor esperado +EV",
       "url": "/?tab=top",
-      "icons": [{ "src": "/logo.png", "sizes": "96x96" }]
+      "icons": [{ "src": "/icon.png", "sizes": "512x512" }]
     },
     {
       "name": "🌐 Cartelera",
       "short_name": "Cartelera",
       "description": "Ver todos los partidos de Fútbol y NBA",
       "url": "/?tab=matches",
-      "icons": [{ "src": "/logo.png", "sizes": "96x96" }]
+      "icons": [{ "src": "/icon.png", "sizes": "512x512" }]
     }
   ]
 }

@@ -13,6 +13,7 @@ export default defineConfig(() => {
         registerType: 'autoUpdate',
         includeAssets: [
           'push-worker.js',
+          'favicon.png',
           'icon-512.png',
           'icon-maskable-512.png',
           'custom-logo.png',
@@ -32,12 +33,24 @@ export default defineConfig(() => {
           name: 'G METRICS | La ciencia detrás de cada victoria',
           short_name: 'G METRICS',
           description: 'Modelos probabilísticos avanzados y analítica deportiva de precisión. Deja el azar a un lado y toma decisiones con ventaja estadística.',
-          theme_color: '#ffffff',
-          background_color: '#ffffff',
+          theme_color: '#0b0e14',
+          background_color: '#0b0e14',
           display: 'standalone',
           start_url: '/',
           scope: '/',
           icons: [
+            {
+              src: '/favicon.png',
+              sizes: '64x64',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: '/icon.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any',
+            },
             {
               src: '/icon-512.png',
               sizes: '512x512',

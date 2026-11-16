@@ -230,7 +230,13 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
   const [friendlyDeviceName, setFriendlyDeviceName] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [acceptedLegal, setAcceptedLegal] = useState<boolean>(true);
+  const [acceptedLegal, setAcceptedLegal] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('gmetrics_cookies_legal_accepted_v1') !== 'false';
+    } catch {
+      return true;
+    }
+  });
   const [selectedDuelIndex, setSelectedDuelIndex] = useState<number>(0);
   const [isAutoRotating, setIsAutoRotating] = useState<boolean>(true);
   const [gatewaySport, setGatewaySport] = useState<'SOCCER' | 'NBA'>('SOCCER');
@@ -1053,7 +1059,15 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
               <input
                 type="checkbox"
                 checked={acceptedLegal}
-                onChange={(e) => setAcceptedLegal(e.target.checked)}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setAcceptedLegal(val);
+                  try {
+                    localStorage.setItem('gmetrics_cookies_legal_accepted_v1', val ? 'true' : 'false');
+                  } catch {
+                    // ignore
+                  }
+                }}
                 className="rounded accent-emerald-500 cursor-pointer w-3.5 h-3.5"
               />
               <span>
@@ -1067,7 +1081,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
                   }}
                   className="text-[#d9b114] underline font-bold hover:text-white cursor-pointer"
                 >
-                  Términos y +18
+                  Términos, Cookies y +18
                 </button>
               </span>
             </label>

@@ -14,8 +14,7 @@ export const SportStatsLogo: React.FC<SportStatsLogoProps> = ({
   size = 'md',
   withGlow = true,
   withText = false,
-  subtitle,
-  activeSport = 'SOCCER'
+  subtitle
 }) => {
   const [logoSrc, setLogoSrc] = useState('/icon.png');
 
@@ -28,13 +27,13 @@ export const SportStatsLogo: React.FC<SportStatsLogoProps> = ({
   };
 
   const glowStyles = withGlow
-    ? 'shadow-lg shadow-[#d9b114]/20 ring-1 ring-[#d9b114]/50'
-    : '';
+    ? 'drop-shadow-[0_0_12px_rgba(217,177,20,0.45)]'
+    : 'drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]';
 
   return (
     <div className={`inline-flex items-center gap-2.5 ${className}`}>
       <div
-        className={`${sizeDimensions[size]} rounded-full flex items-center justify-center shrink-0 relative overflow-hidden transition-all duration-300 ${glowStyles} bg-[#0b0e14] border border-[#d9b114]/70`}
+        className={`${sizeDimensions[size]} flex items-center justify-center shrink-0 relative transition-all duration-300`}
       >
         <img
           src={logoSrc}
@@ -44,7 +43,7 @@ export const SportStatsLogo: React.FC<SportStatsLogoProps> = ({
               setLogoSrc('/logo.png');
             }
           }}
-          className="w-full h-full object-cover scale-[2.28] rounded-full"
+          className={`w-full h-full object-contain select-none ${glowStyles}`}
         />
       </div>
 

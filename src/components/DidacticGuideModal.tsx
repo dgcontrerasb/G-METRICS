@@ -740,6 +740,17 @@ export const DidacticGuideModal: React.FC<DidacticGuideModalProps> = ({
                     Todos los nombres de ligas, clubes, escudos y marcas deportivas que aparecen en las tablas estadísticas pertenecen a sus respectivos propietarios legítimos y se emplean con carácter estrictamente descriptivo, informativo y referencial (<em>Nominative Fair Use</em>), sin reclamar afiliación ni patrocinio oficial. El acceso al software está estrictamente restringido a personas <strong className="text-white">mayores de 18 años (+18)</strong>.
                   </p>
                 </div>
+
+                {/* 4. Política de Cookies Técnicas y Almacenamiento Local */}
+                <div className="bg-[#161b22] border border-[#30363d] p-3.5 rounded-2xl space-y-1">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>4. Política de Cookies Técnicas Esenciales y Almacenamiento Local</span>
+                  </h4>
+                  <p className="text-[11px] text-[#8b949e] leading-relaxed">
+                    <strong className="text-white">G METRICS</strong> utiliza únicamente <strong className="text-white">cookies técnicas estrictamente necesarias</strong> (<code className="text-emerald-400">HttpOnly / SameSite=Lax</code>) y almacenamiento local en el navegador (<code className="text-emerald-400">localStorage</code>) para mantener la sesión autenticada con Google OAuth, recordar tus partidos favoritos con alertas Push y conservar tus tickets de parlay. <strong className="text-white">No utilizamos cookies publicitarias ni rastreadores comerciales de terceros.</strong>
+                  </p>
+                </div>
               </div>
             </div>
           )}
