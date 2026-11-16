@@ -135,10 +135,23 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
   const awayAbbr = useMemo(() => buildTeamCode(effectiveAwayName), [effectiveAwayName]);
   const homeAbbr = useMemo(() => buildTeamCode(effectiveHomeName), [effectiveHomeName]);
 
+  const slideOrder: CourtSlideMode[] = useMemo(() => {
+    return isLive ? ['TRACKER', 'LINEUPS', 'HEATMAP'] : ['LINEUPS', 'HEATMAP'];
+  }, [isLive]);
+
   const [slideMode, setSlideMode] = useState<CourtSlideMode>(isLive ? 'TRACKER' : 'LINEUPS');
   const [activeBench, setActiveBench] = useState<'HOME' | 'AWAY' | null>(null);
   const [trackerPhase, setTrackerPhase] = useState<LiveTrackerAnimPhase>('SLIM_POSSESSION');
   const [simulatedPlayIdx, setSimulatedPlayIdx] = useState<number>(0);
+
+  // Auto-sincronizar modo táctico según si el partido está en vivo o programado
+  useEffect(() => {
+    if (isLive) {
+      setSlideMode('TRACKER');
+    } else {
+      setSlideMode('LINEUPS');
+    }
+  }, [isLive, effectiveHomeName, effectiveAwayName]);
 
   // Detect official Halftime / Descanso state in NBA match
   const isHalfTime = useMemo(() => {
@@ -188,9 +201,9 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
     return liveClock || 'VIVO';
   }, [isLive, isHalfTime, baseClockSec, clockTickDown, liveClock]);
 
-  // Relaxed 5.2s cadence with a calm RADAR_BALL phase (strictly paused during Halftime)
+  // Relaxed 5.2s cadence with a calm RADAR_BALL phase (strictly paused during Halftime or pre-match)
   useEffect(() => {
-    if (slideMode !== 'TRACKER' || isHalfTime) return;
+    if (!isLive || slideMode !== 'TRACKER' || isHalfTime) return;
 
     const phases: LiveTrackerAnimPhase[] = ['SLIM_POSSESSION', 'RADAR_BALL', 'SLIM_STAT_PILL'];
     let step = 0;
@@ -205,7 +218,7 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
     }, 5200);
 
     return () => clearInterval(timer);
-  }, [slideMode, liveSituation?.id, isHalfTime]);
+  }, [slideMode, liveSituation?.id, isHalfTime, isLive]);
 
   const resolvedPlay: NBALivePlaySituation & {
     ballX: number;
@@ -222,6 +235,23 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
         teamSide: 'HOME',
         typeLabel: '⏸️ Medio Tiempo Oficial',
         statSummary: `Pausa de descanso · Marcador parcial: ${quarterScores.awayTotal} - ${quarterScores.homeTotal}`,
+        ballX: 50,
+        ballY: 50,
+        originX: 50,
+        originY: 50
+      };
+    }
+
+    // Si el partido no ha comenzado (o ya finalizó), congelar 100% estático en el centro
+    if (!isLive) {
+      return {
+        id: 'pre-match-center',
+        text: 'Salto inicial programado',
+        quarter: 'PRE',
+        actionKind: 'POSSESSION',
+        teamSide: 'HOME',
+        typeLabel: '🏀 Salto Inicial',
+        statSummary: `Inicio programado · ${matchTimeLabel || 'Por disputarse'}`,
         ballX: 50,
         ballY: 50,
         originX: 50,
@@ -407,9 +437,9 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
   };
 
   const handleCycleSlide = (dir: -1 | 1) => {
-    const idx = SLIDE_ORDER.indexOf(slideMode);
-    const nextIdx = (idx + dir + SLIDE_ORDER.length) % SLIDE_ORDER.length;
-    setSlideMode(SLIDE_ORDER[nextIdx]);
+    const idx = slideOrder.indexOf(slideMode);
+    const nextIdx = (idx + dir + slideOrder.length) % slideOrder.length;
+    setSlideMode(slideOrder[nextIdx]);
   };
 
   const isActionHome = resolvedPlay.teamSide === 'HOME';
@@ -653,18 +683,20 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
       {/* 2. SUB-TOOLBAR: Mode Tabs */}
       <div className="px-2.5 py-1 bg-[#0D1322] border-b border-slate-800/80 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setSlideMode('TRACKER')}
-            className={`px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-bold flex items-center gap-1 transition cursor-pointer ${
-              slideMode === 'TRACKER'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Radio className="w-2.5 h-2.5 text-emerald-400 animate-pulse" />
-            <span>Tracker En Vivo</span>
-          </button>
+          {isLive && (
+            <button
+              type="button"
+              onClick={() => setSlideMode('TRACKER')}
+              className={`px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-bold flex items-center gap-1 transition cursor-pointer ${
+                slideMode === 'TRACKER'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Radio className="w-2.5 h-2.5 text-emerald-400 animate-pulse" />
+              <span>Tracker En Vivo</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -895,8 +927,8 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
               strokeWidth="1.3"
             />
 
-            {/* SUBTLE LOCALIZED TACTICAL RADAR & VECTOR IN TRACKER MODE (Hidden during Halftime) */}
-            {slideMode === 'TRACKER' && !isHalfTime && (
+            {/* SUBTLE LOCALIZED TACTICAL RADAR & VECTOR IN TRACKER MODE (Hidden during Halftime & Pre-match) */}
+            {slideMode === 'TRACKER' && isLive && !isHalfTime && (
               <g>
                 <circle
                   cx={svgBallX}
@@ -989,24 +1021,26 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
                 </div>
               )}
 
-              {/* Live Ball Marker Node on Court (Static at center during halftime, dynamic during play) */}
+              {/* Live Ball Marker Node on Court (Static at center during halftime or pre-match, dynamic during play) */}
               <div
                 style={{
-                  left: isHalfTime ? '50%' : `${resolvedPlay.ballX}%`,
-                  top: isHalfTime ? '50%' : `${resolvedPlay.ballY}%`
+                  left: isHalfTime || !isLive ? '50%' : `${resolvedPlay.ballX}%`,
+                  top: isHalfTime || !isLive ? '50%' : `${resolvedPlay.ballY}%`
                 }}
                 className={`absolute -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none ${
-                  isHalfTime ? '' : 'transition-all duration-700'
+                  isHalfTime || !isLive ? '' : 'transition-all duration-700'
                 }`}
               >
-                {!isHalfTime && (
+                {!isHalfTime && isLive && (
                   <span
                     className={`w-4 h-4 rounded-full ${activeDotColor} opacity-35 animate-ping absolute -inset-0.5`}
                   />
                 )}
                 <div
                   className={`w-3.5 h-3.5 rounded-full ${
-                    isHalfTime
+                    !isLive
+                      ? 'bg-white border-2 border-slate-400'
+                      : isHalfTime
                       ? 'bg-amber-400 border-2 border-white'
                       : isActionHome
                       ? 'bg-white border-2 border-amber-400'
@@ -1084,24 +1118,16 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
           {/* MODE 2: 5 vs 5 TACTICAL LINEUPS                                           */}
           {/* ========================================================================= */}
           {slideMode === 'LINEUPS' && (
-            !isConfirmed ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center p-3 text-center z-20 bg-slate-950/75 backdrop-blur-[2px]">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 mb-1.5 shadow-lg">
-                  <Users className="w-5 h-5" />
-                </div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-300 text-[10px] font-mono font-bold uppercase tracking-wider mb-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  Quinteto Oficial Pendiente
-                </div>
-                <h4 className="text-white font-bold text-xs sm:text-sm max-w-xs leading-snug">
-                  El quinteto titular y rotación se mostrarán minutos antes del partido
-                </h4>
-                <p className="text-slate-300 text-[10px] max-w-sm mt-1 leading-relaxed">
-                  Las alineaciones oficiales se confirmarán aproximadamente entre 30 y 45 minutos antes del salto entre dos cuando las franquicias entreguen sus planillas oficiales.
-                </p>
-              </div>
-            ) : (
             <>
+              {!isConfirmed && (
+                <div className="absolute top-1.5 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/90 border border-amber-400/40 text-amber-300 text-[8.5px] font-mono font-bold shadow-md">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    <span>Quinteto Probable (Oficial ~30m antes)</span>
+                  </div>
+                </div>
+              )}
+
               {effectiveAwayStarters.slice(0, 5).map((player, idx) => {
                 const coords = getAwayHorizontalCoords(player.position, idx);
                 const lastName = player.name.split(' ').pop() || player.name;
@@ -1154,7 +1180,6 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
                 );
               })}
             </>
-            )
           )}
 
           {/* MODE 3: HORIZONTAL HEATMAP BADGES */}
@@ -1190,7 +1215,7 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
             </button>
 
             <div className="flex items-center gap-1">
-              {SLIDE_ORDER.map((mode) => (
+              {slideOrder.map((mode) => (
                 <button
                   key={mode}
                   type="button"

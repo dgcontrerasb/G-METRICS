@@ -91,10 +91,14 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
   );
 
   const slideOrder: PitchSlideMode[] = useMemo(() => {
-    return isPenaltyShootout
-      ? ['PENALTIES', 'TRACKER', 'LINEUPS', 'HEATMAP']
-      : DEFAULT_SLIDE_ORDER;
-  }, [isPenaltyShootout]);
+    if (isPenaltyShootout) {
+      return ['PENALTIES', 'TRACKER', 'LINEUPS', 'HEATMAP'];
+    }
+    if (isLive) {
+      return ['TRACKER', 'LINEUPS', 'HEATMAP'];
+    }
+    return ['LINEUPS', 'HEATMAP'];
+  }, [isPenaltyShootout, isLive]);
 
   const [slideMode, setSlideMode] = useState<PitchSlideMode>(
     isPenaltyShootout ? 'PENALTIES' : isLive ? 'TRACKER' : 'LINEUPS'
@@ -103,11 +107,16 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
   const [trackerPhase, setTrackerPhase] = useState<PitchAnimPhase>('SLIM_POSSESSION');
   const [stepCursor, setStepCursor] = useState<number>(0);
 
+  // Auto-sincronizar modo táctico según estado del juego y fixture activo (0 movimientos en pre-partido)
   useEffect(() => {
     if (isPenaltyShootout) {
       setSlideMode('PENALTIES');
+    } else if (isLive) {
+      setSlideMode('TRACKER');
+    } else {
+      setSlideMode('LINEUPS');
     }
-  }, [isPenaltyShootout]);
+  }, [fixture.id, isLive, isPenaltyShootout]);
 
   const penaltyScore = fixture.score?.penalties || fixture.currentScore?.penalties;
   const homePenGoals = penaltyScore?.home ?? 0;
@@ -176,9 +185,9 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
     );
   }, [isHomeShooting, homeStarters, awayStarters, homePenGoals, awayPenGoals]);
 
-  // Relaxed, natural cadence (5.5s per phase, strictly paused during halftime)
+  // Relaxed, natural cadence (5.5s per phase, strictly paused during halftime or pre-match)
   useEffect(() => {
-    if (slideMode !== 'TRACKER' || isHalfTime) return;
+    if (!isLive || slideMode !== 'TRACKER' || isHalfTime) return;
 
     const phases: PitchAnimPhase[] = ['SLIM_POSSESSION', 'RADAR_BALL', 'SLIM_STAT_PILL'];
     let idx = 0;
@@ -193,7 +202,7 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
     }, 5200);
 
     return () => clearInterval(timer);
-  }, [slideMode, fixture.currentScore?.home, fixture.currentScore?.away, isHalfTime]);
+  }, [slideMode, fixture.currentScore?.home, fixture.currentScore?.away, isHalfTime, isLive]);
 
   // Synchronized live telemetry metrics for the compact header table
   const statsRow = useMemo(() => {
@@ -409,6 +418,28 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
         minuteLabel: "MT · 45'",
         typeLabel: '☕ Descanso Oficial',
         subLabel: `Pausa de medio tiempo · Marcador parcial: ${statsRow.homeGoals} - ${statsRow.awayGoals}`,
+        ballX: 50,
+        ballY: 50,
+        originX: 50,
+        originY: 50
+      };
+    }
+
+    // Si el partido no ha comenzado (o ya finalizó), congelar 100% estático en el centro
+    if (!isLive) {
+      const isFinished = fixture.status === 'FINISHED';
+      return {
+        isOfficialEvent: false,
+        isGoalEvent: false,
+        isHome: true,
+        teamName: `${homeAbbr} vs ${awayAbbr}`,
+        teamCode: isFinished ? 'FIN' : 'PRE',
+        playerName: isFinished ? 'Finalizado' : 'Kickoff',
+        minuteLabel: isFinished ? 'FT' : (fixture.time || 'Pre'),
+        typeLabel: isFinished ? '🏁 Partido Finalizado' : '⚽ Saque Inicial',
+        subLabel: isFinished
+          ? `Resultado Final: ${statsRow.homeGoals} - ${statsRow.awayGoals}`
+          : `Inicio programado · ${fixture.time || 'Por disputarse'}`,
         ballX: 50,
         ballY: 50,
         originX: 50,
@@ -665,18 +696,20 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => setSlideMode('TRACKER')}
-            className={`px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-bold flex items-center gap-1 transition cursor-pointer ${
-              slideMode === 'TRACKER'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Radio className="w-2.5 h-2.5 text-emerald-400 animate-pulse" />
-            <span>Tracker En Vivo</span>
-          </button>
+          {isLive && (
+            <button
+              type="button"
+              onClick={() => setSlideMode('TRACKER')}
+              className={`px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-bold flex items-center gap-1 transition cursor-pointer ${
+                slideMode === 'TRACKER'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Radio className="w-2.5 h-2.5 text-emerald-400 animate-pulse" />
+              <span>Tracker En Vivo</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -864,8 +897,8 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
               strokeWidth="1"
             />
 
-            {/* SUBTLE LOCALIZED TACTICAL RADAR & VECTOR IN TRACKER MODE (Hidden during Halftime) */}
-            {slideMode === 'TRACKER' && !isHalfTime && (
+            {/* SUBTLE LOCALIZED TACTICAL RADAR & VECTOR IN TRACKER MODE (Hidden during Halftime & Pre-match) */}
+            {slideMode === 'TRACKER' && isLive && !isHalfTime && (
               <g>
                 {/* Localized soft radar halo around the ball (takes <8% of pitch) */}
                 <circle
@@ -980,19 +1013,24 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
 
               {/* Live Ball Marker Node on Pitch */}
               <div
-                style={{ left: `${activeLivePlay.ballX}%`, top: `${activeLivePlay.ballY}%` }}
+                style={{
+                  left: isHalfTime || !isLive ? '50%' : `${activeLivePlay.ballX}%`,
+                  top: isHalfTime || !isLive ? '50%' : `${activeLivePlay.ballY}%`
+                }}
                 className={`absolute -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none ${
-                  isHalfTime ? '' : 'transition-all duration-700'
+                  isHalfTime || !isLive ? '' : 'transition-all duration-700'
                 }`}
               >
-                {!isHalfTime && (
+                {!isHalfTime && isLive && (
                   <span
                     className={`w-4 h-4 rounded-full ${activeDotColor} opacity-35 animate-ping absolute -inset-0.5`}
                   />
                 )}
                 <div
                   className={`w-3.5 h-3.5 rounded-full ${
-                    isHalfTime
+                    !isLive
+                      ? 'bg-white border-2 border-slate-400'
+                      : isHalfTime
                       ? 'bg-amber-400 border-2 border-white'
                       : isActionHome
                       ? 'bg-white border-2 border-emerald-400'
@@ -1105,24 +1143,16 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
           {/* MODE 2: 11 vs 11 TACTICAL LINEUPS ON HORIZONTAL PITCH (1-Tap Props)       */}
           {/* ========================================================================= */}
           {slideMode === 'LINEUPS' && (
-            !isConfirmed ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center p-3 text-center z-20 bg-slate-950/75 backdrop-blur-[2px]">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 mb-1.5 shadow-lg">
-                  <Users className="w-5 h-5" />
-                </div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-300 text-[10px] font-mono font-bold uppercase tracking-wider mb-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  Alineación Oficial Pendiente
-                </div>
-                <h4 className="text-white font-bold text-xs sm:text-sm max-w-xs leading-snug">
-                  La formación táctica y los 11 titulares se mostrarán minutos antes del partido
-                </h4>
-                <p className="text-slate-300 text-[10px] max-w-sm mt-1 leading-relaxed">
-                  Las alineaciones oficiales se confirmarán aproximadamente entre 45 y 60 minutos antes del inicio cuando los clubes entreguen las planillas oficiales.
-                </p>
-              </div>
-            ) : (
             <>
+              {!isConfirmed && (
+                <div className="absolute top-1.5 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/90 border border-amber-400/40 text-amber-300 text-[8.5px] font-mono font-bold shadow-md">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    <span>Alineación Probable (Oficial ~45m antes)</span>
+                  </div>
+                </div>
+              )}
+
               {/* Home Team (Left Half) */}
               {homeStarters.slice(0, 11).map((player, idx) => {
                 const coords = getHomePitchCoords(idx);
@@ -1177,7 +1207,6 @@ export const SoccerPitch2D: React.FC<SoccerPitch2DProps> = ({
                 );
               })}
             </>
-            )
           )}
 
           {/* ========================================================================= */}
