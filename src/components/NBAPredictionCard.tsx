@@ -621,7 +621,7 @@ export const NBAPredictionCard: React.FC<NBAPredictionCardProps> = React.memo(({
 
         {/* Sección de Análisis Detallado NBA (Visible al Desplegar) */}
         {expanded && (
-          <div className="p-4 sm:p-5 pt-3 space-y-4 border-t border-slate-800/40">
+          <div className="p-4 sm:p-5 pt-3 space-y-4 border-t border-slate-800/40 animate-row-enter">
             {/* MÓDULO EXCLUSIVO: MERCADO DE TRIPLES (3-POINTERS / 3PM) CON DISTRIBUCIÓN POISSON */}
             {analysis.threePointersMarket && (
               <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/30 backdrop-blur-sm border border-slate-800/40 space-y-3">

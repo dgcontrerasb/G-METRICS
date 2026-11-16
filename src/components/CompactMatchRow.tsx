@@ -500,7 +500,7 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
 
       {/* Expanded Details: Renders only if onOpenDetail is not supplied */}
       {!onOpenDetail && isExpanded && (
-        <div className="border-t border-[#21262d] p-2 sm:p-3 bg-[#0b0e14]/80">
+        <div className="border-t border-[#21262d] p-2 sm:p-3 bg-[#0b0e14]/80 animate-row-enter">
           <FriendlyPredictionCard
             fixture={fixture}
             analysis={analysis}

@@ -340,7 +340,7 @@ export const SoccerWorkspaceView: React.FC<SoccerWorkspaceViewProps> = React.mem
 
       {/* TAB 1: 🔥 TOP PICKS / JOYAS DEL DÍA */}
       {mainTab === 'TOP_PICKS' && !isLoading && (
-        <div className="space-y-3">
+        <div key="tab-top-picks" className="space-y-3 animate-tab-content">
           <div className="px-4 py-3.5 rounded-2xl bg-[#161b22] border border-[#30363d] shadow-md text-center space-y-1 backdrop-blur-md">
             <div className="inline-flex items-center justify-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#d9b114]/15 border border-[#d9b114]/40 text-[#d9b114] text-[10px] font-mono uppercase tracking-wider font-bold">
               <Flame className="w-3.5 h-3.5 text-[#d9b114]" strokeWidth={2} />
@@ -492,7 +492,7 @@ export const SoccerWorkspaceView: React.FC<SoccerWorkspaceViewProps> = React.mem
 
       {/* TAB 2: 🔴 EN VIVO */}
       {mainTab === 'LIVE' && !isLoading && (
-        <div className="space-y-3">
+        <div key="tab-live" className="space-y-3 animate-tab-content">
           <div className="p-3.5 rounded-xl bg-[#161b22] border border-rose-500/30 shadow-md flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2.5 w-2.5">
@@ -582,7 +582,7 @@ export const SoccerWorkspaceView: React.FC<SoccerWorkspaceViewProps> = React.mem
 
       {/* TAB 3: 🌐 CARTELERA COMPLETA (ORGANIZADA POR COMPETICIONES) */}
       {mainTab === 'ALL_LEAGUES' && !isLoading && filteredFixtures.length > 0 && (
-        <div className="space-y-2.5 sm:space-y-4">
+        <div key={`tab-all-leagues-${selectedLeague}`} className="space-y-2.5 sm:space-y-4 animate-tab-content">
           {groupedFilteredFixtures.map((group) => (
             <CompetitionBlock
               key={group.key}

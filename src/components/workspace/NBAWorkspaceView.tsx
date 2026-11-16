@@ -194,7 +194,7 @@ export const NBAWorkspaceView: React.FC<NBAWorkspaceViewProps> = React.memo(({
 
       {/* TAB 1: 🔥 BALONCESTO TOP PICKS */}
       {mainTab === 'TOP_PICKS' && !isNBALoading && (
-        <div className="space-y-3">
+        <div key="nba-tab-top-picks" className="space-y-3 animate-tab-content">
           <div className="px-4 py-3.5 rounded-2xl bg-[#161b22] border border-[#30363d] shadow-md text-center space-y-1 backdrop-blur-md">
             <div className="inline-flex items-center justify-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#d9b114]/15 border border-[#d9b114]/40 text-[#d9b114] text-[10px] font-mono uppercase tracking-wider font-bold">
               <Flame className="w-3.5 h-3.5 text-[#d9b114]" strokeWidth={2} />
@@ -278,7 +278,7 @@ export const NBAWorkspaceView: React.FC<NBAWorkspaceViewProps> = React.memo(({
 
       {/* TAB 2: 🔴 NBA EN VIVO */}
       {mainTab === 'LIVE' && !isNBALoading && (
-        <div className="space-y-3">
+        <div key="nba-tab-live" className="space-y-3 animate-tab-content">
           <div className="p-3.5 rounded-xl bg-[#161b22] border border-rose-500/30 shadow-md flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2.5 w-2.5">
@@ -363,7 +363,7 @@ export const NBAWorkspaceView: React.FC<NBAWorkspaceViewProps> = React.memo(({
 
       {/* TAB 3: 🌐 CARTELERA NBA COMPLETA */}
       {mainTab === 'ALL_LEAGUES' && !isNBALoading && filteredNBAFixtures.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+        <div key="nba-tab-all-leagues" className="grid grid-cols-1 md:grid-cols-2 gap-2.5 animate-tab-content">
           {filteredNBAFixtures.slice(0, visibleMatchLimit).map((fixture, idx, arr) => {
             const analysis = nbaAnalysesMap[fixture.id];
             if (!analysis) return null;

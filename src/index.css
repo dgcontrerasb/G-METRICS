@@ -408,4 +408,108 @@ select:focus {
   color: #ffffff;
 }
 
+/* ============================================================
+   13. Native-App Micro-Animations & Fluidity (Zero Cost, GPU Accelerated)
+   ============================================================ */
+
+/* A. Modals: Hardware accelerated cubic-bezier fade & zoom */
+@keyframes modalBackdropFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalContentZoomIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-in.fade-in,
+.animate-modal-backdrop {
+  animation: modalBackdropFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: opacity;
+}
+
+.animate-in.zoom-in-95,
+.animate-modal-content {
+  animation: modalContentZoomIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* B. Tab Switches, League Filtering & View Transitions */
+@keyframes tabFadeSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-tab-content {
+  animation: tabFadeSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* C. Card & Accordion Smooth Reveal */
+@keyframes listRowFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-row-enter {
+  animation: listRowFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* D. Touch & Click Tactile Micro-Interactions */
+.tap-interactive {
+  transition: transform 0.12s ease-out, filter 0.12s ease-out, border-color 0.12s ease-out;
+}
+
+.tap-interactive:active {
+  transform: scale(0.975);
+}
+
+/* E. High-Performance Virtualization for Deep League Stacks */
+.content-visibility-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
+
+/* F. Accessibility: Respect reduced motion preference strictly */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in.fade-in,
+  .animate-modal-backdrop,
+  .animate-in.zoom-in-95,
+  .animate-modal-content,
+  .animate-tab-content,
+  .animate-row-enter,
+  .gmetrics-dark-pulse,
+  .value-bet-glow,
+  .cyber-glow,
+  .tap-interactive {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
 

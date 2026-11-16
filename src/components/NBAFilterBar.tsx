@@ -171,7 +171,7 @@ export const NBAFilterBar: React.FC<NBAFilterBarProps> = ({
             <button
               type="button"
               onClick={() => onConferenceChange('ALL')}
-              className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono transition-all cursor-pointer border ${
+              className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono tap-interactive cursor-pointer border ${
                 selectedNBAConference === 'ALL'
                   ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 font-bold shadow-xs'
                   : 'bg-slate-900/40 border-slate-800/80 text-slate-400 hover:text-white'
@@ -186,7 +186,7 @@ export const NBAFilterBar: React.FC<NBAFilterBarProps> = ({
                   key={l.key}
                   type="button"
                   onClick={() => onConferenceChange(isSelected ? 'ALL' : l.key)}
-                  className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1.5 border ${
+                  className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono tap-interactive cursor-pointer flex items-center gap-1.5 border ${
                     isSelected
                       ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 font-bold shadow-xs'
                       : 'bg-slate-900/40 border-slate-800/80 text-slate-300 hover:text-white'
@@ -202,7 +202,7 @@ export const NBAFilterBar: React.FC<NBAFilterBarProps> = ({
               <button
                 type="button"
                 onClick={() => onConferenceChange(selectedNBAConference === 'Este' ? 'ALL' : 'Este')}
-                className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1 border ${
+                className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono tap-interactive cursor-pointer flex items-center gap-1 border ${
                   selectedNBAConference === 'Este'
                     ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 font-bold shadow-xs'
                     : 'bg-slate-900/40 border-slate-800/80 text-slate-300 hover:text-white'
@@ -217,7 +217,7 @@ export const NBAFilterBar: React.FC<NBAFilterBarProps> = ({
               <button
                 type="button"
                 onClick={() => onConferenceChange(selectedNBAConference === 'Oeste' ? 'ALL' : 'Oeste')}
-                className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1 border ${
+                className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono tap-interactive cursor-pointer flex items-center gap-1 border ${
                   selectedNBAConference === 'Oeste'
                     ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 font-bold shadow-xs'
                     : 'bg-slate-900/40 border-slate-800/80 text-slate-300 hover:text-white'

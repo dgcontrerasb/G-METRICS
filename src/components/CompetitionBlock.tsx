@@ -135,7 +135,7 @@ export const CompetitionBlock: React.FC<CompetitionBlockProps> = ({
   };
 
   return (
-    <div className="border border-[#30363d] rounded-2xl overflow-hidden shadow-md bg-[#161b22]/90 backdrop-blur-md transition-all">
+    <div className="border border-[#30363d] rounded-2xl overflow-hidden shadow-md bg-[#161b22]/90 backdrop-blur-md transition-all content-visibility-auto">
       {/* Header Bar (1 sola línea compacta en móvil y PC) */}
       <div
         onClick={() => onToggleGroupCollapse(group.key)}

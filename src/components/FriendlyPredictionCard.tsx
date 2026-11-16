@@ -549,7 +549,7 @@ export const FriendlyPredictionCard: React.FC<FriendlyPredictionCardProps> = Rea
 
         {/* Sección de Análisis Detallado (Visible solo si no se usa modal externo) */}
         {!onOpenDetail && expanded && (
-          <div className="space-y-0">
+          <div className="space-y-0 animate-row-enter">
             <div className="px-4 sm:px-5 pt-3 pb-4 space-y-3.5 border-t border-white/10">
               {/* NUEVO: Ranking Top Mercados Más Seguros del Partido */}
               <div className="p-3 rounded-xl bg-slate-950/50 border border-emerald-500/30 space-y-2">

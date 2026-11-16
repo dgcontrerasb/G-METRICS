@@ -208,7 +208,7 @@ export const SoccerFilterBar: React.FC<SoccerFilterBarProps> = ({
               <button
                 type="button"
                 onClick={() => onLeagueChange('PRIME_CO')}
-                className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1.5 border ${
+                className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono tap-interactive cursor-pointer flex items-center gap-1.5 border ${
                   selectedLeague === 'PRIME_CO'
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 font-bold shadow-xs'
                     : 'bg-slate-900/40 border-slate-800/80 text-slate-300 hover:text-white'
@@ -221,7 +221,7 @@ export const SoccerFilterBar: React.FC<SoccerFilterBarProps> = ({
               <button
                 type="button"
                 onClick={() => onLeagueChange('ALL')}
-                className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1.5 border ${
+                className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-mono tap-interactive cursor-pointer flex items-center gap-1.5 border ${
                   selectedLeague === 'ALL'
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 font-bold shadow-xs'
                     : 'bg-slate-900/40 border-slate-800/80 text-slate-400 hover:text-white'
@@ -237,7 +237,7 @@ export const SoccerFilterBar: React.FC<SoccerFilterBarProps> = ({
                     key={chip.key}
                     type="button"
                     onClick={() => onLeagueChange(isSelected ? 'PRIME_CO' : `COUNTRY_${chip.key}`)}
-                    className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1.5 border ${
+                    className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-mono tap-interactive cursor-pointer flex items-center gap-1.5 border ${
                       isSelected
                         ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 font-bold shadow-xs'
                         : 'bg-slate-900/40 border-slate-800/80 text-slate-300 hover:text-white'
