@@ -20,7 +20,7 @@ import { NBAFilterType } from './components/NBAFilterBar';
 import { FintechSidebar } from './components/FintechSidebar';
 import { AppFooter } from './components/AppFooter';
 import { AppModalsContainer } from './components/AppModalsContainer';
-import { findWallpaperOptionByUrl } from './components/WallpaperSelectorModal';
+import { findWallpaperOptionByUrl } from './services/wallpaperConfig';
 import { UserFeedbackWidget } from './components/UserFeedbackWidget';
 import { SoccerWorkspaceView } from './components/workspace/SoccerWorkspaceView';
 import { NBAWorkspaceView } from './components/workspace/NBAWorkspaceView';
@@ -491,6 +491,8 @@ export default function App() {
     if (!isAppUnlocked) return;
 
     const sendHeartbeat = async () => {
+      // Si la pestaña está oculta o el móvil bloqueado, omitir para ahorrar batería y no saturar la red
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
         const active = getActiveStoredLicense();
         const devId = getOrCreateDeviceId();
@@ -1451,10 +1453,22 @@ export default function App() {
       );
     const intervalMs = isModalViewingLiveMatch ? 15000 : 20000;
 
+    const handleTabVisible = () => {
+      if (document.visibilityState === 'visible') {
+        runLivePulseCheck();
+      }
+    };
+    document.addEventListener('visibilitychange', handleTabVisible);
+
     const interval = setInterval(() => {
+      // Si la app está en segundo plano o el teléfono tiene pantalla apagada, no consumir batería ni red
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       runLivePulseCheck();
     }, intervalMs);
-    return () => clearInterval(interval);
+    return () => {
+      document.removeEventListener('visibilitychange', handleTabVisible);
+      clearInterval(interval);
+    };
   }, [runLivePulseCheck, detailModalPayload]);
 
   // Compute analyses for all upcoming matches

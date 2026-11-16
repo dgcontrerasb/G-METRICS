@@ -531,10 +531,11 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
       ? filteredDuels[(selectedDuelIndex + 1) % filteredDuels.length]
       : dynamicFeaturedDuels.find((d) => d.id !== duel1.id) || duel1;
 
-  // Rotación automática suave de partidos estelares cada 7 segundos
+  // Rotación automática suave de partidos estelares cada 7 segundos (pausa cuando la pestaña está oculta para ahorrar batería)
   useEffect(() => {
     if (!isAutoRotating || filteredDuels.length <= 1) return;
     const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       setSelectedDuelIndex((prev) => (prev + 1) % filteredDuels.length);
     }, 7000);
     return () => clearInterval(timer);

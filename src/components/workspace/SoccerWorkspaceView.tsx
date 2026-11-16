@@ -81,7 +81,7 @@ interface SoccerWorkspaceViewProps {
   onOpenSimulator: (fixture: MatchFixture) => void;
 }
 
-export const SoccerWorkspaceView: React.FC<SoccerWorkspaceViewProps> = ({
+export const SoccerWorkspaceView: React.FC<SoccerWorkspaceViewProps> = React.memo(({
   isLoading,
   fixtures,
   filteredFixtures,
@@ -699,4 +699,4 @@ export const SoccerWorkspaceView: React.FC<SoccerWorkspaceViewProps> = ({
       )}
     </main>
   );
-};
+});

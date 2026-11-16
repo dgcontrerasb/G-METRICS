@@ -49,7 +49,7 @@ interface NBAWorkspaceViewProps {
   onClearNBAFilters: () => void;
 }
 
-export const NBAWorkspaceView: React.FC<NBAWorkspaceViewProps> = ({
+export const NBAWorkspaceView: React.FC<NBAWorkspaceViewProps> = React.memo(({
   isNBALoading,
   nbaFixtures,
   filteredNBAFixtures,
@@ -417,4 +417,4 @@ export const NBAWorkspaceView: React.FC<NBAWorkspaceViewProps> = ({
       )}
     </main>
   );
-};
+});

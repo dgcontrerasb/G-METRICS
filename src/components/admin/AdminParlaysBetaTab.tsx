@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import * as XLSX from 'xlsx';
 import {
   Check,
   Copy,
@@ -602,10 +601,11 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     });
   }, [singleValueBets, singleTypeFilter, singleSportFilter]);
 
-  // Exportación a Excel (.xlsx) con datos 100% reales
-  const handleExportExcel = () => {
+  // Exportación a Excel (.xlsx) con datos 100% reales (carga diferida de XLSX para no penalizar el peso del bundle)
+  const handleExportExcel = async () => {
     setIsExporting(true);
     try {
+      const XLSX = await import('xlsx');
       const wb = XLSX.utils.book_new();
 
       // Hoja 1: Resumen Mes a Mes

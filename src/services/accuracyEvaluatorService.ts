@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import { MatchFixture, MatchAnalysis, NBAMatchFixture, NBAAnalysis } from '../types';
 import { fetchCompletedAuditBundle, getColombiaDateString } from './apiService';
 import { convertESPNEventToNBAMatch, fetchNBAFixtures } from './nbaApiService';
@@ -1234,11 +1233,12 @@ export class AccuracyEvaluatorService {
    * - Autofiltro activado en todas las hojas.
    * - Hojas dedicadas para Base de Datos Maestra, Top 5 Fútbol (Ligas y Pronósticos), Top 5 Baloncesto NBA (Equipos y Mercados), KPIs y Segmentos.
    */
-  public static exportToExcelFile(
+  public static async exportToExcelFile(
     summary: OverallAccuracySummary,
     fileName?: string,
     activeFilter: 'PRIME_SOCCER' | 'SECONDARY_SOCCER' | 'NBA' | 'ALL' = 'ALL'
-  ): void {
+  ): Promise<void> {
+    const XLSX = await import('xlsx');
     const wb = XLSX.utils.book_new();
 
     const allSamples = summary.metricsByCategory.flatMap((c) => c.sampleMatches);

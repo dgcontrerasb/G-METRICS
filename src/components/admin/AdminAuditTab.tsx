@@ -32,7 +32,7 @@ export const AdminAuditTab: React.FC = () => {
     };
   }, []);
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
     if (!summary) return;
     const dateStr = new Date().toISOString().split('T')[0];
     const sportName =
@@ -43,7 +43,7 @@ export const AdminAuditTab: React.FC = () => {
         : sportFilter === 'NBA'
         ? 'NBA_Baloncesto'
         : 'Consolidado_Global';
-    AccuracyEvaluatorService.exportToExcelFile(
+    await AccuracyEvaluatorService.exportToExcelFile(
       summary,
       `Auditoria_Mensual_${sportName}_${dateStr}.xlsx`,
       sportFilter

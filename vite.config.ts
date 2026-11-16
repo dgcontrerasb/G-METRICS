@@ -16,7 +16,6 @@ export default defineConfig(() => {
           'favicon.png',
           'icon-512.png',
           'icon-maskable-512.png',
-          'custom-logo.png',
           'logo.png',
           'icon.png',
           'apple-touch-icon.png'
