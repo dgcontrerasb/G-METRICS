@@ -1737,6 +1737,22 @@ const NBATabContent: React.FC<{
   const isFastPace = combinedPace >= 100.5;
   const isSlowPace = combinedPace <= 98.0;
 
+  // Cálculo de Racha Histórica Directa H2H
+  let streakCount = 0;
+  const latestMatch = h2hData.recentMatches[0];
+  const latestWinner = latestMatch?.winner; // 'HOME' | 'AWAY'
+  const latestWinnerShortName = latestMatch?.winnerShortName || (latestWinner === 'HOME' ? fixture.homeTeam.shortName : fixture.awayTeam.shortName);
+
+  if (latestWinner) {
+    for (const m of h2hData.recentMatches) {
+      if (m.winner === latestWinner) {
+        streakCount++;
+      } else {
+        break;
+      }
+    }
+  }
+
   return (
     <div className="space-y-2.5 text-center">
       {/* 1. RESUMEN EJECUTIVO DE LA SERIE H2H (HEAD TO HEAD) */}
@@ -1748,9 +1764,26 @@ const NBATabContent: React.FC<{
               Historial Directo (H2H · Últimos {h2hData.totalMatches} Duelos)
             </span>
           </div>
-          <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-[#0b0e14] text-[#8b949e] font-semibold border border-[#30363d]">
-            Línea Ref: ~{h2hData.referenceLine} pts
-          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {streakCount > 0 && (
+              <span
+                className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-bold flex items-center gap-1 border ${
+                  latestWinner === 'HOME'
+                    ? 'bg-[#00ff66]/15 text-[#00ff66] border-[#00ff66]/30'
+                    : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+                }`}
+                title={`Últimos enfrentamientos directos ganados consecutivamente por ${latestWinnerShortName}`}
+              >
+                <span>{streakCount >= 2 ? '🔥' : '⚡'}</span>
+                <span>
+                  {latestWinnerShortName} {streakCount >= 2 ? `+${streakCount}V seguidas` : 'Último ganador'}
+                </span>
+              </span>
+            )}
+            <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-[#0b0e14] text-[#8b949e] font-semibold border border-[#30363d]">
+              Línea Ref: ~{h2hData.referenceLine} pts
+            </span>
+          </div>
         </div>
 
         {/* Marcador de Serie / Balance de Victorias */}
@@ -1775,13 +1808,24 @@ const NBATabContent: React.FC<{
             </div>
 
             {/* Marcador Central */}
-            <div className="shrink-0 text-center px-2.5 py-0.5 rounded-lg bg-[#161b22] border border-[#30363d] shadow-md">
+            <div className="shrink-0 text-center px-2.5 py-0.5 rounded-lg bg-[#161b22] border border-[#30363d] shadow-md flex flex-col items-center justify-center">
               <span className="text-xs sm:text-sm font-mono font-black text-white tracking-tight">
                 {h2hData.homeWins} - {h2hData.awayWins}
               </span>
               <span className="block text-[7.5px] font-mono uppercase text-[#8b949e] font-bold tracking-tight">
                 SERIE
               </span>
+              {streakCount >= 2 && (
+                <span
+                  className={`mt-0.5 px-1.5 py-0.2 rounded text-[7px] font-mono font-extrabold uppercase tracking-tight border ${
+                    latestWinner === 'HOME'
+                      ? 'bg-[#00ff66]/15 text-[#00ff66] border-[#00ff66]/30'
+                      : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+                  }`}
+                >
+                  +{streakCount}V racha
+                </span>
+              )}
             </div>
 
             {/* Equipo Visita */}
