@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X,
-  Sparkles,
-  ChevronLeft,
-  ChevronRight,
   SlidersHorizontal,
   Search,
   TrendingUp,
   Flame,
-  Layers,
+  FileSpreadsheet,
+  ChevronLeft,
+  ChevronRight,
   ArrowRight
 } from 'lucide-react';
 
@@ -39,7 +38,7 @@ const TOUR_STEPS: TourStep[] = [
     title: 'Selector de Deportes & Ligas',
     subtitle: 'Navegación unificada Fútbol y NBA',
     description:
-      'Alterna al instante entre fútbol mundial y baloncesto NBA. En este panel lateral también filtras tus Top Picks con ventaja matemática y despliegas las ligas destacadas.',
+      'Alterna al instante entre fútbol y baloncesto NBA en un solo clic. En esta barra lateral también accedes a ligas principales, torneos destacados y filtros rápidos.',
     icon: SlidersHorizontal,
     preferredPlacement: 'right'
   },
@@ -49,9 +48,9 @@ const TOUR_STEPS: TourStep[] = [
     targetName: 'BUSCADOR & CALENDARIO',
     badge: 'PASO 2 DE 5',
     title: 'Buscador Inteligente & Fechas',
-    subtitle: 'Programación en vivo hasta 5 días',
+    subtitle: 'Programación y consulta por fechas',
     description:
-      'Busca cualquier equipo, jugador o torneo en tiempo real. Utiliza el selector de calendario para consultar partidos de hoy, mañana o programaciones futuras.',
+      'Encuentra equipos, jugadores o torneos al instante. Utiliza el selector de fechas para consultar partidos de hoy, mañana o programaciones hasta con 5 días de anticipación.',
     icon: Search,
     preferredPlacement: 'bottom'
   },
@@ -61,9 +60,9 @@ const TOUR_STEPS: TourStep[] = [
     targetName: 'TARJETA DE PARTIDO & +EV',
     badge: 'PASO 3 DE 5',
     title: 'Probabilidades Reales & Señal +EV',
-    subtitle: 'Detección cuantitativa de valor',
+    subtitle: 'Ventaja matemática cuantitativa',
     description:
-      'El modelo calcula la probabilidad matemática pura y la Cuota Justa. Si la casa de apuestas paga por encima de su valor real, se activa la señal verde +EV (Ventaja a tu favor).',
+      'El modelo matemático calcula la probabilidad pura del encuentro y la Cuota Justa. Si la casa paga por encima del valor real, se activa la señal verde +EV (Ventaja a tu favor).',
     icon: TrendingUp,
     preferredPlacement: 'bottom'
   },
@@ -73,22 +72,22 @@ const TOUR_STEPS: TourStep[] = [
     targetName: 'HISTORIAL DIRECTO (H2H)',
     badge: 'PASO 4 DE 5',
     title: 'Radiografía H2H & Ritmo de Juego',
-    subtitle: 'Estadísticas cara a cara y rachas',
+    subtitle: 'Cara a cara y rachas determinísticas',
     description:
-      'Presiona este botón para inspeccionar los últimos 5 duelos directos, rachas de victorias consecutivas (ej. 🔥 +3V) y tendencias de Altas / Bajas con línea de referencia.',
+      'Abre la radiografía del partido para examinar los últimos 5 duelos directos, rachas de victorias consecutivas (ej. 🔥 +3V) y tendencias históricas de Altas / Bajas.',
     icon: Flame,
     preferredPlacement: 'top'
   },
   {
     selector: '[data-tour="tour-header-actions"]',
     fallbackSelector: 'header [data-tour="tour-header-actions"], header button',
-    targetName: 'ACCIONES, EXPORTAR & PARLAYS',
+    targetName: 'ACCIONES & EXPORTACIÓN',
     badge: 'PASO 5 DE 5',
-    title: 'Sincronización, Exportación & Slips',
-    subtitle: 'Herramientas avanzadas del terminal',
+    title: 'Sincronización, Exportación & Guía',
+    subtitle: 'Herramientas profesionales del terminal',
     description:
-      'Sincroniza marcadores en tiempo real, exporta informes en Excel (.csv) o PDF, y construye tus combinadas en el Parlay Slip con cálculo de probabilidad correlacionada.',
-    icon: Layers,
+      'Sincroniza marcadores y cuotas en tiempo real, exporta informes cuantitativos en Excel (.csv) o PDF, y consulta la Guía didáctica con el glosario A-Z.',
+    icon: FileSpreadsheet,
     preferredPlacement: 'bottom'
   }
 ];
@@ -109,7 +108,6 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
   const [targetRect, setTargetRect] = useState<ElementRect | null>(null);
   const [cardPos, setCardPos] = useState<{ top: number; left: number }>({ top: 120, left: 40 });
-  const [arrowSide, setArrowSide] = useState<'top' | 'bottom' | 'left' | 'right' | 'none'>('top');
   const [dontShowAgain, setDontShowAgain] = useState<boolean>(() => {
     try {
       return localStorage.getItem('gmetrics_hide_onboarding_tour') === 'true';
@@ -120,7 +118,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
 
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // Avisar a la app del estado del tour (para suprimir banners como el de instalación PWA)
+  // Notificar a la app el estado del tour para aislar pop-ups (ej. instalación PWA)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
@@ -136,7 +134,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
     };
   }, [isOpen]);
 
-  // Reset al paso inicial cada vez que se abre
+  // Reset al paso inicial al abrirse
   useEffect(() => {
     if (isOpen) {
       setCurrentStepIndex(0);
@@ -162,7 +160,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
     }
   };
 
-  // Localizar elemento en el DOM y calcular dimensiones del Spotlight sin pegar al borde superior
+  // Cálculo de posición con medición real de altura para evitar cortes o encimados
   const updateTargetPosition = useCallback(() => {
     if (!isOpen) return;
 
@@ -175,27 +173,27 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
 
     const vpW = window.innerWidth;
     const vpH = window.innerHeight;
-    const cardW = Math.min(420, vpW - 32);
-    const cardH = 260;
+    const cardW = Math.min(440, vpW - 32);
+    // Medir la altura real del DOM para que el cálculo nunca recorte el texto inferior
+    const cardH = cardRef.current?.offsetHeight || 290;
 
     if (!el) {
-      // Centrar suavemente en resguardo
+      // Resguardo centrado elegante
       setTargetRect(null);
       setCardPos({
         left: Math.max(16, (vpW - cardW) / 2),
-        top: Math.max(30, (vpH - cardH) / 2)
+        top: Math.max(28, (vpH - cardH) / 2)
       });
-      setArrowSide('none');
       return;
     }
 
-    // Scroll suave al centro visual
+    // Scroll suave para asegurar que el elemento esté centrado en el viewport
     el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
 
     const rect = el.getBoundingClientRect();
     const padding = 8;
 
-    // Protección de borde superior: Garantizar siempre margen seguro del techo del navegador (mínimo 14px)
+    // Asegurar margen seguro de al menos 14px respecto al borde superior de la pantalla
     const safeTop = Math.max(14, rect.top - padding);
     const safeLeft = Math.max(10, rect.left - padding);
     const safeWidth = Math.max(rect.width + padding * 2, 44);
@@ -211,46 +209,39 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
     };
     setTargetRect(computedRect);
 
-    // Posicionamiento inteligente del Anuncio Tipo Glass
+    // Calcular la posición del anuncio Glass sin solapar el elemento
     let finalTop = 80;
     let finalLeft = 20;
-    let chosenArrow: 'top' | 'bottom' | 'left' | 'right' | 'none' = 'top';
 
     const preferred = currentStep.preferredPlacement || 'bottom';
 
     if (preferred === 'right' && computedRect.right + cardW + 24 < vpW) {
-      // Lado derecho (ideal para sidebar desktop)
+      // Posición lateral derecha (ideal para el menú lateral en PC)
       finalLeft = computedRect.right + 20;
       finalTop = Math.max(24, Math.min(computedRect.top, vpH - cardH - 24));
-      chosenArrow = 'left';
     } else if (preferred === 'top' && computedRect.top - cardH - 28 > 0) {
       // Arriba del elemento
       finalTop = computedRect.top - cardH - 20;
       finalLeft = Math.max(16, Math.min(computedRect.left + (computedRect.width - cardW) / 2, vpW - cardW - 16));
-      chosenArrow = 'bottom';
     } else if (computedRect.bottom + cardH + 24 < vpH) {
       // Abajo del elemento
-      finalTop = Math.max(computedRect.bottom + 18, 60);
+      finalTop = Math.max(computedRect.bottom + 18, 65);
       finalLeft = Math.max(16, Math.min(computedRect.left + (computedRect.width - cardW) / 2, vpW - cardW - 16));
-      chosenArrow = 'top';
     } else if (computedRect.top - cardH - 24 > 0) {
-      // Fallback arriba
+      // Fallback arriba si abajo se corta
       finalTop = computedRect.top - cardH - 20;
       finalLeft = Math.max(16, Math.min(computedRect.left + (computedRect.width - cardW) / 2, vpW - cardW - 16));
-      chosenArrow = 'bottom';
     } else {
-      // Resguardo centrado dentro de límites
+      // Centrado seguro en pantalla
       finalTop = Math.max(24, (vpH - cardH) / 2);
       finalLeft = Math.max(16, (vpW - cardW) / 2);
-      chosenArrow = 'none';
     }
 
-    // Clamp seguro para no cortar nunca la tarjeta contra ningún borde
-    finalTop = Math.max(20, Math.min(finalTop, vpH - cardH - 24));
+    // Clamp riguroso para evitar que ningún borde quede cortado contra el viewport
+    finalTop = Math.max(24, Math.min(finalTop, vpH - cardH - 24));
     finalLeft = Math.max(16, Math.min(finalLeft, vpW - cardW - 16));
 
     setCardPos({ top: finalTop, left: finalLeft });
-    setArrowSide(chosenArrow);
   }, [isOpen, currentStepIndex]);
 
   useEffect(() => {
@@ -312,15 +303,15 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
   const StepIcon = currentStep.icon;
   const isLastStep = currentStepIndex === TOUR_STEPS.length - 1;
 
-  // Si el objetivo está muy cerca del techo del navegador, colocar la etiqueta de la baliza abajo del elemento para no cortarla
-  const isTargetNearTop = targetRect ? targetRect.top < 38 : false;
+  // Si el objetivo está cerca del techo del navegador, colocar la baliza abajo del elemento para no cortarla
+  const isTargetNearTop = targetRect ? targetRect.top < 42 : false;
 
   return (
     <div
       data-tour-active="true"
       className="fixed inset-0 z-[80] overflow-hidden select-none pointer-events-none"
     >
-      {/* 1. MÁSCARA SVG SPOTLIGHT (Transición líquida de recorte con GPU easing) */}
+      {/* 1. MÁSCARA SVG SPOTLIGHT LÍQUIDA (Recorte fluido acelerado por hardware) */}
       <svg
         className="fixed inset-0 w-full h-full pointer-events-auto cursor-pointer"
         onClick={onClose}
@@ -328,9 +319,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
       >
         <defs>
           <mask id="gmetrics-tour-spotlight-mask">
-            {/* Base blanca = atenuado */}
             <rect width="100%" height="100%" fill="white" />
-            {/* Ventana de recorte transparente que se desplaza suavemente */}
             {targetRect && (
               <rect
                 x={targetRect.left}
@@ -348,7 +337,6 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
           </mask>
         </defs>
 
-        {/* Fondo oscuro Cyber-Fintech con recorte fluido */}
         <rect
           width="100%"
           height="100%"
@@ -357,7 +345,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
         />
       </svg>
 
-      {/* 2. ANILLO Y BALIZA LUMINOSA (Aceleración 3D por GPU sin reflows forzados) */}
+      {/* 2. ANILLO Y BALIZA LUMINOSA QUE SEÑALA EL OBJETIVO */}
       {targetRect && (
         <div
           className="fixed pointer-events-none z-[81] rounded-2xl border-2 border-[#d9b114] shadow-[0_0_35px_rgba(217,177,20,0.5),inset_0_0_15px_rgba(217,177,20,0.2)]"
@@ -370,65 +358,54 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
             transition: 'transform 0.65s cubic-bezier(0.22, 1, 0.36, 1), width 0.65s cubic-bezier(0.22, 1, 0.36, 1), height 0.65s cubic-bezier(0.22, 1, 0.36, 1)'
           }}
         >
-          {/* Baliza indicadora: Se reposiciona abajo si está pegada al techo para no quedar cortada */}
+          {/* Baliza identificadora: si está cerca del techo, se posiciona abajo para no quedar cortada */}
           <div
-            className={`absolute left-3 px-2.5 py-0.5 rounded-full bg-[#d9b114] text-[#0b0e14] font-mono text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-lg transition-all duration-300 ${
+            className={`absolute left-3 whitespace-nowrap px-2.5 py-1 rounded-full bg-[#d9b114] text-[#0b0e14] font-mono text-[9.5px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg transition-all duration-300 select-none z-20 ${
               isTargetNearTop ? 'top-full mt-2' : '-top-3.5'
             }`}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#0b0e14] animate-ping" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#0b0e14] animate-ping shrink-0" />
             <span>{currentStep.targetName}</span>
           </div>
         </div>
       )}
 
-      {/* 3. ANUNCIO TIPO GLASS (Estilo 21st.dev Glass Spotlight con traslación 3D fluida) */}
+      {/* 3. ANUNCIO TIPO GLASS (Estilo 21st.dev Glass Spotlight sin textos encimados ni cortes) */}
       <div
         ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="glass-tour-title"
-        className="fixed top-0 left-0 z-[85] pointer-events-auto max-w-[92vw] sm:max-w-[420px] w-full"
+        className="fixed top-0 left-0 z-[85] pointer-events-auto max-w-[92vw] sm:max-w-[440px] w-full"
         style={{
           transform: `translate3d(${cardPos.left}px, ${cardPos.top}px, 0)`,
           transition: 'transform 0.65s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s ease-out',
           willChange: 'transform'
         }}
       >
-        <div className="relative rounded-3xl bg-[#161b22]/88 backdrop-blur-2xl border border-[#d9b114]/40 shadow-[0_30px_70px_-15px_rgba(0,0,0,0.85),0_0_35px_rgba(217,177,20,0.12),inset_0_1px_1px_rgba(255,255,255,0.12)] p-4 sm:p-5 text-white flex flex-col gap-3.5 overflow-hidden">
-          {/* Flare radial ambiental sutil estilo 21st.dev Glass Spotlight */}
-          <div className="absolute -top-12 -right-12 w-32 h-32 bg-[#d9b114]/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="relative rounded-3xl bg-[#161b22]/90 backdrop-blur-2xl border border-[#d9b114]/40 shadow-[0_30px_70px_-15px_rgba(0,0,0,0.85),0_0_35px_rgba(217,177,20,0.14),inset_0_1px_1px_rgba(255,255,255,0.12)] p-5 sm:p-6 text-white flex flex-col gap-4 overflow-hidden">
+          {/* Flare radial ambiental dorado suave estilo 21st.dev */}
+          <div className="absolute -top-12 -right-12 w-36 h-36 bg-[#d9b114]/10 rounded-full blur-2xl pointer-events-none" />
 
-          {/* Flecha indicadora glass sin costuras */}
-          {arrowSide === 'top' && (
-            <div className="absolute -top-2 left-8 w-4 h-4 bg-[#161b22] border-t border-l border-[#d9b114]/50 rotate-45 transform" />
-          )}
-          {arrowSide === 'bottom' && (
-            <div className="absolute -bottom-2 left-8 w-4 h-4 bg-[#161b22] border-b border-r border-[#d9b114]/50 rotate-45 transform" />
-          )}
-          {arrowSide === 'left' && (
-            <div className="absolute top-8 -left-2 w-4 h-4 bg-[#161b22] border-b border-l border-[#d9b114]/50 rotate-45 transform" />
-          )}
-
-          {/* Reflejo superior dorado */}
+          {/* Línea superior dorada de acento */}
           <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#d9b114]/80 to-transparent" />
 
           {/* Cabecera del anuncio Glass */}
-          <div className="flex items-center justify-between gap-2 pt-1 relative z-10">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#d9b114]/15 border border-[#d9b114]/40 font-mono text-[10px] font-bold text-[#d9b114] tracking-wider uppercase">
-                <StepIcon className="w-3 h-3" />
+          <div className="flex items-center justify-between gap-2 relative z-10">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#d9b114]/15 border border-[#d9b114]/40 font-mono text-[10.5px] font-bold text-[#d9b114] tracking-wider uppercase shrink-0">
+                <StepIcon className="w-3.5 h-3.5" />
                 {currentStep.badge}
               </span>
-              <span className="text-[11px] font-mono text-[#8b949e]">
-                {currentStepIndex + 1} / {TOUR_STEPS.length}
+              <span className="text-xs font-mono text-[#8b949e] font-semibold tabular-nums shrink-0">
+                {currentStepIndex + 1} de {TOUR_STEPS.length}
               </span>
             </div>
 
             <button
               type="button"
               onClick={onClose}
-              className="p-1 rounded-lg text-[#8b949e] hover:text-white hover:bg-[#21262d] transition-colors cursor-pointer"
+              className="p-1 rounded-lg text-[#8b949e] hover:text-white hover:bg-[#21262d] transition-colors cursor-pointer shrink-0"
               title="Cerrar tour (Escape)"
               aria-label="Cerrar tour"
             >
@@ -436,18 +413,18 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
             </button>
           </div>
 
-          {/* Título y Contenido explicativo con suave transición al cambiar de paso */}
+          {/* Título y Contenido explicativo con espaciado limpio y legible */}
           <div
             key={currentStepIndex}
-            className="space-y-1 relative z-10 animate-in fade-in-50 slide-in-from-bottom-1 duration-300"
+            className="space-y-1.5 relative z-10 animate-in fade-in-50 slide-in-from-bottom-1 duration-300"
           >
-            <h3 id="glass-tour-title" className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-1.5">
-              <span>{currentStep.title}</span>
+            <h3 id="glass-tour-title" className="text-base sm:text-lg font-bold text-white tracking-tight leading-snug">
+              {currentStep.title}
             </h3>
-            <p className="text-[11px] sm:text-xs font-semibold text-[#d9b114]">
+            <p className="text-xs sm:text-[13px] font-semibold text-[#d9b114] leading-snug">
               {currentStep.subtitle}
             </p>
-            <p className="text-xs text-[#8b949e] leading-relaxed pt-1">
+            <p className="text-xs sm:text-sm text-[#cbd5e1] leading-relaxed pt-0.5">
               {currentStep.description}
             </p>
           </div>
@@ -461,45 +438,45 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
                 onClick={() => setCurrentStepIndex(idx)}
                 className={`h-1.5 rounded-full transition-all cursor-pointer ${
                   idx === currentStepIndex
-                    ? 'w-6 bg-[#d9b114]'
+                    ? 'w-7 bg-[#d9b114]'
                     : idx < currentStepIndex
                     ? 'w-2 bg-[#00ff66]'
                     : 'w-2 bg-[#30363d] hover:bg-[#8b949e]'
                 }`}
-                title={`Ir al paso ${idx + 1}`}
+                title={`Ir al paso ${idx + 1}: ${step.title}`}
               />
             ))}
           </div>
 
           {/* Footer del Anuncio: Casilla de exclusión y Botones de Control */}
-          <div className="pt-2 border-t border-[#30363d]/80 flex flex-col gap-2.5 relative z-10">
+          <div className="pt-3 border-t border-[#30363d]/80 flex flex-col gap-3 relative z-10">
             {/* Casilla de verificación: No volver a mostrar al iniciar sesión */}
-            <label className="flex items-center gap-2 text-[11px] text-[#8b949e] hover:text-white cursor-pointer select-none transition-colors">
+            <label className="flex items-center gap-2.5 text-xs text-[#8b949e] hover:text-white cursor-pointer select-none transition-colors">
               <input
                 type="checkbox"
                 checked={dontShowAgain}
                 onChange={handleToggleDontShow}
-                className="w-3.5 h-3.5 rounded border-[#30363d] bg-[#0b0e14] text-[#d9b114] accent-[#d9b114] cursor-pointer"
+                className="w-4 h-4 rounded border-[#30363d] bg-[#0b0e14] text-[#d9b114] accent-[#d9b114] cursor-pointer"
               />
               <span>No volver a mostrar al iniciar sesión</span>
             </label>
 
             {/* Botones de Navegación Desplazante con curvas elásticas */}
-            <div className="flex items-center justify-between gap-2 pt-0.5">
+            <div className="flex items-center justify-between gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#8b949e] hover:text-white hover:bg-[#21262d] transition-colors cursor-pointer"
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-[#8b949e] hover:text-white hover:bg-[#21262d] transition-colors cursor-pointer"
               >
                 Omitir
               </button>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 {currentStepIndex > 0 && (
                   <button
                     type="button"
                     onClick={handlePrev}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-[#21262d] hover:bg-[#30363d] active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white bg-[#21262d] hover:bg-[#30363d] active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Anterior</span>
@@ -509,7 +486,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
                 <button
                   type="button"
                   onClick={handleNext}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-[#0b0e14] bg-[#d9b114] hover:bg-[#c49f10] active:scale-95 transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
+                  className="px-4 py-1.5 rounded-xl text-xs font-bold text-[#0b0e14] bg-[#d9b114] hover:bg-[#c49f10] active:scale-95 transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
                 >
                   <span>{isLastStep ? 'Finalizar Tour' : 'Siguiente'}</span>
                   {isLastStep ? <ArrowRight className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
