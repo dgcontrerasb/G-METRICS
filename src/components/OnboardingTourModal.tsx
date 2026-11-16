@@ -8,10 +8,8 @@ import {
   Search,
   TrendingUp,
   Flame,
-  CheckCircle2,
-  ArrowRight,
   Layers,
-  Compass
+  ArrowRight
 } from 'lucide-react';
 
 export interface OnboardingTourModalProps {
@@ -41,7 +39,7 @@ const TOUR_STEPS: TourStep[] = [
     title: 'Selector de Deportes & Ligas',
     subtitle: 'Navegación unificada Fútbol y NBA',
     description:
-      'Alterna al instante entre fútbol mundial y baloncesto NBA. En este panel lateral también filtras tus Top Picks con ventaja y despliegas las ligas destacadas.',
+      'Alterna al instante entre fútbol mundial y baloncesto NBA. En este panel lateral también filtras tus Top Picks con ventaja matemática y despliegas las ligas destacadas.',
     icon: SlidersHorizontal,
     preferredPlacement: 'right'
   },
@@ -77,7 +75,7 @@ const TOUR_STEPS: TourStep[] = [
     title: 'Radiografía H2H & Ritmo de Juego',
     subtitle: 'Estadísticas cara a cara y rachas',
     description:
-      'Presiona este botón para inspeccionar los últimos 5 duelos directos, rachas de victorias seguidas (ej. 🔥 +3V) y tendencias de Altas / Bajas con línea de referencia.',
+      'Presiona este botón para inspeccionar los últimos 5 duelos directos, rachas de victorias consecutivas (ej. 🔥 +3V) y tendencias de Altas / Bajas con línea de referencia.',
     icon: Flame,
     preferredPlacement: 'top'
   },
@@ -89,7 +87,7 @@ const TOUR_STEPS: TourStep[] = [
     title: 'Sincronización, Exportación & Slips',
     subtitle: 'Herramientas avanzadas del terminal',
     description:
-      'Sincroniza marcadores en tiempo real, exporta informes en Excel (.csv) o PDF, y construye tus combinadas en el Parlay Slip con probabilidad calculada.',
+      'Sincroniza marcadores en tiempo real, exporta informes en Excel (.csv) o PDF, y construye tus combinadas en el Parlay Slip con cálculo de probabilidad correlacionada.',
     icon: Layers,
     preferredPlacement: 'bottom'
   }
@@ -122,6 +120,22 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
 
   const cardRef = useRef<HTMLDivElement>(null);
 
+  // Avisar a la app del estado del tour (para suprimir banners como el de instalación PWA)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('gmetrics-tour-status', { detail: { isOpen } })
+      );
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('gmetrics-tour-status', { detail: { isOpen: false } })
+        );
+      }
+    };
+  }, [isOpen]);
+
   // Reset al paso inicial cada vez que se abre
   useEffect(() => {
     if (isOpen) {
@@ -148,7 +162,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
     }
   };
 
-  // Localizar elemento en el DOM y calcular dimensiones del Spotlight
+  // Localizar elemento en el DOM y calcular dimensiones del Spotlight sin pegar al borde superior
   const updateTargetPosition = useCallback(() => {
     if (!isOpen) return;
 
@@ -159,41 +173,45 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
       el = document.querySelector(currentStep.fallbackSelector);
     }
 
+    const vpW = window.innerWidth;
+    const vpH = window.innerHeight;
+    const cardW = Math.min(420, vpW - 32);
+    const cardH = 260;
+
     if (!el) {
-      // Si no hay elemento visible (ej. pantalla muy pequeña), centrar suavemente
+      // Centrar suavemente en resguardo
       setTargetRect(null);
-      const vpW = window.innerWidth;
-      const vpH = window.innerHeight;
-      const cardW = Math.min(420, vpW - 32);
       setCardPos({
         left: Math.max(16, (vpW - cardW) / 2),
-        top: Math.max(20, (vpH - 300) / 2)
+        top: Math.max(30, (vpH - cardH) / 2)
       });
       setArrowSide('none');
       return;
     }
 
-    // Desplazar el elemento objetivo al campo visual suavemente
+    // Scroll suave al centro visual
     el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
 
     const rect = el.getBoundingClientRect();
-    const padding = 6;
+    const padding = 8;
+
+    // Protección de borde superior: Garantizar siempre margen seguro del techo del navegador (mínimo 14px)
+    const safeTop = Math.max(14, rect.top - padding);
+    const safeLeft = Math.max(10, rect.left - padding);
+    const safeWidth = Math.max(rect.width + padding * 2, 44);
+    const safeHeight = Math.max(rect.height + padding * 2, 44);
+
     const computedRect: ElementRect = {
-      top: Math.max(0, rect.top - padding),
-      left: Math.max(0, rect.left - padding),
-      width: rect.width + padding * 2,
-      height: rect.height + padding * 2,
-      bottom: rect.bottom + padding,
-      right: rect.right + padding
+      top: safeTop,
+      left: safeLeft,
+      width: safeWidth,
+      height: safeHeight,
+      bottom: safeTop + safeHeight,
+      right: safeLeft + safeWidth
     };
     setTargetRect(computedRect);
 
-    // Calcular posición óptima del anuncio tipo Glass
-    const vpW = window.innerWidth;
-    const vpH = window.innerHeight;
-    const cardW = Math.min(420, vpW - 32);
-    const cardH = 260; // Altura aproximada de la tarjeta
-
+    // Posicionamiento inteligente del Anuncio Tipo Glass
     let finalTop = 80;
     let finalLeft = 20;
     let chosenArrow: 'top' | 'bottom' | 'left' | 'right' | 'none' = 'top';
@@ -201,31 +219,35 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
     const preferred = currentStep.preferredPlacement || 'bottom';
 
     if (preferred === 'right' && computedRect.right + cardW + 24 < vpW) {
-      // Ubicación al lado derecho (ideal para barra lateral en desktop)
-      finalLeft = computedRect.right + 18;
-      finalTop = Math.max(16, Math.min(computedRect.top, vpH - cardH - 16));
+      // Lado derecho (ideal para sidebar desktop)
+      finalLeft = computedRect.right + 20;
+      finalTop = Math.max(24, Math.min(computedRect.top, vpH - cardH - 24));
       chosenArrow = 'left';
-    } else if (preferred === 'top' && computedRect.top - cardH - 24 > 0) {
+    } else if (preferred === 'top' && computedRect.top - cardH - 28 > 0) {
       // Arriba del elemento
-      finalTop = computedRect.top - cardH - 18;
+      finalTop = computedRect.top - cardH - 20;
       finalLeft = Math.max(16, Math.min(computedRect.left + (computedRect.width - cardW) / 2, vpW - cardW - 16));
       chosenArrow = 'bottom';
     } else if (computedRect.bottom + cardH + 24 < vpH) {
-      // Abajo del elemento (predeterminado)
-      finalTop = computedRect.bottom + 18;
+      // Abajo del elemento
+      finalTop = Math.max(computedRect.bottom + 18, 60);
       finalLeft = Math.max(16, Math.min(computedRect.left + (computedRect.width - cardW) / 2, vpW - cardW - 16));
       chosenArrow = 'top';
     } else if (computedRect.top - cardH - 24 > 0) {
-      // Si abajo no cabe, probar arriba
-      finalTop = computedRect.top - cardH - 18;
+      // Fallback arriba
+      finalTop = computedRect.top - cardH - 20;
       finalLeft = Math.max(16, Math.min(computedRect.left + (computedRect.width - cardW) / 2, vpW - cardW - 16));
       chosenArrow = 'bottom';
     } else {
-      // Posición de resguardo centrada
-      finalTop = Math.max(16, (vpH - cardH) / 2);
+      // Resguardo centrado dentro de límites
+      finalTop = Math.max(24, (vpH - cardH) / 2);
       finalLeft = Math.max(16, (vpW - cardW) / 2);
       chosenArrow = 'none';
     }
+
+    // Clamp seguro para no cortar nunca la tarjeta contra ningún borde
+    finalTop = Math.max(20, Math.min(finalTop, vpH - cardH - 24));
+    finalLeft = Math.max(16, Math.min(finalLeft, vpW - cardW - 16));
 
     setCardPos({ top: finalTop, left: finalLeft });
     setArrowSide(chosenArrow);
@@ -234,8 +256,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    // Ejecutar con un pequeño delay para dar tiempo a renderizar la vista
-    const timer = setTimeout(updateTargetPosition, 80);
+    const timer = setTimeout(updateTargetPosition, 60);
 
     const handleResizeOrScroll = () => {
       updateTargetPosition();
@@ -291,9 +312,15 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
   const StepIcon = currentStep.icon;
   const isLastStep = currentStepIndex === TOUR_STEPS.length - 1;
 
+  // Si el objetivo está muy cerca del techo del navegador, colocar la etiqueta de la baliza abajo del elemento para no cortarla
+  const isTargetNearTop = targetRect ? targetRect.top < 38 : false;
+
   return (
-    <div className="fixed inset-0 z-[80] overflow-hidden select-none pointer-events-none">
-      {/* 1. MÁSCARA SVG SPOTLIGHT (Fondo atenuado con ventana translúcida viva) */}
+    <div
+      data-tour-active="true"
+      className="fixed inset-0 z-[80] overflow-hidden select-none pointer-events-none"
+    >
+      {/* 1. MÁSCARA SVG SPOTLIGHT (Transición líquida de recorte con GPU easing) */}
       <svg
         className="fixed inset-0 w-full h-full pointer-events-auto cursor-pointer"
         onClick={onClose}
@@ -301,9 +328,9 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
       >
         <defs>
           <mask id="gmetrics-tour-spotlight-mask">
-            {/* Base blanca = opaco */}
+            {/* Base blanca = atenuado */}
             <rect width="100%" height="100%" fill="white" />
-            {/* Ventana negra = transparente (revela el elemento real con transición suave) */}
+            {/* Ventana de recorte transparente que se desplaza suavemente */}
             {targetRect && (
               <rect
                 x={targetRect.left}
@@ -313,69 +340,81 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
                 rx="16"
                 ry="16"
                 fill="black"
-                className="transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                style={{
+                  transition: 'all 0.65s cubic-bezier(0.22, 1, 0.36, 1)'
+                }}
               />
             )}
           </mask>
         </defs>
 
-        {/* Fondo oscuro Cyber-Fintech con recorte exacto */}
+        {/* Fondo oscuro Cyber-Fintech con recorte fluido */}
         <rect
           width="100%"
           height="100%"
-          fill="rgba(5, 8, 13, 0.78)"
+          fill="rgba(5, 8, 13, 0.76)"
           mask="url(#gmetrics-tour-spotlight-mask)"
         />
       </svg>
 
-      {/* 2. ANILLO Y BALIZA LUMINOSA QUE SEÑALA EL ELEMENTO ACTIVO */}
+      {/* 2. ANILLO Y BALIZA LUMINOSA (Aceleración 3D por GPU sin reflows forzados) */}
       {targetRect && (
         <div
-          className="fixed pointer-events-none z-[81] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] rounded-2xl border-2 border-[#d9b114] shadow-[0_0_25px_rgba(217,177,20,0.55),inset_0_0_15px_rgba(217,177,20,0.2)]"
+          className="fixed pointer-events-none z-[81] rounded-2xl border-2 border-[#d9b114] shadow-[0_0_35px_rgba(217,177,20,0.5),inset_0_0_15px_rgba(217,177,20,0.2)]"
           style={{
-            top: targetRect.top,
-            left: targetRect.left,
+            top: 0,
+            left: 0,
             width: targetRect.width,
-            height: targetRect.height
+            height: targetRect.height,
+            transform: `translate3d(${targetRect.left}px, ${targetRect.top}px, 0)`,
+            transition: 'transform 0.65s cubic-bezier(0.22, 1, 0.36, 1), width 0.65s cubic-bezier(0.22, 1, 0.36, 1), height 0.65s cubic-bezier(0.22, 1, 0.36, 1)'
           }}
         >
-          {/* Baliza flotante con etiqueta indicadora */}
-          <div className="absolute -top-3 left-3 px-2 py-0.5 rounded-full bg-[#d9b114] text-[#0b0e14] font-mono text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-lg animate-pulse">
+          {/* Baliza indicadora: Se reposiciona abajo si está pegada al techo para no quedar cortada */}
+          <div
+            className={`absolute left-3 px-2.5 py-0.5 rounded-full bg-[#d9b114] text-[#0b0e14] font-mono text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-lg transition-all duration-300 ${
+              isTargetNearTop ? 'top-full mt-2' : '-top-3.5'
+            }`}
+          >
             <span className="w-1.5 h-1.5 rounded-full bg-[#0b0e14] animate-ping" />
             <span>{currentStep.targetName}</span>
           </div>
         </div>
       )}
 
-      {/* 3. ANUNCIO TIPO GLASS (Card Flotante Glassmorphism que se desplaza fluidamente) */}
+      {/* 3. ANUNCIO TIPO GLASS (Estilo 21st.dev Glass Spotlight con traslación 3D fluida) */}
       <div
         ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="glass-tour-title"
-        className="fixed z-[85] pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] max-w-[92vw] sm:max-w-[420px] w-full"
+        className="fixed top-0 left-0 z-[85] pointer-events-auto max-w-[92vw] sm:max-w-[420px] w-full"
         style={{
-          top: cardPos.top,
-          left: cardPos.left
+          transform: `translate3d(${cardPos.left}px, ${cardPos.top}px, 0)`,
+          transition: 'transform 0.65s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s ease-out',
+          willChange: 'transform'
         }}
       >
-        <div className="relative rounded-3xl bg-[#161b22]/90 backdrop-blur-2xl border border-[#d9b114]/50 shadow-[0_24px_60px_-10px_rgba(0,0,0,0.85),0_0_30px_rgba(217,177,20,0.18)] p-4 sm:p-5 text-white flex flex-col gap-3.5 overflow-hidden">
-          {/* Puntero visual que señala hacia el objetivo */}
+        <div className="relative rounded-3xl bg-[#161b22]/88 backdrop-blur-2xl border border-[#d9b114]/40 shadow-[0_30px_70px_-15px_rgba(0,0,0,0.85),0_0_35px_rgba(217,177,20,0.12),inset_0_1px_1px_rgba(255,255,255,0.12)] p-4 sm:p-5 text-white flex flex-col gap-3.5 overflow-hidden">
+          {/* Flare radial ambiental sutil estilo 21st.dev Glass Spotlight */}
+          <div className="absolute -top-12 -right-12 w-32 h-32 bg-[#d9b114]/10 rounded-full blur-2xl pointer-events-none" />
+
+          {/* Flecha indicadora glass sin costuras */}
           {arrowSide === 'top' && (
-            <div className="absolute -top-2 left-8 w-4 h-4 bg-[#161b22] border-t border-l border-[#d9b114]/60 rotate-45 transform" />
+            <div className="absolute -top-2 left-8 w-4 h-4 bg-[#161b22] border-t border-l border-[#d9b114]/50 rotate-45 transform" />
           )}
           {arrowSide === 'bottom' && (
-            <div className="absolute -bottom-2 left-8 w-4 h-4 bg-[#161b22] border-b border-r border-[#d9b114]/60 rotate-45 transform" />
+            <div className="absolute -bottom-2 left-8 w-4 h-4 bg-[#161b22] border-b border-r border-[#d9b114]/50 rotate-45 transform" />
           )}
           {arrowSide === 'left' && (
-            <div className="absolute top-8 -left-2 w-4 h-4 bg-[#161b22] border-b border-l border-[#d9b114]/60 rotate-45 transform" />
+            <div className="absolute top-8 -left-2 w-4 h-4 bg-[#161b22] border-b border-l border-[#d9b114]/50 rotate-45 transform" />
           )}
 
-          {/* Línea superior dorada estilo Cyber-Fintech */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#d9b114] to-transparent opacity-80" />
+          {/* Reflejo superior dorado */}
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#d9b114]/80 to-transparent" />
 
           {/* Cabecera del anuncio Glass */}
-          <div className="flex items-center justify-between gap-2 pt-1">
+          <div className="flex items-center justify-between gap-2 pt-1 relative z-10">
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#d9b114]/15 border border-[#d9b114]/40 font-mono text-[10px] font-bold text-[#d9b114] tracking-wider uppercase">
                 <StepIcon className="w-3 h-3" />
@@ -397,8 +436,11 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
             </button>
           </div>
 
-          {/* Título y Explicación */}
-          <div className="space-y-1">
+          {/* Título y Contenido explicativo con suave transición al cambiar de paso */}
+          <div
+            key={currentStepIndex}
+            className="space-y-1 relative z-10 animate-in fade-in-50 slide-in-from-bottom-1 duration-300"
+          >
             <h3 id="glass-tour-title" className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-1.5">
               <span>{currentStep.title}</span>
             </h3>
@@ -411,7 +453,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
           </div>
 
           {/* Puntos de progreso interactivos */}
-          <div className="flex items-center gap-1.5 py-0.5">
+          <div className="flex items-center gap-1.5 py-0.5 relative z-10">
             {TOUR_STEPS.map((step, idx) => (
               <button
                 key={step.title}
@@ -429,8 +471,8 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
             ))}
           </div>
 
-          {/* Footer del Anuncio: Casilla y Botones de Control */}
-          <div className="pt-2 border-t border-[#30363d]/80 flex flex-col gap-2.5">
+          {/* Footer del Anuncio: Casilla de exclusión y Botones de Control */}
+          <div className="pt-2 border-t border-[#30363d]/80 flex flex-col gap-2.5 relative z-10">
             {/* Casilla de verificación: No volver a mostrar al iniciar sesión */}
             <label className="flex items-center gap-2 text-[11px] text-[#8b949e] hover:text-white cursor-pointer select-none transition-colors">
               <input
@@ -442,7 +484,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
               <span>No volver a mostrar al iniciar sesión</span>
             </label>
 
-            {/* Botones de Navegación Desplazante */}
+            {/* Botones de Navegación Desplazante con curvas elásticas */}
             <div className="flex items-center justify-between gap-2 pt-0.5">
               <button
                 type="button"
@@ -457,7 +499,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
                   <button
                     type="button"
                     onClick={handlePrev}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-[#21262d] hover:bg-[#30363d] transition-colors flex items-center gap-1 cursor-pointer"
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-[#21262d] hover:bg-[#30363d] active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Anterior</span>

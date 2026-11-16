@@ -666,7 +666,7 @@ export const FintechSidebar: React.FC<FintechSidebarProps> = ({
           </div>
 
           {/* Switcher Unificado de Deporte (.cyber-chrome-chip lenguaje único del Chrome) */}
-          <div className="grid grid-cols-2 gap-1.5">
+          <div data-tour="tour-sports" className="grid grid-cols-2 gap-1.5">
             <button
               type="button"
               onClick={() => onSelectSport('SOCCER')}

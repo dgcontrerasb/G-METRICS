@@ -25,6 +25,22 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
 
   const [showGuideModal, setShowGuideModal] = useState<'IOS' | 'ANDROID' | null>(null);
   const [floatingStage, setFloatingStage] = useState<'hidden' | 'visible' | 'fading' | 'gone'>('hidden');
+  const [isTourActive, setIsTourActive] = useState<boolean>(() => {
+    try {
+      return typeof document !== 'undefined' && document.querySelector('[data-tour-active="true"]') !== null;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    const handleTourStatus = (e: Event) => {
+      const customEvent = e as CustomEvent<{ isOpen: boolean }>;
+      setIsTourActive(Boolean(customEvent.detail?.isOpen));
+    };
+    window.addEventListener('gmetrics-tour-status', handleTourStatus);
+    return () => window.removeEventListener('gmetrics-tour-status', handleTourStatus);
+  }, []);
 
   // Control del banner flotante temporal (aparece al ingresar y se desvanece tras 10 segundos)
   useEffect(() => {
@@ -53,6 +69,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
       // Ignore sessionStorage errors
     }
 
+    // Si el tour de inicio está activo, posponer la notificación para no interferir
+    if (isTourActive) return;
+
     const showTimer = window.setTimeout(() => {
       setFloatingStage('visible');
       try {
@@ -60,10 +79,10 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
       } catch {
         // Ignore
       }
-    }, 1200);
+    }, 1500);
 
     return () => window.clearTimeout(showTimer);
-  }, [variant, isInstalled, isInstallable, isAndroid, isIOS, isMobile]);
+  }, [variant, isInstalled, isInstallable, isAndroid, isIOS, isMobile, isTourActive]);
 
   // Temporizador de auto-desvanecimiento (10 segundos visible -> 500ms fade out -> desmontaje)
   useEffect(() => {
@@ -271,10 +290,10 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   return (
     <>
       <div
-        className={`hidden sm:block fixed sm:bottom-5 sm:right-5 sm:w-[360px] z-50 transition-all duration-500 ease-out ${
-          floatingStage === 'visible'
-            ? 'opacity-100 translate-y-0'
-            : 'opacity-0 translate-y-3 pointer-events-none'
+        className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 w-[calc(100vw-32px)] sm:w-[360px] z-40 transition-all duration-500 ease-out ${
+          floatingStage === 'visible' && !isTourActive
+            ? 'opacity-100 translate-y-0 pointer-events-auto'
+            : 'opacity-0 translate-y-4 pointer-events-none'
         }`}
       >
         <div className="relative overflow-hidden rounded-2xl bg-[#161b22]/95 backdrop-blur-xl border border-[#d9b114]/45 shadow-2xl shadow-black/70 p-3 flex items-center justify-between gap-3">
