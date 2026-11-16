@@ -90,13 +90,13 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
   };
 
   return (
-    <div className="space-y-3 font-sans text-slate-800">
+    <div className="space-y-3 font-sans text-white">
       {/* 1. Barra de Control Compacta */}
-      <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div className="p-3 rounded-2xl bg-[#0b0e14] border border-[#30363d] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-xs font-bold text-slate-900">Monitor del Servidor & Tráfico en Tiempo Real</span>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-100/80 text-emerald-800 font-bold border border-emerald-200">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#00ff66] animate-pulse" />
+          <span className="text-xs font-bold text-white">Monitor del Servidor & Tráfico en Tiempo Real</span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/15 text-[#00ff66] font-bold border border-emerald-500/30">
             {onlineNow} online
           </span>
         </div>
@@ -107,8 +107,8 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
             onClick={handleCopyReport}
             className={`px-2.5 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer border ${
               copiedDiagnosticReport
-                ? 'bg-emerald-600 border-emerald-600 text-white'
-                : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
+                ? 'bg-emerald-500/20 border-emerald-500/50 text-[#00ff66]'
+                : 'bg-[#161b22] hover:bg-[#21262d] border-[#30363d] text-[#8b949e] hover:text-white'
             }`}
           >
             {copiedDiagnosticReport ? (
@@ -118,7 +118,7 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
               </>
             ) : (
               <>
-                <Copy className="w-3.5 h-3.5 text-slate-500" />
+                <Copy className="w-3.5 h-3.5 text-[#8b949e]" />
                 <span>Copiar Diagnóstico</span>
               </>
             )}
@@ -127,114 +127,114 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
           <button
             type="button"
             onClick={onRefreshTelemetry}
-            className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition"
+            className="px-2.5 py-1.5 rounded-xl bg-[#161b22] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition"
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-indigo-600 ${isLoadingTelemetry ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-[#d9b114] ${isLoadingTelemetry ? 'animate-spin' : ''}`} />
             <span>Refrescar</span>
           </button>
         </div>
       </div>
 
       {/* 2. Estado de Proveedores (Fútbol, NBA, Base de Datos) */}
-      <div className="p-2.5 rounded-xl bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div className="p-2.5 rounded-xl bg-[#0b0e14] border border-[#30363d] text-white flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-2 flex-wrap text-[11px] font-mono">
-          <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700">
-            <span>⚽ ESPN + Football-Data:</span>
-            <span className="text-emerald-400 font-bold">{footballDataStatus}</span>
+          <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#161b22] border border-[#30363d]">
+            <span className="text-[#8b949e]">⚽ ESPN + Football-Data:</span>
+            <span className="text-[#00ff66] font-bold">{footballDataStatus}</span>
           </span>
-          <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700">
-            <span>🏀 NBA Telemetría:</span>
-            <span className="text-cyan-400 font-bold">{serverTelemetry?.oddsApi ? 'Activa' : 'ESPN Oficial'}</span>
+          <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#161b22] border border-[#30363d]">
+            <span className="text-[#8b949e]">🏀 NBA Telemetría:</span>
+            <span className="text-sky-400 font-bold">{serverTelemetry?.oddsApi ? 'Activa' : 'ESPN Oficial'}</span>
           </span>
-          <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700">
-            <span>🗄️ Supabase:</span>
-            <span className="text-emerald-400 font-bold">{serverTelemetry?.supabasePersistence ? 'Conectado' : 'Local'}</span>
+          <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#161b22] border border-[#30363d]">
+            <span className="text-[#8b949e]">🗄️ Supabase:</span>
+            <span className="text-[#00ff66] font-bold">{serverTelemetry?.supabasePersistence ? 'Conectado' : 'Local'}</span>
           </span>
         </div>
       </div>
 
       {/* 3. 4 Tarjetas KPI */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <div className="bg-emerald-50/50 border border-emerald-200 rounded-xl p-3 flex flex-col justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+        <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-3 flex flex-col justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#00ff66]">
             🟢 Online Ahora
           </span>
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl font-bold font-mono text-slate-900">{onlineNow}</span>
-            <span className="text-[10px] text-slate-500">activos</span>
+            <span className="text-xl font-bold font-mono text-white">{onlineNow}</span>
+            <span className="text-[10px] text-[#8b949e]">activos</span>
           </div>
-          <span className="text-[10px] text-slate-500 mt-0.5">Ventana de 3 min</span>
+          <span className="text-[10px] text-[#8b949e] mt-0.5">Ventana de 3 min</span>
         </div>
 
-        <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-3 flex flex-col justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1">
-            <Trophy className="w-3 h-3 text-amber-600" />
+        <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-3 flex flex-col justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#d9b114] flex items-center gap-1">
+            <Trophy className="w-3 h-3 text-[#d9b114]" />
             <span>Récord Online</span>
           </span>
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl font-bold font-mono text-slate-900">{peakUsers}</span>
-            <span className="text-[10px] text-slate-500">pico</span>
+            <span className="text-xl font-bold font-mono text-white">{peakUsers}</span>
+            <span className="text-[10px] text-[#8b949e]">pico</span>
           </div>
-          <span className="text-[10px] text-slate-500 mt-0.5 truncate">{peakTimeStr}</span>
+          <span className="text-[10px] text-[#8b949e] mt-0.5 truncate">{peakTimeStr}</span>
         </div>
 
-        <div className="bg-cyan-50/50 border border-cyan-200 rounded-xl p-3 flex flex-col justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-800 flex items-center gap-1">
-            <Database className="w-3 h-3 text-cyan-600" />
+        <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-3 flex flex-col justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1">
+            <Database className="w-3 h-3 text-sky-400" />
             <span>Football-Data</span>
           </span>
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl font-bold font-mono text-slate-900">{footballDataStatus}</span>
-            <span className="text-[10px] text-slate-500">TTL 6h</span>
+            <span className="text-xl font-bold font-mono text-white">{footballDataStatus}</span>
+            <span className="text-[10px] text-[#8b949e]">TTL 6h</span>
           </div>
-          <span className="text-[10px] text-slate-500 mt-0.5">{footballDataRequests} req · {footballDataCacheHits} hits</span>
+          <span className="text-[10px] text-[#8b949e] mt-0.5">{footballDataRequests} req · {footballDataCacheHits} hits</span>
         </div>
 
-        <div className="bg-indigo-50/50 border border-indigo-200 rounded-xl p-3 flex flex-col justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-indigo-600" />
+        <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-3 flex flex-col justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#d9b114] flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-[#d9b114]" />
             <span>Ahorro Caché</span>
           </span>
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl font-bold font-mono text-slate-900">{cacheHitRate}%</span>
-            <span className="text-[10px] text-slate-500">({cacheHits} hits)</span>
+            <span className="text-xl font-bold font-mono text-white">{cacheHitRate}%</span>
+            <span className="text-[10px] text-[#8b949e]">({cacheHits} hits)</span>
           </div>
-          <span className="text-[10px] text-slate-500 mt-0.5">Pulsos ESPN: {espnPulses}</span>
+          <span className="text-[10px] text-[#8b949e] mt-0.5">Pulsos ESPN: {espnPulses}</span>
         </div>
       </div>
 
       {/* 4. Dos Columnas: Usuarios Conectados y Estado de Caché */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Columna 1: Usuarios Conectados */}
-        <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 space-y-2">
-          <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-            <h4 className="text-xs font-bold text-slate-800">
+        <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-3 space-y-2">
+          <div className="flex items-center justify-between border-b border-[#30363d] pb-1.5">
+            <h4 className="text-xs font-bold text-white">
               🟢 Usuarios Conectados ({onlineList.length})
             </h4>
-            <span className="text-[10px] font-mono text-slate-400">Pulso 45s</span>
+            <span className="text-[10px] font-mono text-[#8b949e]">Pulso 45s</span>
           </div>
           {onlineList.length === 0 ? (
-            <p className="text-xs text-slate-500 py-4 text-center">
+            <p className="text-xs text-[#8b949e] py-4 text-center">
               Sin sesiones en los últimos 3 minutos.
             </p>
           ) : (
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
               {onlineList.map((ou, idx) => {
                 const cleanDisplayUser = formatCleanUser(ou.username);
                 return (
                   <div
                     key={`${ou.deviceId || idx}`}
-                    className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between gap-2 text-xs"
+                    className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d] flex items-center justify-between gap-2 text-xs"
                   >
                     <div className="min-w-0">
-                      <span className="font-mono font-bold text-indigo-800 truncate block">
+                      <span className="font-mono font-bold text-[#d9b114] truncate block">
                         @{cleanDisplayUser}
                       </span>
-                      <p className="text-[10px] text-slate-500 truncate">
+                      <p className="text-[10px] text-[#8b949e] truncate">
                         📱 {ou.deviceName || ou.deviceId || 'Dispositivo Web'}
                       </p>
                     </div>
-                    <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0">
+                    <span className="text-[10px] font-mono text-[#00ff66] bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-md shrink-0">
                       {ou.secondsAgo ?? 0}s
                     </span>
                   </div>
@@ -245,27 +245,27 @@ export const AdminMonitorTab: React.FC<AdminMonitorTabProps> = ({
         </div>
 
         {/* Columna 2: Estado de Caché y Persistencia */}
-        <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 space-y-2">
-          <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-            <h4 className="text-xs font-bold text-slate-800">📡 Persistencia y Caché</h4>
-            <span className="text-[10px] font-mono text-slate-400">En Memoria</span>
+        <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-3 space-y-2">
+          <div className="flex items-center justify-between border-b border-[#30363d] pb-1.5">
+            <h4 className="text-xs font-bold text-white">📡 Persistencia y Caché</h4>
+            <span className="text-[10px] font-mono text-[#8b949e]">En Memoria</span>
           </div>
-          <div className="p-2 rounded-xl bg-white border border-slate-200/80 space-y-1 text-xs">
+          <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d] space-y-1.5 text-xs">
             <div className="flex justify-between items-center">
-              <span className="text-slate-600">Football-Data:</span>
-              <span className="font-semibold text-slate-800">{footballDataStatus}</span>
+              <span className="text-[#8b949e]">Football-Data:</span>
+              <span className="font-semibold text-white">{footballDataStatus}</span>
             </div>
-            <div className="flex justify-between items-center text-[10.5px] text-slate-500">
+            <div className="flex justify-between items-center text-[10.5px] text-[#8b949e]">
               <span>Consultas / Caché Hits:</span>
-              <span className="font-mono">{footballDataRequests} / {footballDataCacheHits}</span>
+              <span className="font-mono text-white">{footballDataRequests} / {footballDataCacheHits}</span>
             </div>
-            <div className="flex justify-between items-center text-[10.5px] text-slate-500">
+            <div className="flex justify-between items-center text-[10.5px] text-[#8b949e]">
               <span>Última sincronización:</span>
-              <span className="font-mono">{footballDataLastSuccess}</span>
+              <span className="font-mono text-white">{footballDataLastSuccess}</span>
             </div>
-            <div className="flex justify-between items-center text-[10.5px] text-slate-500">
+            <div className="flex justify-between items-center text-[10.5px] text-[#8b949e]">
               <span>Almacenamiento:</span>
-              <span className="font-semibold text-slate-700">{serverTelemetry?.supabasePersistence ? 'Supabase Free Tier' : 'Caché Local'}</span>
+              <span className="font-semibold text-[#d9b114]">{serverTelemetry?.supabasePersistence ? 'Supabase Free Tier' : 'Caché Local'}</span>
             </div>
           </div>
         </div>

@@ -488,14 +488,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
     <div className="space-y-3.5">
       {/* Feedback Toast */}
       {actionFeedback && (
-        <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-semibold flex items-center justify-between animate-fadeIn">
+        <div className="p-2.5 rounded-xl bg-[#0b0e14] border border-[#d9b114]/40 text-[#d9b114] text-xs font-semibold flex items-center justify-between animate-fadeIn shadow-lg">
           <div className="flex items-center gap-2">
-            <Check className="w-4 h-4 text-indigo-600 shrink-0" />
+            <Check className="w-4 h-4 text-[#d9b114] shrink-0" />
             <span>{actionFeedback}</span>
           </div>
           <button
             onClick={() => setActionFeedback(null)}
-            className="text-slate-400 hover:text-slate-700 text-xs px-2 py-0.5 rounded cursor-pointer"
+            className="text-white/40 hover:text-white text-xs px-2 py-0.5 rounded cursor-pointer"
           >
             ✕
           </button>
@@ -503,20 +503,20 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       )}
 
       {/* Generador de Códigos VIP Dinámicos (Diseño Nativo Integrado) */}
-      <div className="bg-slate-50/90 p-3.5 rounded-2xl border border-slate-200/90 space-y-2.5 shadow-2xs">
+      <div className="bg-[#161b22] p-3.5 rounded-2xl border border-[#30363d] space-y-2.5 shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+            <span className="w-7 h-7 rounded-lg bg-[#00ff66]/10 border border-[#00ff66]/30 flex items-center justify-center text-[#00ff66] shrink-0">
               <Gift className="w-3.5 h-3.5" />
             </span>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-bold text-slate-900">Generar Código VIP Dinámico</span>
-                <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
+                <span className="text-xs font-black text-white">Generar Código VIP Dinámico</span>
+                <span className="text-[10px] font-bold text-[#00ff66] bg-[#00ff66]/10 border border-[#00ff66]/30 px-1.5 py-0.2 rounded-full">
                   1 solo uso
                 </span>
               </div>
-              <p className="text-[10.5px] text-slate-500">
+              <p className="text-[10.5px] text-[#8b949e]">
                 Genera un código para enviar por WhatsApp tras recibir el pago ($9.900 COP / $3.50 USD).
               </p>
             </div>
@@ -526,7 +526,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
             <select
               value={codeDays}
               onChange={(e) => setCodeDays(Number(e.target.value))}
-              className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-medium focus:outline-none focus:border-emerald-500 shadow-2xs"
+              className="bg-[#0b0e14] border border-[#30363d] rounded-lg px-2.5 py-1.5 text-xs text-white font-medium focus:outline-none focus:border-[#00ff66] shadow-inner"
             >
               <option value={30}>🗓️ 30 Días (Mensual)</option>
               <option value={60}>🗓️ 60 Días</option>
@@ -538,28 +538,28 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               type="button"
               onClick={handleGenerateCode}
               disabled={isGeneratingCode}
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95 disabled:opacity-50"
+              className="px-3 py-1.5 rounded-lg bg-[#00ff66] hover:bg-[#00ff66]/90 text-black font-black text-xs transition cursor-pointer flex items-center gap-1 shadow-md active:scale-95 disabled:opacity-50"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+              <Sparkles className="w-3.5 h-3.5 text-black" />
               <span>{isGeneratingCode ? 'Generando...' : 'Generar'}</span>
             </button>
           </div>
         </div>
 
         {generatedCode && (
-          <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2 animate-fadeIn">
+          <div className="p-2.5 rounded-xl bg-[#0b0e14] border border-[#00ff66]/40 flex items-center justify-between gap-2 animate-fadeIn">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-[11px] font-bold text-emerald-900 shrink-0">Código Generado:</span>
-              <span className="font-mono text-xs font-extrabold text-emerald-950 bg-white px-2 py-0.5 rounded border border-emerald-300 tracking-wider select-all truncate">
+              <span className="text-[11px] font-bold text-[#00ff66] shrink-0">Código Generado:</span>
+              <span className="font-mono text-xs font-extrabold text-[#00ff66] bg-[#161b22] px-2 py-0.5 rounded border border-[#00ff66]/40 tracking-wider select-all truncate">
                 {generatedCode}
               </span>
             </div>
             <button
               type="button"
               onClick={handleCopyGeneratedCode}
-              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1 shadow-2xs transition shrink-0 cursor-pointer"
+              className="px-2.5 py-1 rounded-lg bg-[#00ff66] hover:bg-[#00ff66]/90 text-black font-bold text-xs flex items-center gap-1 shadow-md transition shrink-0 cursor-pointer"
             >
-              {codeCopied ? <Check className="w-3.5 h-3.5 text-emerald-200" /> : <Copy className="w-3.5 h-3.5" />}
+              {codeCopied ? <Check className="w-3.5 h-3.5 text-black" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{codeCopied ? 'Copiado' : 'Copiar'}</span>
             </button>
           </div>
@@ -569,14 +569,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       {/* Quick Create / Activate User Form */}
       <form
         onSubmit={handleCreateOrUpdateQuickUser}
-        className="bg-slate-50/90 p-3.5 rounded-2xl border border-slate-200/90 space-y-2"
+        className="bg-[#161b22] p-3.5 rounded-2xl border border-[#30363d] space-y-2.5 shadow-xl"
       >
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-            <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+          <span className="text-xs font-black text-white flex items-center gap-1.5">
+            <UserCheck className="w-3.5 h-3.5 text-[#d9b114]" />
             <span>Crear o Activar Usuario Rápido</span>
           </span>
-          <span className="text-[10px] text-slate-500">
+          <span className="text-[10px] text-[#8b949e]">
             Si no indicas PIN, conserva el actual o asigna 1234
           </span>
         </div>
@@ -587,26 +587,26 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
             onChange={(e) => setNewQuickUsername(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20))}
             placeholder="Usuario (ej. carlos99)"
             required
-            className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+            className="bg-[#0b0e14] border border-[#30363d] rounded-lg px-2.5 py-1.5 text-xs font-mono text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114]"
           />
           <input
             type="text"
             value={newQuickPin}
             onChange={(e) => setNewQuickPin(e.target.value)}
             placeholder="PIN (opcional)"
-            className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+            className="bg-[#0b0e14] border border-[#30363d] rounded-lg px-2.5 py-1.5 text-xs font-mono text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114]"
           />
           <input
             type="text"
             value={newQuickName}
             onChange={(e) => setNewQuickName(e.target.value)}
             placeholder="Nombre (opcional)"
-            className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+            className="bg-[#0b0e14] border border-[#30363d] rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114]"
           />
           <select
             value={newQuickDays}
             onChange={(e) => setNewQuickDays(Number(e.target.value))}
-            className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+            className="bg-[#0b0e14] border border-[#30363d] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-[#d9b114] cursor-pointer"
           >
             <option value={1}>⚡ Muestra 24h</option>
             <option value={3}>⚡ 3 Días</option>
@@ -620,7 +620,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           </select>
           <button
             type="submit"
-            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition cursor-pointer shadow-2xs flex items-center justify-center gap-1"
+            className="px-3 py-1.5 rounded-lg bg-[#d9b114] hover:bg-[#d9b114]/90 text-black font-black text-xs transition cursor-pointer shadow-md flex items-center justify-center gap-1 active:scale-95"
           >
             <UserCheck className="w-3.5 h-3.5" />
             <span>+ Activar</span>
@@ -629,7 +629,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       </form>
 
       {/* Filter & Search Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/90 p-2.5 rounded-xl border border-slate-200/90">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#161b22] p-2.5 rounded-xl border border-[#30363d] shadow-lg">
         <div className="flex items-center gap-1 overflow-x-auto scrollbar-none text-[11px] font-semibold">
           {[
             { id: 'ALL', label: `Todos (${appUsersList.length})` },
@@ -643,10 +643,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               key={f.id}
               type="button"
               onClick={() => setUserFilter(f.id as any)}
-              className={`px-2.5 py-1 rounded-lg whitespace-nowrap transition cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg whitespace-nowrap transition cursor-pointer font-bold ${
                 userFilter === f.id
-                  ? 'bg-slate-900 text-white font-bold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white'
+                  ? 'bg-[#d9b114] text-black shadow-md'
+                  : 'text-[#8b949e] hover:text-white hover:bg-[#0b0e14]'
               }`}
             >
               {f.label}
@@ -656,22 +656,22 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
         <div className="flex items-center gap-1.5">
           <div className="relative flex-1 sm:w-52">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-3.5 h-3.5 text-[#8b949e] absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={userSearch}
               onChange={(e) => setUserSearch(e.target.value)}
               placeholder="Buscar @usuario o nombre..."
-              className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-[#0b0e14] border border-[#30363d] rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114]"
             />
           </div>
           {/* Toggle Vista Tarjetas / Tabla */}
-          <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 shrink-0">
+          <div className="flex items-center rounded-lg border border-[#30363d] bg-[#0b0e14] p-0.5 shrink-0">
             <button
               type="button"
               onClick={() => setAdminUserViewMode('CARDS')}
               className={`p-1 px-1.5 rounded-md text-xs flex items-center gap-1 transition ${
-                adminUserViewMode === 'CARDS' ? 'bg-slate-900 text-white font-bold' : 'text-slate-500 hover:text-slate-900'
+                adminUserViewMode === 'CARDS' ? 'bg-[#d9b114] text-black font-black' : 'text-[#8b949e] hover:text-white'
               }`}
               title="Vista de Tarjetas"
             >
@@ -682,7 +682,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               type="button"
               onClick={() => setAdminUserViewMode('COMPACT')}
               className={`p-1 px-1.5 rounded-md text-xs flex items-center gap-1 transition ${
-                adminUserViewMode === 'COMPACT' ? 'bg-slate-900 text-white font-bold' : 'text-slate-500 hover:text-slate-900'
+                adminUserViewMode === 'COMPACT' ? 'bg-[#d9b114] text-black font-black' : 'text-[#8b949e] hover:text-white'
               }`}
               title="Vista de Tabla Compacta"
             >
@@ -695,16 +695,16 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
             type="button"
             onClick={handleDownloadUsersExcel}
             disabled={appUsersList.length === 0}
-            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 flex items-center gap-1 shrink-0 transition cursor-pointer disabled:opacity-50"
+            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#00ff66] bg-[#00ff66]/10 hover:bg-[#00ff66]/20 border border-[#00ff66]/30 flex items-center gap-1 shrink-0 transition cursor-pointer disabled:opacity-50"
             title="Descargar usuarios en Excel (.csv)"
           >
-            <Download className="w-3.5 h-3.5 text-emerald-600" />
+            <Download className="w-3.5 h-3.5 text-[#00ff66]" />
             <span>Excel</span>
           </button>
           <button
             type="button"
             onClick={() => onRefreshUsers(resolveCurrentPin())}
-            className="p-1.5 rounded-lg text-xs text-slate-600 hover:text-slate-900 bg-white border border-slate-200 shrink-0 transition cursor-pointer"
+            className="p-1.5 rounded-lg text-xs text-[#8b949e] hover:text-white bg-[#0b0e14] border border-[#30363d] shrink-0 transition cursor-pointer"
             title="Actualizar lista"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoadingUsers ? 'animate-spin' : ''}`} />
@@ -714,28 +714,28 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
       {/* Users Cards List */}
       {isLoadingUsers && appUsersList.length === 0 ? (
-        <div className="text-center py-10 text-slate-500 text-xs flex items-center justify-center gap-2">
-          <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+        <div className="text-center py-10 text-[#8b949e] text-xs flex items-center justify-center gap-2">
+          <RefreshCw className="w-4 h-4 animate-spin text-[#d9b114]" />
           <span>Cargando usuarios...</span>
         </div>
       ) : appUsersList.length === 0 ? (
-        <div className="text-center py-8 text-slate-500 text-xs bg-slate-50 rounded-2xl border border-slate-200 p-6 space-y-1.5">
-          <Users className="w-7 h-7 text-slate-400 mx-auto" />
-          <p className="font-bold text-slate-800">No hay usuarios registrados aún</p>
-          <p className="text-[11px] text-slate-500">
+        <div className="text-center py-8 text-[#8b949e] text-xs bg-[#161b22] rounded-2xl border border-[#30363d] p-6 space-y-1.5">
+          <Users className="w-7 h-7 text-[#8b949e] mx-auto" />
+          <p className="font-black text-white">No hay usuarios registrados aún</p>
+          <p className="text-[11px] text-[#8b949e]">
             Crea una cuenta arriba o espera solicitudes desde la pantalla de ingreso.
           </p>
         </div>
       ) : (
         <div className="space-y-2.5">
           {paginatedUsers.length === 0 ? (
-            <div className="text-center py-6 text-slate-500 text-xs bg-slate-50 rounded-xl border border-slate-200">
+            <div className="text-center py-6 text-[#8b949e] text-xs bg-[#161b22] rounded-xl border border-[#30363d]">
               No se encontraron usuarios coincidentes con el filtro o búsqueda.
             </div>
           ) : adminUserViewMode === 'COMPACT' ? (
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-2xs">
+            <div className="overflow-x-auto rounded-xl border border-[#30363d] bg-[#161b22] shadow-xl">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px] uppercase tracking-wider">
+                <thead className="bg-[#0b0e14] border-b border-[#30363d] text-[#8b949e] font-semibold text-[11px] uppercase tracking-wider">
                   <tr>
                     <th className="py-2.5 px-3">Usuario</th>
                     <th className="py-2.5 px-3">Estado / Plan</th>
@@ -744,7 +744,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     <th className="py-2.5 px-3 text-right">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[#30363d]">
                   {paginatedUsers.map((u) => {
                     const isSuspended = u.status === 'suspended';
                     const isExpired = u.isExpired || (u.expiresAt ? u.expiresAt < Date.now() : false);
@@ -759,45 +759,45 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                             (ou.deviceId && u.boundDeviceId && ou.deviceId === u.boundDeviceId)
                         ));
                     return (
-                      <tr key={u.id} className="hover:bg-slate-50/70 transition">
+                      <tr key={u.id} className="hover:bg-[#0b0e14]/60 transition">
                         <td className="py-2.5 px-3">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-mono font-bold text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                            <span className="font-mono font-bold text-[#d9b114] bg-[#d9b114]/10 px-1.5 py-0.5 rounded border border-[#d9b114]/30">
                               @{u.username}
                             </span>
-                            {u.displayName && <span className="text-slate-700 font-medium text-[11px]">{u.displayName}</span>}
-                            {u.role === 'admin' && <span className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-1 rounded font-bold">Admin</span>}
+                            {u.displayName && <span className="text-white font-medium text-[11px]">{u.displayName}</span>}
+                            {u.role === 'admin' && <span className="text-[10px] bg-[#d9b114]/20 text-[#d9b114] border border-[#d9b114]/40 px-1 rounded font-black">Admin</span>}
                           </div>
-                          {u.notes && <p className="text-[10px] text-slate-400 truncate max-w-[200px] mt-0.5">{u.notes}</p>}
+                          {u.notes && <p className="text-[10px] text-[#8b949e] truncate max-w-[200px] mt-0.5">{u.notes}</p>}
                         </td>
                         <td className="py-2.5 px-3 whitespace-nowrap">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${
                             isSuspended
-                              ? 'bg-rose-100 text-rose-800'
+                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
                               : isExpired
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-emerald-100 text-emerald-800'
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                              : 'bg-[#00ff66]/10 text-[#00ff66] border-[#00ff66]/30'
                           }`}>
                             {isSuspended ? 'SUSPENDIDO' : isExpired ? 'VENCIDO' : `${daysLeft != null ? daysLeft + 'd restantes' : 'ACTIVO'}`}
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-[11px] whitespace-nowrap">
                           {isBound ? (
-                            <span className="inline-flex items-center gap-1 text-slate-700 font-mono text-[10px]">
-                              <Smartphone className="w-3 h-3 text-indigo-500 shrink-0" />
+                            <span className="inline-flex items-center gap-1 text-white/90 font-mono text-[10px]">
+                              <Smartphone className="w-3 h-3 text-[#d9b114] shrink-0" />
                               <span className="truncate max-w-[90px]">{u.boundDeviceId?.slice(0, 8)}...</span>
                             </span>
                           ) : (
-                            <span className="text-slate-400 text-[10px]">Sin vincular</span>
+                            <span className="text-[#8b949e] text-[10px]">Sin vincular</span>
                           )}
                         </td>
                         <td className="py-2.5 px-3 whitespace-nowrap text-[11px]">
                           {isUserOnline ? (
-                            <span className="text-emerald-700 font-bold flex items-center gap-1">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> En Línea
+                            <span className="text-[#00ff66] font-black flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-[#00ff66] animate-pulse"></span> En Línea
                             </span>
                           ) : (
-                            <span className="text-slate-400 text-[10px]">
+                            <span className="text-[#8b949e] text-[10px]">
                               {u.lastActiveAt ? new Date(u.lastActiveAt).toLocaleDateString() : '—'}
                             </span>
                           )}
@@ -807,7 +807,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                             <button
                               type="button"
                               onClick={() => handleRenewUser(u.id, u.username, 30, 'ADD')}
-                              className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold transition cursor-pointer"
+                              className="px-2 py-0.5 rounded bg-[#00ff66]/10 hover:bg-[#00ff66]/20 text-[#00ff66] border border-[#00ff66]/30 text-[10px] font-black transition cursor-pointer"
                               title="+30 Días"
                             >
                               +30d
@@ -815,7 +815,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                             <button
                               type="button"
                               onClick={() => handleToggleUserStatus(u.username, u.status)}
-                              className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10px] font-semibold transition cursor-pointer"
+                              className="px-2 py-0.5 rounded bg-[#0b0e14] hover:bg-[#30363d] text-white border border-[#30363d] text-[10px] font-semibold transition cursor-pointer"
                               title={isSuspended ? 'Reactivar' : 'Pausar'}
                             >
                               {isSuspended ? 'Activar' : 'Pausar'}
@@ -824,25 +824,25 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleResetUserDevice(u.id, u.username)}
-                                className="px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-medium transition cursor-pointer"
+                                className="px-2 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-[10px] font-medium transition cursor-pointer"
                                 title="Desvincular Dispositivo"
                               >
                                 Desvinc.
                               </button>
                             )}
                             {confirmDeleteUserKey === (u.username || u.id) ? (
-                              <div className="inline-flex items-center gap-1 bg-rose-50 border border-rose-300 rounded px-1.5 py-0.5">
+                              <div className="inline-flex items-center gap-1 bg-rose-500/10 border border-rose-500/30 rounded px-1.5 py-0.5">
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteUser(u.id, u.username)}
-                                  className="text-rose-700 font-bold text-[10px]"
+                                  className="text-rose-400 font-bold text-[10px]"
                                 >
                                   Sí
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setConfirmDeleteUserKey(null)}
-                                  className="text-slate-500 text-[10px]"
+                                  className="text-[#8b949e] text-[10px]"
                                 >
                                   No
                                 </button>
@@ -851,7 +851,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setConfirmDeleteUserKey(u.username || u.id)}
-                                className="p-1 rounded text-rose-500 hover:bg-rose-50 cursor-pointer"
+                                className="p-1 rounded text-rose-400 hover:bg-rose-500/10 cursor-pointer transition"
                                 title="Eliminar"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -883,32 +883,32 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               return (
                 <div
                   key={u.id}
-                  className={`p-3.5 rounded-2xl border space-y-2.5 text-xs transition ${
+                  className={`p-3.5 rounded-2xl border space-y-2.5 text-xs transition shadow-lg ${
                     isSuspended
-                      ? 'bg-rose-50/40 border-rose-200'
+                      ? 'bg-rose-950/20 border-rose-500/40'
                       : isExpired
-                      ? 'bg-amber-50/40 border-amber-200'
+                      ? 'bg-amber-950/20 border-amber-500/40'
                       : isUserOnline
-                      ? 'bg-emerald-50/30 border-emerald-300'
-                      : 'bg-slate-50/70 border-slate-200/90'
+                      ? 'bg-[#00ff66]/5 border-[#00ff66]/40'
+                      : 'bg-[#161b22] border-[#30363d]'
                   }`}
                 >
                   {/* Header Row: Username, Role, Status */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#30363d] pb-2">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono font-bold text-xs sm:text-sm text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                      <span className="font-mono font-bold text-xs sm:text-sm text-[#d9b114] bg-[#d9b114]/10 border border-[#d9b114]/30 px-2 py-0.5 rounded-md">
                         @{u.username}
                       </span>
                       {u.displayName && (
-                        <span className="font-semibold text-slate-900 text-xs sm:text-sm">
+                        <span className="font-bold text-white text-xs sm:text-sm">
                           {u.displayName}
                         </span>
                       )}
-                      <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-white border border-slate-200 text-slate-600">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#0b0e14] border border-[#30363d] text-[#8b949e]">
                         {u.role === 'admin' ? '🛡️ Admin' : '👤 Cliente'}
                       </span>
                       {isUserOnline && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#00ff66]/10 text-[#00ff66] border border-[#00ff66]/30 flex items-center gap-1">
                           <span>🟢 EN LÍNEA</span>
                         </span>
                       )}
@@ -918,12 +918,12 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
                           isSuspended
-                            ? 'bg-rose-50 text-rose-800 border-rose-200'
+                            ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
                             : isExpired
-                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
                             : u.status === 'pending'
-                            ? 'bg-amber-50 text-amber-800 border-amber-200'
-                            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                            : 'bg-[#00ff66]/10 text-[#00ff66] border-[#00ff66]/30'
                         }`}
                       >
                         {isSuspended
@@ -940,30 +940,30 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   {/* Details Grid: Plan & Device Binding */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {/* Plan & Expiry */}
-                    <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 flex flex-col justify-between">
+                    <div className="bg-[#0b0e14] p-2.5 rounded-xl border border-[#30363d] flex flex-col justify-between">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase font-semibold text-slate-500">
+                        <span className="text-[10px] uppercase font-semibold text-[#8b949e]">
                           Plan
                         </span>
-                        <span className="font-semibold text-slate-800">
+                        <span className="font-bold text-white">
                           {u.status === 'pending' ? 'Pendiente' : u.planLabel}
                         </span>
                       </div>
-                      <div className="flex flex-col mt-1.5 pt-1.5 border-t border-slate-100 gap-1">
+                      <div className="flex flex-col mt-1.5 pt-1.5 border-t border-[#30363d] gap-1">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] uppercase font-semibold text-slate-500">
+                          <span className="text-[10px] uppercase font-semibold text-[#8b949e]">
                             Vigencia
                           </span>
                           <div className="flex items-center gap-1.5">
                             <span
                               className={`font-mono font-bold text-xs ${
                                 u.status === 'pending'
-                                  ? 'text-amber-700'
+                                  ? 'text-amber-400'
                                   : isSuspended || isExpired
-                                  ? 'text-rose-700'
+                                  ? 'text-rose-400'
                                   : daysLeft !== null && daysLeft !== undefined && daysLeft <= 3
-                                  ? 'text-amber-700'
-                                  : 'text-emerald-700'
+                                  ? 'text-amber-400'
+                                  : 'text-[#00ff66]'
                               }`}
                             >
                               {u.status === 'pending'
@@ -979,7 +979,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                                   setEditingDaysUserId(u.id);
                                   setCustomDaysInputValue(String(daysLeft ?? 15));
                                 }}
-                                className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10px] font-semibold cursor-pointer transition"
+                                className="px-1.5 py-0.5 rounded bg-[#161b22] hover:bg-[#30363d] text-white border border-[#30363d] text-[10px] font-semibold cursor-pointer transition"
                               >
                                 ✏️ Editar
                               </button>
@@ -988,15 +988,15 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                         </div>
 
                         {editingDaysUserId === u.id && (
-                          <div className="mt-1 p-1.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-1 flex-wrap animate-fadeIn">
-                            <span className="text-[10px] text-slate-700 font-semibold">Días:</span>
+                          <div className="mt-1 p-1.5 bg-[#161b22] border border-[#30363d] rounded-xl flex items-center justify-between gap-1 flex-wrap animate-fadeIn">
+                            <span className="text-[10px] text-[#8b949e] font-semibold">Días:</span>
                             <input
                               type="number"
                               min="0"
                               max="3650"
                               value={customDaysInputValue}
                               onChange={(e) => setCustomDaysInputValue(e.target.value)}
-                              className="w-16 bg-white border border-slate-300 rounded-md px-2 py-0.5 text-slate-900 font-mono text-xs font-bold focus:outline-none focus:border-emerald-600"
+                              className="w-16 bg-[#0b0e14] border border-[#30363d] rounded-md px-2 py-0.5 text-white font-mono text-xs font-bold focus:outline-none focus:border-[#00ff66]"
                             />
                             <div className="flex items-center gap-1">
                               <button
@@ -1008,7 +1008,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                                     setEditingDaysUserId(null);
                                   }
                                 }}
-                                className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-semibold cursor-pointer"
+                                className="px-2 py-0.5 rounded-md bg-[#00ff66] hover:bg-[#00ff66]/90 text-black text-[10px] font-black cursor-pointer shadow-sm"
                               >
                                 Fijar
                               </button>
@@ -1021,14 +1021,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                                     setEditingDaysUserId(null);
                                   }
                                 }}
-                                className="px-2 py-0.5 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-semibold cursor-pointer"
+                                className="px-2 py-0.5 rounded-md bg-[#0b0e14] hover:bg-[#30363d] text-white border border-[#30363d] text-[10px] font-semibold cursor-pointer"
                               >
                                 + Sumar
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setEditingDaysUserId(null)}
-                                className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[10px] font-bold cursor-pointer"
+                                className="px-1.5 py-0.5 rounded bg-[#30363d] text-white/70 hover:text-white text-[10px] font-bold cursor-pointer"
                               >
                                 ✕
                               </button>
@@ -1039,33 +1039,33 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     </div>
 
                     {/* Bound Device Info */}
-                    <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 flex flex-col justify-between">
+                    <div className="bg-[#0b0e14] p-2.5 rounded-xl border border-[#30363d] flex flex-col justify-between">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase font-semibold text-slate-500 flex items-center gap-1">
-                          <Smartphone className="w-3 h-3 text-cyan-600" />
+                        <span className="text-[10px] uppercase font-semibold text-[#8b949e] flex items-center gap-1">
+                          <Smartphone className="w-3 h-3 text-cyan-400" />
                           <span>Dispositivo (1/1)</span>
                         </span>
                         <span
-                          className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border ${
+                          className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
                             isBound
-                              ? 'bg-cyan-50 text-cyan-800 border-cyan-200'
-                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
+                              : 'bg-[#00ff66]/10 text-[#00ff66] border-[#00ff66]/30'
                           }`}
                         >
                           {isBound ? 'Vinculado' : 'Libre'}
                         </span>
                       </div>
 
-                      <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <div className="mt-1.5 pt-1.5 border-t border-[#30363d] flex items-center justify-between gap-2">
                         {isBound ? (
                           <>
-                            <p className="text-[11px] font-mono text-slate-700 truncate font-medium" title={u.boundDeviceId || ''}>
+                            <p className="text-[11px] font-mono text-white/90 truncate font-medium" title={u.boundDeviceId || ''}>
                               {u.boundDeviceName || u.boundDeviceId}
                             </p>
                             <button
                               type="button"
                               onClick={() => handleResetUserDevice(u.id, u.username)}
-                              className="shrink-0 px-2 py-0.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition"
+                              className="shrink-0 px-2 py-0.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition"
                               title="Permitir inicio de sesión en otro equipo"
                             >
                               <Unlock className="w-3 h-3" />
@@ -1073,7 +1073,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                             </button>
                           </>
                         ) : (
-                          <span className="text-[10px] text-slate-400">
+                          <span className="text-[10px] text-[#8b949e]">
                             Se vinculará al primer ingreso
                           </span>
                         )}
@@ -1082,28 +1082,28 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   </div>
 
                   {/* Action Buttons Toolbar */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/70">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#30363d]">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+                      <div className="flex items-center gap-1 bg-[#0b0e14] border border-[#30363d] rounded-lg p-0.5">
                         <select
                           value={userRenewDays[u.id] ?? 30}
                           onChange={(e) => setUserRenewDays((prev) => ({ ...prev, [u.id]: Number(e.target.value) }))}
-                          className="bg-transparent text-slate-800 text-[11px] font-semibold px-1.5 py-1 focus:outline-none cursor-pointer"
+                          className="bg-transparent text-white text-[11px] font-semibold px-1.5 py-1 focus:outline-none cursor-pointer"
                         >
-                          <option value={1}>⚡ 1 Día</option>
-                          <option value={3}>⚡ 3 Días</option>
-                          <option value={7}>📅 7 Días</option>
-                          <option value={15}>📅 15 Días</option>
-                          <option value={30}>🗓️ 30 Días</option>
-                          <option value={60}>🗓️ 60 Días</option>
-                          <option value={90}>🗓️ 90 Días</option>
-                          <option value={365}>🏆 365 Días</option>
-                          <option value={0}>♾️ Vitalicio</option>
+                          <option value={1} className="bg-[#161b22] text-white">⚡ 1 Día</option>
+                          <option value={3} className="bg-[#161b22] text-white">⚡ 3 Días</option>
+                          <option value={7} className="bg-[#161b22] text-white">📅 7 Días</option>
+                          <option value={15} className="bg-[#161b22] text-white">📅 15 Días</option>
+                          <option value={30} className="bg-[#161b22] text-white">🗓️ 30 Días</option>
+                          <option value={60} className="bg-[#161b22] text-white">🗓️ 60 Días</option>
+                          <option value={90} className="bg-[#161b22] text-white">🗓️ 90 Días</option>
+                          <option value={365} className="bg-[#161b22] text-white">🏆 365 Días</option>
+                          <option value={0} className="bg-[#161b22] text-white">♾️ Vitalicio</option>
                         </select>
                         <button
                           type="button"
                           onClick={() => handleRenewUser(u.id, u.username, userRenewDays[u.id] ?? 30, 'SET')}
-                          className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition cursor-pointer flex items-center gap-1"
+                          className="px-2.5 py-1 rounded-md bg-[#00ff66] hover:bg-[#00ff66]/90 text-black text-[11px] font-black transition cursor-pointer flex items-center gap-1 shadow-sm"
                         >
                           <UserCheck className="w-3 h-3" />
                           <span>{u.status === 'pending' ? 'Aprobar' : 'Fijar'}</span>
@@ -1112,7 +1112,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                           <button
                             type="button"
                             onClick={() => handleRenewUser(u.id, u.username, userRenewDays[u.id] ?? 30, 'ADD')}
-                            className="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition cursor-pointer"
+                            className="px-2 py-1 rounded-md bg-[#161b22] hover:bg-[#30363d] text-white text-[11px] font-semibold transition cursor-pointer"
                           >
                             + Sumar
                           </button>
@@ -1122,21 +1122,21 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                       <button
                         type="button"
                         onClick={() => handleRenewUser(u.id, u.username, 1, 'SET')}
-                        className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-semibold transition cursor-pointer"
+                        className="px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-semibold transition cursor-pointer"
                       >
                         ⚡ 1d
                       </button>
                       <button
                         type="button"
                         onClick={() => handleRenewUser(u.id, u.username, 15, 'SET')}
-                        className="px-2 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-[11px] font-semibold transition cursor-pointer"
+                        className="px-2 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-[11px] font-semibold transition cursor-pointer"
                       >
                         15d
                       </button>
                       <button
                         type="button"
                         onClick={() => handleRenewUser(u.id, u.username, 30, 'SET')}
-                        className="px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-semibold transition cursor-pointer"
+                        className="px-2 py-1 rounded-lg bg-[#0b0e14] hover:bg-[#30363d] text-white border border-[#30363d] text-[11px] font-semibold transition cursor-pointer"
                       >
                         30d
                       </button>
@@ -1147,8 +1147,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                           onClick={() => handleToggleUserStatus(u.id, u.status, u.username)}
                           className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer border ${
                             isSuspended
-                              ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border-emerald-200'
-                              : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200'
+                              ? 'bg-[#00ff66]/10 text-[#00ff66] hover:bg-[#00ff66]/20 border-[#00ff66]/30'
+                              : 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border-rose-500/30'
                           }`}
                         >
                           {isSuspended ? 'Reactivar' : 'Suspender'}
@@ -1156,8 +1156,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                       )}
 
                       {confirmDeleteUserKey === (u.username || u.id) ? (
-                        <div className="flex items-center gap-1 bg-rose-50 border border-rose-300 rounded-lg px-2 py-0.5 animate-fadeIn">
-                          <span className="text-[10px] font-bold text-rose-800 mr-1">
+                        <div className="flex items-center gap-1 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2 py-0.5 animate-fadeIn">
+                          <span className="text-[10px] font-bold text-rose-400 mr-1">
                             ¿Eliminar @{u.username}?
                           </span>
                           <button
@@ -1170,7 +1170,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                           <button
                             type="button"
                             onClick={() => setConfirmDeleteUserKey(null)}
-                            className="px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200 text-[10px] font-semibold transition cursor-pointer"
+                            className="px-2 py-0.5 rounded bg-[#0b0e14] text-[#8b949e] hover:text-white border border-[#30363d] text-[10px] font-semibold transition cursor-pointer"
                           >
                             No
                           </button>
@@ -1179,7 +1179,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                         <button
                           type="button"
                           onClick={() => setConfirmDeleteUserKey(u.username || u.id)}
-                          className="px-2 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-600 border border-slate-200 hover:border-rose-200 text-[11px] font-medium flex items-center gap-1 transition cursor-pointer"
+                          className="px-2 py-1 rounded-lg bg-[#0b0e14] hover:bg-rose-500/10 text-rose-400 border border-[#30363d] hover:border-rose-500/30 text-[11px] font-medium flex items-center gap-1 transition cursor-pointer"
                           title={`Eliminar @${u.username}`}
                         >
                           <Trash2 className="w-3 h-3" />
@@ -1195,9 +1195,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                         )}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-semibold flex items-center gap-1 transition"
+                        className="px-2.5 py-1 rounded-lg bg-[#00ff66]/10 hover:bg-[#00ff66]/20 text-[#00ff66] border border-[#00ff66]/30 text-[11px] font-semibold flex items-center gap-1 transition"
                       >
-                        <MessageCircle className="w-3 h-3 text-emerald-600" />
+                        <MessageCircle className="w-3 h-3 text-[#00ff66]" />
                         <span>WhatsApp</span>
                       </a>
                     )}
@@ -1209,29 +1209,29 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
           {/* Barra de Paginación */}
           {filteredUsersList.length > 0 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 px-1 border-t border-slate-200 text-xs">
-              <div className="flex items-center gap-2 text-slate-600 flex-wrap">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 px-1 border-t border-[#30363d] text-xs">
+              <div className="flex items-center gap-2 text-[#8b949e] flex-wrap">
                 <span>Mostrando</span>
-                <span className="font-bold text-slate-900">
+                <span className="font-bold text-white">
                   {(safeCurrentPage - 1) * pageSize + 1} - {Math.min(safeCurrentPage * pageSize, filteredUsersList.length)}
                 </span>
                 <span>de</span>
-                <span className="font-bold text-slate-900">{filteredUsersList.length}</span>
+                <span className="font-bold text-white">{filteredUsersList.length}</span>
                 <span>usuarios</span>
 
-                <span className="mx-1 text-slate-300">|</span>
-                <span className="text-slate-500">Por pág:</span>
+                <span className="mx-1 text-[#30363d]">|</span>
+                <span className="text-[#8b949e]">Por pág:</span>
                 <select
                   value={pageSize}
                   onChange={(e) => {
                     setPageSize(Number(e.target.value));
                     setCurrentPage(1);
                   }}
-                  className="bg-white border border-slate-200 rounded-md px-1.5 py-0.5 text-xs text-slate-800 font-medium focus:outline-none focus:border-indigo-500"
+                  className="bg-[#0b0e14] border border-[#30363d] rounded-md px-1.5 py-0.5 text-xs text-white font-medium focus:outline-none focus:border-[#d9b114]"
                 >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
+                  <option value={10} className="bg-[#161b22] text-white">10</option>
+                  <option value={25} className="bg-[#161b22] text-white">25</option>
+                  <option value={50} className="bg-[#161b22] text-white">50</option>
                 </select>
               </div>
 
@@ -1240,21 +1240,21 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   type="button"
                   disabled={safeCurrentPage <= 1}
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  className="p-1.5 rounded-lg border border-[#30363d] bg-[#0b0e14] text-white hover:bg-[#161b22] disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer"
                   title="Página Anterior"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
 
-                <span className="px-2.5 py-1 text-xs font-semibold text-slate-700">
-                  Pág. {safeCurrentPage} de {totalPages}
+                <span className="px-2.5 py-1 text-xs font-semibold text-[#8b949e]">
+                  Pág. <span className="text-white font-bold">{safeCurrentPage}</span> de {totalPages}
                 </span>
 
                 <button
                   type="button"
                   disabled={safeCurrentPage >= totalPages}
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  className="p-1.5 rounded-lg border border-[#30363d] bg-[#0b0e14] text-white hover:bg-[#161b22] disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer"
                   title="Página Siguiente"
                 >
                   <ChevronRight className="w-4 h-4" />

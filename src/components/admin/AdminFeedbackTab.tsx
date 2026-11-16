@@ -156,20 +156,20 @@ export const AdminFeedbackTab: React.FC = () => {
   }, [items, selectedStarFilter]);
 
   return (
-    <div className="space-y-3 font-sans text-slate-800">
+    <div className="space-y-3 font-sans text-white">
       {/* 1. Resumen KPI del Buzón Privado de Calificaciones */}
-      <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+      <div className="p-3.5 rounded-2xl bg-[#0b0e14] border border-[#30363d] space-y-2.5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-[#d9b114] border border-amber-500/30">
                 ⭐ Exclusivo Administrador
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white text-slate-600 border border-slate-200">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#161b22] text-[#8b949e] border border-[#30363d]">
                 ⚡ Persistente en BD (&lt;10 KB)
               </span>
             </div>
-            <h3 className="text-base sm:text-lg font-bold text-slate-900 mt-1">
+            <h3 className="text-base sm:text-lg font-bold text-white mt-1">
               Calificaciones y Buzón de Usuarios · G METRICS
             </h3>
           </div>
@@ -178,7 +178,7 @@ export const AdminFeedbackTab: React.FC = () => {
             <button
               type="button"
               onClick={loadFeedback}
-              className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+              className="px-2.5 py-1.5 rounded-xl bg-[#161b22] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               <span>Actualizar</span>
@@ -186,8 +186,8 @@ export const AdminFeedbackTab: React.FC = () => {
 
             {items.length > 0 && (
               confirmClearAll ? (
-                <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-xl px-2 py-1">
-                  <span className="text-[11px] text-rose-800 font-bold">¿Vaciar buzón?</span>
+                <div className="flex items-center gap-1 bg-rose-500/10 border border-rose-500/30 rounded-xl px-2 py-1">
+                  <span className="text-[11px] text-rose-400 font-bold">¿Vaciar buzón?</span>
                   <button
                     type="button"
                     onClick={handleClearAll}
@@ -198,7 +198,7 @@ export const AdminFeedbackTab: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setConfirmClearAll(false)}
-                    className="px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200 text-xs font-bold cursor-pointer"
+                    className="px-2 py-0.5 rounded bg-[#161b22] text-[#8b949e] hover:text-white border border-[#30363d] text-xs font-bold cursor-pointer"
                   >
                     ✕
                   </button>
@@ -207,7 +207,7 @@ export const AdminFeedbackTab: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setConfirmClearAll(true)}
-                  className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 text-xs font-medium transition cursor-pointer flex items-center gap-1"
+                  className="px-2.5 py-1.5 rounded-xl bg-[#161b22] hover:bg-rose-500/20 text-[#8b949e] hover:text-rose-400 border border-[#30363d] text-xs font-medium transition cursor-pointer flex items-center gap-1"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Limpiar</span>
@@ -219,22 +219,22 @@ export const AdminFeedbackTab: React.FC = () => {
 
         {/* 3 Tarjetas de Resumen */}
         <div className="grid grid-cols-3 gap-2">
-          <div className="p-2.5 rounded-xl bg-white border border-slate-200 text-xs">
-            <span className="text-slate-500 block text-[10px] uppercase font-semibold">Promedio Global</span>
-            <span className="text-base font-bold font-mono text-amber-700 flex items-center gap-1 mt-0.5">
+          <div className="p-2.5 rounded-xl bg-[#161b22] border border-[#30363d] text-xs">
+            <span className="text-[#8b949e] block text-[10px] uppercase font-semibold">Promedio Global</span>
+            <span className="text-base font-bold font-mono text-[#d9b114] flex items-center gap-1 mt-0.5">
               <span>{stats.avg}</span>
-              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+              <Star className="w-3.5 h-3.5 text-[#d9b114] fill-[#d9b114]" />
             </span>
           </div>
-          <div className="p-2.5 rounded-xl bg-white border border-slate-200 text-xs">
-            <span className="text-slate-500 block text-[10px] uppercase font-semibold">Total Reseñas</span>
-            <span className="text-base font-bold font-mono text-slate-900 mt-0.5 block">
+          <div className="p-2.5 rounded-xl bg-[#161b22] border border-[#30363d] text-xs">
+            <span className="text-[#8b949e] block text-[10px] uppercase font-semibold">Total Reseñas</span>
+            <span className="text-base font-bold font-mono text-white mt-0.5 block">
               {stats.total}
             </span>
           </div>
-          <div className="p-2.5 rounded-xl bg-emerald-50/60 border border-emerald-200 text-xs">
-            <span className="text-emerald-800 block text-[10px] uppercase font-semibold">5 Estrellas</span>
-            <span className="text-base font-bold font-mono text-emerald-700 mt-0.5 block">
+          <div className="p-2.5 rounded-xl bg-[#161b22] border border-[#30363d] text-xs">
+            <span className="text-[#00ff66] block text-[10px] uppercase font-semibold">5 Estrellas</span>
+            <span className="text-base font-bold font-mono text-[#00ff66] mt-0.5 block">
               {stats.fiveStarPct}% ({stats.fiveStars})
             </span>
           </div>
@@ -242,14 +242,14 @@ export const AdminFeedbackTab: React.FC = () => {
       </div>
 
       {/* 2. Filtro por Estrellas */}
-      <div className="flex items-center gap-1 flex-wrap bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+      <div className="flex items-center gap-1 flex-wrap bg-[#0b0e14] p-1 rounded-xl border border-[#30363d] text-xs">
         <button
           type="button"
           onClick={() => setSelectedStarFilter('ALL')}
           className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
             selectedStarFilter === 'ALL'
-              ? 'bg-white text-slate-900 border border-slate-300 shadow-2xs'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-[#161b22] text-white border border-[#d9b114]/50 shadow-2xs'
+              : 'text-[#8b949e] hover:text-white'
           }`}
         >
           Todas ({items.length})
@@ -263,8 +263,8 @@ export const AdminFeedbackTab: React.FC = () => {
               onClick={() => setSelectedStarFilter(st)}
               className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
                 selectedStarFilter === st
-                  ? 'bg-white text-amber-900 border border-amber-300 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-[#161b22] text-[#d9b114] border border-[#d9b114]/50 shadow-2xs'
+                  : 'text-[#8b949e] hover:text-white'
               }`}
             >
               {st} ⭐ ({count})
@@ -275,16 +275,16 @@ export const AdminFeedbackTab: React.FC = () => {
 
       {/* 3. Lista de Comentarios y Calificaciones */}
       {isLoading ? (
-        <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500">
+        <div className="p-6 rounded-2xl bg-[#0b0e14] border border-[#30363d] text-center text-xs text-[#8b949e]">
           Cargando comentarios de usuarios...
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1">
-          <Star className="w-6 h-6 text-slate-400 mx-auto" />
-          <p className="text-xs font-bold text-slate-700">
+        <div className="p-6 rounded-2xl bg-[#0b0e14] border border-[#30363d] text-center space-y-1">
+          <Star className="w-6 h-6 text-[#8b949e] mx-auto" />
+          <p className="text-xs font-bold text-white">
             Aún no hay calificaciones registradas en esta vista.
           </p>
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[11px] text-[#8b949e]">
             Cuando un usuario envíe su calificación desde la notificación o el botón &quot;⭐ Calificar&quot; del pie de página, aparecerá aquí.
           </p>
         </div>
@@ -293,7 +293,7 @@ export const AdminFeedbackTab: React.FC = () => {
           {filteredItems.map((item) => (
             <div
               key={item.id}
-              className="p-3 rounded-2xl bg-white border border-slate-200 shadow-2xs flex items-start justify-between gap-3 text-xs"
+              className="p-3 rounded-2xl bg-[#161b22] border border-[#30363d] shadow-2xs flex items-start justify-between gap-3 text-xs"
             >
               <div className="space-y-1 flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -301,24 +301,24 @@ export const AdminFeedbackTab: React.FC = () => {
                     const identity = formatFeedbackIdentity(item.u, item.n);
                     return (
                       <>
-                        <span className="font-bold text-slate-900 text-xs flex items-center gap-1">
+                        <span className="font-bold text-white text-xs flex items-center gap-1">
                           👤 {identity.name}
                         </span>
                         {identity.username && (
-                          <span className="font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-md text-[10px]">
+                          <span className="font-mono text-[#d9b114] bg-[#0b0e14] border border-[#30363d] px-1.5 py-0.5 rounded-md text-[10px]">
                             @{identity.username}
                           </span>
                         )}
                       </>
                     );
                   })()}
-                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 font-bold text-[11px]">
+                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-[#d9b114] font-bold text-[11px]">
                     {'⭐'.repeat(Math.min(5, Math.max(1, Number(item.r) || 5)))} ({item.r}/5)
                   </span>
-                  <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-semibold text-[10px]">
+                  <span className="px-2 py-0.5 rounded-md bg-[#0b0e14] border border-[#30363d] text-[#8b949e] font-semibold text-[10px]">
                     {item.c}
                   </span>
-                  <span className="text-[10px] font-mono text-slate-400">
+                  <span className="text-[10px] font-mono text-[#8b949e]">
                     {new Date(item.t).toLocaleString('es-CO', {
                       dateStyle: 'short',
                       timeStyle: 'short'
@@ -327,11 +327,11 @@ export const AdminFeedbackTab: React.FC = () => {
                 </div>
 
                 {item.m ? (
-                  <p className="text-xs text-slate-700 leading-relaxed pt-0.5 break-words">
+                  <p className="text-xs text-white/90 leading-relaxed pt-0.5 break-words">
                     &ldquo;{item.m}&rdquo;
                   </p>
                 ) : (
-                  <p className="text-[11px] italic text-slate-400 pt-0.5">
+                  <p className="text-[11px] italic text-[#8b949e] pt-0.5">
                     Calificación enviada sin comentario escrito.
                   </p>
                 )}
@@ -340,7 +340,7 @@ export const AdminFeedbackTab: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleDeleteItem(item.id)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer shrink-0"
+                className="p-1.5 rounded-lg text-[#8b949e] hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer shrink-0"
                 title="Eliminar comentario"
               >
                 <Trash2 className="w-3.5 h-3.5" />

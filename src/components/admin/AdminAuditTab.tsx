@@ -65,8 +65,8 @@ export const AdminAuditTab: React.FC = () => {
   if (isLoading || !summary) {
     return (
       <div className="py-12 text-center space-y-2">
-        <RefreshCw className="w-7 h-7 text-emerald-600 animate-spin mx-auto" />
-        <p className="text-xs font-semibold text-slate-700">
+        <RefreshCw className="w-7 h-7 text-[#d9b114] animate-spin mx-auto" />
+        <p className="text-xs font-semibold text-[#8b949e]">
           Calculando efectividad real por competición...
         </p>
       </div>
@@ -153,16 +153,16 @@ export const AdminAuditTab: React.FC = () => {
   };
 
   return (
-    <div className="space-y-3.5 font-sans text-slate-800">
+    <div className="space-y-3.5 font-sans text-white">
       {/* 0. Selector de Segmento */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 p-1 bg-slate-100 rounded-xl border border-slate-200 gap-1 text-center text-xs">
+      <div className="grid grid-cols-2 sm:grid-cols-4 p-1 bg-[#0b0e14] rounded-xl border border-[#30363d] gap-1 text-center text-xs">
         <button
           type="button"
           onClick={() => setSportFilter('PRIME_SOCCER')}
           className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer font-semibold ${
             sportFilter === 'PRIME_SOCCER'
-              ? 'bg-white text-emerald-800 border border-emerald-300 shadow-2xs font-bold'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-[#161b22] text-[#00ff66] border border-[#00ff66]/40 shadow-2xs font-bold'
+              : 'text-[#8b949e] hover:text-white'
           }`}
         >
           <span>⚽ Principales</span>
@@ -173,8 +173,8 @@ export const AdminAuditTab: React.FC = () => {
           onClick={() => setSportFilter('SECONDARY_SOCCER')}
           className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer font-semibold ${
             sportFilter === 'SECONDARY_SOCCER'
-              ? 'bg-white text-indigo-800 border border-indigo-300 shadow-2xs font-bold'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-[#161b22] text-sky-400 border border-sky-400/40 shadow-2xs font-bold'
+              : 'text-[#8b949e] hover:text-white'
           }`}
         >
           <span>🌍 Secundarias</span>
@@ -185,8 +185,8 @@ export const AdminAuditTab: React.FC = () => {
           onClick={() => setSportFilter('NBA')}
           className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer font-semibold ${
             sportFilter === 'NBA'
-              ? 'bg-white text-amber-800 border border-amber-300 shadow-2xs font-bold'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-[#161b22] text-[#d9b114] border border-[#d9b114]/40 shadow-2xs font-bold'
+              : 'text-[#8b949e] hover:text-white'
           }`}
         >
           <span>🏀 Baloncesto</span>
@@ -197,8 +197,8 @@ export const AdminAuditTab: React.FC = () => {
           onClick={() => setSportFilter('ALL')}
           className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer font-semibold ${
             sportFilter === 'ALL'
-              ? 'bg-white text-cyan-800 border border-cyan-300 shadow-2xs font-bold'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-[#161b22] text-white border border-[#30363d] shadow-2xs font-bold'
+              : 'text-[#8b949e] hover:text-white'
           }`}
         >
           <span>🌐 Global</span>
@@ -206,53 +206,53 @@ export const AdminAuditTab: React.FC = () => {
       </div>
 
       {/* 1. Resumen Principal y Exportación */}
-      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="p-4 rounded-2xl bg-[#0b0e14] border border-[#30363d] flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="space-y-1 flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-[#00ff66] border border-emerald-500/30">
               {getSegmentHeaderLabel()}
             </span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white text-slate-600 border border-slate-200">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#161b22] text-[#8b949e] border border-[#30363d]">
               📅 Acta Oficial · Excel Listo para Tabla Dinámica
             </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-            <div className="p-2 rounded-xl bg-white border border-slate-200">
-              <span className="text-[10px] font-bold text-slate-500 uppercase block">
+            <div className="p-2.5 rounded-xl bg-[#161b22] border border-[#30363d]">
+              <span className="text-[10px] font-bold text-[#8b949e] uppercase block">
                 Efectividad Global (Toda Cartelera)
               </span>
               <div className="flex items-baseline gap-1.5 mt-0.5">
-                <span className="text-base sm:text-lg font-black font-mono text-slate-800">
+                <span className="text-base sm:text-lg font-black font-mono text-white">
                   {activeStats.accuracyPercentage}%
                 </span>
-                <span className="text-[11px] font-medium text-slate-500 font-mono">
+                <span className="text-[11px] font-medium text-[#8b949e] font-mono">
                   ({activeStats.hits}/{activeStats.evaluatedMatches} verificados)
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 block mt-0.5">
+              <span className="text-[10px] text-[#8b949e] block mt-0.5">
                 Incluye mercados abiertos y alta varianza (+2.5, BTTS).
               </span>
             </div>
 
-            <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-200/90">
+            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-emerald-800 uppercase">
+                <span className="text-[10px] font-bold text-[#00ff66] uppercase">
                   Filtro Alta Convicción G METRICS
                 </span>
-                <span className="px-1.5 py-0.2 rounded-full bg-emerald-600 text-white font-mono text-[9px] font-bold">
+                <span className="px-1.5 py-0.2 rounded-full bg-[#00ff66]/20 text-[#00ff66] border border-[#00ff66]/40 font-mono text-[9px] font-bold">
                   ÉLITE &gt; 75%
                 </span>
               </div>
               <div className="flex items-baseline gap-1.5 mt-0.5">
-                <span className="text-base sm:text-lg font-black font-mono text-emerald-700">
+                <span className="text-base sm:text-lg font-black font-mono text-[#00ff66]">
                   {highConvictionAccuracy}%
                 </span>
-                <span className="text-[11px] font-medium text-emerald-800 font-mono">
+                <span className="text-[11px] font-medium text-emerald-400 font-mono">
                   ({highConvictionHits}/{highConvictionTotal} aciertos)
                 </span>
               </div>
-              <span className="text-[10px] text-emerald-700 block mt-0.5">
+              <span className="text-[10px] text-[#8b949e] block mt-0.5">
                 Picks de alta seguridad (1X/X2, Over 1.5, Under 3.5, Córners 7.5+).
               </span>
             </div>
@@ -263,15 +263,15 @@ export const AdminAuditTab: React.FC = () => {
           <button
             type="button"
             onClick={handleDownloadExcel}
-            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            className="px-3.5 py-2 rounded-xl bg-[#d9b114] hover:bg-[#c29e10] text-[#0b0e14] font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Exportar Excel (.xlsx)</span>
           </button>
 
           {confirmResetCycle ? (
-            <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-xl px-2.5 py-1.5 animate-fadeIn">
-              <span className="text-[11px] text-rose-800 font-bold">¿Reiniciar mes?</span>
+            <div className="flex items-center gap-1 bg-rose-500/10 border border-rose-500/30 rounded-xl px-2.5 py-1.5 animate-fadeIn">
+              <span className="text-[11px] text-rose-400 font-bold">¿Reiniciar mes?</span>
               <button
                 type="button"
                 onClick={handleResetMonthlyCycle}
@@ -282,7 +282,7 @@ export const AdminAuditTab: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setConfirmResetCycle(false)}
-                className="px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200 text-xs font-bold cursor-pointer"
+                className="px-2 py-0.5 rounded bg-[#161b22] text-[#8b949e] hover:text-white border border-[#30363d] text-xs font-bold cursor-pointer"
               >
                 ✕
               </button>
@@ -291,7 +291,7 @@ export const AdminAuditTab: React.FC = () => {
             <button
               type="button"
               onClick={() => setConfirmResetCycle(true)}
-              className="px-2.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 text-xs font-medium transition cursor-pointer flex items-center gap-1"
+              className="px-2.5 py-2 rounded-xl bg-[#161b22] hover:bg-rose-500/20 text-[#8b949e] hover:text-rose-400 border border-[#30363d] text-xs font-medium transition cursor-pointer flex items-center gap-1"
               title="Reiniciar ciclo mensual"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -303,26 +303,26 @@ export const AdminAuditTab: React.FC = () => {
 
       {/* 1.5 Indicadores Rápidos */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-          <span className="text-slate-500 block text-[10px] uppercase font-semibold">Muestras</span>
-          <span className="text-base font-bold font-mono text-slate-900">{activeStats.totalMatches}</span>
+        <div className="p-2.5 rounded-xl bg-[#161b22] border border-[#30363d] text-xs">
+          <span className="text-[#8b949e] block text-[10px] uppercase font-semibold">Muestras</span>
+          <span className="text-base font-bold font-mono text-white">{activeStats.totalMatches}</span>
         </div>
 
-        <div className="p-2.5 rounded-xl bg-emerald-50/50 border border-emerald-200 text-xs">
-          <span className="text-emerald-800 block text-[10px] uppercase font-semibold">Aciertos</span>
-          <span className="text-base font-bold font-mono text-emerald-700">{activeStats.hits}</span>
+        <div className="p-2.5 rounded-xl bg-[#161b22] border border-[#30363d] text-xs">
+          <span className="text-[#00ff66] block text-[10px] uppercase font-semibold">Aciertos</span>
+          <span className="text-base font-bold font-mono text-[#00ff66]">{activeStats.hits}</span>
         </div>
 
-        <div className="p-2.5 rounded-xl bg-rose-50/50 border border-rose-200 text-xs">
-          <span className="text-rose-800 block text-[10px] uppercase font-semibold">Fallos</span>
-          <span className="text-base font-bold font-mono text-rose-700">{activeStats.misses}</span>
+        <div className="p-2.5 rounded-xl bg-[#161b22] border border-[#30363d] text-xs">
+          <span className="text-rose-400 block text-[10px] uppercase font-semibold">Fallos</span>
+          <span className="text-base font-bold font-mono text-rose-400">{activeStats.misses}</span>
         </div>
 
-        <div className="p-2.5 rounded-xl bg-amber-50/50 border border-amber-200 text-xs">
-          <span className="text-amber-800 block text-[10px] uppercase font-semibold">
+        <div className="p-2.5 rounded-xl bg-[#161b22] border border-[#30363d] text-xs">
+          <span className="text-[#d9b114] block text-[10px] uppercase font-semibold">
             {sportFilter === 'SECONDARY_SOCCER' ? 'Sin Acta' : 'Cobertura'}
           </span>
-          <span className="text-base font-bold font-mono text-amber-800">
+          <span className="text-base font-bold font-mono text-[#d9b114]">
             {sportFilter === 'SECONDARY_SOCCER' ? `${activeStats.unverifiedCount}` : `${activeStats.coveragePercentage}%`}
           </span>
         </div>
@@ -331,35 +331,35 @@ export const AdminAuditTab: React.FC = () => {
       {/* 2. Doble Panel Top 5 (Ligas/Equipos + Pronósticos/Mercados) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* Panel Top 5 Izquierdo: Ligas (Fútbol) o Equipos (NBA) */}
-        <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+        <div className="p-3.5 rounded-2xl bg-[#0b0e14] border border-[#30363d] space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <Trophy className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-xs font-bold text-white flex items-center gap-1.5">
+              <Trophy className="w-3.5 h-3.5 text-[#d9b114]" />
               <span>{primaryTop5Title}</span>
             </span>
           </div>
 
           <div className="space-y-1.5">
             {primaryTop5List.length === 0 ? (
-              <p className="text-xs text-slate-500 p-2 text-center">Sin registros verificados en este segmento.</p>
+              <p className="text-xs text-[#8b949e] p-2 text-center">Sin registros verificados en este segmento.</p>
             ) : (
               primaryTop5List.map((item, idx) => {
                 const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
                 return (
                   <div
                     key={`${item.name}-${idx}`}
-                    className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between gap-3 text-xs"
+                    className="p-2 rounded-xl bg-[#161b22] border border-[#30363d] flex items-center justify-between gap-3 text-xs"
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-800 font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                      <span className="w-6 h-6 rounded-lg bg-[#0b0e14] border border-[#30363d] text-white font-mono text-xs font-bold flex items-center justify-center shrink-0">
                         {medal}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <span className="font-semibold text-slate-900 truncate block">{item.name}</span>
-                        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-1 overflow-hidden">
+                        <span className="font-semibold text-white truncate block">{item.name}</span>
+                        <div className="w-full bg-[#0b0e14] h-1.5 rounded-full mt-1 overflow-hidden">
                           <div
                             className={`h-full rounded-full ${
-                              item.sport === 'NBA' ? 'bg-amber-500' : 'bg-emerald-500'
+                              item.sport === 'NBA' ? 'bg-[#d9b114]' : 'bg-[#00ff66]'
                             }`}
                             style={{ width: `${Math.min(100, Math.max(10, item.accuracyPercentage))}%` }}
                           />
@@ -368,8 +368,8 @@ export const AdminAuditTab: React.FC = () => {
                     </div>
 
                     <div className="text-right shrink-0 font-mono">
-                      <span className="font-bold text-slate-900 text-xs">{item.accuracyPercentage}%</span>
-                      <span className="text-[10px] text-slate-500 block">
+                      <span className="font-bold text-white text-xs">{item.accuracyPercentage}%</span>
+                      <span className="text-[10px] text-[#8b949e] block">
                         {item.hits}/{item.evaluatedMatches}
                       </span>
                     </div>
@@ -381,35 +381,35 @@ export const AdminAuditTab: React.FC = () => {
         </div>
 
         {/* Panel Top 5 Derecho: Pronósticos Más Efectivos (Fútbol) o Mercados NBA (Baloncesto) */}
-        <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+        <div className="p-3.5 rounded-2xl bg-[#0b0e14] border border-[#30363d] space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <Target className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="text-xs font-bold text-white flex items-center gap-1.5">
+              <Target className="w-3.5 h-3.5 text-[#00ff66]" />
               <span>{secondaryTop5Title}</span>
             </span>
           </div>
 
           <div className="space-y-1.5">
             {secondaryTop5List.length === 0 ? (
-              <p className="text-xs text-slate-500 p-2 text-center">Sin pronósticos verificados en este segmento.</p>
+              <p className="text-xs text-[#8b949e] p-2 text-center">Sin pronósticos verificados en este segmento.</p>
             ) : (
               secondaryTop5List.map((item, idx) => {
                 const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
                 return (
                   <div
                     key={`${item.name}-${idx}`}
-                    className="p-2 rounded-xl bg-white border border-slate-200/80 flex items-center justify-between gap-3 text-xs"
+                    className="p-2 rounded-xl bg-[#161b22] border border-[#30363d] flex items-center justify-between gap-3 text-xs"
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-800 font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                      <span className="w-6 h-6 rounded-lg bg-[#0b0e14] border border-[#30363d] text-white font-mono text-xs font-bold flex items-center justify-center shrink-0">
                         {medal}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <span className="font-semibold text-slate-900 truncate block">{item.name}</span>
-                        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-1 overflow-hidden">
+                        <span className="font-semibold text-white truncate block">{item.name}</span>
+                        <div className="w-full bg-[#0b0e14] h-1.5 rounded-full mt-1 overflow-hidden">
                           <div
                             className={`h-full rounded-full ${
-                              item.sport === 'NBA' ? 'bg-amber-500' : 'bg-indigo-500'
+                              item.sport === 'NBA' ? 'bg-[#d9b114]' : 'bg-[#00ff66]'
                             }`}
                             style={{ width: `${Math.min(100, Math.max(10, item.accuracyPercentage))}%` }}
                           />
@@ -418,8 +418,8 @@ export const AdminAuditTab: React.FC = () => {
                     </div>
 
                     <div className="text-right shrink-0 font-mono">
-                      <span className="font-bold text-slate-900 text-xs">{item.accuracyPercentage}%</span>
-                      <span className="text-[10px] text-slate-500 block">
+                      <span className="font-bold text-white text-xs">{item.accuracyPercentage}%</span>
+                      <span className="text-[10px] text-[#8b949e] block">
                         {item.hits}/{item.evaluatedMatches}
                       </span>
                     </div>
@@ -436,43 +436,43 @@ export const AdminAuditTab: React.FC = () => {
         {filteredCategories.map((m) => (
           <div
             key={m.id}
-            className="p-3 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1.5"
+            className="p-3 rounded-xl bg-[#0b0e14] border border-[#30363d] space-y-1.5"
           >
             <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-slate-900">{m.categoryLabel}</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+              <span className="font-semibold text-white">{m.categoryLabel}</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-[#00ff66] border border-emerald-500/30">
                 {m.accuracyPercentage}%
               </span>
             </div>
-            <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+            <div className="w-full bg-[#161b22] h-1.5 rounded-full overflow-hidden">
               <div
-                className="h-full rounded-full bg-emerald-500"
+                className="h-full rounded-full bg-[#00ff66]"
                 style={{ width: `${m.accuracyPercentage}%` }}
               />
             </div>
-            <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+            <div className="flex items-center justify-between text-[10px] font-mono text-[#8b949e]">
               <span>Evaluados: {m.evaluatedMatches}</span>
-              <span className="text-emerald-700 font-semibold">✓ {m.hits}</span>
-              <span className="text-rose-600">✕ {m.misses}</span>
+              <span className="text-[#00ff66] font-semibold">✓ {m.hits}</span>
+              <span className="text-rose-400">✕ {m.misses}</span>
             </div>
           </div>
         ))}
       </div>
 
       {/* 4. Tabla Detallada de Partidos Evaluados */}
-      <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2">
+      <div className="p-3 rounded-2xl bg-[#0b0e14] border border-[#30363d] space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          <span className="text-xs font-bold text-white flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-[#00ff66]" />
             <span>Historial Verificado ({filteredMatches.length})</span>
           </span>
-          <span className="text-[10px] text-slate-400 font-mono">{summary.lastUpdated}</span>
+          <span className="text-[10px] text-[#8b949e] font-mono">{summary.lastUpdated}</span>
         </div>
 
-        <div className="overflow-x-auto bg-white rounded-xl border border-slate-200">
+        <div className="overflow-x-auto bg-[#161b22] rounded-xl border border-[#30363d]">
           <table className="w-full text-left text-xs font-mono">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 text-[10px] uppercase">
+              <tr className="border-b border-[#30363d] bg-[#0b0e14] text-[#8b949e] text-[10px] uppercase">
                 <th className="py-2 px-2.5">Partido</th>
                 <th className="py-2 px-2">Mercado</th>
                 <th className="py-2 px-2">Pronóstico</th>
@@ -480,27 +480,27 @@ export const AdminAuditTab: React.FC = () => {
                 <th className="py-2 px-2.5 text-right">Estado</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-700">
+            <tbody className="divide-y divide-[#30363d] text-white">
               {filteredMatches.map((rec, i) => (
-                <tr key={`${rec.fixtureId}-${i}`} className="hover:bg-slate-50 transition-colors">
-                  <td className="py-2 px-2.5 font-sans font-semibold text-slate-900">
+                <tr key={`${rec.fixtureId}-${i}`} className="hover:bg-[#21262d] transition-colors">
+                  <td className="py-2 px-2.5 font-sans font-semibold text-white">
                     <div>{rec.matchTitle}</div>
-                    <span className="text-[10px] text-slate-400 font-normal block">{rec.leagueName}</span>
+                    <span className="text-[10px] text-[#8b949e] font-normal block">{rec.leagueName}</span>
                   </td>
-                  <td className="py-2 px-2 text-slate-600 text-[11px]">{rec.marketType}</td>
-                  <td className="py-2 px-2 text-slate-900 font-semibold text-[11px]">{rec.predictionLabel}</td>
-                  <td className="py-2 px-2 text-slate-600 text-[11px]">{rec.actualResult}</td>
+                  <td className="py-2 px-2 text-[#8b949e] text-[11px]">{rec.marketType}</td>
+                  <td className="py-2 px-2 text-white font-semibold text-[11px]">{rec.predictionLabel}</td>
+                  <td className="py-2 px-2 text-[#8b949e] text-[11px]">{rec.actualResult}</td>
                   <td className="py-2 px-2.5 text-right">
                     {rec.status === 'UNVERIFIED' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/15 text-[#d9b114] border border-amber-500/30">
                         ANULADO
                       </span>
                     ) : rec.isHit ? (
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/15 text-[#00ff66] border border-emerald-500/30">
                         ✓ ACIERTO
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
                         ✕ FALLO
                       </span>
                     )}
