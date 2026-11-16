@@ -19,14 +19,7 @@ export default defineConfig(() => {
           'custom-logo.png',
           'logo.png',
           'icon.png',
-          'apple-touch-icon.png',
-          'Barcelona.jpg',
-          'CR7.jpg',
-          'CR7wallpaper.jpg',
-          'Messi.jpg',
-          'Real madrid.jpg',
-          'Ronaldinho.jpg',
-          'Ronaldo R9.jpg'
+          'apple-touch-icon.png'
         ],
         manifest: {
           id: '/',
@@ -106,6 +99,20 @@ export default defineConfig(() => {
                 expiration: {
                   maxEntries: 150,
                   maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/images\.unsplash\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'gmetrics-cloud-wallpapers-v1',
+                expiration: {
+                  maxEntries: 30,
+                  maxAgeSeconds: 60 * 60 * 24 * 60,
                 },
                 cacheableResponse: {
                   statuses: [0, 200],

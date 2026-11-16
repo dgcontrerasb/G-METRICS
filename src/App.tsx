@@ -20,6 +20,7 @@ import { NBAFilterType } from './components/NBAFilterBar';
 import { FintechSidebar } from './components/FintechSidebar';
 import { AppFooter } from './components/AppFooter';
 import { AppModalsContainer } from './components/AppModalsContainer';
+import { findWallpaperOptionByUrl } from './components/WallpaperSelectorModal';
 import { UserFeedbackWidget } from './components/UserFeedbackWidget';
 import { SoccerWorkspaceView } from './components/workspace/SoccerWorkspaceView';
 import { NBAWorkspaceView } from './components/workspace/NBAWorkspaceView';
@@ -740,9 +741,22 @@ export default function App() {
     setDetailModalPayload({ type: 'NBA', fixture, analysis });
   }, []);
 
-  // Wallpaper state (defaults to CR7wallpaper.jpg or user's stored selection)
+  // Wallpaper state (defaults to Cloud HD Stadium or user's stored selection)
   const [selectedWallpaper, setSelectedWallpaper] = useState<string>(() => {
-    return localStorage.getItem('futbolstats_selected_wallpaper') || '/CR7wallpaper.jpg';
+    const saved = localStorage.getItem('futbolstats_selected_wallpaper') || '';
+    const legacyLocalFiles = [
+      '/CR7wallpaper.jpg',
+      '/CR7.jpg',
+      '/Messi.jpg',
+      '/Real madrid.jpg',
+      '/Barcelona.jpg',
+      '/Ronaldinho.jpg',
+      '/Ronaldo R9.jpg'
+    ];
+    if (!saved || legacyLocalFiles.includes(saved)) {
+      return 'https://images.unsplash.com/photo-1522778119026-d647f0596c20?auto=format&fit=crop&w=1600&q=80';
+    }
+    return saved;
   });
   const [wallpaperOpacity, setWallpaperOpacity] = useState<number>(() => {
     try {
@@ -2100,11 +2114,48 @@ export default function App() {
         <div
           className="min-h-screen cr7-cinematic-bg text-slate-900 flex flex-col lg:flex-row font-sans selection:bg-emerald-500 selection:text-white pb-20 lg:pb-0 transition-colors duration-200"
           style={{
-            ['--wallpaper-bg' as string]: `url("${encodeURI(selectedWallpaper)}")`,
+            ['--wallpaper-bg' as string]:
+              !selectedWallpaper || selectedWallpaper === 'none'
+                ? 'none'
+                : selectedWallpaper.startsWith('data:') || selectedWallpaper.startsWith('linear-gradient') || selectedWallpaper.startsWith('radial-gradient')
+                ? selectedWallpaper.startsWith('data:')
+                  ? `url("${selectedWallpaper}")`
+                  : selectedWallpaper
+                : `url("${encodeURI(selectedWallpaper)}")`,
             ['--wallpaper-opacity' as string]: `${Math.max(0.18, Math.min(wallpaperOpacity * 0.65, 0.58))}`,
             ['--wallpaper-blur' as string]: `${wallpaperBlur}px`
           } as React.CSSProperties}
         >
+          {/* Marca de Agua de Escudo e Iluminación Cromática del Club / Franquicia NBA Elegida */}
+          {(() => {
+            const matchedWp = findWallpaperOptionByUrl(selectedWallpaper);
+            if (!matchedWp || (!matchedWp.crestUrl && !matchedWp.accentColor)) return null;
+            return (
+              <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none">
+                {matchedWp.accentColor && (
+                  <div
+                    className="absolute inset-0 transition-opacity duration-500"
+                    style={{
+                      opacity: Math.max(0.12, Math.min(wallpaperOpacity * 0.28, 0.32)),
+                      background: `radial-gradient(circle at 50% 28%, ${matchedWp.accentColor}, transparent 68%)`
+                    }}
+                  />
+                )}
+                {matchedWp.crestUrl && (
+                  <img
+                    src={matchedWp.crestUrl}
+                    alt=""
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] h-[320px] sm:w-[460px] sm:h-[460px] object-contain transition-all duration-500"
+                    style={{
+                      opacity: Math.max(0.06, Math.min(wallpaperOpacity * 0.16, 0.22)),
+                      filter: `blur(${Math.max(0, wallpaperBlur * 0.5)}px) drop-shadow(0 0 40px rgba(0,0,0,0.8))`
+                    }}
+                  />
+                )}
+              </div>
+            );
+          })()}
+
           {/* Left Column: Gmail-Style Collapsible Sidebar (Desktop) & Slide-Over Drawer (Mobile) */}
           <FintechSidebar
             isDesktopCollapsed={isDesktopSidebarCollapsed}
@@ -2510,22 +2561,20 @@ export default function App() {
         )}
       />
 
-      {/* Animación fluida de Inicio y Cierre de Sesión (Pantalla Completa Blanca Minimalista) */}
+      {/* Animación Unificada G METRICS en Fondo Oscuro (#0b0e14) para Inicio y Cierre de Sesión */}
       {authTransition && (
-        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white transition-opacity duration-300 select-none">
-          <div className="flex flex-col items-center justify-center text-center space-y-3 px-6 max-w-lg w-full">
-            <div className="py-2 flex items-center justify-center">
-              {authTransition === 'LOGIN' ? (
-                <div className="loader-loading-minimal" />
-              ) : (
-                <div className="loader-goodbye-minimal" />
-              )}
-            </div>
-
-            <p className="text-xs text-slate-500 font-sans tracking-wide">
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#0b0e14] transition-opacity duration-300 select-none">
+          <div className="flex flex-col items-center justify-center text-center px-6 max-w-md w-full">
+            <img
+              src="/icon.png?v=4"
+              alt="G METRICS"
+              className="w-[72px] h-[72px] object-contain mb-3.5 drop-shadow-[0_0_18px_rgba(217,177,20,0.45)]"
+            />
+            <div className="gmetrics-dark-pulse">G METRICS</div>
+            <p className="mt-2.5 text-xs text-[#8b949e] font-medium tracking-wide">
               {authTransition === 'LOGIN'
-                ? 'Cargando modelos probabilísticos y telemetría en vivo...'
-                : 'Hardware y sesión desvinculados correctamente.'}
+                ? `Bienvenido${activeLicenseInfo?.clientName ? `, ${activeLicenseInfo.clientName.split(' ')[0]}` : ''} · Activando tu ventaja estadística...`
+                : 'Hasta pronto · Sesión cerrada de forma segura'}
             </p>
           </div>
         </div>

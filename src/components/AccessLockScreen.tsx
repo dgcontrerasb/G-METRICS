@@ -1149,6 +1149,21 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
           una casa de apuestas ni captamos fondos.
         </p>
       </footer>
+
+      {/* Overlay Unificado G METRICS durante conexión con Google OAuth */}
+      {googleLoading && (
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#0b0e14] transition-opacity duration-300 select-none">
+          <img
+            src="/icon.png?v=4"
+            alt="G METRICS"
+            className="w-[72px] h-[72px] object-contain mb-3.5 drop-shadow-[0_0_18px_rgba(217,177,20,0.45)]"
+          />
+          <div className="gmetrics-dark-pulse">G METRICS</div>
+          <p className="mt-2.5 text-xs text-[#8b949e] font-medium tracking-wide text-center px-6">
+            Verificando credenciales de acceso seguro...
+          </p>
+        </div>
+      )}
     </div>
   );
 };

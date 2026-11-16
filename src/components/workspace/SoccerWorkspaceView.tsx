@@ -270,12 +270,17 @@ export const SoccerWorkspaceView: React.FC<SoccerWorkspaceViewProps> = ({
         </div>
       )}
 
-      {/* Loading State */}
+      {/* Loading State Unificado G METRICS */}
       {isLoading && (
-        <div className="py-16 text-center space-y-3 bg-[#161b22] rounded-2xl border border-[#30363d] shadow-md">
-          <div className="w-10 h-10 border-2 border-[#d9b114] border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-sm text-slate-300 font-semibold">
-            Consultando programación oficial y calculando probabilidades...
+        <div className="py-16 px-4 text-center flex flex-col items-center justify-center bg-[#0b0e14]/90 rounded-2xl border border-[#30363d] shadow-md select-none">
+          <img
+            src="/icon.png?v=4"
+            alt="G METRICS"
+            className="w-16 h-16 object-contain mb-3 drop-shadow-[0_0_16px_rgba(217,177,20,0.45)]"
+          />
+          <div className="gmetrics-dark-pulse">G METRICS</div>
+          <p className="mt-2 text-xs text-[#8b949e] font-medium">
+            Calculando probabilidades de gol esperado (xG) y valor (+EV)...
           </p>
         </div>
       )}
