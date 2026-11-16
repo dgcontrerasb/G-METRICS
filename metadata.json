@@ -1,6 +1,0 @@
-{
-  "name": "G METRICS | La ciencia detrás de cada victoria",
-  "description": "Modelos probabilísticos avanzados y analítica deportiva de precisión. Deja el azar a un lado y toma decisiones con ventaja estadística.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
