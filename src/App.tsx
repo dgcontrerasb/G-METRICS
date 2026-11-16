@@ -107,6 +107,7 @@ export default function App() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [isVipModalOpen, setIsVipModalOpen] = useState(false);
+  const [isOnboardingTourOpen, setIsOnboardingTourOpen] = useState(false);
   const [freeAccessMode, setFreeAccessMode] = useState<boolean>(() => {
     try {
       return localStorage.getItem('gmetrics_free_access_mode') !== 'false';
@@ -134,6 +135,24 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
+
+  // Apertura automática del Tour de Onboarding al iniciar sesión (si el usuario no marcó ocultarlo)
+  useEffect(() => {
+    if (isAppUnlocked) {
+      try {
+        const hideTour = localStorage.getItem('gmetrics_hide_onboarding_tour') === 'true';
+        const sessionEvaluated = sessionStorage.getItem('gmetrics_session_tour_evaluated') === 'true';
+        if (!hideTour && !sessionEvaluated) {
+          sessionStorage.setItem('gmetrics_session_tour_evaluated', 'true');
+          const timer = setTimeout(() => setIsOnboardingTourOpen(true), 800);
+          return () => clearTimeout(timer);
+        }
+      } catch {
+        // no-op
+      }
+    }
+  }, [isAppUnlocked]);
+
   const [mobileActiveTab, setMobileActiveTab] = useState<MobileTab>('MATCHES');
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState<boolean>(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
@@ -2116,6 +2135,14 @@ export default function App() {
             setTimeout(() => {
               setIsAppUnlocked(true);
               setActiveLicenseInfo(result);
+              try {
+                const hideTour = localStorage.getItem('gmetrics_hide_onboarding_tour') === 'true';
+                if (!hideTour) {
+                  setTimeout(() => setIsOnboardingTourOpen(true), 600);
+                }
+              } catch {
+                // no-op
+              }
               setTimeout(() => {
                 setAuthTransition(null);
               }, 400);
@@ -2269,6 +2296,7 @@ export default function App() {
               currentDate={currentDate}
               onDateChange={handleSmartDateChange}
               onOpenMobileDrawer={() => setIsMobileDrawerOpen(true)}
+              onOpenOnboardingTour={() => setIsOnboardingTourOpen(true)}
             />
 
             {/* 2. Responsive Dual-Column Desktop Workspace (Left: Match Feed Slides Left | Right: Spotlight + Tactical Wire Above Footer) */}
@@ -2563,6 +2591,9 @@ export default function App() {
         isSavedSlipsOpen={isSavedSlipsOpen}
         onCloseSavedSlipsModal={() => setIsSavedSlipsOpen(false)}
         onOpenSavedSlipsModal={() => setIsSavedSlipsOpen(true)}
+        isOnboardingTourOpen={isOnboardingTourOpen}
+        onCloseOnboardingTour={() => setIsOnboardingTourOpen(false)}
+        onOpenGuideModal={handleOpenGuideModal}
         isPro={Boolean(
           (activeLicenseInfo?.isValid && !activeLicenseInfo?.isExpired) ||
           activeLicenseInfo?.isPermanent ||

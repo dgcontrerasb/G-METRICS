@@ -10,6 +10,7 @@ const WallpaperSelectorModal = React.lazy(() => import('./WallpaperSelectorModal
 const DidacticGuideModal = React.lazy(() => import('./DidacticGuideModal').then(m => ({ default: m.DidacticGuideModal })));
 const SavedSlipsHistoryModal = React.lazy(() => import('./SavedSlipsHistoryModal').then(m => ({ default: m.SavedSlipsHistoryModal })));
 const ParlayBuilderDrawer = React.lazy(() => import('./ParlayBuilderDrawer').then(m => ({ default: m.ParlayBuilderDrawer })));
+const OnboardingTourModal = React.lazy(() => import('./OnboardingTourModal').then(m => ({ default: m.OnboardingTourModal })));
 
 export interface AppModalsContainerProps {
   isAdminModalOpen: boolean;
@@ -41,6 +42,9 @@ export interface AppModalsContainerProps {
   onCloseSavedSlipsModal: () => void;
   onOpenSavedSlipsModal: () => void;
   isPro?: boolean;
+  isOnboardingTourOpen?: boolean;
+  onCloseOnboardingTour?: () => void;
+  onOpenGuideModal?: (tab?: GuideModalTab) => void;
 }
 
 export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
@@ -72,7 +76,10 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
   isSavedSlipsOpen,
   onCloseSavedSlipsModal,
   onOpenSavedSlipsModal,
-  isPro
+  isPro,
+  isOnboardingTourOpen,
+  onCloseOnboardingTour,
+  onOpenGuideModal
 }) => {
   return (
     <Suspense fallback={null}>
@@ -143,6 +150,15 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
 
       {/* Floating Parlay Builder Drawer & Action Pill */}
       <ParlayBuilderDrawer onOpenHistory={onOpenSavedSlipsModal} />
+
+      {/* Interactive Cyber-Fintech Onboarding Tour Modal */}
+      {isOnboardingTourOpen && onCloseOnboardingTour && (
+        <OnboardingTourModal
+          isOpen={isOnboardingTourOpen}
+          onClose={onCloseOnboardingTour}
+          onOpenGuideModal={() => onOpenGuideModal?.('GUIDE')}
+        />
+      )}
     </Suspense>
   );
 };

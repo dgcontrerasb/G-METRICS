@@ -18,7 +18,8 @@ import {
   Search,
   Download,
   Clock,
-  Crown
+  Crown,
+  Sparkles
 } from 'lucide-react';
 
 export interface MainAppHeaderProps {
@@ -55,6 +56,7 @@ export interface MainAppHeaderProps {
   currentDate?: string;
   onDateChange?: (dateStr: string) => void;
   onOpenMobileDrawer?: () => void;
+  onOpenOnboardingTour?: () => void;
 }
 
 function getShortDayLabel(offset: number, dateStr: string): string {
@@ -93,7 +95,8 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
   onSearchChange,
   currentDate,
   onDateChange,
-  onOpenMobileDrawer
+  onOpenMobileDrawer,
+  onOpenOnboardingTour
 }) => {
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState<boolean>(false);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
@@ -409,6 +412,19 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
                     <BookOpen className="w-3.5 h-3.5 text-[#d9b114]" strokeWidth={2} />
                     <span>Guía y Glosario A-Z</span>
                   </button>
+                  {onOpenOnboardingTour && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenOnboardingTour();
+                        setIsDownloadMenuOpen(false);
+                      }}
+                      className="w-full px-3.5 py-2 text-left text-xs hover:bg-[#1c2129] flex items-center gap-2.5 text-[#8b949e] hover:text-[#d9b114] cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-[#d9b114]" strokeWidth={2} />
+                      <span>Tour de Inicio Rápido</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
