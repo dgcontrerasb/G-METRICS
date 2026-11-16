@@ -727,7 +727,7 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
 
         <span className="text-[8.5px] font-mono text-slate-400 hidden sm:inline">
           {slideMode === 'LINEUPS'
-            ? (isConfirmed ? 'Toca un jugador para Props' : 'Quinteto pendiente de confirmación oficial')
+            ? (isConfirmed ? '✓ Quinteto oficial confirmado' : 'Quinteto probable · Pendiente oficial')
             : isLive
             ? 'Reloj sincronizado en vivo'
             : leagueName}
@@ -1119,11 +1119,18 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
           {/* ========================================================================= */}
           {slideMode === 'LINEUPS' && (
             <>
-              {!isConfirmed && (
+              {!isConfirmed ? (
                 <div className="absolute top-1.5 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/90 border border-amber-400/40 text-amber-300 text-[8.5px] font-mono font-bold shadow-md">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                    <span>Quinteto Probable (Oficial ~30m antes)</span>
+                    <span>🟡 Quinteto Probable (~30m antes oficial)</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="absolute top-1.5 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/95 border border-emerald-400/70 text-emerald-300 text-[8.5px] font-mono font-bold shadow-[0_0_12px_rgba(52,211,153,0.35)]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse" />
+                    <span>🟢 Quinteto Confirmado Oficial</span>
                   </div>
                 </div>
               )}
@@ -1242,10 +1249,10 @@ export const BasketballCourt25D: React.FC<BasketballCourt25DProps> = ({
 
       {/* 4. COMPACT COLLAPSIBLE BENCHES FOOTER */}
       <div className="px-2.5 pb-2 pt-0.5 bg-[#0B0F19] space-y-1.5">
-        {!isConfirmed ? (
+        {!isConfirmed && homeBench.length === 0 && awayBench.length === 0 ? (
           <div className="py-2 px-3 rounded-lg bg-slate-950/70 border border-slate-800/80 text-center text-[10px] font-mono text-slate-400 flex items-center justify-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-            <span>Rotación de banca y bajas pendientes de confirmación oficial</span>
+            <span>Rotación de banca y bajas pendientes de confirmación oficial (~30m antes)</span>
           </div>
         ) : (
           <>
