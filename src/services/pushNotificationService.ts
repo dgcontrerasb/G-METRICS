@@ -1,8 +1,12 @@
-// Servicio de suscripción a Notificaciones Push en segundo plano (Web Push API)
+// Servicio de suscripción a Notificaciones Push en segundo plano (Web Push API + Periodic Sync + Wake Lock)
 // Compatible con iOS 16.4+ (PWA en pantalla de inicio) y Android (Chrome/PWA) a $0 USD/mes
+
+import { playLiveAlertSound, LiveAlertEventKind } from './favoritesService';
 
 let cachedVapidKey: string | null = null;
 let isSubscribing = false;
+let swListenerAttached = false;
+let activeWakeLock: any = null;
 
 export function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -17,6 +21,14 @@ export function urlBase64ToUint8Array(base64String: string): Uint8Array {
     outputArray[i] = rawData.charCodeAt(i);
   }
   return outputArray;
+}
+
+function uint8ArraysEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.byteLength !== b.byteLength) return false;
+  for (let i = 0; i < a.byteLength; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 export function isPushNotificationSupported(): boolean {
@@ -45,32 +57,84 @@ export async function getVapidPublicKey(): Promise<string | null> {
 }
 
 /**
- * Activación pasiva e invisible al marcar favoritos
- * Solicita permiso y suscribe el dispositivo al APNs / FCM en segundo plano sin modales intrusivos
+ * Conecta el puente acústico entre el Service Worker en segundo plano y el motor de sonido de estadio
+ */
+export function initServiceWorkerAudioBridge(): void {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || swListenerAttached) {
+    return;
+  }
+  swListenerAttached = true;
+
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    const msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+
+    if (
+      msg.type === 'GMETRICS_PUSH_ALERT_RECEIVED' ||
+      msg.type === 'GMETRICS_PUSH_ALERT_CLICKED'
+    ) {
+      const alertKind = (msg.alertKind as LiveAlertEventKind) || 'GOAL';
+      const whistleCount = Number(msg.whistleCount || 2);
+      playLiveAlertSound(alertKind, whistleCount);
+    }
+  });
+}
+
+/**
+ * Mantiene la pantalla encendida (Screen Wake Lock API) sin consumir recursos cuando el usuario
+ * tiene partidos favoritos EN VIVO abiertos en la PWA.
+ */
+export async function syncLiveFavoritesWakeLock(hasLiveFavorites: boolean): Promise<void> {
+  if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
+
+  try {
+    if (hasLiveFavorites && document.visibilityState === 'visible') {
+      if (!activeWakeLock) {
+        activeWakeLock = await (navigator as any).wakeLock.request('screen');
+        activeWakeLock.addEventListener('release', () => {
+          activeWakeLock = null;
+        });
+      }
+    } else if (!hasLiveFavorites && activeWakeLock) {
+      await activeWakeLock.release();
+      activeWakeLock = null;
+    }
+  } catch {
+    // Wake lock puede ser rechazado en modo ahorro extremo de batería; se ignora silenciosamente
+  }
+}
+
+/**
+ * Activación y sincronización en segundo plano al marcar o desmarcar favoritos
+ * Auto-repara suscripciones antiguas si la llave VAPID cambió y registra Periodic Background Sync
  */
 export async function registerBackgroundPushSubscription(
   newFavoriteId?: string,
-  existingFavoriteIds?: Set<string>
+  existingFavoriteIds?: Set<string>,
+  promptIfNeeded = true
 ): Promise<boolean> {
   if (!isPushNotificationSupported()) return false;
+  initServiceWorkerAudioBridge();
+
   if (isSubscribing) return false;
 
   try {
     isSubscribing = true;
 
-    // 1. Validar permiso (sin bloquear al usuario si lo denegó previamente)
+    // 1. Validar permiso
     if (Notification.permission === 'denied') {
       return false;
     }
 
     if (Notification.permission !== 'granted') {
+      if (!promptIfNeeded) return false;
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         return false;
       }
     }
 
-    // 2. Obtener clave pública VAPID del servidor
+    // 2. Obtener clave pública VAPID determinística del servidor
     const vapidKey = await getVapidPublicKey();
     if (!vapidKey) return false;
 
@@ -78,18 +142,43 @@ export async function registerBackgroundPushSubscription(
     const registration = await navigator.serviceWorker.ready;
     if (!registration || !registration.pushManager) return false;
 
+    const expectedServerKey = urlBase64ToUint8Array(vapidKey);
     let subscription = await registration.pushManager.getSubscription();
+
+    // Auto-reparación: si el dispositivo tenía una suscripción con una llave VAPID anterior, renovarla
+    if (subscription && subscription.options?.applicationServerKey) {
+      const currentKey = new Uint8Array(subscription.options.applicationServerKey);
+      if (!uint8ArraysEqual(currentKey, expectedServerKey)) {
+        try {
+          await subscription.unsubscribe();
+        } catch {
+          // ignore
+        }
+        subscription = null;
+      }
+    }
+
     if (!subscription) {
-      const applicationServerKey = urlBase64ToUint8Array(vapidKey);
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: applicationServerKey as any,
+        applicationServerKey: expectedServerKey as any,
       });
     }
 
     if (!subscription) return false;
 
-    // 4. Compilar lista de partidos favoritos para enviar al backend
+    // Registrar Periodic Background Sync si el navegador lo soporta (Android PWA)
+    try {
+      if ('periodicSync' in registration) {
+        await (registration as any).periodicSync.register('gmetrics-live-favorites-sync', {
+          minInterval: 60 * 1000, // 1 minuto mínimo
+        });
+      }
+    } catch {
+      // PeriodicSync es opcional según permisos del navegador
+    }
+
+    // 4. Compilar lista exacta de partidos favoritos para enviar al backend
     const matchIds: string[] = existingFavoriteIds
       ? Array.from(existingFavoriteIds)
       : [];
@@ -97,7 +186,7 @@ export async function registerBackgroundPushSubscription(
       matchIds.push(newFavoriteId);
     }
 
-    // 5. Enviar suscripción al endpoint serverless
+    // 5. Enviar suscripción actualizada al endpoint serverless
     await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: {
@@ -111,8 +200,7 @@ export async function registerBackgroundPushSubscription(
 
     return true;
   } catch (err) {
-    // Falla silenciosa para no degradar la experiencia de usuario
-    console.debug('[Push] Registro pasivo en segundo plano omitido:', err);
+    console.debug('[Push] Sincronización en segundo plano omitida:', err);
     return false;
   } finally {
     isSubscribing = false;

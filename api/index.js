@@ -2000,11 +2000,15 @@ async function adminListActivationCodes() {
   }
 }
 var memoryPushSubscriptions = /* @__PURE__ */ new Map();
+var cachedDbPushSubscriptions = null;
+var lastPushSubSyncAt = 0;
+var PUSH_SUBS_CACHE_TTL_MS = 6e4;
 async function upsertPushSubscription(sub) {
   if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
     return false;
   }
   memoryPushSubscriptions.set(sub.endpoint, sub);
+  cachedDbPushSubscriptions = null;
   const client = getSupabaseClient();
   if (!client) return true;
   try {
@@ -2028,6 +2032,7 @@ async function upsertPushSubscription(sub) {
 async function removePushSubscription(endpoint) {
   if (!endpoint) return false;
   memoryPushSubscriptions.delete(endpoint);
+  cachedDbPushSubscriptions = null;
   const client = getSupabaseClient();
   if (!client) return true;
   try {
@@ -2037,37 +2042,50 @@ async function removePushSubscription(endpoint) {
     return true;
   }
 }
-async function getActivePushSubscriptions(matchId) {
-  const result = [];
+async function getActivePushSubscriptions(matchIdOrCandidates) {
+  const candidates = Array.isArray(matchIdOrCandidates) ? matchIdOrCandidates.map((id) => String(id || "").trim()).filter(Boolean) : matchIdOrCandidates ? [String(matchIdOrCandidates).trim()].filter(Boolean) : [];
+  const now = Date.now();
   const client = getSupabaseClient();
-  if (client) {
+  if (client && (!cachedDbPushSubscriptions || now - lastPushSubSyncAt > PUSH_SUBS_CACHE_TTL_MS)) {
     try {
       const { data, error } = await client.from("sportstats_push_subscriptions").select("*").limit(1e3);
       if (!error && Array.isArray(data)) {
+        const fetched = [];
         for (const row of data) {
-          const matchIds = Array.isArray(row.match_ids) ? row.match_ids : [];
-          if (!matchId || matchIds.length === 0 || matchIds.includes(matchId)) {
-            result.push({
-              endpoint: row.endpoint,
-              keys: {
-                p256dh: row.p256dh,
-                auth: row.auth
-              },
-              matchIds,
-              userId: row.user_id,
-              deviceId: row.device_id
-            });
-          }
+          const matchIds = Array.isArray(row.match_ids) ? row.match_ids.map(String) : [];
+          fetched.push({
+            endpoint: row.endpoint,
+            keys: {
+              p256dh: row.p256dh,
+              auth: row.auth
+            },
+            matchIds,
+            userId: row.user_id,
+            deviceId: row.device_id
+          });
         }
+        cachedDbPushSubscriptions = fetched;
+        lastPushSubSyncAt = now;
       }
     } catch {
     }
   }
+  const combinedMap = /* @__PURE__ */ new Map();
+  if (cachedDbPushSubscriptions) {
+    for (const sub of cachedDbPushSubscriptions) {
+      combinedMap.set(sub.endpoint, sub);
+    }
+  }
   for (const [endpoint, sub] of memoryPushSubscriptions.entries()) {
-    if (!result.some((r) => r.endpoint === endpoint)) {
-      if (!matchId || !sub.matchIds || sub.matchIds.length === 0 || sub.matchIds.includes(matchId)) {
-        result.push(sub);
-      }
+    combinedMap.set(endpoint, sub);
+  }
+  const result = [];
+  for (const sub of combinedMap.values()) {
+    const subMatches = Array.isArray(sub.matchIds) ? sub.matchIds : [];
+    if (candidates.length === 0) {
+      result.push(sub);
+    } else if (subMatches.length > 0 && candidates.some((c) => subMatches.includes(c))) {
+      result.push(sub);
     }
   }
   return result;
@@ -5858,11 +5876,14 @@ var vapidPrivateKey = process.env.VAPID_PRIVATE_KEY?.trim() || "";
 var VAPID_SUBJECT = process.env.VAPID_SUBJECT?.trim() || "mailto:soporte@g-metrics.com";
 if (!vapidPublicKey || !vapidPrivateKey) {
   try {
-    const generated = webpush.generateVAPIDKeys();
-    vapidPublicKey = vapidPublicKey || generated.publicKey;
-    vapidPrivateKey = vapidPrivateKey || generated.privateKey;
+    const vapidSeedMaterial = process.env.VAPID_SECRET_SEED || process.env.VITE_SUPABASE_URL || "gmetrics-deterministic-vapid-p256-v2";
+    const ecdh = crypto3.createECDH("prime256v1");
+    const seedHash = crypto3.createHash("sha256").update(vapidSeedMaterial).digest();
+    ecdh.setPrivateKey(seedHash);
+    vapidPublicKey = vapidPublicKey || ecdh.getPublicKey().toString("base64url");
+    vapidPrivateKey = vapidPrivateKey || ecdh.getPrivateKey().toString("base64url");
   } catch (err) {
-    console.error("[Web-Push] Error generando llaves VAPID temporales:", err);
+    console.error("[Web-Push] Error generando llaves VAPID determin\xEDsticas:", err);
   }
 }
 try {
@@ -8167,6 +8188,9 @@ app.get("/api/live-pulse", dataRateLimitMiddleware, async (req, res) => {
         }
       }
       setCacheItem(pulseCacheKey, liveDeltas);
+      dispatchLivePushNotifications(liveDeltas).catch((pushErr) => {
+        console.warn("[Live-Pulse Push Dispatcher Warning]:", pushErr);
+      });
       return liveDeltas;
     });
     return res.json({
@@ -10465,6 +10489,154 @@ app.delete("/api/admin/feedback", async (req, res) => {
     return res.status(500).json({ success: false, error: "Error al eliminar calificaci\xF3n" });
   }
 });
+var serverLiveMatchSnapshots = /* @__PURE__ */ new Map();
+var sentPushEventTags = /* @__PURE__ */ new Set();
+function getVibrationPatternForAlertKind(alertKind) {
+  switch (alertKind) {
+    case "GOAL":
+      return [300, 100, 300, 100, 600];
+    case "PERIOD_CHANGE":
+      return [180, 90, 180, 90, 450];
+    case "RED_CARD":
+      return [450, 80, 450];
+    case "VAR_DISALLOWED":
+      return [120, 60, 120, 60, 350];
+    default:
+      return [200, 100, 200];
+  }
+}
+async function dispatchLivePushNotifications(liveDeltas) {
+  if (!vapidPublicKey || !vapidPrivateKey || !Array.isArray(liveDeltas) || liveDeltas.length === 0) {
+    return;
+  }
+  if (sentPushEventTags.size > 2e3) {
+    sentPushEventTags.clear();
+  }
+  for (const delta of liveDeltas) {
+    const matchKey = String(delta.id || delta.espnEventId || `${delta.homeKey}_${delta.awayKey}`);
+    if (!matchKey) continue;
+    const candidateIds = Array.from(
+      new Set(
+        [
+          delta.id ? String(delta.id) : "",
+          delta.espnEventId ? String(delta.espnEventId) : "",
+          `${delta.homeKey}_${delta.awayKey}`
+        ].filter(Boolean)
+      )
+    );
+    const newH = Number(delta.homeScore ?? 0);
+    const newA = Number(delta.awayScore ?? 0);
+    const statRedH = Number(delta.liveStats?.home?.redCards ?? 0);
+    const statRedA = Number(delta.liveStats?.away?.redCards ?? 0);
+    const evRedH = Array.isArray(delta.liveEvents) ? delta.liveEvents.filter((e) => e?.type === "RED_CARD" && e?.team === "HOME").length : 0;
+    const evRedA = Array.isArray(delta.liveEvents) ? delta.liveEvents.filter((e) => e?.type === "RED_CARD" && e?.team === "AWAY").length : 0;
+    const redHome = Math.max(statRedH, evRedH);
+    const redAway = Math.max(statRedA, evRedA);
+    const isHT = Boolean(delta.isHalfTime || delta.statusShort === "HT");
+    const minLabel = isHT ? "MT 45'" : delta.minute ? `${delta.minute}'` : "EN VIVO";
+    const prev = serverLiveMatchSnapshots.get(matchKey);
+    serverLiveMatchSnapshots.set(matchKey, {
+      homeScore: newH,
+      awayScore: newA,
+      redHome,
+      redAway,
+      isHalfTime: isHT,
+      status: delta.status,
+      updatedAt: Date.now()
+    });
+    if (!prev) continue;
+    let alertKind = null;
+    let title = "";
+    let body = "";
+    let tag = "";
+    let whistleCount = 1;
+    if (newH > prev.homeScore || newA > prev.awayScore) {
+      const scorerName = newA > prev.awayScore && newH === prev.homeScore ? delta.awayName : delta.homeName;
+      alertKind = "GOAL";
+      tag = `gmetrics_evt_goal_${matchKey}_${newH}_${newA}`;
+      title = `\u26BD \xA1GOL EN VIVO! \xB7 ${newH} - ${newA}`;
+      body = `${delta.homeName} ${newH} - ${newA} ${delta.awayName} (${minLabel})
+\xA1Gol de ${scorerName}!`;
+    } else if (newH < prev.homeScore || newA < prev.awayScore) {
+      const affectedTeam = newA < prev.awayScore ? delta.awayName : delta.homeName;
+      alertKind = "VAR_DISALLOWED";
+      tag = `gmetrics_evt_var_${matchKey}_${newH}_${newA}`;
+      title = `\u26A0\uFE0F GOL ANULADO \xB7 VAR \xB7 ${newH} - ${newA}`;
+      body = `Anulado a ${affectedTeam} (${minLabel})
+Marcador corregido: ${delta.homeName} ${newH} - ${newA} ${delta.awayName}`;
+    } else if (redHome > prev.redHome || redAway > prev.redAway) {
+      const redTeam = redAway > prev.redAway ? delta.awayName : delta.homeName;
+      alertKind = "RED_CARD";
+      tag = `gmetrics_evt_red_${matchKey}_${redHome}_${redAway}`;
+      title = `\u{1F7E5} EXPULSI\xD3N \xB7 ROJA \xB7 ${newH} - ${newA}`;
+      body = `Tarjeta roja en ${redTeam} (${minLabel})
+${delta.homeName} vs ${delta.awayName}`;
+    } else if (!prev.isHalfTime && isHT) {
+      alertKind = "PERIOD_CHANGE";
+      whistleCount = 2;
+      tag = `gmetrics_evt_ht_${matchKey}`;
+      title = `\u23F8\uFE0F FIN 1T \xB7 DESCANSO \xB7 ${newH} - ${newA}`;
+      body = `Entretiempo: ${delta.homeName} ${newH} - ${newA} ${delta.awayName}`;
+    } else if (prev.isHalfTime && !isHT && delta.status === "IN_PLAY") {
+      alertKind = "PERIOD_CHANGE";
+      whistleCount = 1;
+      tag = `gmetrics_evt_2t_${matchKey}`;
+      title = `\u25B6\uFE0F INICIO 2DO TIEMPO \xB7 ${newH} - ${newA}`;
+      body = `Arranca la segunda mitad: ${delta.homeName} ${newH} - ${newA} ${delta.awayName}`;
+    } else if (prev.status !== "FINISHED" && delta.status === "FINISHED") {
+      alertKind = "PERIOD_CHANGE";
+      whistleCount = 3;
+      tag = `gmetrics_evt_ft_${matchKey}`;
+      title = `\u{1F3C1} FINAL DEL PARTIDO \xB7 ${newH} - ${newA}`;
+      body = `Marcador definitivo: ${delta.homeName} ${newH} - ${newA} ${delta.awayName}`;
+    }
+    if (!alertKind || !tag || sentPushEventTags.has(tag)) continue;
+    sentPushEventTags.add(tag);
+    const subscribers = await getActivePushSubscriptions(candidateIds);
+    if (!subscribers || subscribers.length === 0) continue;
+    const payload = JSON.stringify({
+      title,
+      body,
+      icon: "/icon-512.png",
+      badge: "/icon.png",
+      tag,
+      alertKind,
+      whistleCount,
+      vibrate: getVibrationPatternForAlertKind(alertKind),
+      data: {
+        url: "/",
+        matchId: delta.id || delta.espnEventId || matchKey,
+        alertKind,
+        whistleCount,
+        timestamp: Date.now()
+      }
+    });
+    await Promise.allSettled(
+      subscribers.map(async (sub) => {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: {
+                p256dh: sub.keys.p256dh,
+                auth: sub.keys.auth
+              }
+            },
+            payload,
+            {
+              TTL: 180,
+              urgency: "high"
+            }
+          );
+        } catch (err) {
+          if (err?.statusCode === 410 || err?.statusCode === 404) {
+            await removePushSubscription(sub.endpoint);
+          }
+        }
+      })
+    );
+  }
+}
 app.get("/api/push/vapid-public-key", (_req, res) => {
   res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
   res.json({
@@ -10498,7 +10670,7 @@ app.post("/api/push/subscribe", async (req, res) => {
 });
 app.post("/api/push/send-alert", dataRateLimitMiddleware, async (req, res) => {
   try {
-    const { matchId, title, body, icon, badge, url, tag } = req.body || {};
+    const { matchId, title, body, icon, badge, url, tag, alertKind, whistleCount } = req.body || {};
     if (!title) {
       return res.status(400).json({ error: "T\xEDtulo de alerta requerido" });
     }
@@ -10506,14 +10678,20 @@ app.post("/api/push/send-alert", dataRateLimitMiddleware, async (req, res) => {
     if (!subscribers || subscribers.length === 0) {
       return res.json({ success: true, delivered: 0, total: 0, message: "No hay suscriptores registrados para este partido" });
     }
+    const resolvedAlertKind = String(alertKind || "GOAL");
     const payload = JSON.stringify({
       title: sanitizeText(String(title), 80),
       body: sanitizeText(String(body || "\xA1Evento de partido en vivo!"), 160),
       icon: icon || "/icon-512.png",
       badge: badge || "/icon.png",
+      alertKind: resolvedAlertKind,
+      whistleCount: Number(whistleCount || 1),
+      vibrate: getVibrationPatternForAlertKind(resolvedAlertKind),
       data: {
         url: url || "/",
         matchId: matchId ? String(matchId) : null,
+        alertKind: resolvedAlertKind,
+        whistleCount: Number(whistleCount || 1),
         timestamp: Date.now()
       },
       tag: tag || `gmetrics-${matchId || "match-alert"}`
@@ -10534,7 +10712,7 @@ app.post("/api/push/send-alert", dataRateLimitMiddleware, async (req, res) => {
             },
             payload,
             {
-              TTL: 60,
+              TTL: 120,
               urgency: "high"
             }
           );

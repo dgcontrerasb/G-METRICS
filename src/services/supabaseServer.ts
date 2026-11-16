@@ -2201,12 +2201,16 @@ export interface PushSubscriptionData {
 }
 
 const memoryPushSubscriptions = new Map<string, PushSubscriptionData>();
+let cachedDbPushSubscriptions: PushSubscriptionData[] | null = null;
+let lastPushSubSyncAt = 0;
+const PUSH_SUBS_CACHE_TTL_MS = 60_000; // 60s caché en memoria para $0 USD overhead en Supabase
 
 export async function upsertPushSubscription(sub: PushSubscriptionData): Promise<boolean> {
   if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
     return false;
   }
   memoryPushSubscriptions.set(sub.endpoint, sub);
+  cachedDbPushSubscriptions = null; // Invalidar caché para reflejar cambios al instante
 
   const client = getSupabaseClient();
   if (!client) return true;
@@ -2233,6 +2237,7 @@ export async function upsertPushSubscription(sub: PushSubscriptionData): Promise
 export async function removePushSubscription(endpoint: string): Promise<boolean> {
   if (!endpoint) return false;
   memoryPushSubscriptions.delete(endpoint);
+  cachedDbPushSubscriptions = null;
 
   const client = getSupabaseClient();
   if (!client) return true;
@@ -2248,11 +2253,17 @@ export async function removePushSubscription(endpoint: string): Promise<boolean>
   }
 }
 
-export async function getActivePushSubscriptions(matchId?: string): Promise<PushSubscriptionData[]> {
-  const result: PushSubscriptionData[] = [];
+export async function getActivePushSubscriptions(matchIdOrCandidates?: string | string[]): Promise<PushSubscriptionData[]> {
+  const candidates: string[] = Array.isArray(matchIdOrCandidates)
+    ? matchIdOrCandidates.map((id) => String(id || '').trim()).filter(Boolean)
+    : matchIdOrCandidates
+    ? [String(matchIdOrCandidates).trim()].filter(Boolean)
+    : [];
+
+  const now = Date.now();
   const client = getSupabaseClient();
 
-  if (client) {
+  if (client && (!cachedDbPushSubscriptions || now - lastPushSubSyncAt > PUSH_SUBS_CACHE_TTL_MS)) {
     try {
       const { data, error } = await client
         .from('sportstats_push_subscriptions')
@@ -2260,35 +2271,47 @@ export async function getActivePushSubscriptions(matchId?: string): Promise<Push
         .limit(1000);
 
       if (!error && Array.isArray(data)) {
+        const fetched: PushSubscriptionData[] = [];
         for (const row of data) {
           const matchIds: string[] = Array.isArray(row.match_ids)
-            ? row.match_ids
+            ? row.match_ids.map(String)
             : [];
-          if (!matchId || matchIds.length === 0 || matchIds.includes(matchId)) {
-            result.push({
-              endpoint: row.endpoint,
-              keys: {
-                p256dh: row.p256dh,
-                auth: row.auth,
-              },
-              matchIds,
-              userId: row.user_id,
-              deviceId: row.device_id,
-            });
-          }
+          fetched.push({
+            endpoint: row.endpoint,
+            keys: {
+              p256dh: row.p256dh,
+              auth: row.auth,
+            },
+            matchIds,
+            userId: row.user_id,
+            deviceId: row.device_id,
+          });
         }
+        cachedDbPushSubscriptions = fetched;
+        lastPushSubSyncAt = now;
       }
     } catch {
-      // ignore
+      // ignore network error and rely on memory fallback
     }
   }
 
-  // Combinar con la memoria en vivo para evitar perder eventos por eventual consistencia
+  const combinedMap = new Map<string, PushSubscriptionData>();
+  if (cachedDbPushSubscriptions) {
+    for (const sub of cachedDbPushSubscriptions) {
+      combinedMap.set(sub.endpoint, sub);
+    }
+  }
   for (const [endpoint, sub] of memoryPushSubscriptions.entries()) {
-    if (!result.some((r) => r.endpoint === endpoint)) {
-      if (!matchId || !sub.matchIds || sub.matchIds.length === 0 || sub.matchIds.includes(matchId)) {
-        result.push(sub);
-      }
+    combinedMap.set(endpoint, sub);
+  }
+
+  const result: PushSubscriptionData[] = [];
+  for (const sub of combinedMap.values()) {
+    const subMatches = Array.isArray(sub.matchIds) ? sub.matchIds : [];
+    if (candidates.length === 0) {
+      result.push(sub);
+    } else if (subMatches.length > 0 && candidates.some((c) => subMatches.includes(c))) {
+      result.push(sub);
     }
   }
 

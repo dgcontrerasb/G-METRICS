@@ -53,7 +53,11 @@ import {
   triggerNativeSystemNotification,
   LiveGoalAlertItem
 } from './services/favoritesService';
-import { registerBackgroundPushSubscription } from './services/pushNotificationService';
+import {
+  registerBackgroundPushSubscription,
+  initServiceWorkerAudioBridge,
+  syncLiveFavoritesWakeLock
+} from './services/pushNotificationService';
 import { getBrowserSupabase } from './services/supabaseBrowser';
 import { checkIsProClient } from './components/ProGate';
 
@@ -211,16 +215,36 @@ export default function App() {
       const next = new Set(prev);
       if (next.has(fixtureId)) {
         next.delete(fixtureId);
+        // Sincronizar también al quitar un favorito para actualizar la lista en el servidor Push
+        registerBackgroundPushSubscription(undefined, next, false).catch(() => {});
       } else {
         next.add(fixtureId);
-        // Request browser notification permission when user adds a favorite match
+        // Solicitar permiso de notificación y registrar suscripción Web Push al añadir favorito
         requestBrowserNotificationPermission().catch(() => {});
-        registerBackgroundPushSubscription(fixtureId, next).catch(() => {});
+        registerBackgroundPushSubscription(fixtureId, next, true).catch(() => {});
       }
       saveStoredFavoriteIds(next);
       return next;
     });
   }, []);
+
+  // Puente acústico con Service Worker y re-sincronización de favoritos al abrir la PWA
+  useEffect(() => {
+    initServiceWorkerAudioBridge();
+    if (favoriteFixtureIds.size > 0) {
+      registerBackgroundPushSubscription(undefined, favoriteFixtureIds, false).catch(() => {});
+    }
+  }, [favoriteFixtureIds]);
+
+  // Wake Lock inteligente cuando hay partidos favoritos EN VIVO activos en pantalla
+  useEffect(() => {
+    const hasLiveSoccerFav = fixtures.some(
+      (f) =>
+        favoriteFixtureIds.has(f.id) &&
+        ['IN_PLAY', 'HALFTIME', 'PAUSED', 'EXTRA_TIME', 'PENALTY_SHOOTOUT'].includes(f.status)
+    );
+    syncLiveFavoritesWakeLock(hasLiveSoccerFav).catch(() => {});
+  }, [fixtures, favoriteFixtureIds]);
 
   const pushLiveGoalAlert = useCallback((item: LiveGoalAlertItem) => {
     setLiveGoalAlerts((prev) => [item, ...prev.filter((a) => a.fixtureId !== item.fixtureId)].slice(0, 3));

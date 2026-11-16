@@ -66,11 +66,18 @@ const VAPID_SUBJECT = process.env.VAPID_SUBJECT?.trim() || 'mailto:soporte@g-met
 
 if (!vapidPublicKey || !vapidPrivateKey) {
   try {
-    const generated = webpush.generateVAPIDKeys();
-    vapidPublicKey = vapidPublicKey || generated.publicKey;
-    vapidPrivateKey = vapidPrivateKey || generated.privateKey;
+    // Generación determinística ECDH P-256 para que las suscripciones sobrevivan a Cold Starts en Vercel Serverless
+    const vapidSeedMaterial =
+      process.env.VAPID_SECRET_SEED ||
+      process.env.VITE_SUPABASE_URL ||
+      'gmetrics-deterministic-vapid-p256-v2';
+    const ecdh = crypto.createECDH('prime256v1');
+    const seedHash = crypto.createHash('sha256').update(vapidSeedMaterial).digest();
+    ecdh.setPrivateKey(seedHash);
+    vapidPublicKey = vapidPublicKey || ecdh.getPublicKey().toString('base64url');
+    vapidPrivateKey = vapidPrivateKey || ecdh.getPrivateKey().toString('base64url');
   } catch (err) {
-    console.error('[Web-Push] Error generando llaves VAPID temporales:', err);
+    console.error('[Web-Push] Error generando llaves VAPID determinísticas:', err);
   }
 }
 
@@ -2660,6 +2667,10 @@ app.get('/api/live-pulse', dataRateLimitMiddleware, async (req, res) => {
       }
 
       setCacheItem(pulseCacheKey, liveDeltas);
+      // Disparar notificaciones Web Push en segundo plano para partidos favoritos sin bloquear la respuesta
+      dispatchLivePushNotifications(liveDeltas).catch((pushErr) => {
+        console.warn('[Live-Pulse Push Dispatcher Warning]:', pushErr);
+      });
       return liveDeltas;
     });
 
@@ -5428,6 +5439,206 @@ app.delete('/api/admin/feedback', async (req, res) => {
 // ENDPOINTS WEB-PUSH ($0 USD/MES - NOTIFICACIONES BACKGROUND APNs & FCM)
 // =========================================================================
 
+interface ServerLiveMatchSnapshot {
+  homeScore: number;
+  awayScore: number;
+  redHome: number;
+  redAway: number;
+  isHalfTime: boolean;
+  status: string;
+  updatedAt: number;
+}
+
+const serverLiveMatchSnapshots = new Map<string, ServerLiveMatchSnapshot>();
+const sentPushEventTags = new Set<string>();
+
+function getVibrationPatternForAlertKind(alertKind?: string): number[] {
+  switch (alertKind) {
+    case 'GOAL':
+      return [300, 100, 300, 100, 600];
+    case 'PERIOD_CHANGE':
+      return [180, 90, 180, 90, 450];
+    case 'RED_CARD':
+      return [450, 80, 450];
+    case 'VAR_DISALLOWED':
+      return [120, 60, 120, 60, 350];
+    default:
+      return [200, 100, 200];
+  }
+}
+
+async function dispatchLivePushNotifications(
+  liveDeltas: Array<{
+    id?: string;
+    espnEventId?: string;
+    homeKey: string;
+    awayKey: string;
+    homeName: string;
+    awayName: string;
+    homeScore: number;
+    awayScore: number;
+    minute: number;
+    isHalfTime?: boolean;
+    statusShort?: string;
+    status: string;
+    liveStats?: any;
+    liveEvents?: any[];
+  }>
+): Promise<void> {
+  if (!vapidPublicKey || !vapidPrivateKey || !Array.isArray(liveDeltas) || liveDeltas.length === 0) {
+    return;
+  }
+
+  // Limpiar tags antiguos si el set crece demasiado
+  if (sentPushEventTags.size > 2000) {
+    sentPushEventTags.clear();
+  }
+
+  for (const delta of liveDeltas) {
+    const matchKey = String(delta.id || delta.espnEventId || `${delta.homeKey}_${delta.awayKey}`);
+    if (!matchKey) continue;
+
+    const candidateIds = Array.from(
+      new Set(
+        [
+          delta.id ? String(delta.id) : '',
+          delta.espnEventId ? String(delta.espnEventId) : '',
+          `${delta.homeKey}_${delta.awayKey}`,
+        ].filter(Boolean)
+      )
+    );
+
+    const newH = Number(delta.homeScore ?? 0);
+    const newA = Number(delta.awayScore ?? 0);
+    const statRedH = Number(delta.liveStats?.home?.redCards ?? 0);
+    const statRedA = Number(delta.liveStats?.away?.redCards ?? 0);
+    const evRedH = Array.isArray(delta.liveEvents)
+      ? delta.liveEvents.filter((e: any) => e?.type === 'RED_CARD' && e?.team === 'HOME').length
+      : 0;
+    const evRedA = Array.isArray(delta.liveEvents)
+      ? delta.liveEvents.filter((e: any) => e?.type === 'RED_CARD' && e?.team === 'AWAY').length
+      : 0;
+    const redHome = Math.max(statRedH, evRedH);
+    const redAway = Math.max(statRedA, evRedA);
+    const isHT = Boolean(delta.isHalfTime || delta.statusShort === 'HT');
+    const minLabel = isHT ? "MT 45'" : delta.minute ? `${delta.minute}'` : 'EN VIVO';
+
+    const prev = serverLiveMatchSnapshots.get(matchKey);
+    serverLiveMatchSnapshots.set(matchKey, {
+      homeScore: newH,
+      awayScore: newA,
+      redHome,
+      redAway,
+      isHalfTime: isHT,
+      status: delta.status,
+      updatedAt: Date.now(),
+    });
+
+    // En la primera lectura del partido en memoria solo guardamos la foto base para no enviar falsos positivos
+    if (!prev) continue;
+
+    let alertKind: 'GOAL' | 'VAR_DISALLOWED' | 'RED_CARD' | 'PERIOD_CHANGE' | null = null;
+    let title = '';
+    let body = '';
+    let tag = '';
+    let whistleCount = 1;
+
+    // 1. GOL ANOTADO
+    if (newH > prev.homeScore || newA > prev.awayScore) {
+      const scorerName = newA > prev.awayScore && newH === prev.homeScore ? delta.awayName : delta.homeName;
+      alertKind = 'GOAL';
+      tag = `gmetrics_evt_goal_${matchKey}_${newH}_${newA}`;
+      title = `⚽ ¡GOL EN VIVO! · ${newH} - ${newA}`;
+      body = `${delta.homeName} ${newH} - ${newA} ${delta.awayName} (${minLabel})\n¡Gol de ${scorerName}!`;
+    }
+    // 2. GOL ANULADO (VAR)
+    else if (newH < prev.homeScore || newA < prev.awayScore) {
+      const affectedTeam = newA < prev.awayScore ? delta.awayName : delta.homeName;
+      alertKind = 'VAR_DISALLOWED';
+      tag = `gmetrics_evt_var_${matchKey}_${newH}_${newA}`;
+      title = `⚠️ GOL ANULADO · VAR · ${newH} - ${newA}`;
+      body = `Anulado a ${affectedTeam} (${minLabel})\nMarcador corregido: ${delta.homeName} ${newH} - ${newA} ${delta.awayName}`;
+    }
+    // 3. TARJETA ROJA / EXPULSIÓN
+    else if (redHome > prev.redHome || redAway > prev.redAway) {
+      const redTeam = redAway > prev.redAway ? delta.awayName : delta.homeName;
+      alertKind = 'RED_CARD';
+      tag = `gmetrics_evt_red_${matchKey}_${redHome}_${redAway}`;
+      title = `🟥 EXPULSIÓN · ROJA · ${newH} - ${newA}`;
+      body = `Tarjeta roja en ${redTeam} (${minLabel})\n${delta.homeName} vs ${delta.awayName}`;
+    }
+    // 4. CAMBIO DE PERIODO (Entretiempo, Inicio 2T, Final)
+    else if (!prev.isHalfTime && isHT) {
+      alertKind = 'PERIOD_CHANGE';
+      whistleCount = 2;
+      tag = `gmetrics_evt_ht_${matchKey}`;
+      title = `⏸️ FIN 1T · DESCANSO · ${newH} - ${newA}`;
+      body = `Entretiempo: ${delta.homeName} ${newH} - ${newA} ${delta.awayName}`;
+    } else if (prev.isHalfTime && !isHT && delta.status === 'IN_PLAY') {
+      alertKind = 'PERIOD_CHANGE';
+      whistleCount = 1;
+      tag = `gmetrics_evt_2t_${matchKey}`;
+      title = `▶️ INICIO 2DO TIEMPO · ${newH} - ${newA}`;
+      body = `Arranca la segunda mitad: ${delta.homeName} ${newH} - ${newA} ${delta.awayName}`;
+    } else if (prev.status !== 'FINISHED' && delta.status === 'FINISHED') {
+      alertKind = 'PERIOD_CHANGE';
+      whistleCount = 3;
+      tag = `gmetrics_evt_ft_${matchKey}`;
+      title = `🏁 FINAL DEL PARTIDO · ${newH} - ${newA}`;
+      body = `Marcador definitivo: ${delta.homeName} ${newH} - ${newA} ${delta.awayName}`;
+    }
+
+    if (!alertKind || !tag || sentPushEventTags.has(tag)) continue;
+    sentPushEventTags.add(tag);
+
+    const subscribers = await getActivePushSubscriptions(candidateIds);
+    if (!subscribers || subscribers.length === 0) continue;
+
+    const payload = JSON.stringify({
+      title,
+      body,
+      icon: '/icon-512.png',
+      badge: '/icon.png',
+      tag,
+      alertKind,
+      whistleCount,
+      vibrate: getVibrationPatternForAlertKind(alertKind),
+      data: {
+        url: '/',
+        matchId: delta.id || delta.espnEventId || matchKey,
+        alertKind,
+        whistleCount,
+        timestamp: Date.now(),
+      },
+    });
+
+    await Promise.allSettled(
+      subscribers.map(async (sub) => {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: {
+                p256dh: sub.keys.p256dh,
+                auth: sub.keys.auth,
+              },
+            },
+            payload,
+            {
+              TTL: 180,
+              urgency: 'high',
+            }
+          );
+        } catch (err: any) {
+          if (err?.statusCode === 410 || err?.statusCode === 404) {
+            await removePushSubscription(sub.endpoint);
+          }
+        }
+      })
+    );
+  }
+}
+
 app.get('/api/push/vapid-public-key', (_req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
   res.json({
@@ -5465,7 +5676,7 @@ app.post('/api/push/subscribe', async (req, res) => {
 
 app.post('/api/push/send-alert', dataRateLimitMiddleware, async (req, res) => {
   try {
-    const { matchId, title, body, icon, badge, url, tag } = req.body || {};
+    const { matchId, title, body, icon, badge, url, tag, alertKind, whistleCount } = req.body || {};
     if (!title) {
       return res.status(400).json({ error: 'Título de alerta requerido' });
     }
@@ -5475,14 +5686,20 @@ app.post('/api/push/send-alert', dataRateLimitMiddleware, async (req, res) => {
       return res.json({ success: true, delivered: 0, total: 0, message: 'No hay suscriptores registrados para este partido' });
     }
 
+    const resolvedAlertKind = String(alertKind || 'GOAL');
     const payload = JSON.stringify({
       title: sanitizeText(String(title), 80),
       body: sanitizeText(String(body || '¡Evento de partido en vivo!'), 160),
       icon: icon || '/icon-512.png',
       badge: badge || '/icon.png',
+      alertKind: resolvedAlertKind,
+      whistleCount: Number(whistleCount || 1),
+      vibrate: getVibrationPatternForAlertKind(resolvedAlertKind),
       data: {
         url: url || '/',
         matchId: matchId ? String(matchId) : null,
+        alertKind: resolvedAlertKind,
+        whistleCount: Number(whistleCount || 1),
         timestamp: Date.now(),
       },
       tag: tag || `gmetrics-${matchId || 'match-alert'}`,
@@ -5505,7 +5722,7 @@ app.post('/api/push/send-alert', dataRateLimitMiddleware, async (req, res) => {
             },
             payload,
             {
-              TTL: 60,
+              TTL: 120,
               urgency: 'high',
             }
           );
