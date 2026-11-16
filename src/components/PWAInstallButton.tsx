@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, Smartphone, X, CheckCircle2, MoreVertical } from 'lucide-react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
@@ -146,9 +147,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   };
 
   const renderGuideModal = () => {
-    if (!showGuideModal) return null;
+    if (!showGuideModal || typeof document === 'undefined') return null;
 
-    return (
+    return createPortal(
       <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
         {/* Backdrop blur (fondo muy visible y difuminado) */}
         <div
@@ -243,7 +244,8 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             </button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   };
 
@@ -289,48 +291,52 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
 
   return (
     <>
-      <div
-        className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 w-[calc(100vw-32px)] sm:w-[360px] z-40 transition-all duration-500 ease-out ${
-          floatingStage === 'visible' && !isTourActive
-            ? 'opacity-100 translate-y-0 pointer-events-auto'
-            : 'opacity-0 translate-y-4 pointer-events-none'
-        }`}
-      >
-        <div className="relative overflow-hidden rounded-2xl bg-[#161b22]/95 backdrop-blur-xl border border-[#d9b114]/45 shadow-2xl shadow-black/70 p-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-[#0b0e14] border border-[#d9b114]/40 flex items-center justify-center shrink-0">
-              <Smartphone className="w-4 h-4 text-[#d9b114]" strokeWidth={2} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-white truncate">
-                Instalar G METRICS
-              </p>
-              <p className="text-[11px] text-[#8b949e] truncate">
-                Acceso directo y pantalla completa en 1 clic
-              </p>
-            </div>
-          </div>
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 w-[calc(100vw-32px)] sm:w-[360px] z-40 transition-all duration-500 ease-out ${
+              floatingStage === 'visible' && !isTourActive
+                ? 'opacity-100 translate-y-0 pointer-events-auto'
+                : 'opacity-0 translate-y-4 pointer-events-none'
+            }`}
+          >
+            <div className="relative overflow-hidden rounded-2xl bg-[#161b22]/95 backdrop-blur-xl border border-[#d9b114]/45 shadow-2xl shadow-black/70 p-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-[#0b0e14] border border-[#d9b114]/40 flex items-center justify-center shrink-0">
+                  <Smartphone className="w-4 h-4 text-[#d9b114]" strokeWidth={2} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-white truncate">
+                    Instalar G METRICS
+                  </p>
+                  <p className="text-[11px] text-[#8b949e] truncate">
+                    Acceso directo y pantalla completa en 1 clic
+                  </p>
+                </div>
+              </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={handleInstallClick}
-              className="cyber-chrome-chip cyber-chrome-chip-gold h-7 px-3 text-[11px] font-bold cursor-pointer"
-            >
-              <Download className="w-3 h-3 text-[#d9b114]" strokeWidth={2} />
-              <span>Instalar</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFloatingStage('fading')}
-              className="p-1.5 rounded-lg text-[#8b949e] hover:text-white hover:bg-[#1c2129] cursor-pointer transition-colors"
-              title="Cerrar recomendación"
-            >
-              <X className="w-3.5 h-3.5" strokeWidth={2} />
-            </button>
-          </div>
-        </div>
-      </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleInstallClick}
+                  className="cyber-chrome-chip cyber-chrome-chip-gold h-7 px-3 text-[11px] font-bold cursor-pointer"
+                >
+                  <Download className="w-3 h-3 text-[#d9b114]" strokeWidth={2} />
+                  <span>Instalar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFloatingStage('fading')}
+                  className="p-1.5 rounded-lg text-[#8b949e] hover:text-white hover:bg-[#1c2129] cursor-pointer transition-colors"
+                  title="Cerrar recomendación"
+                >
+                  <X className="w-3.5 h-3.5" strokeWidth={2} />
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {renderGuideModal()}
     </>

@@ -447,8 +447,8 @@ export const MainAppHeader: React.FC<MainAppHeaderProps> = ({
       </div>
 
       {/* Fila 2: Sub-barra Compacta de Búsqueda y Selector de Días */}
-      <div data-tour="tour-search-date" className="border-t border-[#21262d] bg-[#0b0e14]/90 px-3 sm:px-6 py-1.5 transition-colors">
-        <div className="max-w-6xl mx-auto flex items-center gap-2">
+      <div className="border-t border-[#21262d] bg-[#0b0e14]/90 px-3 sm:px-6 py-1.5 transition-colors">
+        <div data-tour="tour-search-date" className="max-w-6xl mx-auto flex items-center gap-2">
           {onSearchChange && (
             <div className="relative flex-1 min-w-0">
               <Search

@@ -39,6 +39,22 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isTourActive, setIsTourActive] = useState<boolean>(() => {
+    try {
+      return typeof document !== 'undefined' && document.querySelector('[data-tour-active="true"]') !== null;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    const handleTourStatus = (e: Event) => {
+      const customEvent = e as CustomEvent<{ isOpen: boolean }>;
+      setIsTourActive(Boolean(customEvent.detail?.isOpen));
+    };
+    window.addEventListener('gmetrics-tour-status', handleTourStatus);
+    return () => window.removeEventListener('gmetrics-tour-status', handleTourStatus);
+  }, []);
 
   const isFreeMode = typeof window !== 'undefined'
     ? localStorage.getItem('gmetrics_free_access_mode') !== 'false'
@@ -186,7 +202,7 @@ export const UserFeedbackWidget: React.FC<UserFeedbackWidgetProps> = ({
   return (
     <>
       {/* 1. Notificación Micro-Cápsula Sutil y Compacta para invitar a calificar */}
-      {showFloatingPrompt && !isOpen && (
+      {showFloatingPrompt && !isOpen && !isTourActive && (
         <div className="fixed bottom-16 sm:bottom-5 left-3 sm:left-5 z-40 max-w-[340px] sm:max-w-sm bg-[#161b22]/95 backdrop-blur-md border border-[#30363d] rounded-2xl shadow-2xl px-3 py-2 text-white animate-fadeIn flex items-center justify-between gap-2.5">
           <button
             type="button"

@@ -294,7 +294,6 @@ export const CompactNBAMatchRow: React.FC<CompactNBAMatchRowProps> = React.memo(
               </span>
 
               <button
-                data-tour="tour-h2h-btn"
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();

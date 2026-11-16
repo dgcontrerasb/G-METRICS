@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import {
   X,
   SlidersHorizontal,
@@ -21,6 +21,7 @@ interface TourStep {
   desktopSelector: string;
   mobileSelector: string;
   fallbackSelector?: string;
+  isFixedTarget?: boolean;
   targetName: string;
   badge: string;
   title: string;
@@ -36,8 +37,9 @@ const TOUR_STEPS: TourStep[] = [
   {
     desktopSelector: '[data-tour="tour-sports"]',
     mobileSelector: '[data-tour="tour-mobile-menu"]',
-    fallbackSelector: 'header, aside',
-    targetName: 'DEPORTES & LIGAS',
+    fallbackSelector: 'aside, nav',
+    isFixedTarget: true,
+    targetName: 'DEPORTES Y LIGAS',
     badge: 'PASO 1 DE 5',
     title: 'Selector de Deportes & Ligas',
     subtitle: 'Navegación unificada Fútbol y NBA',
@@ -53,12 +55,13 @@ const TOUR_STEPS: TourStep[] = [
     desktopSelector: '[data-tour="tour-search-date"]',
     mobileSelector: '[data-tour="tour-search-date"]',
     fallbackSelector: 'header input[type="text"], header',
-    targetName: 'BUSCADOR & CALENDARIO',
+    isFixedTarget: true,
+    targetName: 'BUSCADOR Y FECHAS',
     badge: 'PASO 2 DE 5',
     title: 'Buscador Inteligente & Fechas',
     subtitle: 'Programación y consulta por fechas',
     descriptionDesktop:
-      'Encuentra equipos, jugadores o torneos al instante. Utiliza el selector de fechas para consultar partidos de hoy, mañana o programaciones hasta con 5 días de anticipación.',
+      'Encuentra equipos, jugadores o torneos al instante. Utiliza el selector de fechas para consultar partidos de hoy, mañana o hasta con 5 días de anticipación.',
     descriptionMobile:
       'Busca cualquier equipo o torneo en tiempo real. Usa el selector de fechas para ver partidos de hoy, mañana o hasta con 5 días de programación.',
     icon: Search,
@@ -69,12 +72,13 @@ const TOUR_STEPS: TourStep[] = [
     desktopSelector: '[data-tour="tour-match-card"]',
     mobileSelector: '[data-tour="tour-match-card"]',
     fallbackSelector: '.grid > div:first-child',
-    targetName: 'TARJETA DE PARTIDO & +EV',
+    isFixedTarget: false,
+    targetName: 'CUOTAS Y SEÑAL +EV',
     badge: 'PASO 3 DE 5',
     title: 'Probabilidades Reales & Señal +EV',
     subtitle: 'Ventaja matemática cuantitativa',
     descriptionDesktop:
-      'El modelo matemático calcula la probabilidad pura del encuentro y la Cuota Justa. Si la casa paga por encima del valor real, se activa la señal verde +EV (Ventaja a tu favor).',
+      'El modelo matemático calcula la probabilidad pura del encuentro y la Cuota Justa. Si la casa paga por encima del valor real, se activa la señal verde +EV.',
     descriptionMobile:
       'El modelo calcula la probabilidad real y la Cuota Justa. Si la casa paga por encima de su valor, verás la alerta verde +EV con ventaja matemática.',
     icon: TrendingUp,
@@ -85,7 +89,8 @@ const TOUR_STEPS: TourStep[] = [
     desktopSelector: '[data-tour="tour-h2h-btn"]',
     mobileSelector: '[data-tour="tour-h2h-btn"]',
     fallbackSelector: '[data-tour="tour-match-card"] button',
-    targetName: 'HISTORIAL DIRECTO (H2H)',
+    isFixedTarget: false,
+    targetName: 'HISTORIAL H2H',
     badge: 'PASO 4 DE 5',
     title: 'Radiografía H2H & Ritmo de Juego',
     subtitle: 'Cara a cara y rachas determinísticas',
@@ -94,14 +99,15 @@ const TOUR_STEPS: TourStep[] = [
     descriptionMobile:
       'Pulsa en Cuotas para ver el cara a cara de los últimos 5 duelos directos, rachas de victorias (ej. 🔥 +3V) y tendencias de Altas / Bajas.',
     icon: Flame,
-    desktopPlacement: 'top',
-    mobilePlacement: 'top'
+    desktopPlacement: 'bottom',
+    mobilePlacement: 'bottom'
   },
   {
     desktopSelector: '[data-tour="tour-header-actions"]',
     mobileSelector: '[data-tour="tour-header-actions"]',
-    fallbackSelector: 'header [data-tour="tour-header-actions"], header button',
-    targetName: 'ACCIONES & EXPORTACIÓN',
+    fallbackSelector: 'header button',
+    isFixedTarget: true,
+    targetName: 'ACCIONES Y GUÍA',
     badge: 'PASO 5 DE 5',
     title: 'Sincronización, Exportación & Guía',
     subtitle: 'Herramientas profesionales del terminal',
@@ -124,13 +130,36 @@ interface ElementRect {
   right: number;
 }
 
+type ArrowDirection = 'top' | 'bottom' | 'left' | 'none';
+
+/**
+ * Encuentra el primer nodo del DOM realmente visible (ignora elementos ocultos con display:none o 0x0)
+ */
+function findVisibleElement(selectorList: string): HTMLElement | null {
+  if (typeof document === 'undefined' || !selectorList) return null;
+  const nodes = document.querySelectorAll<HTMLElement>(selectorList);
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const rect = node.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    const style = window.getComputedStyle(node);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+      continue;
+    }
+    return node;
+  }
+  return null;
+}
+
 export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
   isOpen,
   onClose
 }) => {
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
   const [targetRect, setTargetRect] = useState<ElementRect | null>(null);
-  const [cardPos, setCardPos] = useState<{ top: number; left: number }>({ top: 120, left: 40 });
+  const [cardPos, setCardPos] = useState<{ top: number; left: number }>({ top: 120, left: 24 });
+  const [arrowDirection, setArrowDirection] = useState<ArrowDirection>('none');
+  const [arrowOffset, setArrowOffset] = useState<number>(40);
   const [dontShowAgain, setDontShowAgain] = useState<boolean>(() => {
     try {
       return localStorage.getItem('gmetrics_hide_onboarding_tour') === 'true';
@@ -141,23 +170,37 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
 
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // 1. BLOQUEAR EL SCROLL DEL BODY MIENTRAS EL TOUR ESTÉ ACTIVO (PC & Móvil)
+  const handleClose = useCallback(() => {
+    onClose();
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    }
+  }, [onClose]);
+
+  // 1. Bloqueo estricto del scroll en body y html mientras el tour esté activo
   useEffect(() => {
     if (!isOpen) return;
 
-    const originalOverflow = document.body.style.overflow;
-    const originalTouchAction = document.body.style.touchAction;
+    const htmlEl = document.documentElement;
+    const bodyEl = document.body;
+    const prevHtmlOverflow = htmlEl.style.overflow;
+    const prevBodyOverflow = bodyEl.style.overflow;
+    const prevBodyTouch = bodyEl.style.touchAction;
 
-    document.body.style.overflow = 'hidden';
-    document.body.style.touchAction = 'none';
+    htmlEl.style.overflow = 'hidden';
+    bodyEl.style.overflow = 'hidden';
+    bodyEl.style.touchAction = 'none';
 
     return () => {
-      document.body.style.overflow = originalOverflow;
-      document.body.style.touchAction = originalTouchAction;
+      htmlEl.style.overflow = prevHtmlOverflow;
+      bodyEl.style.overflow = prevBodyOverflow;
+      bodyEl.style.touchAction = prevBodyTouch;
     };
   }, [isOpen]);
 
-  // 2. Notificar a la aplicación para ocultar pop-ups (ej. instalación PWA)
+  // 2. Notificar a la aplicación para ocultar pop-ups (PWA install & feedback) durante el tour
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
@@ -199,47 +242,66 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
     }
   };
 
-  // 3. Localizar elemento objetivo según dispositivo (Mobile vs Desktop) y posicionar
+  // 3. Medición síncrona y posicionamiento sin saltos ni desbordes
   const updateTargetPosition = useCallback(() => {
     if (!isOpen) return;
 
     const currentStep = TOUR_STEPS[currentStepIndex];
-    const isMobileView = typeof window !== 'undefined' && window.innerWidth < 1024;
-    const primarySelector = isMobileView ? currentStep.mobileSelector : currentStep.desktopSelector;
-
-    let el = document.querySelector(primarySelector);
-
-    if (!el && currentStep.fallbackSelector) {
-      el = document.querySelector(currentStep.fallbackSelector);
-    }
-
     const vpW = window.innerWidth;
     const vpH = window.innerHeight;
+    const isMobileView = vpW < 1024;
+    const primarySelector = isMobileView ? currentStep.mobileSelector : currentStep.desktopSelector;
+
+    let el = findVisibleElement(primarySelector);
+    if (!el && currentStep.fallbackSelector) {
+      el = findVisibleElement(currentStep.fallbackSelector);
+    }
+
     const cardW = Math.min(440, vpW - 32);
-    // Medir altura real del DOM para que el cálculo nunca recorte texto
-    const cardH = cardRef.current?.offsetHeight || 310;
+    const cardH = cardRef.current?.offsetHeight || 295;
 
     if (!el) {
-      // Resguardo centrado elegante
       setTargetRect(null);
       setCardPos({
         left: Math.max(16, (vpW - cardW) / 2),
         top: Math.max(24, (vpH - cardH) / 2)
       });
+      setArrowDirection('none');
       return;
     }
 
-    // Scroll suave sólo si fuera estrictamente necesario, centrado en pantalla
-    el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    // Sincronizar scroll de forma instantánea ANTES de medir getBoundingClientRect()
+    const htmlEl = document.documentElement;
+    const bodyEl = document.body;
+    const lockedHtml = htmlEl.style.overflow;
+    const lockedBody = bodyEl.style.overflow;
+    htmlEl.style.overflow = '';
+    bodyEl.style.overflow = '';
+
+    if (currentStep.isFixedTarget) {
+      if (window.scrollY > 0) {
+        window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+      }
+    } else {
+      const rawRect = el.getBoundingClientRect();
+      if (rawRect.top < 108 || rawRect.top > 200) {
+        window.scrollBy({ top: rawRect.top - 125, behavior: 'instant' as ScrollBehavior });
+      }
+    }
 
     const rect = el.getBoundingClientRect();
-    const padding = 8;
 
-    // Margen seguro mínimo de 14px respecto al borde superior de la pantalla
-    const safeTop = Math.max(14, rect.top - padding);
-    const safeLeft = Math.max(10, rect.left - padding);
-    const safeWidth = Math.max(rect.width + padding * 2, 44);
-    const safeHeight = Math.max(rect.height + padding * 2, 44);
+    htmlEl.style.overflow = lockedHtml;
+    bodyEl.style.overflow = lockedBody;
+
+    // Clamping de los 4 bordes del recorte spotlight dentro del viewport
+    const pad = 6;
+    const safeLeft = Math.max(8, Math.round(rect.left - pad));
+    const safeTop = Math.max(8, Math.round(rect.top - pad));
+    const safeRight = Math.min(vpW - 8, Math.round(rect.right + pad));
+    const safeBottom = Math.min(vpH - 8, Math.round(rect.bottom + pad));
+    const safeWidth = Math.max(36, safeRight - safeLeft);
+    const safeHeight = Math.max(32, safeBottom - safeTop);
 
     const computedRect: ElementRect = {
       top: safeTop,
@@ -251,87 +313,92 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
     };
     setTargetRect(computedRect);
 
-    // Determinar la ubicación de la tarjeta Glass según pantalla
-    let finalTop = 80;
-    let finalLeft = 20;
+    const targetCenterX = computedRect.left + computedRect.width / 2;
+    const targetCenterY = computedRect.top + computedRect.height / 2;
 
     const preferred = isMobileView
       ? currentStep.mobilePlacement || 'bottom'
       : currentStep.desktopPlacement || 'bottom';
 
-    if (preferred === 'right' && computedRect.right + cardW + 24 < vpW) {
-      // Lateral derecho (menú lateral en PC)
-      finalLeft = computedRect.right + 20;
-      finalTop = Math.max(24, Math.min(computedRect.top, vpH - cardH - 24));
-    } else if (preferred === 'top' && computedRect.top - cardH - 20 > 0) {
-      // Arriba del elemento
+    let finalTop = 80;
+    let finalLeft = 16;
+    let chosenArrow: ArrowDirection = 'none';
+    let chosenArrowOffset = cardW / 2;
+
+    if (preferred === 'right' && computedRect.right + cardW + 28 < vpW) {
+      chosenArrow = 'left';
+      finalLeft = computedRect.right + 18;
+      finalTop = Math.max(20, Math.min(targetCenterY - cardH / 2, vpH - cardH - 20));
+      chosenArrowOffset = Math.max(28, Math.min(targetCenterY - finalTop - 9, cardH - 36));
+    } else if (preferred === 'top' && computedRect.top - cardH - 20 >= 16) {
+      chosenArrow = 'bottom';
       finalTop = computedRect.top - cardH - 16;
-      finalLeft = Math.max(16, Math.min(computedRect.left + (computedRect.width - cardW) / 2, vpW - cardW - 16));
-    } else if (computedRect.bottom + cardH + 20 < vpH) {
-      // Abajo del elemento
-      finalTop = Math.max(computedRect.bottom + 16, 65);
-      finalLeft = Math.max(16, Math.min(computedRect.left + (computedRect.width - cardW) / 2, vpW - cardW - 16));
-    } else if (computedRect.top - cardH - 20 > 0) {
-      // Fallback arriba
+      finalLeft = Math.max(16, Math.min(targetCenterX - cardW / 2, vpW - cardW - 16));
+      chosenArrowOffset = Math.max(24, Math.min(targetCenterX - finalLeft - 9, cardW - 40));
+    } else if (computedRect.bottom + cardH + 20 <= vpH - 16) {
+      chosenArrow = 'top';
+      finalTop = computedRect.bottom + 16;
+      finalLeft = Math.max(16, Math.min(targetCenterX - cardW / 2, vpW - cardW - 16));
+      chosenArrowOffset = Math.max(24, Math.min(targetCenterX - finalLeft - 9, cardW - 40));
+    } else if (computedRect.top - cardH - 20 >= 16) {
+      chosenArrow = 'bottom';
       finalTop = computedRect.top - cardH - 16;
-      finalLeft = Math.max(16, Math.min(computedRect.left + (computedRect.width - cardW) / 2, vpW - cardW - 16));
+      finalLeft = Math.max(16, Math.min(targetCenterX - cardW / 2, vpW - cardW - 16));
+      chosenArrowOffset = Math.max(24, Math.min(targetCenterX - finalLeft - 9, cardW - 40));
     } else {
-      // Centrado seguro en viewport
-      finalTop = Math.max(24, (vpH - cardH) / 2);
+      chosenArrow = 'none';
+      finalTop = Math.max(20, (vpH - cardH) / 2);
       finalLeft = Math.max(16, (vpW - cardW) / 2);
     }
 
-    // Clamp riguroso para asegurar que la tarjeta NUNCA se corte contra el borde superior ni inferior
     finalTop = Math.max(20, Math.min(finalTop, vpH - cardH - 20));
     finalLeft = Math.max(16, Math.min(finalLeft, vpW - cardW - 16));
 
     setCardPos({ top: finalTop, left: finalLeft });
+    setArrowDirection(chosenArrow);
+    setArrowOffset(chosenArrowOffset);
   }, [isOpen, currentStepIndex]);
+
+  // Medición síncrona tras actualizar el contenido del paso para que cardH sea exacto
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updateTargetPosition();
+  }, [isOpen, currentStepIndex, updateTargetPosition]);
 
   useEffect(() => {
     if (!isOpen) return;
-
-    const timer = setTimeout(updateTargetPosition, 60);
-
-    const handleResize = () => {
-      updateTargetPosition();
-    };
-
+    const handleResize = () => updateTargetPosition();
     window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isOpen, updateTargetPosition]);
 
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [isOpen, currentStepIndex, updateTargetPosition]);
-
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     if (currentStepIndex < TOUR_STEPS.length - 1) {
       setCurrentStepIndex((prev) => prev + 1);
     } else {
-      onClose();
+      handleClose();
     }
-  };
+  }, [currentStepIndex, handleClose]);
 
-  const handlePrev = () => {
+  const handlePrev = useCallback(() => {
     if (currentStepIndex > 0) {
       setCurrentStepIndex((prev) => prev - 1);
     }
-  };
+  }, [currentStepIndex]);
 
   // Atajos de teclado
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!isOpen) return;
       if (e.key === 'Escape') {
-        onClose();
+        handleClose();
       } else if (e.key === 'ArrowRight') {
         handleNext();
       } else if (e.key === 'ArrowLeft') {
         handlePrev();
       }
     },
-    [isOpen, currentStepIndex, onClose]
+    [isOpen, handleClose, handleNext, handlePrev]
   );
 
   useEffect(() => {
@@ -347,19 +414,17 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
   const stepDescription = isMobile ? currentStep.descriptionMobile : currentStep.descriptionDesktop;
 
-  // Detección de colisión de la baliza focal para que NUNCA se corte a la derecha o arriba
-  const isTargetNearTop = targetRect ? targetRect.top < 45 : false;
-  const isTargetNearRight = targetRect ? targetRect.left + 190 > (typeof window !== 'undefined' ? window.innerWidth : 400) : false;
-
   return (
     <div
       data-tour-active="true"
-      className="fixed inset-0 z-[80] overflow-hidden select-none pointer-events-none"
+      onWheel={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      className="fixed inset-0 z-[80] overflow-hidden select-none overscroll-none touch-none pointer-events-none"
     >
-      {/* 1. MÁSCARA SVG SPOTLIGHT LÍQUIDA (Recorte fluido con desenfoque de cristal) */}
+      {/* 1. MÁSCARA SVG SPOTLIGHT (Opacidad 0.52 para mantener visibilidad y contraste del vidrio esmerilado) */}
       <svg
         className="fixed inset-0 w-full h-full pointer-events-auto cursor-pointer"
-        onClick={onClose}
+        onClick={handleClose}
         aria-hidden="true"
       >
         <defs>
@@ -375,7 +440,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
                 ry="16"
                 fill="black"
                 style={{
-                  transition: 'all 0.65s cubic-bezier(0.22, 1, 0.36, 1)'
+                  transition: 'all 0.55s cubic-bezier(0.22, 1, 0.36, 1)'
                 }}
               />
             )}
@@ -385,37 +450,28 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
         <rect
           width="100%"
           height="100%"
-          fill="rgba(5, 8, 13, 0.76)"
+          fill="rgba(4, 7, 13, 0.52)"
           mask="url(#gmetrics-tour-spotlight-mask)"
         />
       </svg>
 
-      {/* 2. ANILLO SPOTLIGHT LUMINOSO CON BALIZA FOCAL SEGURA (No obstruye ni se corta) */}
+      {/* 2. ANILLO SPOTLIGHT LIMPIO (Sin píldoras de texto externas que tapen la UI o se corten) */}
       {targetRect && (
         <div
-          className="fixed pointer-events-none z-[81] rounded-2xl border-2 border-[#d9b114] shadow-[0_0_35px_rgba(217,177,20,0.65),inset_0_0_15px_rgba(217,177,20,0.3)]"
+          className="fixed pointer-events-none z-[81] rounded-2xl border-2 border-[#d9b114] shadow-[0_0_28px_rgba(217,177,20,0.65),inset_0_0_12px_rgba(217,177,20,0.22)]"
           style={{
             top: 0,
             left: 0,
             width: targetRect.width,
             height: targetRect.height,
             transform: `translate3d(${targetRect.left}px, ${targetRect.top}px, 0)`,
-            transition: 'transform 0.65s cubic-bezier(0.22, 1, 0.36, 1), width 0.65s cubic-bezier(0.22, 1, 0.36, 1), height 0.65s cubic-bezier(0.22, 1, 0.36, 1)'
+            transition:
+              'transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), width 0.55s cubic-bezier(0.22, 1, 0.36, 1), height 0.55s cubic-bezier(0.22, 1, 0.36, 1)'
           }}
-        >
-          {/* Micro-baliza focal: se alinea dinámicamente para no cortarse contra ningún borde */}
-          <div
-            className={`absolute whitespace-nowrap max-w-[calc(100vw-36px)] truncate px-2.5 py-0.5 rounded-full bg-[#d9b114] text-[#0b0e14] font-mono text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg transition-all duration-300 select-none z-20 ${
-              isTargetNearRight ? 'right-2' : 'left-2'
-            } ${isTargetNearTop ? 'top-full mt-2' : '-top-3.5'}`}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#0b0e14] animate-ping shrink-0" />
-            <span>{currentStep.targetName}</span>
-          </div>
-        </div>
+        />
       )}
 
-      {/* 3. MODAL ANUNCIO TIPO GLASS (Auténtico Toque Glass: Translúcido con luz especular) */}
+      {/* 3. TARJETA FROSTED LIQUID GLASS CON PUNTERO DIRECCIONAL */}
       <div
         ref={cardRef}
         role="dialog"
@@ -424,38 +480,98 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
         className="fixed top-0 left-0 z-[85] pointer-events-auto max-w-[92vw] sm:max-w-[440px] w-full"
         style={{
           transform: `translate3d(${cardPos.left}px, ${cardPos.top}px, 0)`,
-          transition: 'transform 0.65s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s ease-out',
+          transition: 'transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease-out',
           willChange: 'transform'
         }}
       >
         <div
-          className="relative rounded-3xl border border-[#d9b114]/40 p-5 sm:p-6 text-white flex flex-col gap-4 shadow-[0_30px_70px_-15px_rgba(0,0,0,0.85),0_0_35px_rgba(217,177,20,0.18),inset_0_1px_1px_rgba(255,255,255,0.15)]"
+          className="relative rounded-3xl border border-white/25 ring-1 ring-[#d9b114]/35 p-5 sm:p-6 text-white flex flex-col gap-3.5 shadow-[0_28px_64px_-12px_rgba(0,0,0,0.75),0_0_32px_rgba(217,177,20,0.16),inset_0_1px_1px_rgba(255,255,255,0.25)]"
           style={{
-            background: 'rgba(11, 14, 20, 0.72)',
-            backdropFilter: 'blur(28px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(28px) saturate(180%)'
+            background:
+              'linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(30, 41, 59, 0.52) 45%, rgba(15, 23, 42, 0.62) 100%)',
+            backdropFilter: 'blur(24px) saturate(190%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(190%)'
           }}
         >
-          {/* Luz ambiental sutil y brillo superior especular de cristal */}
-          <div className="absolute -top-12 -right-12 w-36 h-36 bg-[#d9b114]/12 rounded-full blur-2xl pointer-events-none" />
-          <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-[#d9b114]/80 to-transparent" />
+          {/* Puntero direccional de cristal apuntando al centro geométrico del elemento */}
+          {arrowDirection === 'top' && (
+            <div
+              className="absolute -top-[9px] pointer-events-none"
+              style={{ left: arrowOffset }}
+              aria-hidden="true"
+            >
+              <svg width="18" height="10" viewBox="0 0 18 10">
+                <path d="M1 10 L9 1 L17 10 Z" fill="rgba(30, 41, 59, 0.72)" />
+                <path
+                  d="M1 9.5 L9 1 L17 9.5"
+                  fill="none"
+                  stroke="rgba(217, 177, 20, 0.75)"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+          )}
 
-          {/* Cabecera del Glass Modal */}
+          {arrowDirection === 'bottom' && (
+            <div
+              className="absolute -bottom-[9px] pointer-events-none"
+              style={{ left: arrowOffset }}
+              aria-hidden="true"
+            >
+              <svg width="18" height="10" viewBox="0 0 18 10">
+                <path d="M1 0 L9 9 L17 0 Z" fill="rgba(15, 23, 42, 0.75)" />
+                <path
+                  d="M1 0.5 L9 9 L17 0.5"
+                  fill="none"
+                  stroke="rgba(217, 177, 20, 0.75)"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+          )}
+
+          {arrowDirection === 'left' && (
+            <div
+              className="absolute -left-[9px] pointer-events-none"
+              style={{ top: arrowOffset }}
+              aria-hidden="true"
+            >
+              <svg width="10" height="18" viewBox="0 0 10 18">
+                <path d="M10 1 L1 9 L10 17 Z" fill="rgba(30, 41, 59, 0.72)" />
+                <path
+                  d="M9.5 1 L1 9 L9.5 17"
+                  fill="none"
+                  stroke="rgba(217, 177, 20, 0.75)"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+          )}
+
+          {/* Reflejo especular blanco superior y resplandor interno del vidrio */}
+          <div className="pointer-events-none absolute -top-12 -right-12 w-36 h-36 bg-[#d9b114]/15 rounded-full blur-2xl" />
+          <div className="pointer-events-none absolute top-0 left-6 right-6 h-[1.5px] bg-gradient-to-r from-transparent via-white/55 to-transparent" />
+
+          {/* Cabecera del Glass Modal con targetName integrado (sin encimarse con el foco) */}
           <div className="flex items-center justify-between gap-2 relative z-10">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#d9b114]/15 border border-[#d9b114]/45 font-mono text-[10.5px] font-bold text-[#d9b114] tracking-wider uppercase shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#d9b114]/20 border border-[#d9b114]/50 font-mono text-[10px] font-bold text-[#d9b114] tracking-wider uppercase shrink-0">
                 <StepIcon className="w-3.5 h-3.5" />
                 {currentStep.badge}
               </span>
-              <span className="text-xs font-mono text-[#8b949e] font-semibold tabular-nums shrink-0">
-                {currentStepIndex + 1} de {TOUR_STEPS.length}
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 font-mono text-[10px] font-semibold text-white/90 tracking-wide uppercase truncate max-w-[175px] sm:max-w-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#d9b114] animate-pulse shrink-0" />
+                <span className="truncate">{currentStep.targetName}</span>
               </span>
             </div>
 
             <button
               type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-xl text-[#8b949e] hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+              onClick={handleClose}
+              className="p-1.5 rounded-xl text-white/70 hover:text-white hover:bg-white/15 transition-colors cursor-pointer shrink-0"
               title="Cerrar tour (Escape)"
               aria-label="Cerrar tour"
             >
@@ -463,7 +579,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
             </button>
           </div>
 
-          {/* Título y Explicación sin textos montados ni cortados */}
+          {/* Título y Explicación con espaciado limpio */}
           <div
             key={currentStepIndex}
             className="space-y-1.5 relative z-10 animate-in fade-in-50 slide-in-from-bottom-1 duration-300"
@@ -474,7 +590,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
             <p className="text-xs sm:text-[13px] font-semibold text-[#d9b114] leading-snug">
               {currentStep.subtitle}
             </p>
-            <p className="text-xs sm:text-sm text-[#cbd5e1] leading-relaxed pt-0.5">
+            <p className="text-xs sm:text-sm text-slate-200 leading-relaxed pt-0.5">
               {stepDescription}
             </p>
           </div>
@@ -488,35 +604,33 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
                 onClick={() => setCurrentStepIndex(idx)}
                 className={`h-1.5 rounded-full transition-all cursor-pointer ${
                   idx === currentStepIndex
-                    ? 'w-7 bg-[#d9b114]'
+                    ? 'w-7 bg-[#d9b114] shadow-[0_0_10px_rgba(217,177,20,0.6)]'
                     : idx < currentStepIndex
                     ? 'w-2 bg-[#00ff66]'
-                    : 'w-2 bg-white/20 hover:bg-white/40'
+                    : 'w-2 bg-white/25 hover:bg-white/45'
                 }`}
                 title={`Ir al paso ${idx + 1}: ${step.title}`}
               />
             ))}
           </div>
 
-          {/* Footer del Glass Modal: Casilla y Botones de Control */}
-          <div className="pt-3 border-t border-white/10 flex flex-col gap-3 relative z-10">
-            {/* Casilla de verificación: No volver a mostrar al iniciar sesión */}
-            <label className="flex items-center gap-2.5 text-xs text-[#94a3b8] hover:text-white cursor-pointer select-none transition-colors">
+          {/* Footer del Glass Modal: Casilla y Botones */}
+          <div className="pt-3 border-t border-white/15 flex flex-col gap-3 relative z-10">
+            <label className="flex items-center gap-2.5 text-xs text-slate-300 hover:text-white cursor-pointer select-none transition-colors">
               <input
                 type="checkbox"
                 checked={dontShowAgain}
                 onChange={handleToggleDontShow}
-                className="w-4 h-4 rounded border-[#30363d] bg-[#0b0e14]/80 text-[#d9b114] accent-[#d9b114] cursor-pointer"
+                className="w-4 h-4 rounded border-white/30 bg-black/40 text-[#d9b114] accent-[#d9b114] cursor-pointer"
               />
               <span>No volver a mostrar al iniciar sesión</span>
             </label>
 
-            {/* Botones de Navegación con Toque Glass */}
             <div className="flex items-center justify-between gap-2">
               <button
                 type="button"
-                onClick={onClose}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-[#94a3b8] hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                onClick={handleClose}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               >
                 Omitir
               </button>
@@ -526,7 +640,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
                   <button
                     type="button"
                     onClick={handlePrev}
-                    className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white bg-white/10 hover:bg-white/15 border border-white/15 active:scale-95 transition-all flex items-center gap-1 cursor-pointer backdrop-blur-md"
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/20 active:scale-95 transition-all flex items-center gap-1 cursor-pointer backdrop-blur-md"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Anterior</span>
@@ -536,7 +650,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({
                 <button
                   type="button"
                   onClick={handleNext}
-                  className="px-4 py-1.5 rounded-xl text-xs font-bold text-[#0b0e14] bg-gradient-to-r from-[#d9b114] to-[#f59e0b] hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5 shadow-[0_0_20px_rgba(217,177,20,0.4)] cursor-pointer"
+                  className="px-4 py-1.5 rounded-xl text-xs font-bold text-[#0b0e14] bg-gradient-to-r from-[#d9b114] to-[#f59e0b] hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5 shadow-[0_0_20px_rgba(217,177,20,0.45)] cursor-pointer"
                 >
                   <span>{isLastStep ? 'Finalizar Tour' : 'Siguiente'}</span>
                   {isLastStep ? <ArrowRight className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
