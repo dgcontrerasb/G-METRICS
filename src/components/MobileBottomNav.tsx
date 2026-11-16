@@ -26,6 +26,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       <div className="grid grid-cols-4 items-center h-14 max-w-lg mx-auto px-2 gap-1.5">
         {/* Botón 1: Ligas y menú (Abre el panel lateral izquierdo) */}
         <button
+          data-tour="tour-mobile-menu"
           onClick={() => {
             if (onOpenDrawer) {
               onOpenDrawer();
