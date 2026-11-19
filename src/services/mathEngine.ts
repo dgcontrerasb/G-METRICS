@@ -127,8 +127,8 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
   if (isNaN(lambdaHome) || lambdaHome <= 0) lambdaHome = 1.45;
   if (isNaN(lambdaAway) || lambdaAway <= 0) lambdaAway = 1.10;
 
-  // Calibrate expected goals using real lineup injury/suspension status
-  const lineup = getSoccerLineupData(fixture);
+  // Calibrate expected goals using deterministic pre-match baseline (immune to mid-game liveRosters arrival)
+  const lineup = getSoccerLineupData({ ...fixture, liveRosters: undefined });
   const homeInjured = [...lineup.homeStarters, ...lineup.homeSubstitutes].filter(p => p.isInjured);
   const awayInjured = [...lineup.awayStarters, ...lineup.awaySubstitutes].filter(p => p.isInjured);
 

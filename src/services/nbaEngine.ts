@@ -128,30 +128,9 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
     else if (p.injuryStatus === 'GTD') baseAwayScore -= 1.0;
   });
 
-  // Calibrate baseline to real matchup scoring rhythm when completed quarter data is available
-  if (fixture.quarters) {
-    const completedQuarters = [fixture.quarters.q1, fixture.quarters.q2, fixture.quarters.q3, fixture.quarters.q4].filter(
-      (q): q is NonNullable<typeof q> => Boolean(q && q.isCompleted && (q.home + q.away) >= 24)
-    );
-    if (completedQuarters.length > 0) {
-      const avgCompletedQHome = completedQuarters.reduce((s, q) => s + q.home, 0) / completedQuarters.length;
-      const avgCompletedQAway = completedQuarters.reduce((s, q) => s + q.away, 0) / completedQuarters.length;
-      const impliedFullHome = avgCompletedQHome * 4;
-      const impliedFullAway = avgCompletedQAway * 4;
-      // Blend 65% real matchup tempo + 35% prior so defensive games don't have inflated 240-pt lines
-      baseHomeScore = Math.round((baseHomeScore * 0.35 + impliedFullHome * 0.65) * 10) / 10;
-      baseAwayScore = Math.round((baseAwayScore * 0.35 + impliedFullAway * 0.65) * 10) / 10;
-    }
-  } else if (isFinished && fixture.currentScore && (fixture.currentScore.home + fixture.currentScore.away) > 100) {
-    baseHomeScore = Math.round((baseHomeScore * 0.35 + fixture.currentScore.home * 0.65) * 10) / 10;
-    baseAwayScore = Math.round((baseAwayScore * 0.35 + fixture.currentScore.away * 0.65) * 10) / 10;
-  }
-
   // 2. IMMUTABLE PRE-MATCH BASELINES & LIVE IN-PLAY ADAPTIVE RE-ESTIMATION
+  // Las líneas y probabilidades pre-partido jamás se recalibran con cuartos completados ni marcador final.
   const rawPreMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
-  const preMatchDiff = baseHomeScore - baseAwayScore;
-  const fairSpread = Math.round(-preMatchDiff * 2) / 2; // Home favored is negative (e.g. -6.5)
-  // Recommended safe line includes a 6.5 pt statistical safety cushion for high accuracy
   const fairTotalLine = Math.floor(rawPreMatchTotalPoints - 6.5) + 0.5;
 
   // Multiple Linear & Logistic Regression Calibration + Bayesian Shrinkage (Layers 3 & 6)
@@ -185,13 +164,81 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
 
   baseHomeScore = shrinkLambdaBayesian(nbaReg.regressedHomeScore, LEAGUE_AVG_ORTG, 75);
   baseAwayScore = shrinkLambdaBayesian(nbaReg.regressedAwayScore, LEAGUE_AVG_ORTG, 75);
-  const preMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
+  let preMatchHomeScore = Math.round(baseHomeScore * 10) / 10;
+  let preMatchAwayScore = Math.round(baseAwayScore * 10) / 10;
+  const preMatchTotalPoints = Math.round((preMatchHomeScore + preMatchAwayScore) * 10) / 10;
 
-  let projectedHomeScore = baseHomeScore;
-  let projectedAwayScore = baseAwayScore;
+  // 3. Pre-Match Win Probability via Normal Distribution + Elo/Bradley-Terry + Bayesian 2-Way Shrinkage
+  const rawZScore = (preMatchHomeScore - preMatchAwayScore) / 11.2;
+  const pHomeWinRawNormal = normalCDF(rawZScore) * 100;
+  const pHomeWinEnsemble = pHomeWinRawNormal * 0.70 + nbaReg.eloBradleyTerryHomeWinProb * 0.30;
+  const bayesWin = evaluateBayesianCredibility({
+    observedProbability: pHomeWinEnsemble,
+    category: 'NBA_MONEYLINE_2WAY',
+    derbyOrRivalry: false,
+    fatiguePenalty: (homeTeam.restDays === 0 ? 0.05 : 0) + (awayTeam.restDays === 0 ? 0.06 : 0)
+  });
+  const modelPHomeWin = Math.round(bayesWin.posteriorProbability * 10) / 10;
+
+  // 3.5 Cuotas Reales Pre-Partido & Anclaje de Coherencia (Guardrail anti-cuotas absurdas ej. @8.20)
+  const realHomeOdds = fixture.externalOdds?.homeMoneyline || fixture.consensusOdds?.homeMoneyline;
+  const realAwayOdds = fixture.externalOdds?.awayMoneyline || fixture.consensusOdds?.awayMoneyline;
+  const realSpread = fixture.externalOdds?.spreadPoint ?? (typeof fixture.consensusOdds?.spread === 'number' ? fixture.consensusOdds.spread : undefined);
+  const realSpreadOdds = fixture.externalOdds?.homeSpreadOdds || 1.91;
+  const realTotal = fixture.externalOdds?.totalPoint ?? (typeof fixture.consensusOdds?.total === 'number' ? fixture.consensusOdds.total : undefined);
+  const realOverOdds = fixture.externalOdds?.overOdds || fixture.consensusOdds?.overOdds || 1.91;
+  const realUnderOdds = fixture.externalOdds?.underOdds || fixture.consensusOdds?.underOdds || 1.91;
+
+  const hasValidTwoWayOdds = Boolean(
+    typeof realHomeOdds === 'number' &&
+      typeof realAwayOdds === 'number' &&
+      isFinite(realHomeOdds) &&
+      isFinite(realAwayOdds) &&
+      realHomeOdds >= 1.03 &&
+      realHomeOdds <= 25.0 &&
+      realAwayOdds >= 1.03 &&
+      realAwayOdds <= 25.0 &&
+      1 / realHomeOdds + 1 / realAwayOdds >= 0.98 &&
+      1 / realHomeOdds + 1 / realAwayOdds <= 1.20
+  );
+
+  let pHomeWin = modelPHomeWin;
+  let marketDivergenceWarning = false;
+  if (hasValidTwoWayOdds && realHomeOdds && realAwayOdds) {
+    const overround = 1 / realHomeOdds + 1 / realAwayOdds;
+    const marketHomeProb = ((1 / realHomeOdds) / overround) * 100;
+    const divergence = Math.abs(modelPHomeWin - marketHomeProb);
+
+    let anchoredHome = modelPHomeWin;
+    if (divergence <= 12) {
+      anchoredHome = modelPHomeWin * 0.65 + marketHomeProb * 0.35;
+    } else if (divergence <= 25) {
+      anchoredHome = modelPHomeWin * 0.35 + marketHomeProb * 0.65;
+    } else {
+      anchoredHome = modelPHomeWin * 0.15 + marketHomeProb * 0.85;
+      marketDivergenceWarning = true;
+    }
+    pHomeWin = Math.max(8, Math.min(92, Math.round(anchoredHome * 10) / 10));
+
+    if (divergence > 15) {
+      const targetMargin =
+        typeof realSpread === 'number' && isFinite(realSpread) && Math.abs(realSpread) <= 24
+          ? -realSpread
+          : Math.max(-16, Math.min(16, (pHomeWin - 50) * 0.30));
+      const halfTotal = preMatchTotalPoints / 2;
+      preMatchHomeScore = Math.round((halfTotal + targetMargin / 2) * 10) / 10;
+      preMatchAwayScore = Math.round((preMatchTotalPoints - preMatchHomeScore) * 10) / 10;
+    }
+  }
+  const pAwayWin = Math.round((100 - pHomeWin) * 10) / 10;
+  const preMatchDiff = preMatchHomeScore - preMatchAwayScore;
+  const fairSpread = Math.round(-preMatchDiff * 2) / 2; // Home favored is negative (e.g. -6.5)
+
+  let projectedHomeScore = preMatchHomeScore;
+  let projectedAwayScore = preMatchAwayScore;
   let expectedPace = Math.round(basePace * 10) / 10;
 
-  // Estimate minutes remaining if live
+  // Estimate minutes remaining if live (solo actualiza proyección en vivo, nunca las líneas pre-partido)
   const totalGameMinutes = isFibaLeague ? 40 : 48;
   let minutesRemaining = totalGameMinutes;
   if (isFinished) {
@@ -200,8 +247,8 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
       projectedHomeScore = fixture.currentScore.home;
       projectedAwayScore = fixture.currentScore.away;
     } else {
-      projectedHomeScore = Math.round(baseHomeScore * 10) / 10;
-      projectedAwayScore = Math.round(baseAwayScore * 10) / 10;
+      projectedHomeScore = preMatchHomeScore;
+      projectedAwayScore = preMatchAwayScore;
     }
   } else if (isLive && fixture.currentScore) {
     const curHome = fixture.currentScore.home;
@@ -223,12 +270,12 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
 
     // Calculate live effective pace from actual points scored so far
     if (fractionElapsed > 0.1 && curTotal > 15) {
-      const paceFactor = curTotal / (fractionElapsed * (baseHomeScore + baseAwayScore));
+      const paceFactor = curTotal / (fractionElapsed * (preMatchHomeScore + preMatchAwayScore));
       expectedPace = Math.round(basePace * Math.max(0.85, Math.min(1.20, paceFactor)) * 10) / 10;
 
       // Adaptive projected score = Points already scored + remaining projected points
-      const remainingHomeExp = (baseHomeScore * fractionRemaining) * paceFactor;
-      const remainingAwayExp = (baseAwayScore * fractionRemaining) * paceFactor;
+      const remainingHomeExp = (preMatchHomeScore * fractionRemaining) * paceFactor;
+      const remainingAwayExp = (preMatchAwayScore * fractionRemaining) * paceFactor;
 
       projectedHomeScore = Math.round((curHome + remainingHomeExp) * 10) / 10;
       projectedAwayScore = Math.round((curAway + remainingAwayExp) * 10) / 10;
@@ -236,19 +283,6 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
   }
 
   const projectedTotalPoints = Math.round((projectedHomeScore + projectedAwayScore) * 10) / 10;
-
-  // 3. Pre-Match Win Probability via Normal Distribution + Elo/Bradley-Terry + Bayesian Shrinkage
-  const preMatchZScore = (baseHomeScore - baseAwayScore) / 11.2;
-  const pHomeWinRawNormal = normalCDF(preMatchZScore) * 100;
-  const pHomeWinEnsemble = pHomeWinRawNormal * 0.70 + nbaReg.eloBradleyTerryHomeWinProb * 0.30;
-  const bayesWin = evaluateBayesianCredibility({
-    observedProbability: pHomeWinEnsemble,
-    category: '1X2',
-    derbyOrRivalry: false,
-    fatiguePenalty: (homeTeam.restDays === 0 ? 0.05 : 0) + (awayTeam.restDays === 0 ? 0.06 : 0)
-  });
-  const pHomeWin = Math.round(bayesWin.posteriorProbability * 10) / 10;
-  const pAwayWin = Math.round((100 - pHomeWin) * 10) / 10;
 
   // Over / Under Total probability calibrated with Logistic Sigmoid Regression and Bayesian Credibility
   const bayesTotal = evaluateBayesianCredibility({
@@ -259,7 +293,7 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
   const overTotalProb = Math.round(bayesTotal.posteriorProbability * 10) / 10;
   const underTotalProb = Math.round((100 - overTotalProb) * 10) / 10;
 
-  // 4. Quarter Projections Breakdown (1Q, 2Q, 3Q, 4Q and Halves)
+  // 4. Quarter Projections Breakdown (1Q, 2Q, 3Q, 4Q and Halves - líneas pre-partido 100% fijas)
   const halfMins = totalGameMinutes / 2;
   const qMins = totalGameMinutes / 4;
   const quarterWeights = [
@@ -270,8 +304,8 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
   ];
 
   const quarterProjections: NBAQuarterProjection[] = quarterWeights.map((qw, idx) => {
-    const qHome = Math.round((baseHomeScore * qw.weight) * 10) / 10;
-    const qAway = Math.round((baseAwayScore * qw.weight) * 10) / 10;
+    const qHome = Math.round((preMatchHomeScore * qw.weight) * 10) / 10;
+    const qAway = Math.round((preMatchAwayScore * qw.weight) * 10) / 10;
     const qTotal = Math.round((qHome + qAway) * 10) / 10;
     const qSpread = Math.round(-(qHome - qAway) * 2) / 2;
     // Safe Pick Over Line per quarter (2.5-pt safety cushion below expected total)
@@ -438,7 +472,7 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
 
     if ((isLive || isFinished) && fixture.currentScore) {
       const teamActualScore = isHomePlayer ? fixture.currentScore.home : fixture.currentScore.away;
-      const teamBaseScore = isHomePlayer ? baseHomeScore : baseAwayScore;
+      const teamBaseScore = isHomePlayer ? preMatchHomeScore : preMatchAwayScore;
       const scoreRatio = Math.max(0.15, teamActualScore / Math.max(85, teamBaseScore));
 
       // Deterministic per-player performance variance so some players exceed their line (✅) and some fall short (❌)
@@ -516,21 +550,14 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
   const starAway = sanitizePlayerName(awayTeam.keyPlayers?.[0]?.name, awayTeam.name, 0, false);
   const keyMatchup = `Emparejamiento estelar: ${starHome} (${homeTeam.shortName}) vs ${starAway} (${awayTeam.shortName}).`;
 
-  // 7. Cuotas Reales de Casas de Apuestas (The Odds API / ESPN PickCenter DraftKings) & Valor (+EV)
-  const realHomeOdds = fixture.externalOdds?.homeMoneyline || fixture.consensusOdds?.homeMoneyline;
-  const realAwayOdds = fixture.externalOdds?.awayMoneyline || fixture.consensusOdds?.awayMoneyline;
-  const realSpread = fixture.externalOdds?.spreadPoint ?? (typeof fixture.consensusOdds?.spread === 'number' ? fixture.consensusOdds.spread : undefined);
-  const realSpreadOdds = fixture.externalOdds?.homeSpreadOdds || 1.91;
-  const realTotal = fixture.externalOdds?.totalPoint ?? (typeof fixture.consensusOdds?.total === 'number' ? fixture.consensusOdds.total : undefined);
-  const realOverOdds = fixture.externalOdds?.overOdds || fixture.consensusOdds?.overOdds || 1.91;
-  const realUnderOdds = fixture.externalOdds?.underOdds || fixture.consensusOdds?.underOdds || 1.91;
+  // 7. Cuotas Reales Pre-Partido & Validación Anti-+EV Ficticio (Guardrail Coherencia)
+  const fairOddsHome = Math.max(1.05, Math.min(12.0, Math.round((100 / Math.max(8, pHomeWin)) * 100) / 100));
+  const fairOddsAway = Math.max(1.05, Math.min(12.0, Math.round((100 / Math.max(8, pAwayWin)) * 100) / 100));
 
-  // Cuotas justas del modelo Poisson / Dixon-Coles
-  const fairOddsHome = Math.max(1.05, Math.min(15.0, Math.round((100 / Math.max(5, pHomeWin)) * 100) / 100));
-  const fairOddsAway = Math.max(1.05, Math.min(15.0, Math.round((100 / Math.max(5, pAwayWin)) * 100) / 100));
-
-  const bookmakerHomeOdds = realHomeOdds || Math.round(fairOddsHome * 0.96 * 100) / 100;
-  const bookmakerAwayOdds = realAwayOdds || Math.round(fairOddsAway * 0.96 * 100) / 100;
+  const bookmakerHomeOdds =
+    hasValidTwoWayOdds && realHomeOdds ? realHomeOdds : Math.round(fairOddsHome * 0.96 * 100) / 100;
+  const bookmakerAwayOdds =
+    hasValidTwoWayOdds && realAwayOdds ? realAwayOdds : Math.round(fairOddsAway * 0.96 * 100) / 100;
   const bookmakerSpread = realSpread !== undefined ? realSpread : fairSpread;
   const bookmakerTotal = realTotal !== undefined ? realTotal : fairTotalLine;
 
@@ -544,12 +571,24 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
 
   const bookmakerName = fixture.externalOdds?.bookmaker || fixture.consensusOdds?.provider || 'Casas de Apuestas';
 
-  if (homeEV >= 2.5 && pHomeWin >= 45) {
+  if (
+    !marketDivergenceWarning &&
+    homeEV >= 2.5 &&
+    homeEV <= 15.0 &&
+    pHomeWin >= 45 &&
+    bookmakerHomeOdds <= 2.85
+  ) {
     valueBetDetected = true;
     valueSide = 'HOME';
     valueEdgePercent = Math.round(homeEV * 10) / 10;
     valueExplanation = `Ventaja +EV en ${homeTeam.shortName} (@${bookmakerHomeOdds.toFixed(2)} en ${bookmakerName}): Probabilidad del modelo (${pHomeWin}%) supera la cuota de mercado.`;
-  } else if (awayEV >= 2.5 && pAwayWin >= 40) {
+  } else if (
+    !marketDivergenceWarning &&
+    awayEV >= 2.5 &&
+    awayEV <= 15.0 &&
+    pAwayWin >= 42 &&
+    bookmakerAwayOdds <= 2.85
+  ) {
     valueBetDetected = true;
     valueSide = 'AWAY';
     valueEdgePercent = Math.round(awayEV * 10) / 10;
@@ -563,6 +602,10 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
     projectedHomeScore,
     projectedAwayScore,
     projectedTotalPoints,
+    preMatchHomeScore,
+    preMatchAwayScore,
+    preMatchTotalPoints,
+    isPreMatchLocked: Boolean(fixture.preMatchLocked),
     pHomeWin,
     pAwayWin,
     fairSpread,
@@ -585,7 +628,10 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
       valueBetDetected,
       valueSide,
       valueEdgePercent,
-      valueExplanation
+      valueExplanation,
+      marketDivergenceWarning,
+      fairHomeOdds: fairOddsHome,
+      fairAwayOdds: fairOddsAway
     }
   };
 
@@ -630,9 +676,17 @@ export function evaluateNBAMarketsLiveStatus(
   const favIsHome = analysis.pHomeWin >= analysis.pAwayWin;
   const favTeam = favIsHome ? fixture.homeTeam : fixture.awayTeam;
   const favProb = Math.max(analysis.pHomeWin, analysis.pAwayWin);
-  const mlOdd = analysis.marketOdds
+  const modelFairOdd = Number((100 / Math.max(10, favProb)).toFixed(2));
+  const rawBookieOdd = analysis.marketOdds
     ? (favIsHome ? analysis.marketOdds.bookmakerHomeOdds : analysis.marketOdds.bookmakerAwayOdds)
-    : Number((100 / Math.max(10, favProb)).toFixed(2));
+    : undefined;
+  const mlOdd =
+    rawBookieOdd !== undefined &&
+    isFinite(rawBookieOdd) &&
+    rawBookieOdd >= 1.04 &&
+    rawBookieOdd <= Math.max(2.60, modelFairOdd * 1.45)
+      ? rawBookieOdd
+      : modelFairOdd;
   const mlLeadingNow = favIsHome ? curHome > curAway : curAway > curHome;
   const mlOnPace = favIsHome
     ? analysis.projectedHomeScore >= analysis.projectedAwayScore
@@ -734,7 +788,7 @@ export function evaluateNBAMarketsLiveStatus(
       category: '🔥 Total de Puntos',
       icon: '📈',
       label: `${isOverFav ? 'Más de' : 'Menos de'} ${totalLine} Puntos`,
-      subLabel: `Proyección: ${analysis.projectedTotalPoints} pts`,
+      subLabel: `Proy. pre-partido: ${analysis.preMatchTotalPoints ?? analysis.projectedTotalPoints} pts`,
       prob: totalProb,
       odd: totalOdd,
       isAvailable: totalProb >= 52,
@@ -985,8 +1039,9 @@ export function extractNBABettingMarketSuggestions(
   };
 
   // 1. MERCADO PUNTOS TOTALES CON COJÍN DE SEGURIDAD ELÁSTICO (OVER)
-  const safeOverLine = Math.floor(nbaAnalysis.projectedTotalPoints - 12.5) + 0.5;
-  const zOver = (safeOverLine - nbaAnalysis.projectedTotalPoints) / sigma;
+  const preMatchTotal = nbaAnalysis.preMatchTotalPoints ?? nbaAnalysis.projectedTotalPoints;
+  const safeOverLine = Math.floor(preMatchTotal - 12.5) + 0.5;
+  const zOver = (safeOverLine - preMatchTotal) / sigma;
   const pOver = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zOver)));
   if (pOver >= 0.72) {
     addCandidate(BetMarketCategory.NBA_TOTAL_POINTS, `Más de ${safeOverLine} Puntos Totales`, pOver, 0.05);
@@ -994,8 +1049,8 @@ export function extractNBABettingMarketSuggestions(
 
   // 1b. MERCADO PUNTOS TOTALES (UNDER) EN DUELOS DEFENSIVOS / PACE LENTO
   if (nbaAnalysis.expectedPace <= 101) {
-    const safeUnderLine = Math.floor(nbaAnalysis.projectedTotalPoints + 13.5) + 0.5;
-    const zUnder = (safeUnderLine - nbaAnalysis.projectedTotalPoints) / sigma;
+    const safeUnderLine = Math.floor(preMatchTotal + 13.5) + 0.5;
+    const zUnder = (safeUnderLine - preMatchTotal) / sigma;
     const pUnder = Math.max(0.01, Math.min(0.96, normalCDF(zUnder)));
     if (pUnder >= 0.72) {
       addCandidate(BetMarketCategory.NBA_TOTAL_POINTS, `Menos de ${safeUnderLine} Puntos Totales`, pUnder, 0.05);
@@ -1080,8 +1135,9 @@ export function generateGMetricsNBABankerPicks(
     const sigma = isFiba ? 11.5 : 13.5;
 
     // A) TOTAL POINTS OVER CON COJÍN DE SEGURIDAD ELÁSTICO (-12.5 pts)
-    const safeOverLine = Math.floor(analysis.projectedTotalPoints - 12.5) + 0.5;
-    const zOver = (safeOverLine - analysis.projectedTotalPoints) / sigma;
+    const preMatchTotal = analysis.preMatchTotalPoints ?? analysis.projectedTotalPoints;
+    const safeOverLine = Math.floor(preMatchTotal - 12.5) + 0.5;
+    const zOver = (safeOverLine - preMatchTotal) / sigma;
     const pOver = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zOver)));
     const probOverPct = Number((pOver * 100).toFixed(1));
 
@@ -1109,15 +1165,15 @@ export function generateGMetricsNBABankerPicks(
         estimatedBookieOdd,
         valueEdgePct,
         recommendedKellyStakePct: 4.5,
-        reasoning: `Línea con cojín elástico de seguridad (-12.5 pts respecto a los ${analysis.projectedTotalPoints} proyectados), elevando la probabilidad matemática al ${probOverPct}%.`,
+        reasoning: `Línea con cojín elástico de seguridad (-12.5 pts respecto a los ${preMatchTotal} proyectados), elevando la probabilidad matemática al ${probOverPct}%.`,
         tacticalFactor: `Ritmo proyectado (${analysis.expectedPace} posesiones) y consistencia ofensiva con colchón de absorción de racha fría`
       });
     }
 
     // B) TOTAL POINTS UNDER CON COJÍN PREVENTIVO (+13.5 pts) en duelos lentos
     if (analysis.expectedPace <= 101) {
-      const safeUnderLine = Math.floor(analysis.projectedTotalPoints + 13.5) + 0.5;
-      const zUnder = (safeUnderLine - analysis.projectedTotalPoints) / sigma;
+      const safeUnderLine = Math.floor(preMatchTotal + 13.5) + 0.5;
+      const zUnder = (safeUnderLine - preMatchTotal) / sigma;
       const pUnder = Math.max(0.01, Math.min(0.96, normalCDF(zUnder)));
       const probUnderPct = Number((pUnder * 100).toFixed(1));
 

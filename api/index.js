@@ -2330,7 +2330,7 @@ var NBA_30_TEAMS_ROSTERS = {
       { id: "lac5", name: "Ivica Zubac", number: 40, position: "C", ppg: 15.2, apg: 2.6, rpg: 12.4, threePm: 0 }
     ],
     bench: [
-      { id: "lac6", name: "Kawhi Leonard", number: 2, position: "SF", ppg: 23.7, apg: 3.6, rpg: 6.1, threePm: 2.1, isInjured: true, injuryStatus: "Out" },
+      { id: "lac6", name: "Kawhi Leonard", number: 2, position: "SF", ppg: 23.7, apg: 3.6, rpg: 6.1, threePm: 2.1 },
       { id: "lac7", name: "Kevin Porter Jr.", number: 7, position: "SG", ppg: 8.8, apg: 3.1, rpg: 3.2, threePm: 0.9 },
       { id: "lac8", name: "Nicolas Batum", number: 33, position: "PF", ppg: 5.6, apg: 1.8, rpg: 3, threePm: 1.2 }
     ]
@@ -2395,7 +2395,7 @@ var NBA_30_TEAMS_ROSTERS = {
     ],
     bench: [
       { id: "mil6", name: "Bobby Portis", number: 9, position: "PF", ppg: 13.6, apg: 1.2, rpg: 8, threePm: 1.1 },
-      { id: "mil7", name: "Khris Middleton", number: 22, position: "SF", ppg: 15.1, apg: 5.3, rpg: 4.7, threePm: 1.7, isInjured: true, injuryStatus: "GTD" },
+      { id: "mil7", name: "Khris Middleton", number: 22, position: "SF", ppg: 15.1, apg: 5.3, rpg: 4.7, threePm: 1.7 },
       { id: "mil8", name: "Pat Connaughton", number: 24, position: "SG", ppg: 5.8, apg: 1.8, rpg: 3, threePm: 1.2 }
     ]
   },
@@ -2422,7 +2422,7 @@ var NBA_30_TEAMS_ROSTERS = {
       { id: "nop1", name: "Dejounte Murray", number: 5, position: "PG", ppg: 18.4, apg: 6.8, rpg: 5.6, threePm: 1.8 },
       { id: "nop2", name: "CJ McCollum", number: 3, position: "SG", ppg: 19.2, apg: 3.8, rpg: 3.6, threePm: 3 },
       { id: "nop3", name: "Brandon Ingram", number: 14, position: "SF", ppg: 22.8, apg: 5.4, rpg: 5.8, threePm: 2.2 },
-      { id: "nop4", name: "Zion Williamson", number: 1, position: "PF", ppg: 22.7, apg: 5.3, rpg: 8, threePm: 0.1, isInjured: true, injuryStatus: "GTD" },
+      { id: "nop4", name: "Zion Williamson", number: 1, position: "PF", ppg: 22.7, apg: 5.3, rpg: 8, threePm: 0.1 },
       { id: "nop5", name: "Daniel Theis", number: 10, position: "C", ppg: 5.2, apg: 1.8, rpg: 4.8, threePm: 0.4 }
     ],
     bench: [
@@ -2455,7 +2455,7 @@ var NBA_30_TEAMS_ROSTERS = {
       { id: "okc2", name: "Cason Wallace", number: 22, position: "SG", ppg: 7.2, apg: 2.2, rpg: 3.4, threePm: 1.2 },
       { id: "okc3", name: "Luguentz Dort", number: 5, position: "SF", ppg: 10.8, apg: 1.6, rpg: 3.8, threePm: 2.2 },
       { id: "okc4", name: "Jalen Williams", number: 8, position: "PF", ppg: 21.8, apg: 5.2, rpg: 6.4, threePm: 1.8 },
-      { id: "okc5", name: "Chet Holmgren", number: 7, position: "C", ppg: 16.4, apg: 2.2, rpg: 8.7, threePm: 1.5, isInjured: true, injuryStatus: "Out" }
+      { id: "okc5", name: "Chet Holmgren", number: 7, position: "C", ppg: 16.4, apg: 2.2, rpg: 8.7, threePm: 1.5 }
     ],
     bench: [
       { id: "okc6", name: "Alex Caruso", number: 9, position: "SG", ppg: 6.4, apg: 2.4, rpg: 3, threePm: 1.1 },
@@ -2470,7 +2470,7 @@ var NBA_30_TEAMS_ROSTERS = {
       { id: "orl1", name: "Jalen Suggs", number: 4, position: "PG", ppg: 15, apg: 4, rpg: 4.8, threePm: 2.2 },
       { id: "orl2", name: "Kentavious Caldwell-Pope", number: 3, position: "SG", ppg: 8.8, apg: 2, rpg: 2.4, threePm: 1.5 },
       { id: "orl3", name: "Franz Wagner", number: 22, position: "SF", ppg: 23.5, apg: 5.6, rpg: 5.8, threePm: 2 },
-      { id: "orl4", name: "Paolo Banchero", number: 5, position: "PF", ppg: 29, apg: 5.6, rpg: 8.8, threePm: 2.2, isInjured: true, injuryStatus: "Out" },
+      { id: "orl4", name: "Paolo Banchero", number: 5, position: "PF", ppg: 29, apg: 5.6, rpg: 8.8, threePm: 2.2 },
       { id: "orl5", name: "Wendell Carter Jr.", number: 34, position: "C", ppg: 8.6, apg: 2, rpg: 8.4, threePm: 0.8 }
     ],
     bench: [
@@ -3513,9 +3513,7 @@ function getSoccerLineupData(fixture) {
       name: generateHumanPlayerName(teamName, idx + 12, true),
       number: idx === 0 ? 12 : idx + 14,
       position: pos,
-      matchYellowCards: 0,
-      isInjured: idx === 4,
-      injuryNote: idx === 4 ? "Molestia Muscular" : void 0
+      matchYellowCards: 0
     }));
     return { coach, formation, starters, subs };
   };
@@ -3931,6 +3929,7 @@ var CATEGORY_PRIORS = {
   "1X2": 46,
   NBA_TOTAL_POINTS: 62,
   NBA_MONEYLINE: 58,
+  NBA_MONEYLINE_2WAY: 50,
   NBA_PLAYER_PROP: 64,
   DEFAULT: 60
 };
@@ -4170,25 +4169,7 @@ function calculateNBAAnalysis(fixture) {
     if (p.injuryStatus === "Out") baseAwayScore -= 2.2;
     else if (p.injuryStatus === "GTD") baseAwayScore -= 1;
   });
-  if (fixture.quarters) {
-    const completedQuarters = [fixture.quarters.q1, fixture.quarters.q2, fixture.quarters.q3, fixture.quarters.q4].filter(
-      (q) => Boolean(q && q.isCompleted && q.home + q.away >= 24)
-    );
-    if (completedQuarters.length > 0) {
-      const avgCompletedQHome = completedQuarters.reduce((s, q) => s + q.home, 0) / completedQuarters.length;
-      const avgCompletedQAway = completedQuarters.reduce((s, q) => s + q.away, 0) / completedQuarters.length;
-      const impliedFullHome = avgCompletedQHome * 4;
-      const impliedFullAway = avgCompletedQAway * 4;
-      baseHomeScore = Math.round((baseHomeScore * 0.35 + impliedFullHome * 0.65) * 10) / 10;
-      baseAwayScore = Math.round((baseAwayScore * 0.35 + impliedFullAway * 0.65) * 10) / 10;
-    }
-  } else if (isFinished && fixture.currentScore && fixture.currentScore.home + fixture.currentScore.away > 100) {
-    baseHomeScore = Math.round((baseHomeScore * 0.35 + fixture.currentScore.home * 0.65) * 10) / 10;
-    baseAwayScore = Math.round((baseAwayScore * 0.35 + fixture.currentScore.away * 0.65) * 10) / 10;
-  }
   const rawPreMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
-  const preMatchDiff = baseHomeScore - baseAwayScore;
-  const fairSpread = Math.round(-preMatchDiff * 2) / 2;
   const fairTotalLine = Math.floor(rawPreMatchTotalPoints - 6.5) + 0.5;
   const homeWinPct = homeTeam.wins && homeTeam.wins + homeTeam.losses > 0 ? homeTeam.wins / (homeTeam.wins + homeTeam.losses) : 0.52;
   const awayWinPct = awayTeam.wins && awayTeam.wins + awayTeam.losses > 0 ? awayTeam.wins / (awayTeam.wins + awayTeam.losses) : 0.48;
@@ -4214,9 +4195,57 @@ function calculateNBAAnalysis(fixture) {
   );
   baseHomeScore = shrinkLambdaBayesian(nbaReg.regressedHomeScore, LEAGUE_AVG_ORTG, 75);
   baseAwayScore = shrinkLambdaBayesian(nbaReg.regressedAwayScore, LEAGUE_AVG_ORTG, 75);
-  const preMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
-  let projectedHomeScore = baseHomeScore;
-  let projectedAwayScore = baseAwayScore;
+  let preMatchHomeScore = Math.round(baseHomeScore * 10) / 10;
+  let preMatchAwayScore = Math.round(baseAwayScore * 10) / 10;
+  const preMatchTotalPoints = Math.round((preMatchHomeScore + preMatchAwayScore) * 10) / 10;
+  const rawZScore = (preMatchHomeScore - preMatchAwayScore) / 11.2;
+  const pHomeWinRawNormal = normalCDF(rawZScore) * 100;
+  const pHomeWinEnsemble = pHomeWinRawNormal * 0.7 + nbaReg.eloBradleyTerryHomeWinProb * 0.3;
+  const bayesWin = evaluateBayesianCredibility({
+    observedProbability: pHomeWinEnsemble,
+    category: "NBA_MONEYLINE_2WAY",
+    derbyOrRivalry: false,
+    fatiguePenalty: (homeTeam.restDays === 0 ? 0.05 : 0) + (awayTeam.restDays === 0 ? 0.06 : 0)
+  });
+  const modelPHomeWin = Math.round(bayesWin.posteriorProbability * 10) / 10;
+  const realHomeOdds = fixture.externalOdds?.homeMoneyline || fixture.consensusOdds?.homeMoneyline;
+  const realAwayOdds = fixture.externalOdds?.awayMoneyline || fixture.consensusOdds?.awayMoneyline;
+  const realSpread = fixture.externalOdds?.spreadPoint ?? (typeof fixture.consensusOdds?.spread === "number" ? fixture.consensusOdds.spread : void 0);
+  const realSpreadOdds = fixture.externalOdds?.homeSpreadOdds || 1.91;
+  const realTotal = fixture.externalOdds?.totalPoint ?? (typeof fixture.consensusOdds?.total === "number" ? fixture.consensusOdds.total : void 0);
+  const realOverOdds = fixture.externalOdds?.overOdds || fixture.consensusOdds?.overOdds || 1.91;
+  const realUnderOdds = fixture.externalOdds?.underOdds || fixture.consensusOdds?.underOdds || 1.91;
+  const hasValidTwoWayOdds = Boolean(
+    typeof realHomeOdds === "number" && typeof realAwayOdds === "number" && isFinite(realHomeOdds) && isFinite(realAwayOdds) && realHomeOdds >= 1.03 && realHomeOdds <= 25 && realAwayOdds >= 1.03 && realAwayOdds <= 25 && 1 / realHomeOdds + 1 / realAwayOdds >= 0.98 && 1 / realHomeOdds + 1 / realAwayOdds <= 1.2
+  );
+  let pHomeWin = modelPHomeWin;
+  let marketDivergenceWarning = false;
+  if (hasValidTwoWayOdds && realHomeOdds && realAwayOdds) {
+    const overround = 1 / realHomeOdds + 1 / realAwayOdds;
+    const marketHomeProb = 1 / realHomeOdds / overround * 100;
+    const divergence = Math.abs(modelPHomeWin - marketHomeProb);
+    let anchoredHome = modelPHomeWin;
+    if (divergence <= 12) {
+      anchoredHome = modelPHomeWin * 0.65 + marketHomeProb * 0.35;
+    } else if (divergence <= 25) {
+      anchoredHome = modelPHomeWin * 0.35 + marketHomeProb * 0.65;
+    } else {
+      anchoredHome = modelPHomeWin * 0.15 + marketHomeProb * 0.85;
+      marketDivergenceWarning = true;
+    }
+    pHomeWin = Math.max(8, Math.min(92, Math.round(anchoredHome * 10) / 10));
+    if (divergence > 15) {
+      const targetMargin = typeof realSpread === "number" && isFinite(realSpread) && Math.abs(realSpread) <= 24 ? -realSpread : Math.max(-16, Math.min(16, (pHomeWin - 50) * 0.3));
+      const halfTotal = preMatchTotalPoints / 2;
+      preMatchHomeScore = Math.round((halfTotal + targetMargin / 2) * 10) / 10;
+      preMatchAwayScore = Math.round((preMatchTotalPoints - preMatchHomeScore) * 10) / 10;
+    }
+  }
+  const pAwayWin = Math.round((100 - pHomeWin) * 10) / 10;
+  const preMatchDiff = preMatchHomeScore - preMatchAwayScore;
+  const fairSpread = Math.round(-preMatchDiff * 2) / 2;
+  let projectedHomeScore = preMatchHomeScore;
+  let projectedAwayScore = preMatchAwayScore;
   let expectedPace = Math.round(basePace * 10) / 10;
   const totalGameMinutes = isFibaLeague ? 40 : 48;
   let minutesRemaining = totalGameMinutes;
@@ -4226,8 +4255,8 @@ function calculateNBAAnalysis(fixture) {
       projectedHomeScore = fixture.currentScore.home;
       projectedAwayScore = fixture.currentScore.away;
     } else {
-      projectedHomeScore = Math.round(baseHomeScore * 10) / 10;
-      projectedAwayScore = Math.round(baseAwayScore * 10) / 10;
+      projectedHomeScore = preMatchHomeScore;
+      projectedAwayScore = preMatchAwayScore;
     }
   } else if (isLive && fixture.currentScore) {
     const curHome = fixture.currentScore.home;
@@ -4245,26 +4274,15 @@ function calculateNBAAnalysis(fixture) {
     const fractionElapsed = elapsedMinutes / totalGameMinutes;
     const fractionRemaining = minutesRemaining / totalGameMinutes;
     if (fractionElapsed > 0.1 && curTotal > 15) {
-      const paceFactor = curTotal / (fractionElapsed * (baseHomeScore + baseAwayScore));
+      const paceFactor = curTotal / (fractionElapsed * (preMatchHomeScore + preMatchAwayScore));
       expectedPace = Math.round(basePace * Math.max(0.85, Math.min(1.2, paceFactor)) * 10) / 10;
-      const remainingHomeExp = baseHomeScore * fractionRemaining * paceFactor;
-      const remainingAwayExp = baseAwayScore * fractionRemaining * paceFactor;
+      const remainingHomeExp = preMatchHomeScore * fractionRemaining * paceFactor;
+      const remainingAwayExp = preMatchAwayScore * fractionRemaining * paceFactor;
       projectedHomeScore = Math.round((curHome + remainingHomeExp) * 10) / 10;
       projectedAwayScore = Math.round((curAway + remainingAwayExp) * 10) / 10;
     }
   }
   const projectedTotalPoints = Math.round((projectedHomeScore + projectedAwayScore) * 10) / 10;
-  const preMatchZScore = (baseHomeScore - baseAwayScore) / 11.2;
-  const pHomeWinRawNormal = normalCDF(preMatchZScore) * 100;
-  const pHomeWinEnsemble = pHomeWinRawNormal * 0.7 + nbaReg.eloBradleyTerryHomeWinProb * 0.3;
-  const bayesWin = evaluateBayesianCredibility({
-    observedProbability: pHomeWinEnsemble,
-    category: "1X2",
-    derbyOrRivalry: false,
-    fatiguePenalty: (homeTeam.restDays === 0 ? 0.05 : 0) + (awayTeam.restDays === 0 ? 0.06 : 0)
-  });
-  const pHomeWin = Math.round(bayesWin.posteriorProbability * 10) / 10;
-  const pAwayWin = Math.round((100 - pHomeWin) * 10) / 10;
   const bayesTotal = evaluateBayesianCredibility({
     observedProbability: nbaReg.logisticOverTotalProb,
     category: "SAFE_GOALS",
@@ -4281,8 +4299,8 @@ function calculateNBAAnalysis(fixture) {
     { key: "Q4", label: "4to Cuarto (4Q)", weight: 0.248, elapsed: minutesRemaining === 0 }
   ];
   const quarterProjections = quarterWeights.map((qw, idx) => {
-    const qHome = Math.round(baseHomeScore * qw.weight * 10) / 10;
-    const qAway = Math.round(baseAwayScore * qw.weight * 10) / 10;
+    const qHome = Math.round(preMatchHomeScore * qw.weight * 10) / 10;
+    const qAway = Math.round(preMatchAwayScore * qw.weight * 10) / 10;
     const qTotal = Math.round((qHome + qAway) * 10) / 10;
     const qSpread = Math.round(-(qHome - qAway) * 2) / 2;
     const qOverLine = Math.max(isFibaLeague ? 34.5 : 43.5, Math.floor(qTotal - 2.5) + 0.5);
@@ -4423,7 +4441,7 @@ function calculateNBAAnalysis(fixture) {
     let liveCurrentPra;
     if ((isLive || isFinished) && fixture.currentScore) {
       const teamActualScore = isHomePlayer ? fixture.currentScore.home : fixture.currentScore.away;
-      const teamBaseScore = isHomePlayer ? baseHomeScore : baseAwayScore;
+      const teamBaseScore = isHomePlayer ? preMatchHomeScore : preMatchAwayScore;
       const scoreRatio = Math.max(0.15, teamActualScore / Math.max(85, teamBaseScore));
       const nameSeed = (player.name.charCodeAt(0) || 65) + (player.name.charCodeAt(player.name.length - 1) || 70) + pIdx * 7;
       const perfMultiplier = nameSeed % 3 === 0 ? 1.16 : nameSeed % 3 === 1 ? 0.86 : 1.05;
@@ -4486,17 +4504,10 @@ function calculateNBAAnalysis(fixture) {
   const starHome = sanitizePlayerName(homeTeam.keyPlayers?.[0]?.name, homeTeam.name, 0, false);
   const starAway = sanitizePlayerName(awayTeam.keyPlayers?.[0]?.name, awayTeam.name, 0, false);
   const keyMatchup = `Emparejamiento estelar: ${starHome} (${homeTeam.shortName}) vs ${starAway} (${awayTeam.shortName}).`;
-  const realHomeOdds = fixture.externalOdds?.homeMoneyline || fixture.consensusOdds?.homeMoneyline;
-  const realAwayOdds = fixture.externalOdds?.awayMoneyline || fixture.consensusOdds?.awayMoneyline;
-  const realSpread = fixture.externalOdds?.spreadPoint ?? (typeof fixture.consensusOdds?.spread === "number" ? fixture.consensusOdds.spread : void 0);
-  const realSpreadOdds = fixture.externalOdds?.homeSpreadOdds || 1.91;
-  const realTotal = fixture.externalOdds?.totalPoint ?? (typeof fixture.consensusOdds?.total === "number" ? fixture.consensusOdds.total : void 0);
-  const realOverOdds = fixture.externalOdds?.overOdds || fixture.consensusOdds?.overOdds || 1.91;
-  const realUnderOdds = fixture.externalOdds?.underOdds || fixture.consensusOdds?.underOdds || 1.91;
-  const fairOddsHome = Math.max(1.05, Math.min(15, Math.round(100 / Math.max(5, pHomeWin) * 100) / 100));
-  const fairOddsAway = Math.max(1.05, Math.min(15, Math.round(100 / Math.max(5, pAwayWin) * 100) / 100));
-  const bookmakerHomeOdds = realHomeOdds || Math.round(fairOddsHome * 0.96 * 100) / 100;
-  const bookmakerAwayOdds = realAwayOdds || Math.round(fairOddsAway * 0.96 * 100) / 100;
+  const fairOddsHome = Math.max(1.05, Math.min(12, Math.round(100 / Math.max(8, pHomeWin) * 100) / 100));
+  const fairOddsAway = Math.max(1.05, Math.min(12, Math.round(100 / Math.max(8, pAwayWin) * 100) / 100));
+  const bookmakerHomeOdds = hasValidTwoWayOdds && realHomeOdds ? realHomeOdds : Math.round(fairOddsHome * 0.96 * 100) / 100;
+  const bookmakerAwayOdds = hasValidTwoWayOdds && realAwayOdds ? realAwayOdds : Math.round(fairOddsAway * 0.96 * 100) / 100;
   const bookmakerSpread = realSpread !== void 0 ? realSpread : fairSpread;
   const bookmakerTotal = realTotal !== void 0 ? realTotal : fairTotalLine;
   const homeEV = (pHomeWin / 100 * (bookmakerHomeOdds - 1) - (1 - pHomeWin / 100)) * 100;
@@ -4506,12 +4517,12 @@ function calculateNBAAnalysis(fixture) {
   let valueEdgePercent;
   let valueExplanation;
   const bookmakerName = fixture.externalOdds?.bookmaker || fixture.consensusOdds?.provider || "Casas de Apuestas";
-  if (homeEV >= 2.5 && pHomeWin >= 45) {
+  if (!marketDivergenceWarning && homeEV >= 2.5 && homeEV <= 15 && pHomeWin >= 45 && bookmakerHomeOdds <= 2.85) {
     valueBetDetected = true;
     valueSide = "HOME";
     valueEdgePercent = Math.round(homeEV * 10) / 10;
     valueExplanation = `Ventaja +EV en ${homeTeam.shortName} (@${bookmakerHomeOdds.toFixed(2)} en ${bookmakerName}): Probabilidad del modelo (${pHomeWin}%) supera la cuota de mercado.`;
-  } else if (awayEV >= 2.5 && pAwayWin >= 40) {
+  } else if (!marketDivergenceWarning && awayEV >= 2.5 && awayEV <= 15 && pAwayWin >= 42 && bookmakerAwayOdds <= 2.85) {
     valueBetDetected = true;
     valueSide = "AWAY";
     valueEdgePercent = Math.round(awayEV * 10) / 10;
@@ -4524,6 +4535,10 @@ function calculateNBAAnalysis(fixture) {
     projectedHomeScore,
     projectedAwayScore,
     projectedTotalPoints,
+    preMatchHomeScore,
+    preMatchAwayScore,
+    preMatchTotalPoints,
+    isPreMatchLocked: Boolean(fixture.preMatchLocked),
     pHomeWin,
     pAwayWin,
     fairSpread,
@@ -4546,7 +4561,10 @@ function calculateNBAAnalysis(fixture) {
       valueBetDetected,
       valueSide,
       valueEdgePercent,
-      valueExplanation
+      valueExplanation,
+      marketDivergenceWarning,
+      fairHomeOdds: fairOddsHome,
+      fairAwayOdds: fairOddsAway
     }
   };
   nbaAnalysisCache.set(liveKey, {
@@ -4586,15 +4604,16 @@ function extractNBABettingMarketSuggestions(fixture, analysis) {
       });
     }
   };
-  const safeOverLine = Math.floor(nbaAnalysis.projectedTotalPoints - 12.5) + 0.5;
-  const zOver = (safeOverLine - nbaAnalysis.projectedTotalPoints) / sigma;
+  const preMatchTotal = nbaAnalysis.preMatchTotalPoints ?? nbaAnalysis.projectedTotalPoints;
+  const safeOverLine = Math.floor(preMatchTotal - 12.5) + 0.5;
+  const zOver = (safeOverLine - preMatchTotal) / sigma;
   const pOver = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zOver)));
   if (pOver >= 0.72) {
     addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `M\xE1s de ${safeOverLine} Puntos Totales`, pOver, 0.05);
   }
   if (nbaAnalysis.expectedPace <= 101) {
-    const safeUnderLine = Math.floor(nbaAnalysis.projectedTotalPoints + 13.5) + 0.5;
-    const zUnder = (safeUnderLine - nbaAnalysis.projectedTotalPoints) / sigma;
+    const safeUnderLine = Math.floor(preMatchTotal + 13.5) + 0.5;
+    const zUnder = (safeUnderLine - preMatchTotal) / sigma;
     const pUnder = Math.max(0.01, Math.min(0.96, normalCDF(zUnder)));
     if (pUnder >= 0.72) {
       addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `Menos de ${safeUnderLine} Puntos Totales`, pUnder, 0.05);
@@ -4689,7 +4708,7 @@ function calculateMatchAnalysis(fixture) {
   let lambdaAway = leagueMean * awayAttack * homeDefense * (1 - awayTotalPenalty);
   if (isNaN(lambdaHome) || lambdaHome <= 0) lambdaHome = 1.45;
   if (isNaN(lambdaAway) || lambdaAway <= 0) lambdaAway = 1.1;
-  const lineup = getSoccerLineupData(fixture);
+  const lineup = getSoccerLineupData({ ...fixture, liveRosters: void 0 });
   const homeInjured = [...lineup.homeStarters, ...lineup.homeSubstitutes].filter((p) => p.isInjured);
   const awayInjured = [...lineup.awayStarters, ...lineup.awaySubstitutes].filter((p) => p.isInjured);
   homeInjured.forEach((p) => {
@@ -7903,6 +7922,7 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
         } catch {
         }
         try {
+          const nbaSnapMap = await loadNBAPreMatchSnapshotsForDate(espnDate);
           const nbaRes = await fetch(
             `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${espnDate}`,
             {
@@ -7920,6 +7940,10 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
               if (bState === "post" || bev?.status?.type?.completed === true || bDesc.includes("final")) {
                 bev._sportstatsLeague = { name: "NBA", country: "Estados Unidos" };
                 bev._auditDateStr = dStr;
+                const snap = nbaSnapMap[String(bev?.id || "")];
+                if (snap) {
+                  bev._preMatchSnapshot = snap;
+                }
                 nbaFinishedEvents.push(bev);
               }
             }
@@ -8331,6 +8355,86 @@ app.get("/api/match-telemetry", dataRateLimitMiddleware, async (req, res) => {
     });
   }
 });
+var hydratedNbaSnapDates = /* @__PURE__ */ new Set();
+function compactEspnOddsForSnapshot(rawOdds) {
+  if (!rawOdds || typeof rawOdds !== "object") return void 0;
+  return {
+    provider: rawOdds.provider ? { name: rawOdds.provider.name } : void 0,
+    details: rawOdds.details,
+    spread: rawOdds.spread,
+    overUnder: rawOdds.overUnder,
+    moneyline: rawOdds.moneyline,
+    pointSpread: rawOdds.pointSpread,
+    total: rawOdds.total,
+    homeTeamOdds: rawOdds.homeTeamOdds ? { moneyLine: rawOdds.homeTeamOdds.moneyLine } : void 0,
+    awayTeamOdds: rawOdds.awayTeamOdds ? { moneyLine: rawOdds.awayTeamOdds.moneyLine } : void 0
+  };
+}
+async function loadNBAPreMatchSnapshotsForDate(espnDateStr) {
+  const snapKey = `nba_prematch_snap_v1_${espnDateStr}`;
+  const mem = getCacheItem(snapKey);
+  if (mem && mem.data && typeof mem.data === "object") {
+    return mem.data;
+  }
+  if (!hydratedNbaSnapDates.has(espnDateStr) && isSupabaseConfigured()) {
+    hydratedNbaSnapDates.add(espnDateStr);
+    try {
+      const remote = await getSupabaseKvCache(snapKey);
+      if (remote && remote.data && typeof remote.data === "object") {
+        setCacheItem(snapKey, remote.data);
+        return remote.data;
+      }
+    } catch {
+    }
+  }
+  return {};
+}
+async function mergeAndPersistNBAPreMatchSnapshots(espnDateStr, events) {
+  if (!Array.isArray(events) || events.length === 0) return;
+  const snapKey = `nba_prematch_snap_v1_${espnDateStr}`;
+  const snapMap = { ...await loadNBAPreMatchSnapshotsForDate(espnDateStr) };
+  let dirty = false;
+  for (const ev of events) {
+    const eventId = String(ev?.id || "");
+    if (!eventId) continue;
+    const state = String(ev?.status?.type?.state || "").toLowerCase();
+    const comp = ev?.competitions?.[0];
+    const homeComp = comp?.competitors?.find((c) => c.homeAway === "home");
+    const awayComp = comp?.competitors?.find((c) => c.homeAway === "away");
+    const homeRecord = String(homeComp?.records?.find((r) => r.type === "total")?.summary || "");
+    const awayRecord = String(awayComp?.records?.find((r) => r.type === "total")?.summary || "");
+    const rawOdds = comp?.odds?.[0];
+    if (state === "pre") {
+      if (!snapMap[eventId]) {
+        snapMap[eventId] = {
+          eventId,
+          capturedAt: Date.now(),
+          homeRecord,
+          awayRecord,
+          odds: compactEspnOddsForSnapshot(rawOdds)
+        };
+        dirty = true;
+      } else if (!snapMap[eventId].odds && rawOdds) {
+        snapMap[eventId] = {
+          ...snapMap[eventId],
+          odds: compactEspnOddsForSnapshot(rawOdds)
+        };
+        dirty = true;
+      }
+    }
+    if (snapMap[eventId]) {
+      ev._preMatchSnapshot = snapMap[eventId];
+    }
+  }
+  if (dirty) {
+    setCacheItem(snapKey, snapMap);
+    hydratedNbaSnapDates.add(espnDateStr);
+    if (isSupabaseConfigured()) {
+      setSupabaseKvCache(snapKey, snapMap).catch(() => {
+      });
+    }
+  }
+}
 app.get("/api/nba/scoreboard", dataRateLimitMiddleware, async (req, res) => {
   res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=120");
   const dateQuery = req.query.date || "";
@@ -8343,6 +8447,7 @@ app.get("/api/nba/scoreboard", dataRateLimitMiddleware, async (req, res) => {
   const hasLiveNbaInCache = cached && Array.isArray(cached.data) && cached.data.some((ev) => String(ev?.status?.type?.state || "").toLowerCase() === "in");
   const cacheTTL = targetDate === todayColombia ? hasLiveNbaInCache ? 25 * 1e3 : 3 * 60 * 1e3 : 24 * 60 * 60 * 1e3;
   if (cached && !force && Date.now() - cached.timestamp < cacheTTL) {
+    await mergeAndPersistNBAPreMatchSnapshots(espnDateStr, cached.data);
     return res.json({
       success: true,
       source: "persistent_disk_cache",
@@ -8417,7 +8522,11 @@ app.get("/api/nba/scoreboard", dataRateLimitMiddleware, async (req, res) => {
           allEvents.push(...r.value);
         }
       });
-      if (allEvents.length === 0 && cached) return cached.data;
+      if (allEvents.length === 0 && cached) {
+        await mergeAndPersistNBAPreMatchSnapshots(espnDateStr, cached.data);
+        return cached.data;
+      }
+      await mergeAndPersistNBAPreMatchSnapshots(espnDateStr, allEvents);
       setCacheItem(cacheKey, allEvents);
       return allEvents;
     });
@@ -8430,6 +8539,7 @@ app.get("/api/nba/scoreboard", dataRateLimitMiddleware, async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (cached) {
+      await mergeAndPersistNBAPreMatchSnapshots(espnDateStr, cached.data);
       return res.json({ success: true, source: "fallback_disk_cache", date: targetDate, events: cached.data });
     }
     return res.json({ success: false, error: msg, events: [] });

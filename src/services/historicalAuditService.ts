@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
+import { MatchFixture, MatchAnalysis, NBAMatchFixture, BestMarketPick } from '../types';
 import { fetchCompletedAuditBundle } from './apiService';
+import { calculateMatchAnalysis } from './mathEngine';
+import { calculateNBAAnalysis } from './nbaEngine';
+import { convertESPNEventToNBAMatch } from './nbaApiService';
 
 export interface AuditPickItem {
   id: string;
@@ -454,12 +458,25 @@ function computeAuditOverviewFromPicks(picks: AuditPickItem[]): HistoricalAuditO
     picks
   };
 
+  let maxConsecutiveStreak = 0;
+  let runningStreak = 0;
+  picks.forEach((p) => {
+    if (p.status === 'WON') {
+      runningStreak += 1;
+      if (runningStreak > maxConsecutiveStreak) {
+        maxConsecutiveStreak = runningStreak;
+      }
+    } else {
+      runningStreak = 0;
+    }
+  });
+
   return {
     globalAccuracy,
     totalPicksAudited: totalAudited,
     totalPicksWon: totalWon,
     accumulatedROI: roi,
-    maxConsecutiveStreak: 8,
+    maxConsecutiveStreak,
     avgWinningOdd,
     marketAccuracy,
     weeks: [weekSummary]
@@ -467,7 +484,7 @@ function computeAuditOverviewFromPicks(picks: AuditPickItem[]): HistoricalAuditO
 }
 
 // Resumen activo en memoria y persistencia local
-const STORAGE_KEY = 'gmetrics_live_audit_overview_v2';
+const STORAGE_KEY = 'gmetrics_live_audit_overview_v3';
 
 function loadStoredAuditOverview(): HistoricalAuditOverview {
   try {
@@ -521,6 +538,164 @@ export const getHistoricalAuditSummary = (): HistoricalAuditOverview => {
   return cachedAuditOverview;
 };
 
+function evaluateSoccerPreMatchPickForAudit(
+  f: MatchFixture,
+  analysis: MatchAnalysis
+): {
+  market: string;
+  pick: string;
+  odd: number;
+  certainty: number;
+  isWon: boolean;
+  detailScore?: string;
+} {
+  const hScore = f.currentScore?.home ?? 0;
+  const aScore = f.currentScore?.away ?? 0;
+  const totGoals = hScore + aScore;
+  const actualCorners = f.liveStats?.home && f.liveStats?.away
+    ? (f.liveStats.home.corners || 0) + (f.liveStats.away.corners || 0)
+    : 0;
+  const actualCards = f.liveStats?.home && f.liveStats?.away
+    ? (f.liveStats.home.yellowCards || 0) +
+      (f.liveStats.away.yellowCards || 0) +
+      (f.liveStats.home.redCards || 0) +
+      (f.liveStats.away.redCards || 0)
+    : 0;
+
+  const isPickVerifiable = (p?: BestMarketPick): boolean => {
+    if (!p) return false;
+    if (p.category === 'DOUBLE_CHANCE' || p.category === 'SAFE_GOALS' || p.category === 'BTTS' || p.category === '1X2') {
+      return true;
+    }
+    if (p.category === 'CORNERS') return actualCorners >= 3;
+    if (p.category === 'CARDS') return actualCards >= 1;
+    return false;
+  };
+
+  const candidates = [analysis.verdict?.topSafePick, ...(analysis.verdict?.allRankedPicks || [])];
+  const chosen = candidates.find(isPickVerifiable);
+
+  if (chosen) {
+    const baseOdd = Number(Math.max(1.18, chosen.fairOdd || 1.45).toFixed(2));
+    const cert = Number((chosen.probability || 72).toFixed(1));
+
+    if (chosen.id === 'dc_1x') {
+      return {
+        market: 'Doble Oportunidad',
+        pick: chosen.label,
+        odd: baseOdd,
+        certainty: cert,
+        isWon: hScore >= aScore,
+        detailScore: 'Pronóstico sellado pre-partido (1X)'
+      };
+    }
+    if (chosen.id === 'dc_x2') {
+      return {
+        market: 'Doble Oportunidad',
+        pick: chosen.label,
+        odd: baseOdd,
+        certainty: cert,
+        isWon: aScore >= hScore,
+        detailScore: 'Pronóstico sellado pre-partido (X2)'
+      };
+    }
+    if (chosen.id === 'goals_over15') {
+      return {
+        market: 'Goles Totales',
+        pick: chosen.label,
+        odd: baseOdd,
+        certainty: cert,
+        isWon: totGoals > 1.5,
+        detailScore: `xG Pre-Partido: ${analysis.dixonColes.totalXG.toFixed(2)}`
+      };
+    }
+    if (chosen.id === 'goals_under35') {
+      return {
+        market: 'Línea de Goles',
+        pick: chosen.label,
+        odd: baseOdd,
+        certainty: cert,
+        isWon: totGoals < 3.5,
+        detailScore: `xG Pre-Partido: ${analysis.dixonColes.totalXG.toFixed(2)}`
+      };
+    }
+    if (chosen.id === 'btts_pick') {
+      const predictYes = !chosen.label.toLowerCase().includes(': no');
+      const bothScored = hScore > 0 && aScore > 0;
+      return {
+        market: 'Ambos Equipos Anotan',
+        pick: chosen.label,
+        odd: baseOdd,
+        certainty: cert,
+        isWon: predictYes ? bothScored : !bothScored,
+        detailScore: `xG: ${analysis.dixonColes.lambdaHome.toFixed(2)} - ${analysis.dixonColes.lambdaAway.toFixed(2)}`
+      };
+    }
+    if (chosen.id === 'winner_1x2') {
+      const homeFav = analysis.dixonColes.pHomeWin >= analysis.dixonColes.pAwayWin;
+      return {
+        market: 'Resultado 1X2',
+        pick: chosen.label,
+        odd: baseOdd,
+        certainty: cert,
+        isWon: homeFav ? hScore > aScore : aScore > hScore,
+        detailScore: 'Pronóstico sellado pre-partido (1X2)'
+      };
+    }
+    if (chosen.category === 'CORNERS' && actualCorners >= 3) {
+      const isUnder = /menos|under/i.test(chosen.label);
+      const lineMatch = chosen.label.match(/(\d+(?:\.\d+)?)/);
+      const line = lineMatch ? parseFloat(lineMatch[1]) : isUnder ? 10.5 : 8.5;
+      return {
+        market: 'Córners Totales',
+        pick: chosen.label,
+        odd: baseOdd,
+        certainty: cert,
+        isWon: isUnder ? actualCorners < line : actualCorners > line,
+        detailScore: `${actualCorners} Córners reales`
+      };
+    }
+    if (chosen.category === 'CARDS' && actualCards >= 1) {
+      const isUnder = /menos|under/i.test(chosen.label);
+      const lineMatch = chosen.label.match(/(\d+(?:\.\d+)?)/);
+      const line = lineMatch ? parseFloat(lineMatch[1]) : isUnder ? 4.5 : 3.5;
+      return {
+        market: 'Tarjetas & Disciplina',
+        pick: chosen.label,
+        odd: baseOdd,
+        certainty: cert,
+        isWon: isUnder ? actualCards < line : actualCards > line,
+        detailScore: `${actualCards} Tarjetas reales`
+      };
+    }
+  }
+
+  // Respaldo determinístico puramente pre-partido (sin leer marcador real para elegir)
+  const p1X = analysis.goalsMarket?.doubleChance1X ?? 65;
+  const pX2 = analysis.goalsMarket?.doubleChanceX2 ?? 60;
+  const pOver15 = analysis.goalsMarket?.over15 ?? 70;
+  if (pOver15 >= Math.max(p1X, pX2)) {
+    return {
+      market: 'Goles Totales',
+      pick: 'Más de 1.5 Goles',
+      odd: Number(Math.max(1.2, 100 / Math.max(50, pOver15)).toFixed(2)),
+      certainty: pOver15,
+      isWon: totGoals > 1.5,
+      detailScore: `xG Pre-Partido: ${analysis.dixonColes.totalXG.toFixed(2)}`
+    };
+  }
+  const pick1X = p1X >= pX2;
+  const chosenProb = pick1X ? p1X : pX2;
+  return {
+    market: 'Doble Oportunidad',
+    pick: pick1X ? `${f.homeTeam.shortName} o Empate (1X)` : `Empate o ${f.awayTeam.shortName} (X2)`,
+    odd: Number(Math.max(1.2, 100 / Math.max(50, chosenProb)).toFixed(2)),
+    certainty: chosenProb,
+    isWon: pick1X ? hScore >= aScore : aScore >= hScore,
+    detailScore: 'Pronóstico sellado pre-partido'
+  };
+}
+
 // Sincronización continua en caliente con partidos oficiales finalizados (Fútbol & NBA)
 export const syncLatestFinishedAudit = async (): Promise<HistoricalAuditOverview> => {
   try {
@@ -531,103 +706,110 @@ export const syncLatestFinishedAudit = async (): Promise<HistoricalAuditOverview
 
     const liveAuditedPicks: AuditPickItem[] = [];
 
-    // 1. Procesar partidos de fútbol finalizados reales de ESPN
+    // 1. Evaluar partidos de fútbol finalizados reales usando estrictamente clones pre-partido
     bundle.soccerFixtures.forEach((f) => {
-      const hScore = f.currentScore?.home ?? 0;
-      const aScore = f.currentScore?.away ?? 0;
-      const totGoals = hScore + aScore;
-      const hName = f.homeTeam.name;
-      const aName = f.awayTeam.name;
-
-      let pickLabel = 'Más de 1.5 Goles en el partido';
-      let market = 'Goles Esperados';
-      let odd = 1.35;
-      let cert = 83.5;
-      let isWon = totGoals >= 2;
-
-      if (totGoals === 0) {
-        pickLabel = 'Menos de 2.5 Goles en total';
-        market = 'Línea de Goles';
-        odd = 1.72;
-        cert = 76.0;
-        isWon = true;
-      } else if (hScore > aScore && hScore >= 2) {
-        pickLabel = `Victoria ${hName} (1)`;
-        market = 'Resultado 1X2';
-        odd = 1.55;
-        cert = 85.0;
-        isWon = true;
-      } else if (totGoals >= 3) {
-        pickLabel = 'Más de 2.5 Goles en el partido';
-        market = 'Goles Totales';
-        odd = 1.62;
-        cert = 84.0;
-        isWon = true;
-      }
+      if (!f.currentScore) return;
+      const hScore = f.currentScore.home;
+      const aScore = f.currentScore.away;
+      const preMatchClone: MatchFixture = {
+        ...f,
+        status: 'SCHEDULED',
+        currentScore: undefined,
+        liveStats: undefined,
+        liveEvents: undefined,
+        liveRosters: undefined
+      };
+      const preAnalysis = calculateMatchAnalysis(preMatchClone);
+      const evaluated = evaluateSoccerPreMatchPickForAudit(f, preAnalysis);
 
       liveAuditedPicks.push({
         id: `live-f-${f.id}`,
         sport: 'SOCCER',
         league: f.league.name,
-        match: `${hName} vs ${aName}`,
+        match: `${f.homeTeam.name} vs ${f.awayTeam.name}`,
         homeLogo: f.homeTeam.logo,
         awayLogo: f.awayTeam.logo,
-        date: f.date ? f.date.slice(5, 10) : 'Hoy',
-        market,
-        pick: pickLabel,
-        odd,
-        certainty: cert,
-        status: isWon ? 'WON' : 'LOST',
+        date: f.date ? f.date.slice(5, 10) : 'Reciente',
+        market: evaluated.market,
+        pick: evaluated.pick,
+        odd: evaluated.odd,
+        certainty: evaluated.certainty,
+        status: evaluated.isWon ? 'WON' : 'LOST',
         officialResult: `${hScore} - ${aScore} (Final)`,
+        detailScore: evaluated.detailScore,
         hash: `GM-ESPN-${f.id}`
       });
     });
 
-    // 2. Procesar partidos NBA finalizados reales de ESPN
+    // 2. Evaluar partidos NBA finalizados reales usando clones pre-partido + snapshot oficial
     bundle.nbaEvents.forEach((bev) => {
-      const comp = bev.competitions?.[0];
-      const h = comp?.competitors?.find((c: any) => c.homeAway === 'home') || comp?.competitors?.[0];
-      const a = comp?.competitors?.find((c: any) => c.homeAway === 'away') || comp?.competitors?.[1];
-      if (!h || !a) return;
+      const dStr = bev?._auditDateStr || (bev?.date ? String(bev.date).slice(0, 10) : '2026-11-18');
+      const nbaFix = convertESPNEventToNBAMatch(bev, dStr);
+      if (!nbaFix || !nbaFix.currentScore) return;
 
-      const hScore = parseInt(h.score || '0', 10);
-      const aScore = parseInt(a.score || '0', 10);
-      const hName = h.team?.displayName || 'Local';
-      const aName = a.team?.displayName || 'Visitante';
-      const hLogo = h.team?.logo || '';
-      const aLogo = a.team?.logo || '';
+      const hScore = nbaFix.currentScore.home;
+      const aScore = nbaFix.currentScore.away;
       const totalPts = hScore + aScore;
-      const diff = hScore - aScore;
+      if (totalPts < 100) return;
 
-      let pickLabel = `Over ${Math.floor(totalPts * 0.96)}.5 Puntos Totales`;
-      let market = 'Total Puntos';
-      let odd = 1.90;
-      let cert = 80.5;
-      let isWon = totalPts > Math.floor(totalPts * 0.96);
+      const preMatchNbaClone: NBAMatchFixture = {
+        ...nbaFix,
+        status: 'SCHEDULED',
+        currentScore: undefined,
+        quarters: undefined
+      };
+      const preNbaAnalysis = calculateNBAAnalysis(preMatchNbaClone);
 
-      if (Math.abs(diff) >= 8) {
-        const favored = diff > 0 ? hName : aName;
-        pickLabel = `${favored} Spread -4.5`;
-        market = 'Hándicap Spread';
-        odd = 1.88;
-        cert = 82.0;
-        isWon = Math.abs(diff) >= 5;
+      const pHome = preNbaAnalysis.pHomeWin;
+      const pAway = preNbaAnalysis.pAwayWin;
+      const maxWinProb = Math.max(pHome, pAway);
+
+      let market = 'Moneyline NBA';
+      let pickLabel = '';
+      let odd = 1.85;
+      let cert = maxWinProb;
+      let isWon = false;
+
+      if (maxWinProb >= 58) {
+        const homeFav = pHome >= pAway;
+        const favTeamName = homeFav ? nbaFix.homeTeam.name : nbaFix.awayTeam.name;
+        const modelFair = Number((100 / Math.max(15, maxWinProb)).toFixed(2));
+        const bookOdd = homeFav
+          ? preNbaAnalysis.marketOdds?.bookmakerHomeOdds
+          : preNbaAnalysis.marketOdds?.bookmakerAwayOdds;
+        odd = bookOdd && isFinite(bookOdd) && bookOdd >= 1.04 && bookOdd <= Math.max(2.6, modelFair * 1.45)
+          ? bookOdd
+          : modelFair;
+        pickLabel = `Gana ${favTeamName} (ML)`;
+        isWon = homeFav ? hScore > aScore : aScore > hScore;
+      } else {
+        const isOver = preNbaAnalysis.overTotalProb >= preNbaAnalysis.underTotalProb;
+        const line = preNbaAnalysis.fairTotalLine;
+        market = 'Total Puntos';
+        pickLabel = `${isOver ? 'Más de' : 'Menos de'} ${line} Puntos Totales`;
+        cert = Math.max(preNbaAnalysis.overTotalProb, preNbaAnalysis.underTotalProb);
+        odd =
+          (isOver
+            ? preNbaAnalysis.marketOdds?.bookmakerOverOdds
+            : preNbaAnalysis.marketOdds?.bookmakerUnderOdds) || 1.91;
+        isWon = isOver ? totalPts > line : totalPts < line;
       }
 
       liveAuditedPicks.push({
         id: `live-nba-${bev.id}`,
         sport: 'NBA',
         league: 'NBA Oficial',
-        match: `${hName} vs ${aName}`,
-        homeLogo: hLogo,
-        awayLogo: aLogo,
-        date: bev.date ? String(bev.date).slice(5, 10) : 'Hoy',
+        match: `${nbaFix.homeTeam.name} vs ${nbaFix.awayTeam.name}`,
+        homeLogo: nbaFix.homeTeam.logo,
+        awayLogo: nbaFix.awayTeam.logo,
+        date: bev.date ? String(bev.date).slice(5, 10) : dStr.slice(5, 10),
         market,
         pick: pickLabel,
         odd,
-        certainty: cert,
+        certainty: Number(cert.toFixed(1)),
         status: isWon ? 'WON' : 'LOST',
-        officialResult: `${hScore} - ${aScore} (Final)`,
+        officialResult: `${hScore} - ${aScore} (Final · ${totalPts} pts)`,
+        detailScore: `Pre-partido ${preNbaAnalysis.preMatchTotalPoints ?? preNbaAnalysis.projectedTotalPoints} pts (Línea ${preNbaAnalysis.fairTotalLine})`,
         hash: `GM-NBA-${bev.id}`
       });
     });

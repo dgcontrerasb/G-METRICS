@@ -542,6 +542,16 @@ export interface NBAMatchFixture {
     status: string; // 'Out', 'Day-To-Day', 'Questionable', 'Doubtful'
     description?: string;
   }>;
+  preMatchLocked?: boolean;
+  preMatchSnapshot?: {
+    capturedAt: number;
+    homeWins: number;
+    homeLosses: number;
+    awayWins: number;
+    awayLosses: number;
+    consensusOdds?: NBAMatchFixture['consensusOdds'];
+    externalOdds?: NBAMatchFixture['externalOdds'];
+  };
 }
 
 export interface NBAH2HMatch {
@@ -587,6 +597,10 @@ export interface NBAAnalysis {
   projectedHomeScore: number;
   projectedAwayScore: number;
   projectedTotalPoints: number;
+  preMatchHomeScore?: number;
+  preMatchAwayScore?: number;
+  preMatchTotalPoints?: number;
+  isPreMatchLocked?: boolean;
   // Probabilidades y líneas
   pHomeWin: number;
   pAwayWin: number;
@@ -625,6 +639,9 @@ export interface NBAAnalysis {
     valueSide?: 'HOME' | 'AWAY' | 'OVER' | 'UNDER';
     valueEdgePercent?: number;
     valueExplanation?: string;
+    marketDivergenceWarning?: boolean;
+    fairHomeOdds?: number;
+    fairAwayOdds?: number;
   };
 }
 

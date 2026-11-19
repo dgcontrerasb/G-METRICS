@@ -210,13 +210,22 @@ export function getNBADidacticAdvice(fixture: NBAMatchFixture, analysis: NBAAnal
   const homeName = fixture.homeTeam.shortName || fixture.homeTeam.name;
   const awayName = fixture.awayTeam.shortName || fixture.awayTeam.name;
   const { pHomeWin, pAwayWin, threePointersMarket, projectedTotalPoints, fairSpread, marketOdds } = analysis;
+  const preMatchPts = analysis.preMatchTotalPoints ?? projectedTotalPoints;
 
-  const isValueBet = Boolean(marketOdds?.valueBetDetected);
+  const chosenOdd =
+    marketOdds?.valueSide === 'HOME'
+      ? marketOdds.bookmakerHomeOdds
+      : (marketOdds?.bookmakerAwayOdds || 1.9);
+  const isValueBet = Boolean(
+    marketOdds?.valueBetDetected &&
+      !marketOdds?.marketDivergenceWarning &&
+      (marketOdds?.valueEdgePercent ?? 0) <= 15 &&
+      chosenOdd <= 2.85
+  );
 
   // 1. CASO VERDE (🟢 TE CONVIENE):
   if (isValueBet) {
     const sideName = marketOdds?.valueSide === 'HOME' ? homeName : awayName;
-    const chosenOdd = marketOdds?.valueSide === 'HOME' ? marketOdds.bookmakerHomeOdds : marketOdds?.bookmakerAwayOdds || 1.9;
     return {
       signal: 'GREEN',
       badgeLabel: '🟢 Te Conviene (Valor en Cuota NBA)',
@@ -285,7 +294,7 @@ export function getNBADidacticAdvice(fixture: NBAMatchFixture, analysis: NBAAnal
       headline: `Duelo parejo: Margen menor a 4 puntos`,
       plainExplanation: `Cualquiera de los dos puede ganar (${pHomeWin}% vs ${pAwayWin}%). Los finales cerrados se deciden en los últimos segundos.`,
       payoutExample: formatOddsPayout(1.90, 10),
-      actionAdvice: `Te conviene apostar a puntos totales (${projectedTotalPoints} pts proyectados) en vez de elegir un ganador.`
+      actionAdvice: `Te conviene apostar a puntos totales (${preMatchPts} pts proyectados pre-partido) en vez de elegir un ganador.`
     };
   }
 

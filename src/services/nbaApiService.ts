@@ -4,13 +4,112 @@ import { findNBARosterForTeam } from './nbaRostersData';
 
 export function americanToDecimal(americanStr?: string | number): number | undefined {
   if (americanStr === undefined || americanStr === null || americanStr === '') return undefined;
+  if (typeof americanStr === 'string') {
+    const clean = americanStr.trim().toUpperCase();
+    if (clean === 'EVEN' || clean === 'EV' || clean === 'PK' || clean === 'PICK') {
+      return 2.0;
+    }
+  }
   const num = typeof americanStr === 'number' ? americanStr : parseFloat(String(americanStr).replace('+', ''));
   if (isNaN(num) || num === 0) return undefined;
-  if (num > 0) {
-    return Math.round((1 + num / 100) * 100) / 100;
-  } else {
-    return Math.round((1 + 100 / Math.abs(num)) * 100) / 100;
+  const dec =
+    num > 0
+      ? Math.round((1 + num / 100) * 100) / 100
+      : Math.round((1 + 100 / Math.abs(num)) * 100) / 100;
+  if (!isFinite(dec) || dec < 1.01 || dec > 35.0) return undefined;
+  return dec;
+}
+
+const NBA_TEAM_MASCOTS = [
+  'trail blazers',
+  'blazers',
+  'timberwolves',
+  'clippers',
+  'lakers',
+  'spurs',
+  'knicks',
+  'nets',
+  'thunder',
+  'celtics',
+  'mavericks',
+  'nuggets',
+  'warriors',
+  'pelicans',
+  'grizzlies',
+  'hornets',
+  'pistons',
+  'raptors',
+  'wizards',
+  'rockets',
+  'kings',
+  'hawks',
+  'heat',
+  'cavaliers',
+  '76ers',
+  'sixers',
+  'bucks',
+  'bulls',
+  'magic',
+  'pacers',
+  'suns',
+  'jazz'
+];
+
+function extractNBAMascot(normalizedName: string): string | null {
+  const padded = ` ${normalizedName} `;
+  for (const rawMascot of NBA_TEAM_MASCOTS) {
+    if (padded.includes(` ${rawMascot} `)) {
+      if (rawMascot === 'trail blazers') return 'blazers';
+      if (rawMascot === 'sixers') return '76ers';
+      return rawMascot;
+    }
   }
+  return null;
+}
+
+/**
+ * Matches two basketball team names strictly without colliding on shared cities (e.g. LA Clippers vs Los Angeles Lakers).
+ */
+export function nbaTeamNamesMatch(teamA: string, teamB: string): boolean {
+  const norm = (s: string) =>
+    (s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const a = norm(teamA);
+  const b = norm(teamB);
+  if (!a || !b) return false;
+  if (a === b) return true;
+
+  const mascotA = extractNBAMascot(a);
+  const mascotB = extractNBAMascot(b);
+  if (mascotA && mascotB) {
+    return mascotA === mascotB;
+  }
+
+  if (a.length >= 6 && b.length >= 6 && (a.includes(b) || b.includes(a))) {
+    return true;
+  }
+
+  const tokensA = a.split(' ');
+  const tokensB = b.split(' ');
+  const lastA = tokensA[tokensA.length - 1] || '';
+  const lastB = tokensB[tokensB.length - 1] || '';
+  return lastA.length >= 5 && lastA === lastB;
+}
+
+function parseWinLossSummary(summary?: string): { wins?: number; losses?: number } {
+  if (!summary || typeof summary !== 'string') return {};
+  const m = summary.trim().match(/^(\d+)\s*-\s*(\d+)/);
+  if (!m) return {};
+  const w = parseInt(m[1], 10);
+  const l = parseInt(m[2], 10);
+  if (isNaN(w) || isNaN(l) || w + l === 0) return {};
+  return { wins: w, losses: l };
 }
 
 // Database of elite NBA franchises with accurate tactical metrics, pace and rosters
@@ -1590,12 +1689,13 @@ export const NBA_TEAMS: Record<string, NBATeamInfo> = {
 /**
  * Resolves or creates an NBATeamInfo object from an official ESPN competitor feed
  */
-export function resolveNBATeam(comp: any, leagueName = 'NBA'): NBATeamInfo {
+export function resolveNBATeam(comp: any, leagueName = 'NBA', overrideRecord?: string): NBATeamInfo {
   const team = comp?.team || {};
   const dispName = (team.displayName || '').toLowerCase().trim();
   const name = (team.name || '').toLowerCase().trim();
   const abbr = (team.abbreviation || '').toLowerCase().trim();
   const isStrictNBA = !leagueName || leagueName.toUpperCase() === 'NBA';
+  const parsedOverride = parseWinLossSummary(overrideRecord);
 
   // Only match against the 30 NBA franchises when the event actually belongs to the NBA
   if (isStrictNBA) {
@@ -1639,14 +1739,36 @@ export function resolveNBATeam(comp: any, leagueName = 'NBA'): NBATeamInfo {
         (key === 'blazers' && (abbr === 'por' || dispName.includes('trail blazers') || dispName.includes('blazers')))
       ) {
         const recordSummary = comp?.records?.find((r: any) => r.type === 'total')?.summary || `${t.wins}-${t.losses}`;
-        const [w, l] = recordSummary.split('-').map((v: string) => parseInt(v, 10));
+        const [rawW, rawL] = recordSummary.split('-').map((v: string) => parseInt(v, 10));
+        const finalWins = parsedOverride.wins !== undefined ? parsedOverride.wins : (!isNaN(rawW) ? rawW : t.wins);
+        const finalLosses = parsedOverride.losses !== undefined ? parsedOverride.losses : (!isNaN(rawL) ? rawL : t.losses);
+
+        // Calibración dinámica hacia el rendimiento real de la temporada vigente
+        const totalGames = finalWins + finalLosses;
+        let calibratedOff = t.offensiveRating;
+        let calibratedDef = t.defensiveRating;
+        let calibratedNet = t.netRating;
+        if (totalGames >= 5) {
+          const winPct = finalWins / totalGames;
+          const currentSeasonNet = (winPct - 0.5) * 28.0;
+          const seasonWeight = Math.min(0.85, totalGames / 25);
+          const blendedNet = t.netRating * (1 - seasonWeight) + currentSeasonNet * seasonWeight;
+          const netShift = blendedNet - t.netRating;
+          calibratedOff = Math.max(103.0, Math.min(124.0, Number((t.offensiveRating + netShift * 0.52).toFixed(1))));
+          calibratedDef = Math.max(103.0, Math.min(124.0, Number((t.defensiveRating - netShift * 0.48).toFixed(1))));
+          calibratedNet = Number((calibratedOff - calibratedDef).toFixed(1));
+        }
+
         const foundRoster = findNBARosterForTeam(dispName) || findNBARosterForTeam(name) || findNBARosterForTeam(key);
         const enrichedKeyPlayers = foundRoster ? buildKeyPlayersFromRoster(foundRoster, t.name) : t.keyPlayers;
         return {
           ...t,
           logo: team.logo || t.logo,
-          wins: !isNaN(w) ? w : t.wins,
-          losses: !isNaN(l) ? l : t.losses,
+          wins: finalWins,
+          losses: finalLosses,
+          offensiveRating: calibratedOff,
+          defensiveRating: calibratedDef,
+          netRating: calibratedNet,
           keyPlayers: enrichedKeyPlayers && enrichedKeyPlayers.length > 0 ? enrichedKeyPlayers : t.keyPlayers
         };
       }
@@ -1655,7 +1777,18 @@ export function resolveNBATeam(comp: any, leagueName = 'NBA'): NBATeamInfo {
 
   // Authentic team profile for NCAA, WNBA, FIBA, EuroLeague, or unmatched basketball clubs
   const recordSummary = comp?.records?.find((r: any) => r.type === 'total')?.summary || '0-0';
-  const [wins, losses] = recordSummary.split('-').map((v: string) => parseInt(v, 10) || 0);
+  const [rawW, rawL] = recordSummary.split('-').map((v: string) => parseInt(v, 10) || 0);
+  const wins = parsedOverride.wins !== undefined ? parsedOverride.wins : rawW;
+  const losses = parsedOverride.losses !== undefined ? parsedOverride.losses : rawL;
+  const totalGames = wins + losses;
+  let offRtg = 114.2;
+  let defRtg = 113.8;
+  if (totalGames >= 5) {
+    const shift = ((wins / totalGames) - 0.5) * 14;
+    offRtg = Math.max(98, Math.min(122, Number((114.2 + shift * 0.52).toFixed(1))));
+    defRtg = Math.max(98, Math.min(122, Number((113.8 - shift * 0.48).toFixed(1))));
+  }
+  const netRtg = Number((offRtg - defRtg).toFixed(1));
   const fullTeamName = team.displayName || team.name || 'Equipo Baloncesto';
   const shortTeamName = team.shortDisplayName || team.name || team.abbreviation || fullTeamName;
 
@@ -1698,9 +1831,9 @@ export function resolveNBATeam(comp: any, leagueName = 'NBA'): NBATeamInfo {
     losses: losses || 0,
     streak: wins > losses ? 'W1' : 'L1',
     pace: 99.5,
-    offensiveRating: 114.2,
-    defensiveRating: 113.8,
-    netRating: 0.4,
+    offensiveRating: offRtg,
+    defensiveRating: defRtg,
+    netRating: netRtg,
     threePointAttemptRate: 0.41,
     threePointPct: 36.5,
     restDays: 1,
@@ -1779,8 +1912,9 @@ export function convertESPNEventToNBAMatch(ev: any, dateStr: string): NBAMatchFi
       country: 'Estados Unidos'
     };
 
-    const homeTeam = resolveNBATeam(homeComp, leagueMeta.name);
-    const awayTeam = resolveNBATeam(awayComp, leagueMeta.name);
+    const snap = ev._preMatchSnapshot;
+    const homeTeam = resolveNBATeam(homeComp, leagueMeta.name, snap?.homeRecord);
+    const awayTeam = resolveNBATeam(awayComp, leagueMeta.name, snap?.awayRecord);
 
     // Compute local time in user's country timezone
     const matchDate = new Date(ev.date);
@@ -1947,25 +2081,43 @@ export function convertESPNEventToNBAMatch(ev: any, dateStr: string): NBAMatchFi
       };
     }
 
-    // Extract official sportsbook lines from ESPN pickcenter/odds
-    const rawOdds = comp.odds?.[0];
+    // Extract official sportsbook pre-match lines from immutable server snapshot or ESPN pickcenter open odds
+    const rawOdds = snap?.odds || comp.odds?.[0];
     let consensusOdds: NBAMatchFixture['consensusOdds'] = undefined;
     if (rawOdds) {
-      const mlHome = americanToDecimal(rawOdds.moneyline?.home?.close?.odds || rawOdds.moneyline?.home?.open?.odds);
-      const mlAway = americanToDecimal(rawOdds.moneyline?.away?.close?.odds || rawOdds.moneyline?.away?.open?.odds);
-      const spLine = rawOdds.pointSpread?.home?.close?.line || rawOdds.details || rawOdds.spread;
-      const totLine = rawOdds.total?.over?.close?.line || rawOdds.overUnder;
-      const oOdds = americanToDecimal(rawOdds.total?.over?.close?.odds);
-      const uOdds = americanToDecimal(rawOdds.total?.under?.close?.odds);
-      consensusOdds = {
-        provider: rawOdds.provider?.name || 'DraftKings',
-        homeMoneyline: mlHome,
-        awayMoneyline: mlAway,
-        spread: spLine,
-        total: totLine,
-        overOdds: oOdds,
-        underOdds: uOdds
-      };
+      const useCloseFallback = Boolean(snap?.odds) || status === 'SCHEDULED';
+      const mlHomeRaw =
+        rawOdds.moneyline?.home?.open?.odds ??
+        (useCloseFallback ? (rawOdds.moneyline?.home?.close?.odds ?? rawOdds.homeTeamOdds?.moneyLine) : undefined);
+      const mlAwayRaw =
+        rawOdds.moneyline?.away?.open?.odds ??
+        (useCloseFallback ? (rawOdds.moneyline?.away?.close?.odds ?? rawOdds.awayTeamOdds?.moneyLine) : undefined);
+
+      const mlHome = americanToDecimal(mlHomeRaw);
+      const mlAway = americanToDecimal(mlAwayRaw);
+      const spLine = useCloseFallback
+        ? (rawOdds.pointSpread?.home?.open?.line || rawOdds.pointSpread?.home?.close?.line || rawOdds.details || rawOdds.spread)
+        : rawOdds.pointSpread?.home?.open?.line;
+      const totLine = useCloseFallback
+        ? (rawOdds.total?.over?.open?.line || rawOdds.total?.over?.close?.line || rawOdds.overUnder)
+        : rawOdds.total?.over?.open?.line;
+      const oOdds = americanToDecimal(
+        rawOdds.total?.over?.open?.odds ?? (useCloseFallback ? rawOdds.total?.over?.close?.odds : undefined)
+      );
+      const uOdds = americanToDecimal(
+        rawOdds.total?.under?.open?.odds ?? (useCloseFallback ? rawOdds.total?.under?.close?.odds : undefined)
+      );
+      if (mlHome !== undefined || mlAway !== undefined || spLine !== undefined || totLine !== undefined) {
+        consensusOdds = {
+          provider: rawOdds.provider?.name || 'DraftKings',
+          homeMoneyline: mlHome,
+          awayMoneyline: mlAway,
+          spread: spLine,
+          total: totLine,
+          overOdds: oOdds,
+          underOdds: uOdds
+        };
+      }
     }
 
     return {
@@ -2000,6 +2152,17 @@ export function convertESPNEventToNBAMatch(ev: any, dateStr: string): NBAMatchFi
         homeWins: homeTeam.wins >= awayTeam.wins ? 3 : 2,
         awayWins: homeTeam.wins >= awayTeam.wins ? 2 : 3
       },
+      preMatchLocked: Boolean(snap),
+      preMatchSnapshot: snap
+        ? {
+            capturedAt: snap.capturedAt || Date.now(),
+            homeWins: homeTeam.wins,
+            homeLosses: homeTeam.losses,
+            awayWins: awayTeam.wins,
+            awayLosses: awayTeam.losses,
+            consensusOdds
+          }
+        : undefined,
       consensusOdds
     };
   } catch (err) {
@@ -2117,9 +2280,153 @@ export function generateNBAFixtures(dateStr: string): NBAMatchFixture[] {
   ];
 }
 
-const NBA_CACHE_PREFIX = 'basketstats_nba_v7_';
+const NBA_CACHE_PREFIX = 'basketstats_nba_v8_';
+const NBA_PREMATCH_LOCK_PREFIX = 'gmetrics_nba_prematch_lock_v1_';
 const NBA_CACHE_TTL_LIVE = 25 * 1000; // 25 seconds for live matches
 const NBA_CACHE_TTL_SCHEDULED = 5 * 60 * 1000; // 5 minutes for scheduled/completed
+
+interface LocalNBAPreMatchLockItem {
+  capturedAt: number;
+  homeWins: number;
+  homeLosses: number;
+  homeOff: number;
+  homeDef: number;
+  homeNet: number;
+  awayWins: number;
+  awayLosses: number;
+  awayOff: number;
+  awayDef: number;
+  awayNet: number;
+  consensusOdds?: NBAMatchFixture['consensusOdds'];
+  externalOdds?: NBAMatchFixture['externalOdds'];
+}
+
+function loadLocalNBAPreMatchLocks(dateStr: string): Record<string, LocalNBAPreMatchLockItem> {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(`${NBA_PREMATCH_LOCK_PREFIX}${dateStr}`);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalNBAPreMatchLocks(dateStr: string, map: Record<string, LocalNBAPreMatchLockItem>): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    // Limpiar locks mayores a 4 días para evitar saturación en móvil
+    const cutoff = Date.now() - 4 * 24 * 60 * 60 * 1000;
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(NBA_PREMATCH_LOCK_PREFIX) && k !== `${NBA_PREMATCH_LOCK_PREFIX}${dateStr}`) {
+        const dPart = k.replace(NBA_PREMATCH_LOCK_PREFIX, '');
+        const dMs = new Date(`${dPart}T12:00:00Z`).getTime();
+        if (!isNaN(dMs) && dMs < cutoff) {
+          localStorage.removeItem(k);
+        }
+      }
+    }
+    localStorage.setItem(`${NBA_PREMATCH_LOCK_PREFIX}${dateStr}`, JSON.stringify(map));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function applyPreMatchLockToFixture(
+  match: NBAMatchFixture,
+  lockMap: Record<string, LocalNBAPreMatchLockItem>
+): boolean {
+  const existing = lockMap[match.id];
+
+  if (match.status === 'SCHEDULED') {
+    if (!existing) {
+      lockMap[match.id] = {
+        capturedAt: match.preMatchSnapshot?.capturedAt || Date.now(),
+        homeWins: match.homeTeam.wins,
+        homeLosses: match.homeTeam.losses,
+        homeOff: match.homeTeam.offensiveRating,
+        homeDef: match.homeTeam.defensiveRating,
+        homeNet: match.homeTeam.netRating,
+        awayWins: match.awayTeam.wins,
+        awayLosses: match.awayTeam.losses,
+        awayOff: match.awayTeam.offensiveRating,
+        awayDef: match.awayTeam.defensiveRating,
+        awayNet: match.awayTeam.netRating,
+        consensusOdds: match.consensusOdds,
+        externalOdds: match.externalOdds
+      };
+      match.preMatchLocked = true;
+      return true;
+    }
+
+    let updated = false;
+    if (!existing.consensusOdds && match.consensusOdds) {
+      existing.consensusOdds = match.consensusOdds;
+      updated = true;
+    }
+    if (!existing.externalOdds && match.externalOdds) {
+      existing.externalOdds = match.externalOdds;
+      updated = true;
+    }
+
+    match.homeTeam = {
+      ...match.homeTeam,
+      wins: existing.homeWins,
+      losses: existing.homeLosses,
+      offensiveRating: existing.homeOff,
+      defensiveRating: existing.homeDef,
+      netRating: existing.homeNet
+    };
+    match.awayTeam = {
+      ...match.awayTeam,
+      wins: existing.awayWins,
+      losses: existing.awayLosses,
+      offensiveRating: existing.awayOff,
+      defensiveRating: existing.awayDef,
+      netRating: existing.awayNet
+    };
+    if (existing.consensusOdds) match.consensusOdds = existing.consensusOdds;
+    if (existing.externalOdds) match.externalOdds = existing.externalOdds;
+    match.preMatchLocked = true;
+    return updated;
+  }
+
+  if (existing) {
+    match.homeTeam = {
+      ...match.homeTeam,
+      wins: existing.homeWins,
+      losses: existing.homeLosses,
+      offensiveRating: existing.homeOff,
+      defensiveRating: existing.homeDef,
+      netRating: existing.homeNet
+    };
+    match.awayTeam = {
+      ...match.awayTeam,
+      wins: existing.awayWins,
+      losses: existing.awayLosses,
+      offensiveRating: existing.awayOff,
+      defensiveRating: existing.awayDef,
+      netRating: existing.awayNet
+    };
+    if (existing.consensusOdds) match.consensusOdds = existing.consensusOdds;
+    if (existing.externalOdds) match.externalOdds = existing.externalOdds;
+    match.preMatchLocked = true;
+    if (!match.preMatchSnapshot) {
+      match.preMatchSnapshot = {
+        capturedAt: existing.capturedAt,
+        homeWins: existing.homeWins,
+        homeLosses: existing.homeLosses,
+        awayWins: existing.awayWins,
+        awayLosses: existing.awayLosses,
+        consensusOdds: existing.consensusOdds,
+        externalOdds: existing.externalOdds
+      };
+    }
+  }
+  return false;
+}
 
 export async function fetchNBAFixtures(
   dateStr?: string,
@@ -2174,24 +2481,19 @@ export async function fetchNBAFixtures(
       if (json.success && Array.isArray(json.events)) {
         const parsedList: NBAMatchFixture[] = [];
         const allParsedList: NBAMatchFixture[] = [];
+        const lockMap = loadLocalNBAPreMatchLocks(targetDate);
+        let lockDirty = false;
 
         for (const ev of json.events) {
           const match = convertESPNEventToNBAMatch(ev, targetDate);
           if (match) {
-            // Match with The Odds API data (DraftKings, FanDuel, Pinnacle, 1xBet, etc.)
-            if (externalOddsList.length > 0) {
-              const hName = match.homeTeam.name.toLowerCase();
-              const aName = match.awayTeam.name.toLowerCase();
-              const hCity = (match.homeTeam.city || '').toLowerCase();
-              const aCity = (match.awayTeam.city || '').toLowerCase();
-
-              const foundOdds = externalOddsList.find((g: any) => {
-                const gh = (g.home_team || '').toLowerCase();
-                const ga = (g.away_team || '').toLowerCase();
-                const matchHome = hName.includes(gh) || gh.includes(hName) || (hCity && gh.includes(hCity));
-                const matchAway = aName.includes(ga) || ga.includes(aName) || (aCity && ga.includes(aCity));
-                return matchHome && matchAway;
-              });
+            // Solo adjuntar cuotas externas cuando el partido aún no comienza (SCHEDULED) y sin colisión de ciudades
+            if (match.status === 'SCHEDULED' && externalOddsList.length > 0) {
+              const foundOdds = externalOddsList.find(
+                (g: any) =>
+                  nbaTeamNamesMatch(match.homeTeam.name, String(g.home_team || '')) &&
+                  nbaTeamNamesMatch(match.awayTeam.name, String(g.away_team || ''))
+              );
 
               if (foundOdds && Array.isArray(foundOdds.bookmakers) && foundOdds.bookmakers.length > 0) {
                 const bm =
@@ -2225,9 +2527,17 @@ export async function fetchNBAFixtures(
               }
             }
 
+            if (applyPreMatchLockToFixture(match, lockMap)) {
+              lockDirty = true;
+            }
+
             allParsedList.push(match);
             parsedList.push(match);
           }
+        }
+
+        if (lockDirty) {
+          saveLocalNBAPreMatchLocks(targetDate, lockMap);
         }
 
         // Sort: Live first, then scheduled by time, then finished

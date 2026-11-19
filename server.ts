@@ -2329,6 +2329,7 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
 
         // B. Baloncesto NBA (Scoreboard finalizado oficial de ESPN a $0 costo)
         try {
+          const nbaSnapMap = await loadNBAPreMatchSnapshotsForDate(espnDate);
           const nbaRes = await fetch(
             `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${espnDate}`,
             {
@@ -2346,6 +2347,10 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
               if (bState === 'post' || bev?.status?.type?.completed === true || bDesc.includes('final')) {
                 bev._sportstatsLeague = { name: 'NBA', country: 'Estados Unidos' };
                 bev._auditDateStr = dStr;
+                const snap = nbaSnapMap[String(bev?.id || '')];
+                if (snap) {
+                  bev._preMatchSnapshot = snap;
+                }
                 nbaFinishedEvents.push(bev);
               }
             }
@@ -2830,6 +2835,103 @@ app.get('/api/match-telemetry', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
+interface ServerNBAPreMatchSnapItem {
+  eventId: string;
+  capturedAt: number;
+  homeRecord: string;
+  awayRecord: string;
+  odds?: any;
+}
+
+const hydratedNbaSnapDates = new Set<string>();
+
+function compactEspnOddsForSnapshot(rawOdds: any): any | undefined {
+  if (!rawOdds || typeof rawOdds !== 'object') return undefined;
+  return {
+    provider: rawOdds.provider ? { name: rawOdds.provider.name } : undefined,
+    details: rawOdds.details,
+    spread: rawOdds.spread,
+    overUnder: rawOdds.overUnder,
+    moneyline: rawOdds.moneyline,
+    pointSpread: rawOdds.pointSpread,
+    total: rawOdds.total,
+    homeTeamOdds: rawOdds.homeTeamOdds ? { moneyLine: rawOdds.homeTeamOdds.moneyLine } : undefined,
+    awayTeamOdds: rawOdds.awayTeamOdds ? { moneyLine: rawOdds.awayTeamOdds.moneyLine } : undefined
+  };
+}
+
+async function loadNBAPreMatchSnapshotsForDate(espnDateStr: string): Promise<Record<string, ServerNBAPreMatchSnapItem>> {
+  const snapKey = `nba_prematch_snap_v1_${espnDateStr}`;
+  const mem = getCacheItem<Record<string, ServerNBAPreMatchSnapItem>>(snapKey);
+  if (mem && mem.data && typeof mem.data === 'object') {
+    return mem.data;
+  }
+  if (!hydratedNbaSnapDates.has(espnDateStr) && isSupabaseConfigured()) {
+    hydratedNbaSnapDates.add(espnDateStr);
+    try {
+      const remote = await getSupabaseKvCache<Record<string, ServerNBAPreMatchSnapItem>>(snapKey);
+      if (remote && remote.data && typeof remote.data === 'object') {
+        setCacheItem(snapKey, remote.data);
+        return remote.data;
+      }
+    } catch {
+      // fallback to empty snapshot map
+    }
+  }
+  return {};
+}
+
+async function mergeAndPersistNBAPreMatchSnapshots(espnDateStr: string, events: any[]): Promise<void> {
+  if (!Array.isArray(events) || events.length === 0) return;
+  const snapKey = `nba_prematch_snap_v1_${espnDateStr}`;
+  const snapMap = { ...(await loadNBAPreMatchSnapshotsForDate(espnDateStr)) };
+  let dirty = false;
+
+  for (const ev of events) {
+    const eventId = String(ev?.id || '');
+    if (!eventId) continue;
+
+    const state = String(ev?.status?.type?.state || '').toLowerCase();
+    const comp = ev?.competitions?.[0];
+    const homeComp = comp?.competitors?.find((c: any) => c.homeAway === 'home');
+    const awayComp = comp?.competitors?.find((c: any) => c.homeAway === 'away');
+    const homeRecord = String(homeComp?.records?.find((r: any) => r.type === 'total')?.summary || '');
+    const awayRecord = String(awayComp?.records?.find((r: any) => r.type === 'total')?.summary || '');
+    const rawOdds = comp?.odds?.[0];
+
+    if (state === 'pre') {
+      if (!snapMap[eventId]) {
+        snapMap[eventId] = {
+          eventId,
+          capturedAt: Date.now(),
+          homeRecord,
+          awayRecord,
+          odds: compactEspnOddsForSnapshot(rawOdds)
+        };
+        dirty = true;
+      } else if (!snapMap[eventId].odds && rawOdds) {
+        snapMap[eventId] = {
+          ...snapMap[eventId],
+          odds: compactEspnOddsForSnapshot(rawOdds)
+        };
+        dirty = true;
+      }
+    }
+
+    if (snapMap[eventId]) {
+      ev._preMatchSnapshot = snapMap[eventId];
+    }
+  }
+
+  if (dirty) {
+    setCacheItem(snapKey, snapMap);
+    hydratedNbaSnapDates.add(espnDateStr);
+    if (isSupabaseConfigured()) {
+      setSupabaseKvCache(snapKey, snapMap).catch(() => {});
+    }
+  }
+}
+
 // 0.5 NBA Live & Scheduled Scoreboard endpoint (ESPN 100% gratuito)
 app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
   res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
@@ -2853,6 +2955,7 @@ app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
         : 3 * 60 * 1000
       : 24 * 60 * 60 * 1000;
   if (cached && !force && Date.now() - cached.timestamp < cacheTTL) {
+    await mergeAndPersistNBAPreMatchSnapshots(espnDateStr, cached.data);
     return res.json({
       success: true,
       source: 'persistent_disk_cache',
@@ -2934,7 +3037,11 @@ app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
         }
       });
 
-      if (allEvents.length === 0 && cached) return cached.data;
+      if (allEvents.length === 0 && cached) {
+        await mergeAndPersistNBAPreMatchSnapshots(espnDateStr, cached.data);
+        return cached.data;
+      }
+      await mergeAndPersistNBAPreMatchSnapshots(espnDateStr, allEvents);
       setCacheItem(cacheKey, allEvents);
       return allEvents;
     });
@@ -2948,6 +3055,7 @@ app.get('/api/nba/scoreboard', dataRateLimitMiddleware, async (req, res) => {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (cached) {
+      await mergeAndPersistNBAPreMatchSnapshots(espnDateStr, cached.data);
       return res.json({ success: true, source: 'fallback_disk_cache', date: targetDate, events: cached.data });
     }
     return res.json({ success: false, error: msg, events: [] });

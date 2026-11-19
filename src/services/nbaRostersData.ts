@@ -222,7 +222,7 @@ export const NBA_30_TEAMS_ROSTERS: Record<string, NBARosterEntry> = {
       { id: 'lac5', name: 'Ivica Zubac', number: 40, position: 'C', ppg: 15.2, apg: 2.6, rpg: 12.4, threePm: 0.0 }
     ],
     bench: [
-      { id: 'lac6', name: 'Kawhi Leonard', number: 2, position: 'SF', ppg: 23.7, apg: 3.6, rpg: 6.1, threePm: 2.1, isInjured: true, injuryStatus: 'Out' },
+      { id: 'lac6', name: 'Kawhi Leonard', number: 2, position: 'SF', ppg: 23.7, apg: 3.6, rpg: 6.1, threePm: 2.1 },
       { id: 'lac7', name: 'Kevin Porter Jr.', number: 7, position: 'SG', ppg: 8.8, apg: 3.1, rpg: 3.2, threePm: 0.9 },
       { id: 'lac8', name: 'Nicolas Batum', number: 33, position: 'PF', ppg: 5.6, apg: 1.8, rpg: 3.0, threePm: 1.2 }
     ]
@@ -291,7 +291,7 @@ export const NBA_30_TEAMS_ROSTERS: Record<string, NBARosterEntry> = {
     ],
     bench: [
       { id: 'mil6', name: 'Bobby Portis', number: 9, position: 'PF', ppg: 13.6, apg: 1.2, rpg: 8.0, threePm: 1.1 },
-      { id: 'mil7', name: 'Khris Middleton', number: 22, position: 'SF', ppg: 15.1, apg: 5.3, rpg: 4.7, threePm: 1.7, isInjured: true, injuryStatus: 'GTD' },
+      { id: 'mil7', name: 'Khris Middleton', number: 22, position: 'SF', ppg: 15.1, apg: 5.3, rpg: 4.7, threePm: 1.7 },
       { id: 'mil8', name: 'Pat Connaughton', number: 24, position: 'SG', ppg: 5.8, apg: 1.8, rpg: 3.0, threePm: 1.2 }
     ]
   },
@@ -320,7 +320,7 @@ export const NBA_30_TEAMS_ROSTERS: Record<string, NBARosterEntry> = {
       { id: 'nop1', name: 'Dejounte Murray', number: 5, position: 'PG', ppg: 18.4, apg: 6.8, rpg: 5.6, threePm: 1.8 },
       { id: 'nop2', name: 'CJ McCollum', number: 3, position: 'SG', ppg: 19.2, apg: 3.8, rpg: 3.6, threePm: 3.0 },
       { id: 'nop3', name: 'Brandon Ingram', number: 14, position: 'SF', ppg: 22.8, apg: 5.4, rpg: 5.8, threePm: 2.2 },
-      { id: 'nop4', name: 'Zion Williamson', number: 1, position: 'PF', ppg: 22.7, apg: 5.3, rpg: 8.0, threePm: 0.1, isInjured: true, injuryStatus: 'GTD' },
+      { id: 'nop4', name: 'Zion Williamson', number: 1, position: 'PF', ppg: 22.7, apg: 5.3, rpg: 8.0, threePm: 0.1 },
       { id: 'nop5', name: 'Daniel Theis', number: 10, position: 'C', ppg: 5.2, apg: 1.8, rpg: 4.8, threePm: 0.4 }
     ],
     bench: [
@@ -355,7 +355,7 @@ export const NBA_30_TEAMS_ROSTERS: Record<string, NBARosterEntry> = {
       { id: 'okc2', name: 'Cason Wallace', number: 22, position: 'SG', ppg: 7.2, apg: 2.2, rpg: 3.4, threePm: 1.2 },
       { id: 'okc3', name: 'Luguentz Dort', number: 5, position: 'SF', ppg: 10.8, apg: 1.6, rpg: 3.8, threePm: 2.2 },
       { id: 'okc4', name: 'Jalen Williams', number: 8, position: 'PF', ppg: 21.8, apg: 5.2, rpg: 6.4, threePm: 1.8 },
-      { id: 'okc5', name: 'Chet Holmgren', number: 7, position: 'C', ppg: 16.4, apg: 2.2, rpg: 8.7, threePm: 1.5, isInjured: true, injuryStatus: 'Out' }
+      { id: 'okc5', name: 'Chet Holmgren', number: 7, position: 'C', ppg: 16.4, apg: 2.2, rpg: 8.7, threePm: 1.5 },
     ],
     bench: [
       { id: 'okc6', name: 'Alex Caruso', number: 9, position: 'SG', ppg: 6.4, apg: 2.4, rpg: 3.0, threePm: 1.1 },
@@ -371,7 +371,7 @@ export const NBA_30_TEAMS_ROSTERS: Record<string, NBARosterEntry> = {
       { id: 'orl1', name: 'Jalen Suggs', number: 4, position: 'PG', ppg: 15.0, apg: 4.0, rpg: 4.8, threePm: 2.2 },
       { id: 'orl2', name: 'Kentavious Caldwell-Pope', number: 3, position: 'SG', ppg: 8.8, apg: 2.0, rpg: 2.4, threePm: 1.5 },
       { id: 'orl3', name: 'Franz Wagner', number: 22, position: 'SF', ppg: 23.5, apg: 5.6, rpg: 5.8, threePm: 2.0 },
-      { id: 'orl4', name: 'Paolo Banchero', number: 5, position: 'PF', ppg: 29.0, apg: 5.6, rpg: 8.8, threePm: 2.2, isInjured: true, injuryStatus: 'Out' },
+      { id: 'orl4', name: 'Paolo Banchero', number: 5, position: 'PF', ppg: 29.0, apg: 5.6, rpg: 8.8, threePm: 2.2 },
       { id: 'orl5', name: 'Wendell Carter Jr.', number: 34, position: 'C', ppg: 8.6, apg: 2.0, rpg: 8.4, threePm: 0.8 }
     ],
     bench: [

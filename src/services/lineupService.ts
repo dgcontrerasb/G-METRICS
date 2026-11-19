@@ -620,7 +620,7 @@ const NBA_REAL_ROSTERS: Record<string, { coach: string; starters: NBAPlayerRoste
     bench: [
       { id: 'lal6', name: 'Dalton Knecht', number: 4, position: 'SG', ppg: 11.2, apg: 1.4, rpg: 3.1, threePm: 2.1 },
       { id: 'lal7', name: 'Gabe Vincent', number: 7, position: 'PG', ppg: 5.4, apg: 2.1, rpg: 1.2, threePm: 1.1 },
-      { id: 'lal8', name: 'Jarred Vanderbilt', number: 2, position: 'PF', ppg: 5.2, apg: 1.2, rpg: 4.8, threePm: 0.2, isInjured: true, injuryStatus: 'GTD' },
+      { id: 'lal8', name: 'Jarred Vanderbilt', number: 2, position: 'PF', ppg: 5.2, apg: 1.2, rpg: 4.8, threePm: 0.2 },
       { id: 'lal9', name: 'Cam Reddish', number: 5, position: 'SF', ppg: 5.4, apg: 1.0, rpg: 2.1, threePm: 0.8 }
     ]
   }
@@ -1040,9 +1040,7 @@ export function getSoccerLineupData(fixture: MatchFixture): SoccerLineupData {
       name: generateHumanPlayerName(teamName, idx + 12, true),
       number: idx === 0 ? 12 : idx + 14,
       position: pos,
-      matchYellowCards: 0,
-      isInjured: idx === 4,
-      injuryNote: idx === 4 ? 'Molestia Muscular' : undefined
+      matchYellowCards: 0
     }));
 
     return { coach, formation, starters, subs };

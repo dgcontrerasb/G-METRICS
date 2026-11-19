@@ -33,6 +33,7 @@ const CATEGORY_PRIORS: Record<string, number> = {
   '1X2': 46.0,
   NBA_TOTAL_POINTS: 62.0,
   NBA_MONEYLINE: 58.0,
+  NBA_MONEYLINE_2WAY: 50.0,
   NBA_PLAYER_PROP: 64.0,
   DEFAULT: 60.0
 };

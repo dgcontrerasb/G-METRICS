@@ -1152,8 +1152,13 @@ const NBATabContent: React.FC<{
               {didacticAdvice.badgeLabel}
             </span>
             <span className="bg-[#0b0e14] text-[#00ff66] border border-[#00ff66]/30 font-mono text-[10px] px-2.5 py-0.5 rounded-full">
-              Puntos Proyectados: {analysis.projectedTotalPoints} pts
+              Puntos Pre-Partido: {analysis.preMatchTotalPoints ?? analysis.projectedTotalPoints} pts
             </span>
+            {isLive && (
+              <span className="bg-[#0b0e14] text-rose-400 border border-rose-500/30 font-mono text-[10px] px-2.5 py-0.5 rounded-full">
+                Proy. En Vivo: {analysis.projectedTotalPoints} pts
+              </span>
+            )}
           </div>
 
           <div className="text-base sm:text-lg font-sans font-bold text-white mb-1">
@@ -1221,12 +1226,12 @@ const NBATabContent: React.FC<{
               <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d] text-center">
                 <div className="text-[9px] font-mono text-[#8b949e] uppercase truncate">{formatCompactTeamName(fixture.homeTeam.name)}</div>
                 <div className="text-sm font-mono tabular-nums font-bold text-white">{analysis.pHomeWin}%</div>
-                <div className="text-[9px] font-mono tabular-nums text-[#8b949e]">{analysis.projectedHomeScore} pts proy.</div>
+                <div className="text-[9px] font-mono tabular-nums text-[#8b949e]">{analysis.preMatchHomeScore ?? analysis.projectedHomeScore} pts proy.</div>
               </div>
               <div className="p-2 rounded-xl bg-[#0b0e14] border border-[#30363d] text-center">
                 <div className="text-[9px] font-mono text-[#8b949e] uppercase truncate">{formatCompactTeamName(fixture.awayTeam.name)}</div>
                 <div className="text-sm font-mono tabular-nums font-bold text-white">{analysis.pAwayWin}%</div>
-                <div className="text-[9px] font-mono tabular-nums text-[#8b949e]">{analysis.projectedAwayScore} pts proy.</div>
+                <div className="text-[9px] font-mono tabular-nums text-[#8b949e]">{analysis.preMatchAwayScore ?? analysis.projectedAwayScore} pts proy.</div>
               </div>
             </div>
           </div>
@@ -1237,7 +1242,7 @@ const NBATabContent: React.FC<{
                 📊 Eficiencia & Totales
               </span>
               <span className="bg-[#0b0e14] text-[#00ff66] border border-[#00ff66]/30 font-mono text-[9px] px-2 py-0.5 rounded-full">
-                Total: {analysis.projectedTotalPoints} pts
+                Total: {analysis.preMatchTotalPoints ?? analysis.projectedTotalPoints} pts
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">

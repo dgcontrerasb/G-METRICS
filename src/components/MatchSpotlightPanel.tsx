@@ -711,7 +711,7 @@ export const MatchSpotlightPanel: React.FC<MatchSpotlightPanelProps> = ({
       matchDate: fixture.date,
       matchTime: fixture.time,
       marketKey: 'NBA_SPOTLIGHT_ML',
-      selectionLabel: `Ganador: ${favName} (Proy. ${analysis.projectedTotalPoints.toFixed(0)} pts)`,
+      selectionLabel: `Ganador: ${favName} (Proy. ${(analysis.preMatchTotalPoints ?? analysis.projectedTotalPoints).toFixed(0)} pts)`,
       referenceOdd: favOdd,
       userOdd: favOdd,
       probability: favProb,
