@@ -494,7 +494,28 @@ select:focus {
   contain-intrinsic-size: auto 120px;
 }
 
-/* F. Accessibility: Respect reduced motion preference strictly */
+/* F. Ticker Marquee Infinito 60fps (Landing Cockpit) */
+@keyframes infiniteMarqueeLeft {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.animate-infinite-ticker {
+  display: flex;
+  width: max-content;
+  animation: infiniteMarqueeLeft 38s linear infinite;
+  will-change: transform;
+}
+
+.animate-infinite-ticker:hover {
+  animation-play-state: paused;
+}
+
+/* G. Accessibility: Respect reduced motion preference strictly */
 @media (prefers-reduced-motion: reduce) {
   .animate-in.fade-in,
   .animate-modal-backdrop,
@@ -502,6 +523,7 @@ select:focus {
   .animate-modal-content,
   .animate-tab-content,
   .animate-row-enter,
+  .animate-infinite-ticker,
   .gmetrics-dark-pulse,
   .value-bet-glow,
   .cyber-glow,

@@ -270,7 +270,7 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
             : 'flex flex-col gap-1.5'
         }`}
       >
-        <div className="flex flex-col gap-1.5 min-w-0">
+        <div className="@container w-full flex flex-col gap-1.5 min-w-0">
           {/* LÍNEA 1: EJE SIMÉTRICO 3 COLUMNAS (LOCAL · VS/MARCADOR · VISITANTE) */}
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 min-w-0">
             {/* Columna 1: Local (Alineado a la derecha hacia el centro) */}
@@ -335,16 +335,16 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
           {/* LÍNEA 2: HORA COMPACTA + PICK MÓVIL / LIGA PC + CUOTAS + FAVORITO + CHECKBOX */}
           <div className="flex items-center justify-between gap-1.5 sm:gap-2 pt-1 border-t border-[#21262d] text-[11px]">
             {/* Izquierda: Hora / Minuto + LiveStats o Pick Cuantitativo Móvil + Liga en PC */}
-            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
               {!isHaltOrInterrupted && isFreshEvent && (
                 <span className="px-2 py-0.5 rounded-md bg-[#00ff66] text-slate-950 font-mono font-bold text-[9.5px] uppercase tracking-tight animate-bounce shrink-0 shadow-xs">
                   ⚽ ¡GOL! {fixture.currentScore ? `${fixture.currentScore.home}-${fixture.currentScore.away}` : ''}
                 </span>
               )}
               {renderClock()}
-              <span className="hidden sm:inline text-[#30363d] shrink-0">·</span>
+              <span className={fixture.liveStats && (isLive || isFinished) ? 'hidden @min-[480px]:inline text-[#30363d] shrink-0' : 'hidden sm:inline text-[#30363d] shrink-0'}>·</span>
               <span
-                className="hidden sm:inline text-[11px] font-normal text-[#8b949e] truncate"
+                className={fixture.liveStats && (isLive || isFinished) ? 'hidden @min-[480px]:inline text-[11px] font-normal text-[#8b949e] truncate' : 'hidden sm:inline text-[11px] font-normal text-[#8b949e] truncate'}
                 title={fixture.league?.name || 'Liga'}
               >
                 {fixture.league?.name || 'Liga'}
@@ -365,11 +365,12 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
               )}
             </div>
 
-            {/* Derecha: Botón Cuotas (compacto en móvil) + Estrella Favorito + Checkbox fino de 20px */}
-            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Derecha: Botón Cuotas (adaptativo por ancho de tarjeta) + Estrella Favorito + Checkbox fino de 20px */}
+            <div className="flex items-center gap-1 sm:gap-1.5 @min-[435px]:gap-2 shrink-0 ml-auto">
               <button
                 data-tour="tour-h2h-btn"
                 type="button"
+                title="Ver cuotas, estadísticas y datos completos"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (onSelectSpotlight) onSelectSpotlight(fixture, analysis);
@@ -379,8 +380,9 @@ export const CompactMatchRow: React.FC<CompactMatchRowProps> = React.memo(({
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#0b0e14] hover:bg-[#1c2129] text-slate-300 hover:text-white border border-[#30363d] text-[10.5px] font-medium transition-colors shrink-0 cursor-pointer"
               >
                 <BarChart2 className="w-3 h-3 text-[#d9b114]" strokeWidth={2} />
-                <span className="sm:hidden">Cuotas</span>
-                <span className="hidden sm:inline">Ver Cuotas y Datos</span>
+                <span className="hidden @min-[435px]:inline">Ver Cuotas y Datos</span>
+                <span className="hidden @min-[305px]:@max-[435px]:inline">Ver Cuotas</span>
+                <span className="hidden @max-[305px]:inline">Cuotas</span>
               </button>
 
               {onToggleFavorite && (

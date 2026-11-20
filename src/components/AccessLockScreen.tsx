@@ -329,8 +329,14 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
       certainty: string;
     }> = [];
 
-    // Tomar partidos reales de fútbol de hoy
-    allSoccerFixtures.slice(0, 4).forEach((f) => {
+    // Tomar partidos reales de fútbol de hoy (priorizando EN VIVO)
+    const sortedSoccer = [...allSoccerFixtures].sort((a, b) => {
+      const aLive = a.status === 'IN_PLAY' ? 1 : 0;
+      const bLive = b.status === 'IN_PLAY' ? 1 : 0;
+      return bLive - aLive;
+    });
+
+    sortedSoccer.slice(0, 4).forEach((f) => {
       const isLive = f.status === 'IN_PLAY';
       const isFT = f.status === 'FINISHED';
       const statusText = isLive
@@ -368,8 +374,14 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
       });
     });
 
-    // Partidos reales de NBA de hoy
-    allNbaFixtures.slice(0, 2).forEach((nba: NBAMatchFixture) => {
+    // Partidos reales de NBA de hoy (priorizando EN VIVO)
+    const sortedNba = [...allNbaFixtures].sort((a, b) => {
+      const aLive = a.status === 'IN_PLAY' ? 1 : 0;
+      const bLive = b.status === 'IN_PLAY' ? 1 : 0;
+      return bLive - aLive;
+    });
+
+    sortedNba.slice(0, 3).forEach((nba: NBAMatchFixture) => {
       const isLive = nba.status === 'IN_PLAY';
       const isFT = nba.status === 'FINISHED';
       const statusText = isLive ? 'EN VIVO' : isFT ? 'FINAL' : `Hoy ${nba.time || '20:00'}`;
@@ -393,12 +405,18 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
     return FALLBACK_TICKER_MATCHES;
   }, [allSoccerFixtures, allNbaFixtures]);
 
-  // 3. Pool dinámico de duelos estelares conectados a partidos REALES de hoy
+  // 3. Pool dinámico de duelos estelares conectados a partidos REALES de hoy (4 a 6 juegos priorizando EN VIVO)
   const dynamicFeaturedDuels = useMemo(() => {
     const list: FeaturedMarqueeDuel[] = [];
 
-    // Partidos reales de fútbol de hoy
-    allSoccerFixtures.slice(0, 4).forEach((f) => {
+    // Ordenar fútbol de hoy: primero partidos EN VIVO, luego programados de hoy
+    const sortedSoccer = [...allSoccerFixtures].sort((a, b) => {
+      const aLive = a.status === 'IN_PLAY' ? 1 : 0;
+      const bLive = b.status === 'IN_PLAY' ? 1 : 0;
+      return bLive - aLive;
+    });
+
+    sortedSoccer.slice(0, 6).forEach((f) => {
       const isLive = f.status === 'IN_PLAY';
       const isFT = f.status === 'FINISHED';
       const statusText = isLive
@@ -472,15 +490,20 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
           label: topPickLabel,
           odd: topPickOdd,
           certainty: topPickCertainty,
-          market: 'Modelo Predictivo'
+          market: 'Modelo Cuantitativo'
         },
         topScores
       });
     });
 
-    // Si hay partidos NBA de hoy, agregar el estelar
-    if (allNbaFixtures.length > 0) {
-      const topNba = allNbaFixtures[0];
+    // Ordenar partidos NBA de hoy: primero EN VIVO, luego programados
+    const sortedNba = [...allNbaFixtures].sort((a, b) => {
+      const aLive = a.status === 'IN_PLAY' ? 1 : 0;
+      const bLive = b.status === 'IN_PLAY' ? 1 : 0;
+      return bLive - aLive;
+    });
+
+    sortedNba.slice(0, 4).forEach((topNba) => {
       const isLive = topNba.status === 'IN_PLAY';
       list.push({
         id: `real-nba-${topNba.id}`,
@@ -514,7 +537,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
           market: 'Línea de Victoria'
         }
       });
-    }
+    });
 
     if (list.length > 0) return list;
     return FALLBACK_FEATURED_DUELS;
@@ -885,9 +908,9 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
       </div>
 
       {/* Banner Inferior: G METRICS Pick con Certeza */}
-      <div className="mt-1 px-2.5 py-1.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between gap-2">
+      <div className="mt-1 px-2.5 py-1.5 rounded-xl bg-[#0b0e14] border border-[#d9b114]/40 flex items-center justify-between gap-2 shadow-xs">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[10px] text-emerald-400 font-black whitespace-nowrap">
+          <span className="text-[10px] text-[#d9b114] font-black whitespace-nowrap">
             G METRICS Pick:
           </span>
           <span className="text-[10px] sm:text-[11px] text-white font-extrabold truncate">
@@ -905,13 +928,14 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
   );
 
   return (
-    <div className="h-[100dvh] max-h-[100dvh] w-full cr7-cinematic-bg bg-[#0b0e14] flex flex-col justify-between relative overflow-hidden text-white font-sans select-none">
-      {/* Resplandores ambientales de fondo */}
-      <div className="absolute top-[8%] left-[12%] w-[450px] h-[450px] rounded-full bg-emerald-500/10 blur-[130px] pointer-events-none -z-10" />
-      <div className="absolute bottom-[8%] right-[8%] w-[450px] h-[450px] rounded-full bg-[#d9b114]/8 blur-[130px] pointer-events-none -z-10" />
+    <div className="min-h-[100dvh] lg:h-[100dvh] lg:max-h-[100dvh] w-full bg-[#0b0e14] flex flex-col justify-between relative overflow-y-auto lg:overflow-hidden text-white font-sans select-none">
+      {/* Resplandores ambientales dorados de fondo (sin texturas ni ruido de estadio) */}
+      <div className="absolute top-[8%] left-[10%] w-[500px] h-[500px] rounded-full bg-[#d9b114]/8 blur-[140px] pointer-events-none -z-10" />
+      <div className="absolute bottom-[8%] right-[8%] w-[500px] h-[500px] rounded-full bg-[#d9b114]/6 blur-[140px] pointer-events-none -z-10" />
+      <div className="absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[700px] h-[400px] rounded-full bg-emerald-500/3 blur-[160px] pointer-events-none -z-10" />
 
       {/* ================= BARRA SUPERIOR INSTITUCIONAL GLASS ================= */}
-      <header className="relative z-20 w-full max-w-6xl mx-auto px-4 pt-2 sm:pt-3 shrink-0">
+      <header className="relative z-20 w-full max-w-7xl mx-auto px-4 pt-2 sm:pt-3 shrink-0">
         <div className="w-full px-3.5 sm:px-5 py-2 rounded-2xl bg-[#0b0e14]/90 backdrop-blur-xl border border-[#30363d] shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)] flex items-center justify-between gap-3">
           {/* Logo y Tipografía Original de G METRICS (con 3 clics secretos para Admin) */}
           <div
@@ -921,10 +945,10 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
           >
             <SportStatsLogo size="md" withGlow={false} />
             <div className="min-w-0 flex flex-col justify-center text-left">
-              <span className="gmetrics-brand-title text-base sm:text-xl leading-none block whitespace-nowrap">
+              <span className="gmetrics-brand-title text-base sm:text-xl leading-none block whitespace-nowrap text-white">
                 G METRICS
               </span>
-              <span className="text-[7px] sm:text-[8px] font-extrabold uppercase tracking-[0.12em] text-[#8b949e] block whitespace-nowrap leading-none mt-1">
+              <span className="text-[7px] sm:text-[8px] font-extrabold uppercase tracking-[0.14em] text-[#d9b114] block whitespace-nowrap leading-none mt-1">
                 LA CIENCIA DETRÁS DE LA VICTORIA
               </span>
             </div>
@@ -938,9 +962,9 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
             <button
               type="button"
               onClick={() => onOpenGuide?.('AUDIT')}
-              className="px-3 py-0.5 text-emerald-400 hover:text-emerald-300 transition cursor-pointer flex items-center gap-1 font-bold"
+              className="px-3 py-0.5 text-[#d9b114] hover:text-yellow-300 transition cursor-pointer flex items-center gap-1 font-bold"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#d9b114] animate-pulse" />
               <span>Auditoría</span>
             </button>
             <button
@@ -971,7 +995,7 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
             <button
               type="button"
               onClick={() => onOpenGuide?.('LEGAL')}
-              className="px-3 py-1 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#d9b114]/50 text-xs font-bold text-[#d9b114] shadow-xs transition cursor-pointer"
+              className="px-3 py-1 rounded-full bg-[#161b22] hover:bg-[#1c2129] border border-[#d9b114]/60 text-xs font-bold text-[#d9b114] shadow-xs transition cursor-pointer"
             >
               +18 Legal
             </button>
@@ -979,28 +1003,62 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
         </div>
       </header>
 
-      {/* ================= HERO GATEWAY CENTRADO (OPCIÓN B - FIDELIDAD MOCKUP & CERO SCROLL) ================= */}
-      <main className="relative z-10 w-full max-w-5xl mx-auto px-4 flex-1 flex flex-col justify-evenly items-center min-h-0 py-2 sm:py-3">
-        {/* 1. Eficiencia Semanal Auditada + Titular de Alto Impacto */}
-        <div className="text-center space-y-1.5 sm:space-y-2 max-w-3xl mx-auto shrink-0">
+      {/* ================= CINTA TICKER MARQUEE INFINITA (DESPLAZAMIENTO HACIA LA IZQUIERDA) ================= */}
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 mt-2 shrink-0">
+        <div className="w-full bg-[#161b22]/90 backdrop-blur-md border border-[#30363d] rounded-xl py-1.5 px-3 flex items-center gap-3 overflow-hidden shadow-md">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0b0e14] border border-[#d9b114]/60 text-[#d9b114] font-black text-[10px] shrink-0 uppercase tracking-wider shadow-xs z-10">
+            <Activity className="w-3 h-3 text-[#d9b114] animate-pulse" />
+            <span>RADAR HOY</span>
+          </div>
+          <div className="relative overflow-hidden w-full">
+            <div className="animate-infinite-ticker flex items-center gap-6 text-xs font-mono">
+              {/* Duplicación simétrica para desplazamiento continuo sin saltos */}
+              {[...dynamicTickerMatches, ...dynamicTickerMatches].map((m, idx) => (
+                <div key={`${m.id}-${idx}`} className="flex items-center gap-2.5 shrink-0 px-2.5 py-1 rounded-lg bg-[#0b0e14]/70 border border-[#30363d]/60">
+                  <div className="flex items-center gap-1.5">
+                    {m.crestHome && <img src={m.crestHome} alt="" className="w-4 h-4 object-contain" />}
+                    <span className="text-white font-extrabold text-[11px] whitespace-nowrap">{m.match}</span>
+                    {m.crestAway && <img src={m.crestAway} alt="" className="w-4 h-4 object-contain" />}
+                  </div>
+                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
+                    m.status.includes('EN VIVO')
+                      ? 'bg-rose-500/20 border border-rose-500/40 text-rose-400'
+                      : 'bg-[#161b22] border border-[#d9b114]/30 text-[#d9b114]'
+                  }`}>
+                    {m.status}
+                  </span>
+                  <span className="text-[#8b949e] text-[10px]">{m.score}</span>
+                  <span className="text-[#00ff66] font-black text-[10px]">{m.certainty}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ================= COCKPIT MODULAR CON COMPARADOR +EV (OPCIÓN 3) ================= */}
+      <main className="relative z-10 w-full max-w-7xl mx-auto px-4 py-2 sm:py-3 flex-1 flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:gap-6 items-center min-h-0">
+        
+        {/* LADO IZQUIERDO (7 COLS): AUDITORÍA, H1 DORADO Y COMPARADOR DIDÁCTICO +EV */}
+        <div className="w-full lg:col-span-7 flex flex-col justify-center space-y-2.5 sm:space-y-3.5">
           {/* Badge de Eficiencia Semanal Auditada (Abre la Auditoría Histórica al hacer click) */}
-          <div className="flex items-center justify-center">
+          <div className="flex items-center">
             <button
               type="button"
               onClick={() => onOpenGuide?.('AUDIT')}
-              className="inline-flex items-center gap-2 px-3 sm:px-4 py-0.5 sm:py-1 rounded-full bg-[#161b22]/90 hover:bg-[#1c2129] border border-emerald-500/50 hover:border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_25px_rgba(16,185,129,0.35)] text-[10.5px] sm:text-xs backdrop-blur-md transition-all duration-200 cursor-pointer group hover:scale-[1.02] active:scale-[0.98]"
+              className="inline-flex items-center gap-2 px-3 sm:px-4 py-0.5 sm:py-1 rounded-full bg-[#161b22]/90 hover:bg-[#1c2129] border border-[#d9b114]/50 hover:border-[#d9b114] shadow-[0_0_20px_rgba(217,177,20,0.2)] text-[10.5px] sm:text-xs backdrop-blur-md transition-all duration-200 cursor-pointer group hover:scale-[1.01] active:scale-[0.99]"
               title="Click para revisar la Auditoría Histórica de Certeza y Registro de Picks"
             >
               <span className="flex h-2 w-2 relative shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#d9b114] opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#d9b114]" />
               </span>
-              <span className="text-slate-300 font-semibold group-hover:text-white transition-colors">
+              <span className="text-slate-300 font-medium group-hover:text-white transition-colors">
                 Eficiencia Semanal{' '}
                 <span className="text-[#8b949e] font-normal">(Sem. {weekInfo.weekNo}):</span>
               </span>
               <span className="text-[#00ff66] font-mono font-black tracking-wide">
-                {auditSummary.globalAccuracy}% Acierto
+                {auditSummary.globalAccuracy}% Acierto Élite
               </span>
               <span className="hidden sm:inline text-slate-600 font-mono">•</span>
               <span className="hidden sm:inline text-[#d9b114] font-bold text-[10.5px] group-hover:underline">
@@ -1009,132 +1067,212 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
             </button>
           </div>
 
-          <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white leading-[1.12]">
-            Deja el azar a un lado.<br className="hidden sm:inline" />{' '}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-[#d9b114] to-yellow-200">
-              Toma decisiones con ventaja estadística.
-            </span>
-          </h1>
-          <p className="text-[11px] sm:text-xs md:text-sm text-[#8b949e] font-medium max-w-xl mx-auto leading-tight hidden xs:block">
-            Inteligencia deportiva en tiempo real: modelos de gol esperado (xG), probabilidades Poisson y selecciones +EV verificadas.
-          </p>
-        </div>
-
-        {/* 2. Botón de Acceso Google Luminous Pill (Centro de Conversión sin saturación) */}
-        <div className="flex flex-col items-center gap-1.5 w-full max-w-md shrink-0">
-          <button
-            type="button"
-            onClick={handleContinueWithGoogle}
-            disabled={googleLoading}
-            className="group relative px-7 sm:px-10 py-3 sm:py-3.5 rounded-full bg-[#0b0e14] hover:bg-[#161b22] border-2 border-emerald-400 text-white font-black text-sm sm:text-base flex items-center justify-center gap-3 transition-all duration-300 shadow-[0_0_25px_rgba(16,185,129,0.4)] hover:shadow-[0_0_40px_rgba(16,185,129,0.7)] hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-65 w-full sm:w-auto"
-          >
-            <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-              <path
-                fill="#4285F4"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-              />
-            </svg>
-            <span>{googleLoading ? 'Conectando con Google...' : 'Continuar con Google'}</span>
-          </button>
-
-          {/* Micro-legal y términos en 1 línea limpia */}
-          <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] sm:text-[10.5px] text-[#8b949e]">
-            <span className="flex items-center gap-1 text-[#00ff66] font-bold">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              Acceso 1-clic instantáneo
-            </span>
-            <span>•</span>
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={acceptedLegal}
-                onChange={(e) => {
-                  const val = e.target.checked;
-                  setAcceptedLegal(val);
-                  try {
-                    localStorage.setItem('gmetrics_cookies_legal_accepted_v1', val ? 'true' : 'false');
-                  } catch {
-                    // ignore
-                  }
-                }}
-                className="rounded accent-emerald-500 cursor-pointer w-3.5 h-3.5"
-              />
-              <span>
-                Acepto{' '}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onOpenGuide && onOpenGuide('LEGAL');
-                  }}
-                  className="text-[#d9b114] underline font-bold hover:text-white cursor-pointer"
-                >
-                  Términos, Cookies y +18
-                </button>
+          {/* H1 Semántico, Accesible y Potente (Con degradado dorado oficial) */}
+          <div className="space-y-1.5 sm:space-y-2">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl xl:text-[2.6rem] font-black tracking-tight text-white leading-[1.12]">
+              Software cuantitativo y modelos matemáticos.<br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#d9b114] via-yellow-300 to-amber-200">
+                Proyecta la probabilidad real antes de cada juego.
               </span>
-            </label>
+            </h1>
+            <p className="text-[11.5px] sm:text-xs md:text-sm text-[#8b949e] font-medium leading-relaxed max-w-xl">
+              Algoritmos estadísticos propietarios y análisis probabilístico en tiempo real para fútbol y baloncesto. Detectamos discrepancias de cuota con valor esperado positivo (+EV) verificadas sin sesgo humano.
+            </p>
           </div>
 
-          {authError && (
-            <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2 animate-fadeIn">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
-              <span>{authError}</span>
+          {/* TARJETA COMPARADORA DIDÁCTICA +EV (EN VIVO CON ESTILO DORADO / FINTECH) */}
+          <div className="w-full max-w-xl rounded-2xl bg-[#161b22]/95 border border-[#30363d] hover:border-[#d9b114]/40 p-3.5 sm:p-4 shadow-xl backdrop-blur-xl space-y-2.5 transition">
+            <div className="flex items-center justify-between pb-1.5 border-b border-[#30363d]/60 text-xs">
+              <span className="text-white font-extrabold flex items-center gap-1.5 text-[11px] sm:text-xs">
+                <Sparkles className="w-3.5 h-3.5 text-[#d9b114]" />
+                <span>Demostración de Ventaja Matemática en Vivo</span>
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-[#d9b114]/10 border border-[#d9b114]/40 text-[#d9b114] font-mono font-black text-[9.5px]">
+                +EV DETECTADO
+              </span>
             </div>
-          )}
+
+            <div className="grid grid-cols-2 gap-2.5">
+              {/* Caja A: Casa de Apuestas */}
+              <div className="p-2.5 sm:p-3 rounded-xl bg-[#0b0e14] border border-rose-500/25 text-center">
+                <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#8b949e] block">
+                  Casa de Apuestas
+                </span>
+                <span className="text-lg sm:text-xl font-mono font-black text-rose-400 block mt-0.5">
+                  Cuota @1.95
+                </span>
+                <span className="text-[10px] text-[#8b949e] font-mono block mt-0.5">
+                  Prob. Implícita: 51.3%
+                </span>
+              </div>
+
+              {/* Caja B: Modelo Cuantitativo G-METRICS */}
+              <div className="p-2.5 sm:p-3 rounded-xl bg-[#0b0e14] border border-[#d9b114]/50 shadow-[0_0_15px_rgba(217,177,20,0.15)] text-center">
+                <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#d9b114] block">
+                  Modelo G-METRICS
+                </span>
+                <span className="text-lg sm:text-xl font-mono font-black text-white block mt-0.5">
+                  Prob. Real <span className="text-[#00ff66]">64.8%</span>
+                </span>
+                <span className="text-[10px] text-[#d9b114] font-mono font-bold block mt-0.5">
+                  Cuota Justa: @1.54
+                </span>
+              </div>
+            </div>
+
+            {/* Banner de Valor Esperado Positivo */}
+            <div className="px-3 py-1.5 rounded-xl bg-[#0b0e14] border border-[#d9b114]/30 flex items-center justify-between text-[11px]">
+              <span className="text-[#8b949e] font-medium">Margen matemático a tu favor:</span>
+              <span className="font-mono font-black text-[#00ff66] flex items-center gap-1 text-xs">
+                <TrendingUp className="w-3.5 h-3.5 text-[#00ff66]" />
+                <span>+13.5% Ventaja Estadística (+EV)</span>
+              </span>
+            </div>
+          </div>
+
+          {/* 3 Micro-píldoras de Seguridad Cuantitativa */}
+          <div className="grid grid-cols-3 gap-2 max-w-xl text-[10.5px]">
+            <div className="p-2 rounded-xl bg-[#161b22]/70 border border-[#30363d] hover:border-[#d9b114]/30 transition flex flex-col justify-center">
+              <span className="text-[#8b949e] font-bold uppercase text-[8.5px]">Método</span>
+              <span className="text-[#d9b114] font-extrabold truncate">Modelos Propietarios</span>
+            </div>
+            <div className="p-2 rounded-xl bg-[#161b22]/70 border border-[#30363d] hover:border-[#d9b114]/30 transition flex flex-col justify-center">
+              <span className="text-[#8b949e] font-bold uppercase text-[8.5px]">Filtro</span>
+              <span className="text-white font-extrabold truncate">Picks +EV &gt; 5%</span>
+            </div>
+            <div className="p-2 rounded-xl bg-[#161b22]/70 border border-[#30363d] hover:border-[#d9b114]/30 transition flex flex-col justify-center">
+              <span className="text-[#8b949e] font-bold uppercase text-[8.5px]">Auditoría</span>
+              <span className="text-[#d9b114] font-extrabold truncate">Picks Sellados</span>
+            </div>
+          </div>
         </div>
 
-        {/* 3. Selector Segmentado de Deporte */}
-        <div className="flex items-center justify-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              setGatewaySport('SOCCER');
-              setSelectedDuelIndex(0);
-            }}
-            className={`px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all duration-200 cursor-pointer border flex items-center gap-1.5 ${
-              gatewaySport === 'SOCCER'
-                ? 'bg-emerald-500/15 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] scale-105'
-                : 'bg-[#161b22]/70 border-[#30363d] text-[#8b949e] hover:text-white'
-            }`}
-          >
-            <span>⚽ Fútbol Hoy ({allSoccerFixtures.length || 4})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setGatewaySport('NBA');
-              setSelectedDuelIndex(0);
-            }}
-            className={`px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all duration-200 cursor-pointer border flex items-center gap-1.5 ${
-              gatewaySport === 'NBA'
-                ? 'bg-emerald-500/15 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] scale-105'
-                : 'bg-[#161b22]/70 border-[#30363d] text-[#8b949e] hover:text-white'
-            }`}
-          >
-            <span>🏀 NBA Hoy ({allNbaFixtures.length || 2})</span>
-          </button>
-        </div>
+        {/* LADO DERECHO (5 COLS): PORTAL DE ACCESO GOOGLE & CARTELERA DUAL REAL */}
+        <div className="w-full lg:col-span-5 flex flex-col justify-center space-y-3">
+          {/* Caja de Acceso con Google con marco dorado institucional */}
+          <div className="w-full p-4 sm:p-5 rounded-2xl bg-[#161b22]/95 border border-[#d9b114]/40 shadow-[0_0_35px_rgba(217,177,20,0.15)] backdrop-blur-xl flex flex-col items-center gap-2.5">
+            <div className="text-center">
+              <span className="text-xs font-black uppercase tracking-wider text-[#d9b114] block">
+                Acceso Inmediato
+              </span>
+              <h2 className="text-base sm:text-lg font-black text-white">
+                Desbloquea el análisis completo de hoy
+              </h2>
+            </div>
 
-        {/* 4. Vitrina de Partidos Reales (2 en Paralelo en PC, 1 en Móvil) */}
-        <div
-          onMouseEnter={() => setIsAutoRotating(false)}
-          onMouseLeave={() => setIsAutoRotating(true)}
-          className="w-full max-w-4xl mx-auto shrink-0"
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 w-full">
+            {/* Botón de Google OAuth con Halo Dorado */}
+            <button
+              type="button"
+              onClick={handleContinueWithGoogle}
+              disabled={googleLoading}
+              className="group relative px-6 py-3 rounded-full bg-[#0b0e14] hover:bg-[#161b22] border-2 border-[#d9b114] text-white font-black text-sm sm:text-base flex items-center justify-center gap-3 transition-all duration-300 shadow-[0_0_25px_rgba(217,177,20,0.35)] hover:shadow-[0_0_40px_rgba(217,177,20,0.6)] hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-65 w-full"
+            >
+              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                />
+              </svg>
+              <span>{googleLoading ? 'Conectando con Google...' : 'Continuar con Google'}</span>
+            </button>
+
+            {/* Micro-legal y términos en 1 línea limpia */}
+            <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] sm:text-[10.5px] text-[#8b949e]">
+              <span className="flex items-center gap-1 text-[#00ff66] font-bold">
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#00ff66]" />
+                Acceso 1-clic instantáneo
+              </span>
+              <span>•</span>
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={acceptedLegal}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setAcceptedLegal(val);
+                    try {
+                      localStorage.setItem('gmetrics_cookies_legal_accepted_v1', val ? 'true' : 'false');
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  className="rounded accent-[#d9b114] cursor-pointer w-3.5 h-3.5"
+                />
+                <span>
+                  Acepto{' '}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onOpenGuide && onOpenGuide('LEGAL');
+                    }}
+                    className="text-[#d9b114] underline font-bold hover:text-white cursor-pointer"
+                  >
+                    Términos, Cookies y +18
+                  </button>
+                </span>
+              </label>
+            </div>
+
+            {authError && (
+              <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2 animate-fadeIn w-full">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                <span>{authError}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Selector de Deporte */}
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setGatewaySport('SOCCER');
+                setSelectedDuelIndex(0);
+              }}
+              className={`flex-1 py-1.5 px-3 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer border flex items-center justify-center gap-1.5 ${
+                gatewaySport === 'SOCCER'
+                  ? 'bg-[#d9b114]/15 border-[#d9b114] text-[#d9b114] shadow-[0_0_12px_rgba(217,177,20,0.25)]'
+                  : 'bg-[#161b22]/70 border-[#30363d] text-[#8b949e] hover:text-white'
+              }`}
+            >
+              <span>⚽ Fútbol Hoy ({allSoccerFixtures.length || 4})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setGatewaySport('NBA');
+                setSelectedDuelIndex(0);
+              }}
+              className={`flex-1 py-1.5 px-3 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer border flex items-center justify-center gap-1.5 ${
+                gatewaySport === 'NBA'
+                  ? 'bg-[#d9b114]/15 border-[#d9b114] text-[#d9b114] shadow-[0_0_12px_rgba(217,177,20,0.25)]'
+                  : 'bg-[#161b22]/70 border-[#30363d] text-[#8b949e] hover:text-white'
+              }`}
+            >
+              <span>🏀 NBA Hoy ({allNbaFixtures.length || 2})</span>
+            </button>
+          </div>
+
+          {/* Vitrina de Partidos Reales de Hoy (Con escudos oficiales y telemetría) */}
+          <div
+            onMouseEnter={() => setIsAutoRotating(false)}
+            onMouseLeave={() => setIsAutoRotating(true)}
+            className="w-full space-y-2.5"
+          >
             {renderMatchCard(duel1)}
             {renderMatchCard(duel2, true)}
           </div>
@@ -1142,11 +1280,11 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
       </main>
 
       {/* ================= PIE DE PÁGINA LEGAL ================= */}
-      <footer className="relative z-10 w-full max-w-6xl mx-auto px-4 py-1.5 text-center shrink-0">
+      <footer className="relative z-10 w-full max-w-7xl mx-auto px-4 py-1.5 text-center shrink-0">
         <p className="text-[9.5px] sm:text-[10px] text-[#8b949e] font-medium leading-none">
           <span className="font-extrabold text-white">+18</span> ·{' '}
-          <span className="gmetrics-brand-title text-[9.5px] mr-1">G METRICS</span> es una
-          herramienta analítica y de software estadístico basada en modelos cuantitativos. No somos
+          <span className="gmetrics-brand-title text-[9.5px] mr-1 text-white">G METRICS</span> es una
+          herramienta analítica y de software estadístico basada en modelos matemáticos cuantitativos. No somos
           una casa de apuestas ni captamos fondos.
         </p>
       </footer>
