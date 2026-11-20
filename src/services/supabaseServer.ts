@@ -2,6 +2,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { SmartParlaySlip, GMetricsSingleBetSuggestion } from '../types';
+import { getIsoWeekKey, normalizeMatchId } from './parlaySinglesLedger';
 import {
   hashUserPin,
   verifyUserPin,
@@ -220,6 +222,9 @@ export async function setSupabaseKvCache<T = unknown>(cacheId: string, payload: 
         .neq('id', '__server_telemetry_v1__')
         .neq('id', '__deleted_users_v1__')
         .neq('id', '__admin_user_feedback_v1__')
+        .neq('id', '__gmetrics_smart_parlays_v3__')
+        .neq('id', '__gmetrics_singles_history_v1__')
+        .neq('id', '__admin_monthly_parlays_v2__')
         .lt('updated_at', threeDaysAgoIso)
         .then(
           () => {},
@@ -1399,6 +1404,66 @@ BEGIN
 END $$;
 `;
 
+export const PARLAYS_SINGLES_HISTORY_SQL = `
+CREATE TABLE IF NOT EXISTS gmetrics_parlay_history (
+  id TEXT PRIMARY KEY,
+  bet_date TEXT NOT NULL,
+  week_key TEXT NOT NULL,
+  profile TEXT NOT NULL,
+  total_odds NUMERIC NOT NULL,
+  effective_odds NUMERIC,
+  legs JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  engine_version TEXT,
+  created_at BIGINT NOT NULL,
+  settled_at BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_parlay_hist_date ON gmetrics_parlay_history(bet_date DESC);
+CREATE INDEX IF NOT EXISTS idx_parlay_hist_week ON gmetrics_parlay_history(week_key);
+CREATE INDEX IF NOT EXISTS idx_parlay_hist_status ON gmetrics_parlay_history(status);
+ALTER TABLE gmetrics_parlay_history ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS gmetrics_singles_history (
+  id TEXT PRIMARY KEY,
+  bet_date TEXT NOT NULL,
+  week_key TEXT NOT NULL,
+  fixture_id TEXT NOT NULL,
+  espn_event_id TEXT,
+  sport TEXT NOT NULL,
+  league TEXT,
+  match_title TEXT NOT NULL,
+  home_team TEXT,
+  away_team TEXT,
+  bet_type TEXT NOT NULL,
+  market_key TEXT NOT NULL,
+  selection_label TEXT NOT NULL,
+  category_label TEXT,
+  probability NUMERIC NOT NULL,
+  fair_odd NUMERIC,
+  estimated_odd NUMERIC NOT NULL,
+  value_edge_pct NUMERIC,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  actual_result TEXT,
+  created_at BIGINT NOT NULL,
+  settled_at BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_singles_hist_date ON gmetrics_singles_history(bet_date DESC);
+CREATE INDEX IF NOT EXISTS idx_singles_hist_week ON gmetrics_singles_history(week_key);
+CREATE INDEX IF NOT EXISTS idx_singles_hist_status ON gmetrics_singles_history(status);
+CREATE INDEX IF NOT EXISTS idx_singles_hist_type ON gmetrics_singles_history(bet_type);
+ALTER TABLE gmetrics_singles_history ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'gmetrics_parlay_history' AND policyname = 'Allow server full access parlay history') THEN
+    CREATE POLICY "Allow server full access parlay history" ON gmetrics_parlay_history FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'gmetrics_singles_history' AND policyname = 'Allow server full access singles history') THEN
+    CREATE POLICY "Allow server full access singles history" ON gmetrics_singles_history FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+`;
+
 // SQL Script para crear las tablas en Supabase con un solo clic en el SQL Editor de Supabase
 export const SUPABASE_SQL_SCHEMA = `
 -- =========================================================================
@@ -1492,6 +1557,8 @@ BEGIN
 END $$;
 
 ${PICK_LEDGER_SQL}
+
+${PARLAYS_SINGLES_HISTORY_SQL}
 `;
 
 
@@ -2561,4 +2628,447 @@ export async function purgeOldPickLedgerRows(maxDays = 35): Promise<number> {
     console.warn('[PickLedger] purge exception:', err);
     return 0;
   }
+}
+
+
+// =========================================================================
+// HISTORIAL PERSISTENTE DE PARLAYS Y APUESTAS SENCILLAS ($0 USD · 35 días)
+// =========================================================================
+const PARLAY_KV_FALLBACK_KEY = '__gmetrics_smart_parlays_v3__';
+const SINGLES_KV_FALLBACK_KEY = '__gmetrics_singles_history_v1__';
+
+function isMissingTableError(err: any): boolean {
+  if (!err) return false;
+  const code = String(err.code || '');
+  const msg = String(err.message || '');
+  return code === '42P01' || code === 'PGRST205' || /does not exist|could not find the table/i.test(msg);
+}
+
+function getCutoffDateStr(maxDays: number): string {
+  const ts = Date.now() - Math.max(0, maxDays) * 86400_000;
+  return new Date(ts - 5 * 3600_000).toISOString().slice(0, 10);
+}
+
+function isNonSeedSlip(s: any): s is SmartParlaySlip {
+  return Boolean(
+    s &&
+      s.id &&
+      !String(s.id).includes('seed') &&
+      !s.legs?.some((l: any) => String(l?.fixtureId || '').startsWith('seed_'))
+  );
+}
+
+function mapParlayRowToSlip(row: any): SmartParlaySlip {
+  return {
+    id: String(row.id),
+    date: String(row.bet_date),
+    weekKey: String(row.week_key || getIsoWeekKey(String(row.bet_date))),
+    profile: row.profile,
+    legs: Array.isArray(row.legs) ? row.legs : [],
+    totalOdds: Number(row.total_odds || 1),
+    effectiveOdds: row.effective_odds !== null && row.effective_odds !== undefined ? Number(row.effective_odds) : Number(row.total_odds || 1),
+    status: row.status || 'PENDING',
+    evaluationDate: row.settled_at ? new Date(Number(row.settled_at)).toISOString() : undefined,
+    engineVersion: row.engine_version || undefined,
+    createdAt: Number(row.created_at || Date.now())
+  };
+}
+
+function mapSlipToParlayRow(s: SmartParlaySlip) {
+  const settledAt =
+    s.status !== 'PENDING'
+      ? (s.evaluationDate ? Date.parse(s.evaluationDate) || Date.now() : Date.now())
+      : null;
+  return {
+    id: s.id,
+    bet_date: s.date,
+    week_key: s.weekKey || getIsoWeekKey(s.date),
+    profile: s.profile,
+    total_odds: Number(s.totalOdds || 1),
+    effective_odds: Number(s.effectiveOdds ?? s.totalOdds ?? 1),
+    legs: s.legs || [],
+    status: s.status || 'PENDING',
+    engine_version: s.engineVersion || null,
+    created_at: s.createdAt || Date.now(),
+    settled_at: settledAt
+  };
+}
+
+function mapSingleRowToItem(row: any): GMetricsSingleBetSuggestion {
+  return {
+    id: String(row.id),
+    fixtureId: String(row.fixture_id),
+    espnEventId: row.espn_event_id ? String(row.espn_event_id) : undefined,
+    sport: row.sport === 'NBA' ? 'NBA' : 'SOCCER',
+    matchTitle: String(row.match_title),
+    homeTeamName: String(row.home_team || ''),
+    awayTeamName: String(row.away_team || ''),
+    leagueName: String(row.league || ''),
+    matchDate: String(row.bet_date),
+    matchTime: '',
+    weekKey: String(row.week_key || getIsoWeekKey(String(row.bet_date))),
+    marketKey: String(row.market_key),
+    selectionLabel: String(row.selection_label),
+    categoryLabel: String(row.category_label || ''),
+    betType: row.bet_type === 'HIGH_VALUE' ? 'HIGH_VALUE' : 'BANKER',
+    probability: Number(row.probability || 0),
+    fairMinOdd: Number(row.fair_odd || 1.3),
+    estimatedBookieOdd: Number(row.estimated_odd || 1.4),
+    valueEdgePct: Number(row.value_edge_pct || 0),
+    recommendedKellyStakePct: 2.5,
+    reasoning: '',
+    tacticalFactor: '',
+    status: row.status || 'PENDING',
+    actualResult: row.actual_result || undefined,
+    settledAt: row.settled_at ? Number(row.settled_at) : undefined,
+    createdAt: Number(row.created_at || Date.now())
+  };
+}
+
+export function buildCanonicalSingleId(s: GMetricsSingleBetSuggestion): string {
+  const dateStr = String(s.matchDate || '').slice(0, 10) || new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10);
+  const normId = normalizeMatchId(s.espnEventId || s.fixtureId) || String(s.fixtureId || '0');
+  const mKey = String(s.marketKey || 'PICK').replace(/[^a-zA-Z0-9_-]/g, '');
+  return `single_${dateStr}_${normId}_${mKey}`;
+}
+
+export async function loadParlayHistory(
+  maxDays = 35
+): Promise<{ slips: SmartParlaySlip[]; storageMode: 'table' | 'kv_fallback' }> {
+  const client = getSupabaseClient();
+  const cutoff = getCutoffDateStr(maxDays);
+
+  if (client) {
+    try {
+      const { data, error } = await client
+        .from('gmetrics_parlay_history')
+        .select('*')
+        .gte('bet_date', cutoff)
+        .order('bet_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(300);
+
+      if (!error && Array.isArray(data)) {
+        const tableSlips = data.map(mapParlayRowToSlip).filter(isNonSeedSlip);
+        if (tableSlips.length > 0) {
+          return { slips: tableSlips, storageMode: 'table' };
+        }
+        // Migración transparente única si la tabla está vacía pero existían boletos previos en KV
+        const kvOld = await getSupabaseKvCache<{ slips?: SmartParlaySlip[] }>(PARLAY_KV_FALLBACK_KEY);
+        const kvSlips = (kvOld?.data?.slips || []).filter((s) => isNonSeedSlip(s) && s.date >= cutoff);
+        if (kvSlips.length > 0) {
+          await client
+            .from('gmetrics_parlay_history')
+            .upsert(kvSlips.map(mapSlipToParlayRow), { onConflict: 'id', ignoreDuplicates: true });
+          return { slips: kvSlips, storageMode: 'table' };
+        }
+        return { slips: [], storageMode: 'table' };
+      }
+      if (error && !isMissingTableError(error)) {
+        console.warn('[ParlayHistory] query error:', error.message);
+      }
+    } catch (err) {
+      console.warn('[ParlayHistory] load exception:', err);
+    }
+  }
+
+  const kv = await getSupabaseKvCache<{ slips?: SmartParlaySlip[] }>(PARLAY_KV_FALLBACK_KEY);
+  const slips = (kv?.data?.slips || [])
+    .filter((s) => isNonSeedSlip(s) && s.date >= cutoff)
+    .map((s) => ({ ...s, weekKey: s.weekKey || getIsoWeekKey(s.date) }));
+  return { slips, storageMode: 'kv_fallback' };
+}
+
+export async function upsertParlayHistory(
+  slips: SmartParlaySlip[],
+  replacePendingDate?: string
+): Promise<boolean> {
+  const cleanSlips = (slips || []).filter(isNonSeedSlip);
+  const client = getSupabaseClient();
+
+  if (client) {
+    try {
+      if (replacePendingDate) {
+        const { error: delErr } = await client
+          .from('gmetrics_parlay_history')
+          .delete()
+          .eq('bet_date', replacePendingDate)
+          .eq('status', 'PENDING');
+        if (delErr && isMissingTableError(delErr)) {
+          throw new Error('MISSING_TABLE');
+        }
+      }
+
+      if (cleanSlips.length > 0) {
+        // Proteger boletos ya liquidados (nunca sobreescribir WON/LOST/VOID con PENDING)
+        const ids = cleanSlips.map((s) => s.id);
+        const { data: existingRows, error: selErr } = await client
+          .from('gmetrics_parlay_history')
+          .select('id,status')
+          .in('id', ids);
+        if (selErr && isMissingTableError(selErr)) {
+          throw new Error('MISSING_TABLE');
+        }
+        const settledIds = new Set(
+          (existingRows || [])
+            .filter((r: any) => r.status && r.status !== 'PENDING')
+            .map((r: any) => String(r.id))
+        );
+        const toWrite = cleanSlips.filter((s) => !(s.status === 'PENDING' && settledIds.has(s.id)));
+        if (toWrite.length > 0) {
+          const { error: upErr } = await client
+            .from('gmetrics_parlay_history')
+            .upsert(toWrite.map(mapSlipToParlayRow), { onConflict: 'id' });
+          if (upErr) {
+            if (isMissingTableError(upErr)) throw new Error('MISSING_TABLE');
+            console.warn('[ParlayHistory] upsert error:', upErr.message);
+            return false;
+          }
+        }
+      }
+      return true;
+    } catch (err: any) {
+      if (err?.message !== 'MISSING_TABLE') {
+        console.warn('[ParlayHistory] upsert exception:', err);
+      }
+    }
+  }
+
+  // KV fallback (protegido contra purga de 3 días)
+  const kv = await getSupabaseKvCache<{ updatedAt?: number; slips?: SmartParlaySlip[] }>(PARLAY_KV_FALLBACK_KEY);
+  let pool = (kv?.data?.slips || []).filter(isNonSeedSlip);
+  if (replacePendingDate) {
+    pool = pool.filter((s) => !(s.date === replacePendingDate && s.status === 'PENDING'));
+  }
+  const map = new Map<string, SmartParlaySlip>();
+  pool.forEach((s) => map.set(s.id, s));
+  cleanSlips.forEach((s) => {
+    const prev = map.get(s.id);
+    if (prev && prev.status !== 'PENDING' && s.status === 'PENDING') return;
+    map.set(s.id, { ...s, weekKey: s.weekKey || getIsoWeekKey(s.date) });
+  });
+  const merged = Array.from(map.values())
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0))
+    .slice(0, 200);
+  return setSupabaseKvCache(PARLAY_KV_FALLBACK_KEY, { updatedAt: Date.now(), slips: merged });
+}
+
+export async function loadSinglesHistory(
+  maxDays = 35
+): Promise<{ singles: GMetricsSingleBetSuggestion[]; storageMode: 'table' | 'kv_fallback' }> {
+  const client = getSupabaseClient();
+  const cutoff = getCutoffDateStr(maxDays);
+
+  if (client) {
+    try {
+      const { data, error } = await client
+        .from('gmetrics_singles_history')
+        .select('*')
+        .gte('bet_date', cutoff)
+        .order('bet_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(800);
+
+      if (!error && Array.isArray(data)) {
+        return { singles: data.map(mapSingleRowToItem), storageMode: 'table' };
+      }
+      if (error && !isMissingTableError(error)) {
+        console.warn('[SinglesHistory] query error:', error.message);
+      }
+    } catch (err) {
+      console.warn('[SinglesHistory] load exception:', err);
+    }
+  }
+
+  const kv = await getSupabaseKvCache<{ singles?: GMetricsSingleBetSuggestion[] }>(SINGLES_KV_FALLBACK_KEY);
+  const singles = (kv?.data?.singles || [])
+    .filter((s) => s && s.matchDate >= cutoff)
+    .map((s) => ({ ...s, weekKey: s.weekKey || getIsoWeekKey(s.matchDate) }));
+  return { singles, storageMode: 'kv_fallback' };
+}
+
+export async function sealSinglesHistory(singles: GMetricsSingleBetSuggestion[]): Promise<number> {
+  if (!singles || singles.length === 0) return 0;
+  const now = Date.now();
+  const normalized = singles.map((s) => {
+    const id = buildCanonicalSingleId(s);
+    const betDate = String(s.matchDate || '').slice(0, 10) || new Date(now - 5 * 3600_000).toISOString().slice(0, 10);
+    return {
+      ...s,
+      id,
+      matchDate: betDate,
+      weekKey: s.weekKey || getIsoWeekKey(betDate),
+      status: 'PENDING' as const,
+      createdAt: s.createdAt || now
+    };
+  });
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const rows = normalized.map((s) => ({
+        id: s.id,
+        bet_date: s.matchDate,
+        week_key: s.weekKey,
+        fixture_id: String(s.fixtureId),
+        espn_event_id: s.espnEventId ? String(s.espnEventId) : null,
+        sport: s.sport || 'SOCCER',
+        league: s.leagueName || '',
+        match_title: s.matchTitle,
+        home_team: s.homeTeamName || '',
+        away_team: s.awayTeamName || '',
+        bet_type: s.betType,
+        market_key: s.marketKey,
+        selection_label: s.selectionLabel,
+        category_label: s.categoryLabel || '',
+        probability: Number(s.probability),
+        fair_odd: Number(s.fairMinOdd),
+        estimated_odd: Number(s.estimatedBookieOdd),
+        value_edge_pct: Number(s.valueEdgePct),
+        status: 'PENDING',
+        actual_result: null,
+        created_at: s.createdAt,
+        settled_at: null
+      }));
+      const { error } = await client
+        .from('gmetrics_singles_history')
+        .upsert(rows, { onConflict: 'id', ignoreDuplicates: true });
+      if (!error) return rows.length;
+      if (!isMissingTableError(error)) {
+        console.warn('[SinglesHistory] seal error:', error.message);
+        return 0;
+      }
+    } catch (err) {
+      console.warn('[SinglesHistory] seal exception:', err);
+    }
+  }
+
+  // KV fallback insert-only
+  const kv = await getSupabaseKvCache<{ updatedAt?: number; singles?: GMetricsSingleBetSuggestion[] }>(SINGLES_KV_FALLBACK_KEY);
+  const existing = kv?.data?.singles || [];
+  const map = new Map<string, GMetricsSingleBetSuggestion>();
+  existing.forEach((item) => map.set(item.id, item));
+  let added = 0;
+  normalized.forEach((item) => {
+    if (!map.has(item.id)) {
+      map.set(item.id, item);
+      added++;
+    }
+  });
+  if (added > 0) {
+    const merged = Array.from(map.values())
+      .sort((a, b) => b.matchDate.localeCompare(a.matchDate) || (b.createdAt || 0) - (a.createdAt || 0))
+      .slice(0, 800);
+    await setSupabaseKvCache(SINGLES_KV_FALLBACK_KEY, { updatedAt: now, singles: merged });
+  }
+  return added;
+}
+
+export async function updateSinglesSettlement(
+  updates: Array<{ id: string; status: 'WON' | 'LOST' | 'VOID'; actualResult: string; settledAt: number }>
+): Promise<number> {
+  if (!updates || updates.length === 0) return 0;
+  const client = getSupabaseClient();
+  let updatedCount = 0;
+
+  if (client) {
+    try {
+      let useFallback = false;
+      for (const u of updates) {
+        const { error } = await client
+          .from('gmetrics_singles_history')
+          .update({
+            status: u.status,
+            actual_result: u.actualResult,
+            settled_at: u.settledAt
+          })
+          .eq('id', u.id)
+          .eq('status', 'PENDING');
+        if (error) {
+          if (isMissingTableError(error)) {
+            useFallback = true;
+            break;
+          }
+        } else {
+          updatedCount++;
+        }
+      }
+      if (!useFallback) return updatedCount;
+    } catch {
+      // fall through to KV
+    }
+  }
+
+  const kv = await getSupabaseKvCache<{ updatedAt?: number; singles?: GMetricsSingleBetSuggestion[] }>(SINGLES_KV_FALLBACK_KEY);
+  const pool = kv?.data?.singles || [];
+  if (pool.length === 0) return 0;
+  const updMap = new Map(updates.map((u) => [u.id, u]));
+  const next = pool.map((s) => {
+    const u = updMap.get(s.id);
+    if (u && (!s.status || s.status === 'PENDING')) {
+      updatedCount++;
+      return { ...s, status: u.status, actualResult: u.actualResult, settledAt: u.settledAt };
+    }
+    return s;
+  });
+  if (updatedCount > 0) {
+    await setSupabaseKvCache(SINGLES_KV_FALLBACK_KEY, { updatedAt: Date.now(), singles: next });
+  }
+  return updatedCount;
+}
+
+export async function purgeOldParlaysAndSingles(
+  maxDays = 35
+): Promise<{ purgedParlays: number; purgedSingles: number }> {
+  const client = getSupabaseClient();
+  const cutoff = getCutoffDateStr(maxDays);
+  let purgedParlays = 0;
+  let purgedSingles = 0;
+
+  if (client) {
+    try {
+      const pQuery = client.from('gmetrics_parlay_history').delete({ count: 'exact' });
+      const pRes = maxDays <= 0 ? await pQuery.gte('created_at', 0) : await pQuery.lt('bet_date', cutoff);
+      if (!pRes.error) purgedParlays = pRes.count || 0;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const sQuery = client.from('gmetrics_singles_history').delete({ count: 'exact' });
+      const sRes = maxDays <= 0 ? await sQuery.gte('created_at', 0) : await sQuery.lt('bet_date', cutoff);
+      if (!sRes.error) purgedSingles = sRes.count || 0;
+    } catch {
+      // ignore
+    }
+  }
+
+  // Sincronizar también limpieza en KV fallback
+  try {
+    const kvP = await getSupabaseKvCache<{ slips?: SmartParlaySlip[] }>(PARLAY_KV_FALLBACK_KEY);
+    if (kvP?.data?.slips) {
+      const kept = maxDays <= 0 ? [] : kvP.data.slips.filter((s) => s.date >= cutoff);
+      if (kept.length !== kvP.data.slips.length) {
+        purgedParlays = Math.max(purgedParlays, kvP.data.slips.length - kept.length);
+        await setSupabaseKvCache(PARLAY_KV_FALLBACK_KEY, { updatedAt: Date.now(), slips: kept });
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const kvS = await getSupabaseKvCache<{ singles?: GMetricsSingleBetSuggestion[] }>(SINGLES_KV_FALLBACK_KEY);
+    if (kvS?.data?.singles) {
+      const kept = maxDays <= 0 ? [] : kvS.data.singles.filter((s) => s.matchDate >= cutoff);
+      if (kept.length !== kvS.data.singles.length) {
+        purgedSingles = Math.max(purgedSingles, kvS.data.singles.length - kept.length);
+        await setSupabaseKvCache(SINGLES_KV_FALLBACK_KEY, { updatedAt: Date.now(), singles: kept });
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return { purgedParlays, purgedSingles };
 }

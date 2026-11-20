@@ -704,6 +704,12 @@ export interface GMetricsSingleBetSuggestion {
   tacticalFactor: string;
   rank?: number;
   qualityScore?: number;
+  espnEventId?: string;
+  weekKey?: string;
+  status?: 'PENDING' | 'WON' | 'LOST' | 'VOID';
+  actualResult?: string;
+  settledAt?: number;
+  createdAt?: number;
 }
 
 // =========================================================================
@@ -755,6 +761,9 @@ export interface BettingMarketSuggestion {
   expectedValue: number; // EV calculado (+EV)
   availableInColombianBooks: boolean;
   sport?: 'SOCCER' | 'NBA';
+  espnEventId?: string;
+  legStatus?: 'PENDING' | 'WON' | 'LOST' | 'VOID';
+  actualResult?: string;
 }
 
 export interface SmartParlaySlip {
@@ -766,6 +775,9 @@ export interface SmartParlaySlip {
   status: 'PENDING' | 'WON' | 'LOST' | 'VOID';
   evaluationDate?: string;
   engineVersion?: string;
+  weekKey?: string;
+  effectiveOdds?: number;
+  createdAt?: number;
 }
 
 

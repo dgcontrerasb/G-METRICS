@@ -10,6 +10,7 @@ import {
   BetMarketCategory
 } from '../types';
 import { getNBALineupData, sanitizePlayerName } from './lineupService';
+import { normalizeMatchId } from './parlaySinglesLedger';
 import {
   evaluateNBAMultipleAndLogisticRegression,
   shrinkLambdaBayesian,
@@ -1025,6 +1026,7 @@ export function extractNBABettingMarketSuggestions(
     if (odds >= 1.30 && expectedValue > 0) {
       suggestions.push({
         fixtureId: fixture.id,
+        espnEventId: fixture.espnEventId || normalizeMatchId(fixture.id),
         matchName,
         leagueName,
         category,
@@ -1127,6 +1129,7 @@ export function generateGMetricsNBABankerPicks(
 
   for (const fixture of eligible) {
     const analysis = calculateNBAAnalysis(fixture);
+    const resolvedEspnId = fixture.espnEventId || normalizeMatchId(fixture.id);
     const homeName = fixture.homeTeam?.name || 'Local';
     const awayName = fixture.awayTeam?.name || 'Visitante';
     const matchTitle = `${homeName} vs ${awayName}`;
@@ -1149,6 +1152,7 @@ export function generateGMetricsNBABankerPicks(
       results.push({
         id: `${fixture.id}_nba_banker_over`,
         fixtureId: fixture.id,
+        espnEventId: resolvedEspnId,
         sport: 'NBA',
         matchTitle,
         homeTeamName: homeName,
@@ -1185,6 +1189,7 @@ export function generateGMetricsNBABankerPicks(
         results.push({
           id: `${fixture.id}_nba_banker_under`,
           fixtureId: fixture.id,
+          espnEventId: resolvedEspnId,
           sport: 'NBA',
           matchTitle,
           homeTeamName: homeName,
@@ -1224,6 +1229,7 @@ export function generateGMetricsNBABankerPicks(
       results.push({
         id: `${fixture.id}_nba_banker_ml_home`,
         fixtureId: fixture.id,
+        espnEventId: resolvedEspnId,
         sport: 'NBA',
         matchTitle,
         homeTeamName: homeName,
@@ -1264,6 +1270,7 @@ export function generateGMetricsNBABankerPicks(
           results.push({
             id: `${fixture.id}_nba_prop_3pm_${player.id}`,
             fixtureId: fixture.id,
+            espnEventId: resolvedEspnId,
             sport: 'NBA',
             matchTitle,
             homeTeamName: homeName,
@@ -1298,6 +1305,7 @@ export function generateGMetricsNBABankerPicks(
           results.push({
             id: `${fixture.id}_nba_prop_pts_${player.id}`,
             fixtureId: fixture.id,
+            espnEventId: resolvedEspnId,
             sport: 'NBA',
             matchTitle,
             homeTeamName: homeName,

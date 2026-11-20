@@ -10,21 +10,29 @@ import {
   RefreshCw,
   FileSpreadsheet,
   Calendar,
-  Filter,
   Image as ImageIcon,
   FileText,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  Trash2,
+  ShieldCheck
 } from 'lucide-react';
 import { MatchFixture, NBAMatchFixture, ParlayPick, GMetricsSingleBetSuggestion, SmartParlaySlip, BettingMarketSuggestion } from '../../types';
 import {
   generateGMetricsSingleValueBets,
-  generateSmartParlays,
-  PARLAY_ENGINE_VERSION
+  generateSmartParlays
 } from '../../services/mathEngine';
 import { getLocalUpcomingCache, getColombiaDateString } from '../../services/apiService';
 import { useParlay } from '../../context/ParlayContext';
 import { SocialCardExportService, ExportMediaFormat } from '../../services/socialCardExportService';
+import {
+  getIsoWeekKey,
+  getSpanishWeekLabel,
+  computeParlayEfficiencyStats,
+  computeSinglesEfficiencyStats,
+  buildParlaysCsvContent,
+  buildSinglesCsvContent
+} from '../../services/parlaySinglesLedger';
 
 export interface AdminParlaysBetaTabProps {
   fixtures: MatchFixture[];
@@ -32,50 +40,11 @@ export interface AdminParlaysBetaTabProps {
   onCloseAdmin: () => void;
 }
 
-interface ParlayMetricsData {
-  totalGenerated: number;
-  totalWon: number;
-  totalLost: number;
-  totalPending: number;
-  totalVoid: number;
-  winRate: number;
-  avgOdds: number;
-  netYieldUnits: number;
-  yieldPercent: number;
-}
-
-interface MonthlyStatItem {
-  monthKey: string;
-  monthLabel: string;
-  totalSlips: number;
-  won: number;
-  lost: number;
-  pending: number;
-  voidCount: number;
-  resolved: number;
-  winRate: number;
-  avgOdds: number;
-  netYieldUnits: number;
-  yieldPercent: number;
-}
-
-const MONTH_NAMES_ES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-];
-
-function getSpanishMonthLabel(monthKey: string): string {
-  const [yearStr, monthStr] = monthKey.split('-');
-  const monthIdx = Number(monthStr) - 1;
-  const monthName = MONTH_NAMES_ES[monthIdx] || monthKey;
-  return `${monthName} ${yearStr}`;
-}
-
 const LOCAL_SMART_SLIPS_KEY = 'gmetrics_smart_parlays_slips_v5';
 
 function getStoredSmartSlips(): SmartParlaySlip[] {
   try {
-    // Limpia la caché local de versiones anteriores (boletos con apuestas repetidas)
+    // Limpia la caché local de versiones antiguas de almacenamiento
     localStorage.removeItem('gmetrics_smart_parlays_slips_v3');
     localStorage.removeItem('gmetrics_smart_parlays_slips_v4');
     const raw = localStorage.getItem(LOCAL_SMART_SLIPS_KEY);
@@ -83,8 +52,7 @@ function getStoredSmartSlips(): SmartParlaySlip[] {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         return parsed.filter(
-          (s: SmartParlaySlip) =>
-            s && !s.id.includes('seed') && !(s.status === 'PENDING' && s.engineVersion !== PARLAY_ENGINE_VERSION)
+          (s: SmartParlaySlip) => s && s.id && !s.id.includes('seed')
         );
       }
     }
@@ -111,17 +79,22 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
   const { addPick, setIsOpen } = useParlay();
   const [copiedSlipId, setCopiedSlipId] = useState<string | null>(null);
   const [copiedSingleId, setCopiedSingleId] = useState<string | null>(null);
-  const [subTab, setSubTab] = useState<'SMART_PARLAYS' | 'MONTHLY_BREAKDOWN' | 'SINGLES'>('SMART_PARLAYS');
+  const [subTab, setSubTab] = useState<'SMART_PARLAYS' | 'WEEKLY_AUDIT' | 'SINGLES'>('SMART_PARLAYS');
   const [profileFilter, setProfileFilter] = useState<'ALL' | 'BALANCED' | 'HIGH_ODDS' | 'CONSERVATIVE'>('ALL');
-  const [monthFilter, setMonthFilter] = useState<string>('ALL');
+  const [periodFilter, setPeriodFilter] = useState<string>('ALL_30D');
+  const [auditGranularity, setAuditGranularity] = useState<'WEEKLY' | 'MONTHLY'>('WEEKLY');
+  const [singlesViewMode, setSinglesViewMode] = useState<'TODAY' | 'HISTORY'>('TODAY');
   const [singleTypeFilter, setSingleTypeFilter] = useState<'ALL' | 'HIGH_VALUE' | 'BANKER'>('ALL');
   const [singleSportFilter, setSingleSportFilter] = useState<'ALL' | 'SOCCER' | 'NBA'>('ALL');
   const [singleTopLimit, setSingleTopLimit] = useState<5 | 10>(5);
 
   const [smartSlips, setSmartSlips] = useState<SmartParlaySlip[]>(() => getStoredSmartSlips());
-  const [metrics, setMetrics] = useState<ParlayMetricsData | null>(null);
+  const [singlesHistory, setSinglesHistory] = useState<GMetricsSingleBetSuggestion[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isGeneratingToday, setIsGeneratingToday] = useState<boolean>(false);
+  const [isSealingSingles, setIsSealingSingles] = useState<boolean>(false);
+  const [confirmPurge, setConfirmPurge] = useState<boolean>(false);
+  const [isPurging, setIsPurging] = useState<boolean>(false);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -218,6 +191,7 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
       // Compactar la carga útil manteniendo intacta la telemetría analítica (árbitro, tiros, estrellas)
       const compactFixtures = effective.map((f) => ({
         id: f.id,
+        espnEventId: f.espnEventId,
         date: f.date,
         time: f.time,
         status: f.status,
@@ -260,6 +234,7 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
 
       const compactNBA = effectiveNBA.map((f: NBAMatchFixture) => ({
         id: f.id,
+        espnEventId: f.espnEventId,
         date: f.date,
         time: f.time,
         status: f.status,
@@ -287,10 +262,7 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
       if (res.ok && data.success) {
         if (Array.isArray(data.slips) && data.slips.length > 0) {
           const clean = data.slips.filter(
-            (s: SmartParlaySlip) =>
-              s &&
-              !s.id.includes('seed') &&
-              !(s.status === 'PENDING' && s.engineVersion !== PARLAY_ENGINE_VERSION)
+            (s: SmartParlaySlip) => s && s.id && !s.id.includes('seed')
           );
           setSmartSlips(clean);
           saveStoredSmartSlips(clean);
@@ -338,23 +310,35 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     }
   };
 
-  const fetchSmartParlaysAndMetrics = useCallback(async () => {
+  const fetchSmartParlaysAndMetrics = useCallback(async (forceRefresh = false) => {
     setIsLoading(true);
     setErrorMsg(null);
+    const qs = forceRefresh ? '?refresh=true' : '';
     try {
-      const res = await fetch('/api/parlays/metrics', {
-        headers: getAdminAuthHeaders(false)
-      });
+      const [res, singlesRes] = await Promise.all([
+        fetch(`/api/parlays/metrics${qs}`, { headers: getAdminAuthHeaders(false) }),
+        fetch(`/api/admin/singles/metrics${qs}`, { headers: getAdminAuthHeaders(false) }).catch(() => null)
+      ]);
+
+      if (singlesRes && singlesRes.ok) {
+        try {
+          const sTxt = await singlesRes.text();
+          const sData = sTxt ? JSON.parse(sTxt) : {};
+          if (sData.success && Array.isArray(sData.singles)) {
+            setSinglesHistory(sData.singles);
+          }
+        } catch {
+          // non-fatal
+        }
+      }
+
       if (res.ok) {
         const txt = await res.text();
         const data = txt ? JSON.parse(txt) : {};
         if (data.success) {
           if (Array.isArray(data.slips)) {
             const cleanSlips = data.slips.filter(
-              (s: SmartParlaySlip) =>
-                s &&
-                !s.id.includes('seed') &&
-                !(s.status === 'PENDING' && s.engineVersion !== PARLAY_ENGINE_VERSION)
+              (s: SmartParlaySlip) => s && s.id && !s.id.includes('seed')
             );
             const localStored = getStoredSmartSlips();
             const mergedSlips = cleanSlips.length > 0 ? cleanSlips : localStored;
@@ -371,6 +355,7 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
             if (!hasToday && (effective.length + effectiveNBA.length >= 2)) {
               const compact = effective.map((f) => ({
                 id: f.id,
+                espnEventId: f.espnEventId,
                 date: f.date,
                 time: f.time,
                 status: f.status,
@@ -412,6 +397,7 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
               }));
               const compactNBA = effectiveNBA.map((f: NBAMatchFixture) => ({
                 id: f.id,
+                espnEventId: f.espnEventId,
                 date: f.date,
                 time: f.time,
                 status: f.status,
@@ -449,9 +435,6 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                 });
             }
           }
-          if (data.metrics) {
-            setMetrics(data.metrics);
-          }
         }
       } else if (res.status === 403) {
         setErrorMsg('Acceso restringido: Módulo exclusivo para Administrador.');
@@ -478,218 +461,178 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
   }, [fixtures, effectiveNBAFixtures, getAdminAuthHeaders]);
 
   useEffect(() => {
-    fetchSmartParlaysAndMetrics();
+    fetchSmartParlaysAndMetrics(false);
   }, [fetchSmartParlaysAndMetrics]);
 
-  // Desglose Mes a Mes estricto sobre datos reales
-  const monthlyStats = useMemo<MonthlyStatItem[]>(() => {
-    const map = new Map<string, SmartParlaySlip[]>();
-    for (const slip of smartSlips) {
-      const mKey = slip.date ? slip.date.slice(0, 7) : '2026-11';
-      const list = map.get(mKey) || [];
-      list.push(slip);
-      map.set(mKey, list);
-    }
+  const currentWeekKey = useMemo(() => getIsoWeekKey(getColombiaDateString(0)), []);
+  const lastWeekKey = useMemo(() => getIsoWeekKey(getColombiaDateString(-7)), []);
 
-    const result: MonthlyStatItem[] = [];
-    map.forEach((slipsInMonth, monthKey) => {
-      const totalSlips = slipsInMonth.length;
-      const won = slipsInMonth.filter((s) => s.status === 'WON').length;
-      const lost = slipsInMonth.filter((s) => s.status === 'LOST').length;
-      const pending = slipsInMonth.filter((s) => s.status === 'PENDING').length;
-      const voidCount = slipsInMonth.filter((s) => s.status === 'VOID').length;
-      const resolved = won + lost;
-      const winRate = resolved > 0 ? Number(((won / resolved) * 100).toFixed(1)) : 0;
-      const avgOdds = totalSlips > 0
-        ? Number((slipsInMonth.reduce((acc, s) => acc + s.totalOdds, 0) / totalSlips).toFixed(2))
-        : 0;
+  const matchesPeriod = useCallback(
+    (dateStr: string, weekKey?: string) => {
+      if (periodFilter === 'ALL_30D') return true;
+      const wk = weekKey || getIsoWeekKey(dateStr);
+      if (periodFilter === 'THIS_WEEK') return wk === currentWeekKey;
+      if (periodFilter === 'LAST_WEEK') return wk === lastWeekKey;
+      return wk === periodFilter;
+    },
+    [periodFilter, currentWeekKey, lastWeekKey]
+  );
 
-      let netUnits = 0;
-      for (const slip of slipsInMonth) {
-        if (slip.status === 'WON') {
-          netUnits += (slip.totalOdds - 1);
-        } else if (slip.status === 'LOST') {
-          netUnits -= 1;
-        }
-      }
-      const netYieldUnits = Number(netUnits.toFixed(2));
-      const yieldPercent = resolved > 0 ? Number(((netUnits / resolved) * 100).toFixed(1)) : 0;
+  // Estadísticas completas de Parlays (Semanal, Mensual, Perfil y Mercado de Pata)
+  const parlaySummaryAll = useMemo(() => computeParlayEfficiencyStats(smartSlips), [smartSlips]);
+  const periodSlips = useMemo(
+    () => smartSlips.filter((s) => matchesPeriod(s.date, s.weekKey)),
+    [smartSlips, matchesPeriod]
+  );
+  const parlaySummaryPeriod = useMemo(() => computeParlayEfficiencyStats(periodSlips), [periodSlips]);
 
-      result.push({
-        monthKey,
-        monthLabel: getSpanishMonthLabel(monthKey),
-        totalSlips,
-        won,
-        lost,
-        pending,
-        voidCount,
-        resolved,
-        winRate,
-        avgOdds,
-        netYieldUnits,
-        yieldPercent
-      });
-    });
+  // Estadísticas completas de Apuestas Sencillas (+EV y Bankers)
+  const singlesSummaryAll = useMemo(() => computeSinglesEfficiencyStats(singlesHistory), [singlesHistory]);
+  const periodSinglesHistory = useMemo(
+    () => singlesHistory.filter((s) => matchesPeriod(s.matchDate, s.weekKey)),
+    [singlesHistory, matchesPeriod]
+  );
+  const singlesSummaryPeriod = useMemo(
+    () => computeSinglesEfficiencyStats(periodSinglesHistory),
+    [periodSinglesHistory]
+  );
 
-    return result.sort((a, b) => b.monthKey.localeCompare(a.monthKey));
-  }, [smartSlips]);
+  const availableWeeks = useMemo(() => {
+    const map = new Map<string, string>();
+    parlaySummaryAll.byWeek.forEach((w) => map.set(w.key, w.label));
+    singlesSummaryAll.byWeek.forEach((w) => map.set(w.key, w.label));
+    return Array.from(map.entries())
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => b.key.localeCompare(a.key));
+  }, [parlaySummaryAll.byWeek, singlesSummaryAll.byWeek]);
 
-  // Lista de meses disponibles para el selector
-  const availableMonths = useMemo(() => {
-    return monthlyStats.map((m) => ({ key: m.monthKey, label: m.monthLabel }));
-  }, [monthlyStats]);
-
-  // Filtrado de boletos por perfil y por mes
+  // Filtrado de boletos por perfil y por período
   const filteredSlips = useMemo(() => {
-    return smartSlips.filter((s) => {
-      const matchesProfile = profileFilter === 'ALL' || s.profile === profileFilter;
-      const matchesMonth = monthFilter === 'ALL' || (s.date && s.date.startsWith(monthFilter));
-      return matchesProfile && matchesMonth;
-    });
-  }, [smartSlips, profileFilter, monthFilter]);
-
-  // Métricas activas computadas en tiempo real 100% sobre los boletos reales existentes
-  const activeMetrics = useMemo(() => {
-    const slipsToCalculate = monthFilter === 'ALL'
-      ? smartSlips
-      : smartSlips.filter((s) => s.date && s.date.startsWith(monthFilter));
-
-    const totalGenerated = slipsToCalculate.length;
-    const totalWon = slipsToCalculate.filter((s) => s.status === 'WON').length;
-    const totalLost = slipsToCalculate.filter((s) => s.status === 'LOST').length;
-    const totalPending = slipsToCalculate.filter((s) => s.status === 'PENDING').length;
-    const totalVoid = slipsToCalculate.filter((s) => s.status === 'VOID').length;
-    const resolved = totalWon + totalLost;
-    const winRate = resolved > 0 ? Number(((totalWon / resolved) * 100).toFixed(1)) : 0;
-    const avgOdds = totalGenerated > 0
-      ? Number((slipsToCalculate.reduce((acc, s) => acc + s.totalOdds, 0) / totalGenerated).toFixed(2))
-      : 0;
-
-    let netProfitUnits = 0;
-    for (const slip of slipsToCalculate) {
-      if (slip.status === 'WON') {
-        netProfitUnits += (slip.totalOdds - 1);
-      } else if (slip.status === 'LOST') {
-        netProfitUnits -= 1;
-      }
-    }
-    const netYieldUnits = Number(netProfitUnits.toFixed(2));
-    const yieldPercent = resolved > 0 ? Number(((netProfitUnits / resolved) * 100).toFixed(1)) : 0;
-
-    return {
-      totalGenerated,
-      totalWon,
-      totalLost,
-      totalPending,
-      totalVoid,
-      winRate,
-      avgOdds,
-      netYieldUnits,
-      yieldPercent
-    };
-  }, [smartSlips, monthFilter]);
+    return periodSlips.filter((s) => profileFilter === 'ALL' || s.profile === profileFilter);
+  }, [periodSlips, profileFilter]);
 
   const singleValueBets = useMemo<GMetricsSingleBetSuggestion[]>(() => {
     return generateGMetricsSingleValueBets(effectiveFixtures, false, singleTopLimit, effectiveNBAFixtures);
   }, [effectiveFixtures, singleTopLimit, effectiveNBAFixtures]);
 
+  // Sellado automático pre-partido (insert-only, 1 llamada dedup en sessionStorage) + sellado manual
+  const sealSinglesBatch = useCallback(
+    async (items: GMetricsSingleBetSuggestion[], manual = false) => {
+      if (!items || items.length === 0) return;
+      const scheduledSoccer = new Set(
+        effectiveFixtures.filter((f) => f.status === 'SCHEDULED').map((f) => String(f.id))
+      );
+      const scheduledNBA = new Set(
+        effectiveNBAFixtures.filter((f: NBAMatchFixture) => f.status === 'SCHEDULED').map((f: NBAMatchFixture) => String(f.id))
+      );
+      const eligible = items.filter((s) =>
+        s.sport === 'NBA' ? scheduledNBA.has(String(s.fixtureId)) : scheduledSoccer.has(String(s.fixtureId))
+      );
+      const target = eligible.length > 0 ? eligible : (manual ? items : []);
+      if (target.length === 0) return;
+
+      const todayStr = getColombiaDateString(0);
+      const cacheKey = `gmetrics_sealed_singles_sig_${todayStr}`;
+      const sig = target.map((t) => `${t.fixtureId}:${t.marketKey}`).sort().join('|');
+      if (!manual && sessionStorage.getItem(cacheKey) === sig) return;
+
+      if (manual) setIsSealingSingles(true);
+      try {
+        const res = await fetch('/api/admin/singles/seal', {
+          method: 'POST',
+          headers: getAdminAuthHeaders(true),
+          body: JSON.stringify({ singles: target })
+        });
+        if (res.ok) {
+          sessionStorage.setItem(cacheKey, sig);
+          const sRes = await fetch('/api/admin/singles/metrics', { headers: getAdminAuthHeaders(false) });
+          if (sRes.ok) {
+            const sJson = await sRes.json();
+            if (sJson.success && Array.isArray(sJson.singles)) {
+              setSinglesHistory(sJson.singles);
+            }
+          }
+          if (manual) {
+            setSuccessNotice(`🔒 Selladas ${target.length} apuestas sencillas en el historial real.`);
+            setTimeout(() => setSuccessNotice(null), 4000);
+          }
+        }
+      } catch {
+        // non-fatal
+      } finally {
+        if (manual) setIsSealingSingles(false);
+      }
+    },
+    [effectiveFixtures, effectiveNBAFixtures, getAdminAuthHeaders]
+  );
+
+  useEffect(() => {
+    if (singleValueBets.length > 0) {
+      sealSinglesBatch(singleValueBets, false);
+    }
+  }, [singleValueBets, sealSinglesBatch]);
+
   const filteredSingles = useMemo(() => {
-    return singleValueBets.filter((s) => {
+    const source = singlesViewMode === 'HISTORY' ? periodSinglesHistory : singleValueBets;
+    return source.filter((s) => {
       const matchType = singleTypeFilter === 'ALL' || s.betType === singleTypeFilter;
       const matchSport = singleSportFilter === 'ALL' || s.sport === singleSportFilter;
       return matchType && matchSport;
     });
-  }, [singleValueBets, singleTypeFilter, singleSportFilter]);
+  }, [singlesViewMode, periodSinglesHistory, singleValueBets, singleTypeFilter, singleSportFilter]);
 
-  // Exportación a Excel (.xlsx) con datos 100% reales (carga diferida de XLSX para no penalizar el peso del bundle)
-  const handleExportExcel = async () => {
+  // Exportación estricta a CSV (.csv con UTF-8 BOM, cero JSON, cero librerías pesadas)
+  const handleExportCsv = (mode?: 'PARLAYS' | 'SINGLES') => {
     setIsExporting(true);
     try {
-      const XLSX = await import('xlsx');
-      const wb = XLSX.utils.book_new();
-
-      // Hoja 1: Resumen Mes a Mes
-      const summaryRows = monthlyStats.map((m) => ({
-        'Mes (Clave)': m.monthKey,
-        'Nombre del Mes': m.monthLabel,
-        'Boletos Generados': m.totalSlips,
-        'Ganados (WON)': m.won,
-        'Perdidos (LOST)': m.lost,
-        'Pendientes': m.pending,
-        'Resueltos': m.resolved,
-        'Tasa de Acierto (%)': `${m.winRate}%`,
-        'Cuota Promedio': `@${m.avgOdds.toFixed(2)}x`,
-        'Yield Neto (Unidades)': `${m.netYieldUnits >= 0 ? '+' : ''}${m.netYieldUnits} u`,
-        'ROI Neto (%)': `${m.yieldPercent >= 0 ? '+' : ''}${m.yieldPercent}%`
-      }));
-
-      const wsSummary = XLSX.utils.json_to_sheet(summaryRows.length > 0 ? summaryRows : [
-        { Mensaje: 'Sin datos registrados aún en la base de datos' }
-      ]);
-      XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumen_Mes_a_Mes');
-
-      // Hoja 2: Detalle de Parlays Reales
-      const parlayRows = smartSlips.map((s) => {
-        let netProfit = 0;
-        if (s.status === 'WON') netProfit = Number((s.totalOdds - 1).toFixed(2));
-        else if (s.status === 'LOST') netProfit = -1;
-
-        const legsSummary = s.legs
-          .map((l, i) => `${i + 1}) ${l.matchName}: ${l.label} (@${l.odds.toFixed(2)})`)
-          .join(' | ');
-
-        return {
-          'ID Boleto': s.id,
-          'Fecha (YYYY-MM-DD)': s.date,
-          'Perfil': s.profile === 'BALANCED' ? 'Equilibrado' : s.profile === 'HIGH_ODDS' ? 'Cuota Alta' : 'Conservador',
-          'Cuota Total': Number(s.totalOdds.toFixed(2)),
-          'Estado': s.status,
-          'Total Patas': s.legs.length,
-          'Casa Sugerida (Colombia)': s.profile === 'HIGH_ODDS' ? 'BetPlay / Rushbet' : 'BetPlay / Wplay',
-          'Detalle de Selecciones': legsSummary,
-          'Ganancia Neta (Unidades)': netProfit,
-          'Fecha Evaluación': s.evaluationDate || 'Pendiente'
-        };
-      });
-
-      const wsParlays = XLSX.utils.json_to_sheet(parlayRows.length > 0 ? parlayRows : [
-        { Mensaje: 'Sin boletos registrados' }
-      ]);
-      XLSX.utils.book_append_sheet(wb, wsParlays, 'Detalle_Parlays');
-
-      // Hoja 3: Detalle de Patas y Mercados
-      const legsRows: any[] = [];
-      smartSlips.forEach((s) => {
-        s.legs.forEach((leg, idx) => {
-          legsRows.push({
-            'ID Boleto': s.id,
-            'Fecha Boleto': s.date,
-            'N° Pata': idx + 1,
-            'Partido': leg.matchName,
-            'Liga': leg.leagueName,
-            'Categoría Mercado': leg.category,
-            'Pronóstico': leg.label,
-            'Cuota Decimal': Number(leg.odds.toFixed(2)),
-            'Probabilidad Modelo (%)': `${Math.round(leg.impliedProb * 100)}%`,
-            'Valor Esperado (+EV)': leg.expectedValue > 0 ? `+${(leg.expectedValue * 100).toFixed(1)}%` : '0%',
-            'Compatible Casas Colombianas': leg.availableInColombianBooks ? 'Sí' : 'No',
-            'Operador Sugerido': leg.category === 'TOTAL_GOALS' || leg.category === 'TOTAL_CORNERS_MATCH' ? 'BetPlay (Líneas Goles/Córners)' : leg.category === 'BTTS' ? 'Wplay / BetPlay' : 'BetPlay / Rushbet'
-          });
-        });
-      });
-
-      const wsLegs = XLSX.utils.json_to_sheet(legsRows.length > 0 ? legsRows : [
-        { Mensaje: 'Sin selecciones registradas' }
-      ]);
-      XLSX.utils.book_append_sheet(wb, wsLegs, 'Detalle_Mercados');
-
+      const exportTarget = mode || (subTab === 'SINGLES' ? 'SINGLES' : 'PARLAYS');
       const todayStr = new Date().toISOString().split('T')[0];
-      const filename = `G_METRICS_Reporte_Parlays_Reales_${todayStr}.xlsx`;
-      XLSX.writeFile(wb, filename);
+      const csvContent =
+        exportTarget === 'SINGLES'
+          ? buildSinglesCsvContent(periodSinglesHistory, singlesSummaryPeriod.byWeek)
+          : buildParlaysCsvContent(periodSlips, parlaySummaryPeriod.byWeek);
+      const filename =
+        exportTarget === 'SINGLES'
+          ? `G_METRICS_Sencillas_EV_${todayStr}.csv`
+          : `G_METRICS_Parlays_Semanales_${todayStr}.csv`;
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Error al exportar Excel de parlays:', err);
+      console.error('Error al exportar CSV:', err);
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handlePurgeOldRecords = async () => {
+    setIsPurging(true);
+    setConfirmPurge(false);
+    try {
+      const res = await fetch('/api/admin/parlays-singles/purge', {
+        method: 'POST',
+        headers: getAdminAuthHeaders(true),
+        body: JSON.stringify({ maxDays: 30 })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSuccessNotice(
+          `🧹 Purga completada: ${data.purgedParlays || 0} parlays y ${data.purgedSingles || 0} sencillas (>30d) eliminados.`
+        );
+        setTimeout(() => setSuccessNotice(null), 4500);
+        await fetchSmartParlaysAndMetrics(false);
+      }
+    } catch {
+      setErrorMsg('No se pudo purgar el historial antiguo.');
+    } finally {
+      setIsPurging(false);
     }
   };
 
@@ -769,7 +712,11 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
     } catch {}
   };
 
-  const resolvedCount = (activeMetrics?.totalWon ?? 0) + (activeMetrics?.totalLost ?? 0);
+  const isSinglesContext = subTab === 'SINGLES';
+  const activeKpi = isSinglesContext ? singlesSummaryPeriod.overall : parlaySummaryPeriod.overall;
+  const resolvedCount = activeKpi.won + activeKpi.lost;
+  const auditParlayRows = auditGranularity === 'WEEKLY' ? parlaySummaryAll.byWeek : parlaySummaryAll.byMonth;
+  const auditSinglesRows = auditGranularity === 'WEEKLY' ? singlesSummaryAll.byWeek : singlesSummaryAll.byMonth;
 
   return (
     <div className="space-y-3 font-sans text-white">
@@ -781,16 +728,16 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-xs sm:text-sm">Parlays Cuantitativos (+EV)</span>
+              <span className="font-bold text-xs sm:text-sm">Parlays & Sencillas (+EV)</span>
               <span className="px-2 py-0.2 rounded-full text-[9px] font-mono font-bold bg-[#d9b114] text-[#0b0e14] uppercase">
-                Admin Beta
+                Auditoría Real
               </span>
               <span className="text-[10px] font-mono text-[#00ff66]">
                 🇨🇴 BetPlay · Wplay · Rushbet
               </span>
             </div>
             <span className="text-[10.5px] text-[#8b949e] font-mono block">
-              Motor Dixon-Coles & Poisson · Cuotas Reales sin Duplicados
+              Sellado Pre-Partido · Liquidación Multi-Liga & Retención 35 Días
             </span>
           </div>
         </div>
@@ -809,24 +756,55 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
 
           <button
             type="button"
-            onClick={handleExportExcel}
-            disabled={isExporting || smartSlips.length === 0}
+            onClick={() => handleExportCsv()}
+            disabled={isExporting || (isSinglesContext ? periodSinglesHistory.length === 0 : periodSlips.length === 0)}
             className="px-3 py-1.5 rounded-xl bg-[#161b22] hover:bg-[#21262d] border border-[#30363d] disabled:opacity-50 text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-            title="Descargar archivo Excel oficial (.xlsx) con auditoría mes a mes"
+            title="Descargar informe oficial en formato CSV plano (.csv)"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-            <span>{isExporting ? 'Exportando...' : 'Descargar Excel (.xlsx)'}</span>
+            <span>{isExporting ? 'Exportando...' : 'Descargar CSV (.csv)'}</span>
           </button>
 
           <button
             type="button"
-            onClick={fetchSmartParlaysAndMetrics}
+            onClick={() => fetchSmartParlaysAndMetrics(true)}
             className="px-2.5 py-1.5 rounded-xl bg-[#161b22] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] text-xs font-mono font-semibold transition cursor-pointer flex items-center gap-1.5"
-            title="Sincronizar y auditar boletos con partidos finalizados"
+            title="Sincronizar y liquidar boletos y sencillas contra marcadores oficiales"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-[#d9b114] ${isLoading ? 'animate-spin' : ''}`} />
             <span>Actualizar</span>
           </button>
+
+          {confirmPurge ? (
+            <div className="flex items-center gap-1 bg-rose-500/10 border border-rose-500/30 rounded-xl px-2 py-1">
+              <span className="text-[10.5px] text-rose-400 font-bold">¿Purgar &gt;30d?</span>
+              <button
+                type="button"
+                onClick={handlePurgeOldRecords}
+                disabled={isPurging}
+                className="px-2 py-0.5 rounded bg-rose-600 text-white text-[11px] font-bold cursor-pointer"
+              >
+                Sí
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmPurge(false)}
+                className="px-1.5 py-0.5 rounded bg-[#161b22] text-[#8b949e] hover:text-white border border-[#30363d] text-[11px] font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmPurge(true)}
+              className="px-2.5 py-1.5 rounded-xl bg-[#161b22] hover:bg-rose-500/20 text-[#8b949e] hover:text-rose-400 border border-[#30363d] text-xs font-mono transition cursor-pointer flex items-center gap-1"
+              title="Purgar registros con más de 30 días para conservar espacio gratuito"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Purgar &gt;30d</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -843,52 +821,55 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         </div>
       )}
 
-      {/* 2. Filtro de Mes y Período */}
-      {availableMonths.length > 0 && (
-        <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-[#0b0e14] border border-[#30363d] text-xs text-white">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-3.5 h-3.5 text-[#d9b114]" />
-            <span className="font-semibold text-white">Período de Análisis:</span>
-            <select
-              value={monthFilter}
-              onChange={(e) => setMonthFilter(e.target.value)}
-              className="bg-[#161b22] border border-[#30363d] rounded-lg px-2 py-1 text-xs font-mono font-bold text-white focus:outline-none focus:border-[#d9b114] shadow-2xs"
-            >
-              <option value="ALL">🗓️ Histórico Completo ({smartSlips.length} parlays)</option>
-              {availableMonths.map((m) => (
-                <option key={m.key} value={m.key}>
-                  📅 {m.label}
+      {/* 2. Filtro Semanal y de Período */}
+      <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-[#0b0e14] border border-[#30363d] text-xs text-white flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Calendar className="w-3.5 h-3.5 text-[#d9b114]" />
+          <span className="font-semibold text-white">Ventana de Análisis:</span>
+          <select
+            value={periodFilter}
+            onChange={(e) => setPeriodFilter(e.target.value)}
+            className="bg-[#161b22] border border-[#30363d] rounded-lg px-2 py-1 text-xs font-mono font-bold text-white focus:outline-none focus:border-[#d9b114] shadow-2xs"
+          >
+            <option value="ALL_30D">🗓️ Últimos 35 días ({smartSlips.length} parlays · {singlesHistory.length} sencillas)</option>
+            <option value="THIS_WEEK">📅 Esta Semana ({getSpanishWeekLabel(currentWeekKey)})</option>
+            <option value="LAST_WEEK">📅 Semana Pasada ({getSpanishWeekLabel(lastWeekKey)})</option>
+            {availableWeeks
+              .filter((w) => w.key !== currentWeekKey && w.key !== lastWeekKey)
+              .map((w) => (
+                <option key={w.key} value={w.key}>
+                  📅 {w.label}
                 </option>
               ))}
-            </select>
-          </div>
-
-          <span className="text-[11px] font-mono text-[#8b949e]">
-            {filteredSlips.length} boletos filtrados
-          </span>
+          </select>
         </div>
-      )}
 
-      {/* 3. Tarjetas KPI Reales (Sin Datos Falsos ni Estimaciones) */}
+        <span className="text-[11px] font-mono text-[#8b949e]">
+          {isSinglesContext
+            ? `${periodSinglesHistory.length} sencillas selladas · ${activeKpi.pending} pendientes`
+            : `${filteredSlips.length} boletos · ${activeKpi.pending} pendientes`}
+        </span>
+      </div>
+
+      {/* 3. Tarjetas KPI Contextuales Reales (Parlays o Sencillas según pestaña) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-        {/* KPI 1: Tasa de Acierto */}
         <div className="p-3.5 rounded-2xl bg-[#161b22] border border-[#30363d] shadow-2xs flex items-center justify-between">
           <div className="space-y-0.5">
             <span className="text-[10px] font-mono font-bold text-[#8b949e] uppercase tracking-wider">
-              Tasa de Acierto Real
+              {isSinglesContext ? 'Acierto Sencillas (+EV)' : 'Tasa de Acierto Parlays'}
             </span>
             <div className="flex items-baseline gap-1.5">
               <span className="text-xl sm:text-2xl font-black font-mono text-[#00ff66]">
-                {isLoading ? '...' : `${activeMetrics?.winRate ?? 0}%`}
+                {isLoading ? '...' : `${activeKpi.winRate}%`}
               </span>
               <span className="text-[10px] font-mono text-[#8b949e]">
-                ({activeMetrics ? `${activeMetrics.totalWon}W / ${activeMetrics.totalLost}L` : '0W / 0L'})
+                ({activeKpi.won}W / {activeKpi.lost}L{activeKpi.voidCount > 0 ? ` / ${activeKpi.voidCount}V` : ''})
               </span>
             </div>
             <span className="text-[9.5px] font-mono text-[#8b949e] block">
               {resolvedCount > 0
-                ? `${resolvedCount} boletos evaluados oficialmente`
-                : `${activeMetrics?.totalPending ?? filteredSlips.length} en juego o pendientes`}
+                ? `${resolvedCount} resueltos oficialmente`
+                : `${activeKpi.pending} en juego o pendientes`}
             </span>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-[#00ff66] shrink-0">
@@ -896,7 +877,6 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
           </div>
         </div>
 
-        {/* KPI 2: Cuota Promedio Ponderada */}
         <div className="p-3.5 rounded-2xl bg-[#161b22] border border-[#30363d] shadow-2xs flex items-center justify-between">
           <div className="space-y-0.5">
             <span className="text-[10px] font-mono font-bold text-[#8b949e] uppercase tracking-wider">
@@ -904,14 +884,16 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
             </span>
             <div className="flex items-baseline gap-1.5">
               <span className="text-xl sm:text-2xl font-black font-mono text-[#d9b114]">
-                {isLoading ? '...' : `@${(activeMetrics?.avgOdds ?? 0).toFixed(2)}x`}
+                {isLoading ? '...' : `@${activeKpi.avgOdds.toFixed(2)}x`}
               </span>
               <span className="text-[10px] font-mono text-[#8b949e]">
                 Ponderada
               </span>
             </div>
             <span className="text-[9.5px] font-mono text-[#8b949e] block">
-              Sobre {activeMetrics?.totalGenerated ?? filteredSlips.length} parlays generados
+              {isSinglesContext
+                ? `Sobre ${activeKpi.total} sencillas selladas`
+                : `Acierto por pata: ${parlaySummaryPeriod.overall.legWinRate}% (${parlaySummaryPeriod.overall.legWon}/${parlaySummaryPeriod.overall.legWon + parlaySummaryPeriod.overall.legLost})`}
             </span>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[#d9b114] shrink-0">
@@ -919,28 +901,63 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
           </div>
         </div>
 
-        {/* KPI 3: Rendimiento / Yield Neto */}
         <div className="p-3.5 rounded-2xl bg-[#161b22] border border-[#30363d] shadow-2xs flex items-center justify-between">
           <div className="space-y-0.5">
             <span className="text-[10px] font-mono font-bold text-[#8b949e] uppercase tracking-wider">
               Rendimiento Neto Real
             </span>
             <div className="flex items-baseline gap-1.5">
-              <span className={`text-xl sm:text-2xl font-black font-mono ${(activeMetrics?.netYieldUnits ?? 0) >= 0 ? 'text-[#00ff66]' : 'text-rose-400'}`}>
-                {isLoading ? '...' : `${(activeMetrics?.netYieldUnits ?? 0) >= 0 ? '+' : ''}${(activeMetrics?.netYieldUnits ?? 0).toFixed(2)} u`}
+              <span className={`text-xl sm:text-2xl font-black font-mono ${activeKpi.netYieldUnits >= 0 ? 'text-[#00ff66]' : 'text-rose-400'}`}>
+                {isLoading ? '...' : `${activeKpi.netYieldUnits >= 0 ? '+' : ''}${activeKpi.netYieldUnits.toFixed(2)} u`}
               </span>
-              <span className="text-[10px] font-mono text-[#00ff66] font-bold bg-emerald-500/15 px-1.5 py-0.2 rounded border border-emerald-500/30">
-                {activeMetrics ? `${activeMetrics.yieldPercent >= 0 ? '+' : ''}${activeMetrics.yieldPercent}% ROI` : '0.0% ROI'}
+              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded border ${activeKpi.yieldPercent >= 0 ? 'text-[#00ff66] bg-emerald-500/15 border-emerald-500/30' : 'text-rose-400 bg-rose-500/15 border-rose-500/30'}`}>
+                {activeKpi.yieldPercent >= 0 ? '+' : ''}{activeKpi.yieldPercent}% ROI
               </span>
             </div>
             <span className="text-[9.5px] font-mono text-[#8b949e] block">
-              Apuesta fija de 1.0 unidad (Flat Stake)
+              Apuesta fija 1.0 unidad (Flat Stake)
             </span>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-[#00ff66] shrink-0">
             <TrendingUp className="w-5 h-5" />
           </div>
         </div>
+      </div>
+
+      {/* Desglose compacto contextual (Perfiles de Parlay o Tipos/Deporte de Sencillas) */}
+      <div className="flex items-center gap-2 flex-wrap px-2.5 py-1.5 rounded-xl bg-[#0b0e14] border border-[#30363d] text-[10.5px] font-mono">
+        {isSinglesContext ? (
+          <>
+            {singlesSummaryPeriod.byType.map((t) => (
+              <span key={t.key} className="px-2 py-0.5 rounded bg-[#161b22] border border-[#30363d] text-[#8b949e]">
+                <strong className="text-white">{t.label}:</strong>{' '}
+                <span className={t.resolved > 0 && t.winRate >= 55 ? 'text-[#00ff66] font-bold' : 'text-[#d9b114] font-bold'}>
+                  {t.resolved > 0 ? `${t.winRate}%` : `${t.pending} pend.`}
+                </span>{' '}
+                ({t.won}W/{t.lost}L)
+              </span>
+            ))}
+            {singlesSummaryPeriod.bySport.map((sp) => (
+              <span key={sp.key} className="px-2 py-0.5 rounded bg-[#161b22] border border-[#30363d] text-[#8b949e]">
+                <strong className="text-white">{sp.label}:</strong>{' '}
+                <span className="text-[#d9b114] font-bold">{sp.resolved > 0 ? `${sp.winRate}%` : `${sp.pending} pend.`}</span>{' '}
+                ({sp.won}W/{sp.lost}L)
+              </span>
+            ))}
+          </>
+        ) : (
+          <>
+            {parlaySummaryPeriod.byProfile.map((pf) => (
+              <span key={pf.key} className="px-2 py-0.5 rounded bg-[#161b22] border border-[#30363d] text-[#8b949e]">
+                <strong className="text-white">{pf.label}:</strong>{' '}
+                <span className={pf.resolved > 0 && pf.winRate >= 35 ? 'text-[#00ff66] font-bold' : 'text-[#d9b114] font-bold'}>
+                  {pf.resolved > 0 ? `${pf.winRate}%` : `${pf.pending} pend.`}
+                </span>{' '}
+                ({pf.won}W/{pf.lost}L · {pf.netYieldUnits >= 0 ? '+' : ''}{pf.netYieldUnits}u)
+              </span>
+            ))}
+          </>
+        )}
       </div>
 
       {/* 4. Selector de Pestañas Principales */}
@@ -955,20 +972,20 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
           }`}
         >
           <Ticket className="w-3.5 h-3.5 text-[#00ff66]" />
-          <span>Boletos del Día ({filteredSlips.length})</span>
+          <span>Boletos Parlay ({filteredSlips.length})</span>
         </button>
 
         <button
           type="button"
-          onClick={() => setSubTab('MONTHLY_BREAKDOWN')}
+          onClick={() => setSubTab('WEEKLY_AUDIT')}
           className={`flex-1 py-1.5 px-3 rounded-lg font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-            subTab === 'MONTHLY_BREAKDOWN'
+            subTab === 'WEEKLY_AUDIT'
               ? 'bg-[#161b22] text-[#d9b114] border border-[#d9b114]/40 shadow-2xs font-bold'
               : 'text-[#8b949e] hover:text-white'
           }`}
         >
           <Calendar className="w-3.5 h-3.5 text-[#d9b114]" />
-          <span>Auditoría Mes a Mes ({monthlyStats.length})</span>
+          <span>Auditoría Semanal ({Math.max(auditParlayRows.length, auditSinglesRows.length)})</span>
         </button>
 
         <button
@@ -981,80 +998,99 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
           }`}
         >
           <Target className="w-3.5 h-3.5 text-sky-400" />
-          <span>Sencillas (+EV) ({singleValueBets.length})</span>
+          <span>Sencillas (+EV) ({singlesViewMode === 'HISTORY' ? periodSinglesHistory.length : singleValueBets.length})</span>
         </button>
       </div>
 
-      {/* CONTENIDO 1: AUDITORÍA MES A MES */}
-      {subTab === 'MONTHLY_BREAKDOWN' && (
+      {/* CONTENIDO 1: AUDITORÍA SEMANAL Y MENSUAL (PARLAYS + SENCILLAS + MERCADOS) */}
+      {subTab === 'WEEKLY_AUDIT' && (
         <div className="space-y-3">
-          <div className="bg-[#161b22] border border-[#30363d] rounded-2xl overflow-hidden shadow-2xs">
-            <div className="p-3 border-b border-[#30363d] bg-[#0b0e14] flex items-center justify-between">
-              <div>
-                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <BarChart3 className="w-4 h-4 text-[#d9b114]" />
-                  <span>Historial Mensual de Eficiencia Cuantitativa</span>
-                </h4>
-                <p className="text-[10.5px] text-[#8b949e] font-mono">
-                  Datos auditados contra resultados oficiales de marcadores de ESPN y Football-Data.
-                </p>
-              </div>
-
+          <div className="flex items-center justify-between gap-2 flex-wrap p-2 rounded-xl bg-[#0b0e14] border border-[#30363d]">
+            <div className="flex items-center gap-1.5 text-xs font-mono">
               <button
                 type="button"
-                onClick={handleExportExcel}
-                className="px-2.5 py-1 rounded-lg bg-[#0b0e14] hover:bg-[#21262d] border border-[#30363d] text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer transition"
+                onClick={() => setAuditGranularity('WEEKLY')}
+                className={`px-3 py-1 rounded-lg font-bold cursor-pointer border ${auditGranularity === 'WEEKLY' ? 'bg-[#161b22] border-[#d9b114]/60 text-[#d9b114]' : 'border-transparent text-[#8b949e] hover:text-white'}`}
               >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-[#00ff66]" />
-                <span>Exportar Hoja Excel</span>
+                📅 Semana a Semana
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuditGranularity('MONTHLY')}
+                className={`px-3 py-1 rounded-lg font-bold cursor-pointer border ${auditGranularity === 'MONTHLY' ? 'bg-[#161b22] border-[#d9b114]/60 text-[#d9b114]' : 'border-transparent text-[#8b949e] hover:text-white'}`}
+              >
+                🗓️ Mes a Mes
               </button>
             </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleExportCsv('PARLAYS')}
+                disabled={smartSlips.length === 0}
+                className="px-2.5 py-1 rounded-lg bg-[#161b22] hover:bg-[#21262d] border border-[#30363d] disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-[#00ff66]" />
+                <span>CSV Parlays</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExportCsv('SINGLES')}
+                disabled={singlesHistory.length === 0}
+                className="px-2.5 py-1 rounded-lg bg-[#161b22] hover:bg-[#21262d] border border-[#30363d] disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-sky-400" />
+                <span>CSV Sencillas</span>
+              </button>
+            </div>
+          </div>
 
-            {monthlyStats.length === 0 ? (
-              <div className="p-8 text-center text-[#8b949e] text-xs">
-                No hay parlays registrados aún en la base de datos histórica.
+          {/* Tabla 1: Parlays */}
+          <div className="bg-[#161b22] border border-[#30363d] rounded-2xl overflow-hidden shadow-2xs">
+            <div className="p-3 border-b border-[#30363d] bg-[#0b0e14]">
+              <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Ticket className="w-4 h-4 text-[#00ff66]" />
+                <span>Historial {auditGranularity === 'WEEKLY' ? 'Semanal' : 'Mensual'} de Parlays Inteligentes</span>
+              </h4>
+              <p className="text-[10px] text-[#8b949e] font-mono">
+                Liquidado pata por pata contra marcadores oficiales (incluye NCAA/WNBA/FIBA; faltantes de telemetría &gt;12h pasan a VOID).
+              </p>
+            </div>
+
+            {auditParlayRows.length === 0 ? (
+              <div className="p-6 text-center text-[#8b949e] text-xs">
+                No hay parlays registrados aún en esta ventana.
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-[#30363d] bg-[#0b0e14] text-[10px] font-mono text-[#8b949e] uppercase">
-                      <th className="p-2.5 font-bold">Mes</th>
+                      <th className="p-2.5 font-bold">Período</th>
                       <th className="p-2.5 font-bold text-center">Boletos</th>
-                      <th className="p-2.5 font-bold text-center">Ganados</th>
-                      <th className="p-2.5 font-bold text-center">Perdidos</th>
-                      <th className="p-2.5 font-bold text-center">Pendientes</th>
+                      <th className="p-2.5 font-bold text-center">W</th>
+                      <th className="p-2.5 font-bold text-center">L</th>
+                      <th className="p-2.5 font-bold text-center">V</th>
+                      <th className="p-2.5 font-bold text-center">P</th>
                       <th className="p-2.5 font-bold text-center">Win Rate</th>
-                      <th className="p-2.5 font-bold text-center">Cuota Prom.</th>
-                      <th className="p-2.5 font-bold text-right">Yield Neto</th>
+                      <th className="p-2.5 font-bold text-center">Cuota</th>
+                      <th className="p-2.5 font-bold text-right">Yield / ROI</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#30363d] font-mono text-white">
-                    {monthlyStats.map((item) => (
-                      <tr key={item.monthKey} className="hover:bg-[#21262d] transition">
-                        <td className="p-2.5 font-bold text-white">
-                          {item.monthLabel}
-                        </td>
-                        <td className="p-2.5 text-center font-bold text-white/90">
-                          {item.totalSlips}
-                        </td>
-                        <td className="p-2.5 text-center font-bold text-[#00ff66]">
-                          {item.won}
-                        </td>
-                        <td className="p-2.5 text-center font-bold text-rose-400">
-                          {item.lost}
-                        </td>
-                        <td className="p-2.5 text-center text-[#d9b114]">
-                          {item.pending}
-                        </td>
+                    {auditParlayRows.map((item) => (
+                      <tr key={item.key} className="hover:bg-[#21262d] transition">
+                        <td className="p-2.5 font-bold text-white">{item.label}</td>
+                        <td className="p-2.5 text-center font-bold">{item.total}</td>
+                        <td className="p-2.5 text-center font-bold text-[#00ff66]">{item.won}</td>
+                        <td className="p-2.5 text-center font-bold text-rose-400">{item.lost}</td>
+                        <td className="p-2.5 text-center text-[#8b949e]">{item.voidCount}</td>
+                        <td className="p-2.5 text-center text-[#d9b114]">{item.pending}</td>
                         <td className="p-2.5 text-center font-bold">
-                          <span className={`px-2 py-0.5 rounded-md ${item.resolved > 0 && item.winRate >= 50 ? 'bg-emerald-500/15 text-[#00ff66] border border-emerald-500/30' : 'bg-[#0b0e14] text-[#8b949e] border border-[#30363d]'}`}>
+                          <span className={`px-2 py-0.5 rounded-md ${item.resolved > 0 && item.winRate >= 40 ? 'bg-emerald-500/15 text-[#00ff66] border border-emerald-500/30' : 'bg-[#0b0e14] text-[#8b949e] border border-[#30363d]'}`}>
                             {item.winRate}%
                           </span>
                         </td>
-                        <td className="p-2.5 text-center text-[#d9b114] font-bold">
-                          @{item.avgOdds.toFixed(2)}x
-                        </td>
+                        <td className="p-2.5 text-center text-[#d9b114] font-bold">@{item.avgOdds.toFixed(2)}x</td>
                         <td className="p-2.5 text-right font-bold">
                           <span className={item.netYieldUnits >= 0 ? 'text-[#00ff66]' : 'text-rose-400'}>
                             {item.netYieldUnits >= 0 ? '+' : ''}{item.netYieldUnits} u
@@ -1067,6 +1103,107 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {parlaySummaryAll.byLegMarket.length > 0 && (
+              <div className="p-3 border-t border-[#30363d] bg-[#0b0e14]/70">
+                <span className="text-[10px] font-mono font-bold text-[#d9b114] uppercase block mb-2">
+                  Efectividad Pata por Pata según Mercado (Diagnóstico Real)
+                </span>
+                <div className="flex flex-wrap gap-1.5 font-mono text-[10.5px]">
+                  {parlaySummaryAll.byLegMarket.map((m) => (
+                    <span key={m.key} className="px-2 py-1 rounded-lg bg-[#161b22] border border-[#30363d] text-[#8b949e]">
+                      <strong className="text-white">{m.label}:</strong>{' '}
+                      <span className={m.resolved > 0 && m.winRate >= 65 ? 'text-[#00ff66] font-bold' : m.resolved > 0 && m.winRate < 50 ? 'text-rose-400 font-bold' : 'text-[#d9b114] font-bold'}>
+                        {m.resolved > 0 ? `${m.winRate}%` : `${m.pending}P`}
+                      </span>{' '}
+                      ({m.won}W/{m.lost}L{m.voidCount > 0 ? `/${m.voidCount}V` : ''})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Tabla 2: Apuestas Sencillas (+EV y Bankers) */}
+          <div className="bg-[#161b22] border border-[#30363d] rounded-2xl overflow-hidden shadow-2xs">
+            <div className="p-3 border-b border-[#30363d] bg-[#0b0e14]">
+              <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Target className="w-4 h-4 text-sky-400" />
+                <span>Historial {auditGranularity === 'WEEKLY' ? 'Semanal' : 'Mensual'} de Apuestas Sencillas (+EV &amp; Bankers)</span>
+              </h4>
+              <p className="text-[10px] text-[#8b949e] font-mono">
+                Selladas de forma inmutable antes del partido para medir la eficiencia real de cada selección individual.
+              </p>
+            </div>
+
+            {auditSinglesRows.length === 0 ? (
+              <div className="p-6 text-center text-[#8b949e] text-xs">
+                Aún no hay apuestas sencillas selladas. Abre la pestaña "Sencillas (+EV)" o pulsa "Sellar Sencillas de Hoy" para empezar a registrarlas.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#30363d] bg-[#0b0e14] text-[10px] font-mono text-[#8b949e] uppercase">
+                      <th className="p-2.5 font-bold">Período</th>
+                      <th className="p-2.5 font-bold text-center">Sencillas</th>
+                      <th className="p-2.5 font-bold text-center">W</th>
+                      <th className="p-2.5 font-bold text-center">L</th>
+                      <th className="p-2.5 font-bold text-center">V</th>
+                      <th className="p-2.5 font-bold text-center">P</th>
+                      <th className="p-2.5 font-bold text-center">Win Rate</th>
+                      <th className="p-2.5 font-bold text-center">Cuota</th>
+                      <th className="p-2.5 font-bold text-right">Yield / ROI</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#30363d] font-mono text-white">
+                    {auditSinglesRows.map((item) => (
+                      <tr key={item.key} className="hover:bg-[#21262d] transition">
+                        <td className="p-2.5 font-bold text-white">{item.label}</td>
+                        <td className="p-2.5 text-center font-bold">{item.total}</td>
+                        <td className="p-2.5 text-center font-bold text-[#00ff66]">{item.won}</td>
+                        <td className="p-2.5 text-center font-bold text-rose-400">{item.lost}</td>
+                        <td className="p-2.5 text-center text-[#8b949e]">{item.voidCount}</td>
+                        <td className="p-2.5 text-center text-[#d9b114]">{item.pending}</td>
+                        <td className="p-2.5 text-center font-bold">
+                          <span className={`px-2 py-0.5 rounded-md ${item.resolved > 0 && item.winRate >= 60 ? 'bg-emerald-500/15 text-[#00ff66] border border-emerald-500/30' : 'bg-[#0b0e14] text-[#8b949e] border border-[#30363d]'}`}>
+                            {item.winRate}%
+                          </span>
+                        </td>
+                        <td className="p-2.5 text-center text-[#d9b114] font-bold">@{item.avgOdds.toFixed(2)}x</td>
+                        <td className="p-2.5 text-right font-bold">
+                          <span className={item.netYieldUnits >= 0 ? 'text-[#00ff66]' : 'text-rose-400'}>
+                            {item.netYieldUnits >= 0 ? '+' : ''}{item.netYieldUnits} u
+                          </span>
+                          <span className="text-[10px] text-[#8b949e] block">
+                            ({item.yieldPercent >= 0 ? '+' : ''}{item.yieldPercent}%)
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {singlesSummaryAll.byMarket.length > 0 && (
+              <div className="p-3 border-t border-[#30363d] bg-[#0b0e14]/70">
+                <span className="text-[10px] font-mono font-bold text-sky-400 uppercase block mb-2">
+                  Desglose Sencillas por Mercado
+                </span>
+                <div className="flex flex-wrap gap-1.5 font-mono text-[10.5px]">
+                  {singlesSummaryAll.byMarket.map((m) => (
+                    <span key={m.key} className="px-2 py-1 rounded-lg bg-[#161b22] border border-[#30363d] text-[#8b949e]">
+                      <strong className="text-white">{m.label}:</strong>{' '}
+                      <span className={m.resolved > 0 && m.winRate >= 60 ? 'text-[#00ff66] font-bold' : m.resolved > 0 && m.winRate < 48 ? 'text-rose-400 font-bold' : 'text-[#d9b114] font-bold'}>
+                        {m.resolved > 0 ? `${m.winRate}%` : `${m.pending}P`}
+                      </span>{' '}
+                      ({m.won}W/{m.lost}L)
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -1125,6 +1262,8 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                     ? 'bg-emerald-500/15 text-[#00ff66] border-emerald-500/30'
                     : slip.status === 'LOST'
                     ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                    : slip.status === 'VOID'
+                    ? 'bg-slate-500/15 text-[#8b949e] border-[#30363d]'
                     : 'bg-amber-500/15 text-[#d9b114] border-amber-500/30';
 
                 const statusText =
@@ -1132,7 +1271,14 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                     ? 'ACERTADO'
                     : slip.status === 'LOST'
                     ? 'FALLIDO'
+                    : slip.status === 'VOID'
+                    ? 'ANULADO / VOID'
                     : 'EN JUEGO / PENDIENTE';
+
+                const hasEffectiveDiff =
+                  typeof slip.effectiveOdds === 'number' &&
+                  slip.effectiveOdds > 0 &&
+                  Math.abs(slip.effectiveOdds - slip.totalOdds) > 0.01;
 
                 return (
                   <div
@@ -1155,10 +1301,20 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                         </span>
                       </div>
 
-                      {/* Lista de Patas */}
+                      {/* Lista de Patas con Estado y Resultado Real */}
                       <div className="mt-2.5 space-y-2">
                         {slip.legs.map((leg, idx) => {
                           const isBball = leg.sport === 'NBA' || (leg.leagueName || '').toLowerCase().includes('nba');
+                          const lStatus = leg.legStatus || 'PENDING';
+                          const legBadge =
+                            lStatus === 'WON'
+                              ? { icon: '✅', cls: 'text-[#00ff66] bg-emerald-500/15 border-emerald-500/30', text: 'Acertada' }
+                              : lStatus === 'LOST'
+                              ? { icon: '❌', cls: 'text-rose-400 bg-rose-500/15 border-rose-500/30', text: 'Fallida' }
+                              : lStatus === 'VOID'
+                              ? { icon: '⚪', cls: 'text-[#8b949e] bg-[#161b22] border-[#30363d]', text: 'Nula' }
+                              : { icon: '⏳', cls: 'text-[#d9b114] bg-amber-500/10 border-amber-500/30', text: 'Pendiente' };
+
                           return (
                             <div
                               key={`${leg.fixtureId}_${idx}`}
@@ -1172,10 +1328,18 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                                   <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-[#161b22] text-[#8b949e] border border-[#30363d] shrink-0">
                                     {isBball ? '🏀 Baloncesto' : '⚽ Fútbol'}
                                   </span>
+                                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border shrink-0 ${legBadge.cls}`}>
+                                    {legBadge.icon} {legBadge.text}
+                                  </span>
                                 </div>
                                 <span className="text-[10px] font-mono text-[#8b949e] block truncate">
                                   {leg.label} ({leg.leagueName})
                                 </span>
+                                {leg.actualResult && (
+                                  <span className="text-[9.5px] font-mono text-sky-300 block mt-0.5">
+                                    Acta oficial: {leg.actualResult}
+                                  </span>
+                                )}
                                 {isAthleteScratched(leg) && (
                                   <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-[#d9b114] font-mono text-[9px] font-bold border border-amber-500/30">
                                     ⚠️ Atleta reportado baja · Apuesta Nula (Void)
@@ -1200,11 +1364,18 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                     <div className="pt-2 border-t border-[#30363d] flex items-center justify-between gap-2 flex-wrap">
                       <div>
                         <span className="text-[9.5px] font-mono text-[#8b949e] block uppercase">
-                          Cuota Total
+                          {hasEffectiveDiff ? 'Cuota Efectiva (tras VOID)' : 'Cuota Total'}
                         </span>
-                        <span className="text-lg font-black font-mono text-white">
-                          @{slip.totalOdds.toFixed(2)}x
-                        </span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-lg font-black font-mono text-white">
+                            @{(hasEffectiveDiff ? slip.effectiveOdds! : slip.totalOdds).toFixed(2)}x
+                          </span>
+                          {hasEffectiveDiff && (
+                            <span className="text-[10px] font-mono text-[#8b949e] line-through">
+                              @{slip.totalOdds.toFixed(2)}x
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -1273,6 +1444,32 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap text-xs font-mono">
             <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Selector Hoy vs Historial Auditado */}
+              <div className="flex items-center gap-1 bg-[#0b0e14] p-0.5 rounded-lg border border-[#30363d] mr-1">
+                <button
+                  type="button"
+                  onClick={() => setSinglesViewMode('TODAY')}
+                  className={`px-2.5 py-1 rounded text-[11px] font-bold transition cursor-pointer ${
+                    singlesViewMode === 'TODAY'
+                      ? 'bg-[#161b22] text-[#00ff66] border border-[#00ff66]/40'
+                      : 'text-[#8b949e] hover:text-white'
+                  }`}
+                >
+                  Jornada de Hoy ({singleValueBets.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSinglesViewMode('HISTORY')}
+                  className={`px-2.5 py-1 rounded text-[11px] font-bold transition cursor-pointer ${
+                    singlesViewMode === 'HISTORY'
+                      ? 'bg-[#161b22] text-[#d9b114] border border-[#d9b114]/40'
+                      : 'text-[#8b949e] hover:text-white'
+                  }`}
+                >
+                  Historial Auditado ({periodSinglesHistory.length})
+                </button>
+              </div>
+
               {[
                 { key: 'ALL', label: 'Todas' },
                 { key: 'HIGH_VALUE', label: 'Alta Cuota (+EV)' },
@@ -1316,6 +1513,19 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
+              {singlesViewMode === 'TODAY' && (
+                <button
+                  type="button"
+                  onClick={() => sealSinglesBatch(singleValueBets, true)}
+                  disabled={isSealingSingles || singleValueBets.length === 0}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-[#00ff66] border border-emerald-500/40 disabled:opacity-50 font-mono text-[11px] font-bold flex items-center gap-1 cursor-pointer transition"
+                  title="Sellar manualmente las apuestas sencillas de hoy en la base de datos"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>{isSealingSingles ? 'Sellando...' : '🔒 Sellar Sencillas de Hoy'}</span>
+                </button>
+              )}
+
               {/* Botón Descargar Lámina Consolidada */}
               <div className="inline-flex rounded-xl bg-[#0b0e14] p-0.5 border border-[#30363d] text-xs shadow-2xs">
                 <button
@@ -1340,84 +1550,129 @@ export const AdminParlaysBetaTab: React.FC<AdminParlaysBetaTabProps> = ({
                 </button>
               </div>
 
-              <div className="flex items-center gap-1 text-[11px] text-[#8b949e] pl-2 border-l border-[#30363d]">
-                <span>Top:</span>
-                <button
-                  type="button"
-                  onClick={() => setSingleTopLimit(5)}
-                  className={`px-1.5 py-0.5 rounded font-bold cursor-pointer ${singleTopLimit === 5 ? 'bg-[#d9b114] text-[#0b0e14]' : 'bg-[#161b22] text-[#8b949e]'}`}
-                >
-                  5
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSingleTopLimit(10)}
-                  className={`px-1.5 py-0.5 rounded font-bold cursor-pointer ${singleTopLimit === 10 ? 'bg-[#d9b114] text-[#0b0e14]' : 'bg-[#161b22] text-[#8b949e]'}`}
-                >
-                  10
-                </button>
-              </div>
+              {singlesViewMode === 'TODAY' && (
+                <div className="flex items-center gap-1 text-[11px] text-[#8b949e] pl-2 border-l border-[#30363d]">
+                  <span>Top:</span>
+                  <button
+                    type="button"
+                    onClick={() => setSingleTopLimit(5)}
+                    className={`px-1.5 py-0.5 rounded font-bold cursor-pointer ${singleTopLimit === 5 ? 'bg-[#d9b114] text-[#0b0e14]' : 'bg-[#161b22] text-[#8b949e]'}`}
+                  >
+                    5
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSingleTopLimit(10)}
+                    className={`px-1.5 py-0.5 rounded font-bold cursor-pointer ${singleTopLimit === 10 ? 'bg-[#d9b114] text-[#0b0e14]' : 'bg-[#161b22] text-[#8b949e]'}`}
+                  >
+                    10
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Badge Informativo de Diversidad y Cero Repetición */}
+          {/* Badge Informativo */}
           <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] font-mono text-[#d9b114]">
             <span className="flex items-center gap-1.5 font-semibold">
               <Sparkles className="w-3.5 h-3.5 text-[#d9b114] shrink-0" />
-              Filtro Anti-Monotonía Activo · Máx 1 pick por partido · Máx 1 pick de córners en Top 5
+              {singlesViewMode === 'HISTORY'
+                ? 'Historial Sellado Pre-Partido · Eficiencia Real Liquidada contra Marcadores Oficiales'
+                : 'Filtro Anti-Monotonía Activo · Auto-Sellado Pre-Partido en Supabase'}
             </span>
             <span className="text-[10px] text-[#8b949e] hidden sm:inline">
               100% Datos Cuantitativos Reales
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {filteredSingles.map((single) => (
-              <div
-                key={single.id}
-                className="p-3.5 rounded-2xl bg-[#161b22] border border-[#30363d] shadow-2xs space-y-2.5"
-              >
-                <div className="flex items-center justify-between gap-2 border-b border-[#30363d] pb-2">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span className="font-bold text-xs text-white truncate">
-                      {single.matchTitle}
-                    </span>
-                    <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-[#0b0e14] text-[#8b949e] border border-[#30363d] shrink-0">
-                      {single.sport === 'NBA' || (single.leagueName || '').toLowerCase().includes('nba') ? '🏀 Baloncesto' : '⚽ Fútbol'}
-                    </span>
-                  </div>
-                  <span className="px-2 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-500/15 text-[#d9b114] border border-amber-500/30 shrink-0">
-                    {single.betType === 'HIGH_VALUE' ? '+EV ALTO' : 'BANKER'}
-                  </span>
-                </div>
+          {filteredSingles.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-[#0b0e14] border border-[#30363d] text-center text-xs text-[#8b949e]">
+              {singlesViewMode === 'HISTORY'
+                ? 'No hay apuestas sencillas selladas aún en este período.'
+                : 'No hay apuestas sencillas disponibles para los filtros actuales.'}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {filteredSingles.map((single) => {
+                const sStatus = single.status;
+                const statusBadge =
+                  sStatus === 'WON'
+                    ? { cls: 'bg-emerald-500/15 text-[#00ff66] border-emerald-500/30', text: 'GANADA', net: `+${(single.estimatedBookieOdd - 1).toFixed(2)} u` }
+                    : sStatus === 'LOST'
+                    ? { cls: 'bg-rose-500/15 text-rose-400 border-rose-500/30', text: 'PERDIDA', net: '-1.00 u' }
+                    : sStatus === 'VOID'
+                    ? { cls: 'bg-slate-500/15 text-[#8b949e] border-[#30363d]', text: 'NULA', net: '0.00 u' }
+                    : sStatus === 'PENDING'
+                    ? { cls: 'bg-amber-500/15 text-[#d9b114] border-amber-500/30', text: 'PENDIENTE', net: null }
+                    : null;
 
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <div>
-                    <span className="font-bold text-white block">{single.selectionLabel}</span>
-                    <span className="text-[10px] text-[#8b949e] font-mono">{single.categoryLabel}</span>
-                  </div>
-                  <div className="text-right font-mono">
-                    <span className="font-bold text-[#d9b114] block">@{single.estimatedBookieOdd.toFixed(2)}x</span>
-                    <span className="text-[10px] text-[#00ff66] font-semibold">{single.probability}% prob.</span>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-[#30363d] flex items-center justify-between gap-2 text-xs">
-                  <span className="text-[10px] font-mono text-[#00ff66] font-semibold">
-                    Ventaja: +{single.valueEdgePct}% (+EV)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopySingle(single)}
-                    className="px-2.5 py-1 rounded-xl bg-[#0b0e14] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition"
+                return (
+                  <div
+                    key={single.id}
+                    className="p-3.5 rounded-2xl bg-[#161b22] border border-[#30363d] shadow-2xs space-y-2.5"
                   >
-                    {copiedSingleId === single.id ? <Check className="w-3 h-3 text-[#00ff66]" /> : <Copy className="w-3 h-3 text-[#8b949e]" />}
-                    <span>{copiedSingleId === single.id ? 'Copiado' : 'Copiar'}</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+                    <div className="flex items-center justify-between gap-2 border-b border-[#30363d] pb-2">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="font-bold text-xs text-white truncate">
+                          {single.matchTitle}
+                        </span>
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-[#0b0e14] text-[#8b949e] border border-[#30363d] shrink-0">
+                          {single.sport === 'NBA' || (single.leagueName || '').toLowerCase().includes('nba') ? '🏀 Baloncesto' : '⚽ Fútbol'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {statusBadge && (
+                          <span className={`px-2 py-0.2 rounded-full text-[9px] font-mono font-bold border ${statusBadge.cls}`}>
+                            {statusBadge.text}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.2 rounded-full text-[9px] font-mono font-bold bg-amber-500/15 text-[#d9b114] border border-amber-500/30">
+                          {single.betType === 'HIGH_VALUE' ? '+EV ALTO' : 'BANKER'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <div>
+                        <span className="font-bold text-white block">{single.selectionLabel}</span>
+                        <span className="text-[10px] text-[#8b949e] font-mono">
+                          {single.categoryLabel} · {single.matchDate}
+                        </span>
+                        {single.actualResult && (
+                          <span className="text-[10px] font-mono text-sky-300 block mt-0.5">
+                            Acta oficial: {single.actualResult}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right font-mono">
+                        <span className="font-bold text-[#d9b114] block">@{single.estimatedBookieOdd.toFixed(2)}x</span>
+                        <span className="text-[10px] text-[#00ff66] font-semibold">{single.probability}% prob.</span>
+                        {statusBadge?.net && (
+                          <span className={`text-[10px] font-bold block ${sStatus === 'WON' ? 'text-[#00ff66]' : sStatus === 'LOST' ? 'text-rose-400' : 'text-[#8b949e]'}`}>
+                            {statusBadge.net}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-[#30363d] flex items-center justify-between gap-2 text-xs">
+                      <span className="text-[10px] font-mono text-[#00ff66] font-semibold">
+                        Ventaja: +{single.valueEdgePct}% (+EV)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopySingle(single)}
+                        className="px-2.5 py-1 rounded-xl bg-[#0b0e14] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition"
+                      >
+                        {copiedSingleId === single.id ? <Check className="w-3 h-3 text-[#00ff66]" /> : <Copy className="w-3 h-3 text-[#8b949e]" />}
+                        <span>{copiedSingleId === single.id ? 'Copiado' : 'Copiar'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

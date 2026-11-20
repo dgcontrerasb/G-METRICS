@@ -13,6 +13,557 @@ import crypto2 from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+// src/services/parlaySinglesLedger.ts
+var UNVERIFIABLE_PARLAY_CATEGORIES = /* @__PURE__ */ new Set([
+  "PLAYER_SHOTS_ON_TARGET",
+  "NBA_PLAYER_POINTS",
+  "NBA_PLAYER_THREES"
+]);
+var NOISE_TEAM_TOKENS = /* @__PURE__ */ new Set([
+  "fc",
+  "cf",
+  "cd",
+  "ca",
+  "cs",
+  "cp",
+  "sc",
+  "fk",
+  "sk",
+  "bk",
+  "if",
+  "ik",
+  "ff",
+  "afc",
+  "bsc",
+  "ksc",
+  "tsv",
+  "vfb",
+  "vfl",
+  "sv",
+  "rb",
+  "ac",
+  "as",
+  "ss",
+  "us",
+  "club",
+  "deportivo",
+  "atletico",
+  "sporting",
+  "real",
+  "de",
+  "del",
+  "la",
+  "las",
+  "los",
+  "el",
+  "the",
+  "al",
+  "and",
+  "y",
+  "women",
+  "femenil",
+  "fem",
+  "w",
+  "lady",
+  "ladies"
+]);
+var MONTHS_ES_SHORT = [
+  "Ene",
+  "Feb",
+  "Mar",
+  "Abr",
+  "May",
+  "Jun",
+  "Jul",
+  "Ago",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dic"
+];
+var MONTHS_ES_FULL = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre"
+];
+function normalizeMatchId(rawId) {
+  if (rawId === void 0 || rawId === null) return "";
+  const s = String(rawId).trim();
+  if (!s) return "";
+  const stripped = s.replace(/^nba-espn-/i, "").replace(/^espn-/i, "").replace(/^soccer-espn-/i, "").trim();
+  return stripped;
+}
+function normalizeTeamCanonical(name) {
+  if (!name) return "";
+  const clean = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ø/gi, "o").replace(/æ/gi, "ae").replace(/ß/gi, "ss").replace(/[^a-zA-Z0-9\s]/g, " ").toLowerCase().trim();
+  const tokens = clean.split(/\s+/).filter((t) => t.length > 0 && !NOISE_TEAM_TOKENS.has(t));
+  return tokens.join(" ").trim();
+}
+function teamsMatch(candidateA, candidateB) {
+  const a = normalizeTeamCanonical(candidateA);
+  const b = normalizeTeamCanonical(candidateB);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const tokA = a.split(" ").filter((t) => t.length >= 2);
+  const tokB = b.split(" ").filter((t) => t.length >= 2);
+  if (tokA.length === 0 || tokB.length === 0) return false;
+  if (tokA.length >= 2 && tokB.length >= 2) {
+    const lastA = tokA[tokA.length - 1];
+    const lastB = tokB[tokB.length - 1];
+    if (lastA !== lastB && !a.includes(b) && !b.includes(a)) {
+      return false;
+    }
+  }
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  if (shorter.length >= 5 && longer.includes(shorter)) {
+    const shortToks = shorter.split(" ");
+    const longToks = new Set(longer.split(" "));
+    if (shortToks.every((t) => longToks.has(t))) return true;
+  }
+  return false;
+}
+function getIsoWeekKey(dateStr) {
+  const clean = String(dateStr || "").slice(0, 10);
+  const m = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const d = m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : /* @__PURE__ */ new Date();
+  if (isNaN(d.getTime())) return "2026-W01";
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const isoYear = d.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 864e5 + 1) / 7);
+  return `${isoYear}-W${String(weekNo).padStart(2, "0")}`;
+}
+function getSpanishWeekLabel(weekKey) {
+  const m = String(weekKey || "").match(/^(\d{4})-W(\d{2})$/);
+  if (!m) return weekKey;
+  const year = Number(m[1]);
+  const week = Number(m[2]);
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const mondayW1 = new Date(jan4.getTime() - (jan4Day - 1) * 864e5);
+  const monday = new Date(mondayW1.getTime() + (week - 1) * 7 * 864e5);
+  const sunday = new Date(monday.getTime() + 6 * 864e5);
+  const d1 = monday.getUTCDate();
+  const m1 = MONTHS_ES_SHORT[monday.getUTCMonth()] || "";
+  const d2 = sunday.getUTCDate();
+  const m2 = MONTHS_ES_SHORT[sunday.getUTCMonth()] || "";
+  if (m1 === m2) {
+    return `Sem ${week} \xB7 ${d1}\u2013${d2} ${m2}`;
+  }
+  return `Sem ${week} \xB7 ${d1} ${m1}\u2013${d2} ${m2}`;
+}
+function getSpanishMonthLabelLedger(monthKey) {
+  const [y, m] = String(monthKey || "").split("-");
+  const idx = Number(m) - 1;
+  return `${MONTHS_ES_FULL[idx] || monthKey} ${y || ""}`.trim();
+}
+function findMatchingFinishedMatch(target, pool) {
+  if (!pool || pool.length === 0) return void 0;
+  const targetEspn = normalizeMatchId(target.espnEventId);
+  const targetFix = normalizeMatchId(target.fixtureId);
+  if (targetEspn || targetFix) {
+    const byId = pool.find((m) => {
+      if (target.sport && m.sport !== target.sport) return false;
+      const mId = normalizeMatchId(m.id);
+      const mEspn = normalizeMatchId(m.espnEventId);
+      return Boolean(
+        targetEspn && (mEspn === targetEspn || mId === targetEspn) || targetFix && (mId === targetFix || mEspn === targetFix)
+      );
+    });
+    if (byId) return byId;
+  }
+  let homeTarget = target.homeTeamName || "";
+  let awayTarget = target.awayTeamName || "";
+  if ((!homeTarget || !awayTarget) && target.matchName) {
+    const parts = target.matchName.split(/\s+vs\.?\s+|\s+v\s+|\s+@\s+/i);
+    if (parts.length >= 2) {
+      homeTarget = parts[0].trim();
+      awayTarget = parts[1].trim();
+    }
+  }
+  if (!homeTarget || !awayTarget) return void 0;
+  return pool.find((m) => {
+    if (target.sport && m.sport !== target.sport) return false;
+    return teamsMatch(homeTarget, m.homeName) && teamsMatch(awayTarget, m.awayName);
+  });
+}
+function isMatchSettlementStale(matchDate, finishedAtMs, nowMs = Date.now()) {
+  if (finishedAtMs && isFinite(finishedAtMs) && nowMs - finishedAtMs >= 6 * 36e5) {
+    return true;
+  }
+  if (matchDate && /^\d{4}-\d{2}-\d{2}$/.test(matchDate)) {
+    const endOfDayMs = (/* @__PURE__ */ new Date(`${matchDate}T23:59:59-05:00`)).getTime();
+    if (isFinite(endOfDayMs) && nowMs - endOfDayMs >= 12 * 36e5) {
+      return true;
+    }
+  }
+  return false;
+}
+function detectSelectedSideFromLabel(label, homeName, awayName, hintHome, hintAway) {
+  const low = label.toLowerCase();
+  if (/\(1\)/.test(low) || /\blocal\b/.test(low)) return "HOME";
+  if (/\(2\)/.test(low) || /\bvisitante\b/.test(low)) return "AWAY";
+  const stripped = low.replace(/^(gana|victoria de|empate no válido:|draw no bet:)\s*/i, "").replace(/\s*\((ml|1|2|1x|x2)\)\s*$/i, "").replace(/\s+[+-]\d+(?:\.\d+)?\s*$/i, "").trim();
+  const matchesHome = teamsMatch(stripped, homeName) || (hintHome ? teamsMatch(stripped, hintHome) : false);
+  const matchesAway = teamsMatch(stripped, awayName) || (hintAway ? teamsMatch(stripped, hintAway) : false);
+  if (matchesHome && !matchesAway) return "HOME";
+  if (matchesAway && !matchesHome) return "AWAY";
+  const normLow = normalizeTeamCanonical(label);
+  const normH = normalizeTeamCanonical(homeName);
+  const normA = normalizeTeamCanonical(awayName);
+  const inH = normH.length >= 4 && normLow.includes(normH);
+  const inA = normA.length >= 4 && normLow.includes(normA);
+  if (inH && !inA) return "HOME";
+  if (inA && !inH) return "AWAY";
+  return null;
+}
+function evaluatePickAgainstFinishedMatch(pick, m, nowMs = Date.now()) {
+  if (!m) {
+    return { status: "PENDING", actualResult: "" };
+  }
+  const hg = m.homeScore;
+  const ag = m.awayScore;
+  const tot = hg + ag;
+  const scoreStr = `${hg}-${ag}`;
+  const stale = isMatchSettlementStale(pick.matchDate || m.dateStr, m.finishedAtMs, nowMs);
+  const cat = String(pick.category || "").toUpperCase();
+  const mKey = String(pick.marketKey || "").toUpperCase();
+  const low = String(pick.label || "").toLowerCase();
+  const win = (cond, detail = scoreStr) => ({
+    status: cond ? "WON" : "LOST",
+    actualResult: detail
+  });
+  if (cat === "PLAYER_SHOTS_ON_TARGET" || cat === "NBA_PLAYER_POINTS" || cat === "NBA_PLAYER_THREES" || mKey === "NBA_PLAYER_3PM" || mKey === "NBA_PLAYER_PTS" || cat === "NBA_TOTAL_POINTS" && (low.includes(":") || low.includes("triples"))) {
+    return stale ? { status: "VOID", actualResult: "Sin boxscore individual (Nula)" } : { status: "PENDING", actualResult: `${scoreStr} \xB7 Esperando boxscore` };
+  }
+  if (cat === "NBA_TOTAL_POINTS" || mKey === "NBA_OVER_TOTAL" || mKey === "NBA_UNDER_TOTAL") {
+    const lineMatch = low.match(/(\d+(?:\.\d+)?)/);
+    const line = lineMatch ? parseFloat(lineMatch[1]) : 0;
+    if (line <= 0) return { status: "VOID", actualResult: `L\xEDnea inv\xE1lida (${tot} pts)` };
+    const detail = `${scoreStr} (${tot} pts)`;
+    if (tot === line) return { status: "VOID", actualResult: `Push exacto \xB7 ${detail}` };
+    const isUnder = mKey === "NBA_UNDER_TOTAL" || low.includes("menos") || low.includes("under");
+    return win(isUnder ? tot < line : tot > line, detail);
+  }
+  if (cat === "NBA_MONEYLINE" || mKey === "NBA_ML_HOME" || mKey === "NBA_ML_AWAY") {
+    if (hg === ag) return { status: "VOID", actualResult: `Empate ${scoreStr}` };
+    if (mKey === "NBA_ML_HOME") return win(hg > ag);
+    if (mKey === "NBA_ML_AWAY") return win(ag > hg);
+    const side = detectSelectedSideFromLabel(pick.label, m.homeName, m.awayName, pick.homeTeamName, pick.awayTeamName);
+    if (side === "HOME") return win(hg > ag);
+    if (side === "AWAY") return win(ag > hg);
+    return stale ? { status: "VOID", actualResult: `Equipo no resuelto (${scoreStr})` } : { status: "PENDING", actualResult: scoreStr };
+  }
+  if (cat === "NBA_SPREAD" || mKey === "NBA_SPREAD_PLUS") {
+    const spMatch = low.match(/([+-]?\d+(?:\.\d+)?)/);
+    const sp = spMatch ? parseFloat(spMatch[1]) : 0;
+    const side = detectSelectedSideFromLabel(pick.label, m.homeName, m.awayName, pick.homeTeamName, pick.awayTeamName);
+    if (!side) {
+      return stale ? { status: "VOID", actualResult: `Spread no resuelto (${scoreStr})` } : { status: "PENDING", actualResult: scoreStr };
+    }
+    const diff = side === "HOME" ? hg + sp - ag : ag + sp - hg;
+    if (diff === 0) return { status: "VOID", actualResult: `Push exacto (${scoreStr})` };
+    return win(diff > 0);
+  }
+  if (cat === "TOTAL_CORNERS_MATCH" || mKey.startsWith("CORNERS_")) {
+    if (m.corners === null || m.corners < 3) {
+      return stale ? { status: "VOID", actualResult: "Sin acta de c\xF3rners (Nula)" } : { status: "PENDING", actualResult: `${scoreStr} \xB7 Esperando acta c\xF3rners` };
+    }
+    const lineMatch = low.match(/(\d+(?:\.\d+)?)/);
+    const line = lineMatch ? parseFloat(lineMatch[1]) : 8.5;
+    const detail = `${m.corners} c\xF3rners (${scoreStr})`;
+    if (m.corners === line) return { status: "VOID", actualResult: `Push \xB7 ${detail}` };
+    const isUnder = low.includes("menos") || low.includes("under");
+    return win(isUnder ? m.corners < line : m.corners > line, detail);
+  }
+  if (cat === "TOTAL_CARDS" || mKey.startsWith("CARDS_")) {
+    const cards = m.yellowCards !== null ? m.yellowCards + (m.redCards || 0) : null;
+    if (!m.hasStatsTelemetry || cards === null || cards < 1) {
+      return stale ? { status: "VOID", actualResult: "Sin acta de tarjetas (Nula)" } : { status: "PENDING", actualResult: `${scoreStr} \xB7 Esperando acta tarjetas` };
+    }
+    const lineMatch = low.match(/(\d+(?:\.\d+)?)/);
+    const line = lineMatch ? parseFloat(lineMatch[1]) : 3.5;
+    const detail = `${cards} tarjetas (${scoreStr})`;
+    if (cards === line) return { status: "VOID", actualResult: `Push \xB7 ${detail}` };
+    const isUnder = low.includes("menos") || low.includes("under");
+    return win(isUnder ? cards < line : cards > line, detail);
+  }
+  if (cat === "HALF_WITH_MOST_GOALS" || cat === "HALF_GOALS") {
+    if (!m.hasEventsTelemetry || m.secondHalfGoals === null) {
+      return stale ? { status: "VOID", actualResult: "Sin desglose de mitades (Nula)" } : { status: "PENDING", actualResult: `${scoreStr} \xB7 Esperando eventos` };
+    }
+    const detail = `1T:${m.firstHalfGoals ?? 0} / 2T:${m.secondHalfGoals} (${scoreStr})`;
+    if (low.includes("0.5")) {
+      return win(m.secondHalfGoals > 0, detail);
+    }
+    const first = m.firstHalfGoals ?? Math.max(0, tot - m.secondHalfGoals);
+    if (m.secondHalfGoals === first) {
+      return { status: "LOST", actualResult: detail };
+    }
+    return win(m.secondHalfGoals > first, detail);
+  }
+  if (cat === "DOUBLE_CHANCE" || mKey === "DOUBLE_CHANCE_1X" || mKey === "DOUBLE_CHANCE_X2") {
+    if (mKey === "DOUBLE_CHANCE_1X" || low.includes("1x") || low.includes("local o empate")) {
+      return win(hg >= ag);
+    }
+    if (mKey === "DOUBLE_CHANCE_X2" || low.includes("x2") || low.includes("empate o")) {
+      return win(ag >= hg);
+    }
+    if (low.includes("12") || low.includes("cualquiera gana")) {
+      return win(hg !== ag);
+    }
+    return win(hg >= ag);
+  }
+  if (cat === "TOTAL_GOALS" || cat === "SAFE_GOALS" || mKey === "OVER_15" || mKey === "OVER_25" || mKey === "UNDER_25" || mKey === "UNDER_35") {
+    const detail = `${scoreStr} (${tot} goles)`;
+    if (mKey === "OVER_15") return win(tot > 1.5, detail);
+    if (mKey === "OVER_25") return win(tot > 2.5, detail);
+    if (mKey === "UNDER_25") return win(tot < 2.5, detail);
+    if (mKey === "UNDER_35") return win(tot < 3.5, detail);
+    const lineMatch = low.match(/(\d+(?:\.\d+)?)/);
+    const line = lineMatch ? parseFloat(lineMatch[1]) : 1.5;
+    const isUnder = low.includes("menos") || low.includes("under");
+    return win(isUnder ? tot < line : tot > line, detail);
+  }
+  if (cat === "BTTS" || mKey === "BTTS_YES" || mKey === "BTTS_NO") {
+    const both = hg > 0 && ag > 0;
+    if (mKey === "BTTS_NO" || /:\s*no\b|\bno\b$/i.test(low)) {
+      return win(!both);
+    }
+    return win(both);
+  }
+  if (cat === "DRAW_NO_BET" || mKey === "DNB_HOME" || mKey === "DNB_AWAY") {
+    if (hg === ag) return { status: "VOID", actualResult: `Empate ${scoreStr} (Reembolso)` };
+    if (mKey === "DNB_HOME") return win(hg > ag);
+    if (mKey === "DNB_AWAY") return win(ag > hg);
+    const side = detectSelectedSideFromLabel(pick.label, m.homeName, m.awayName, pick.homeTeamName, pick.awayTeamName);
+    if (side === "HOME") return win(hg > ag);
+    if (side === "AWAY") return win(ag > hg);
+    return stale ? { status: "VOID", actualResult: `Equipo DNB no resuelto (${scoreStr})` } : { status: "PENDING", actualResult: scoreStr };
+  }
+  if (cat === "1X2" || cat === "ONE_X_TWO" || mKey === "1X2_HOME" || mKey === "1X2_AWAY") {
+    if (mKey === "1X2_HOME") return win(hg > ag);
+    if (mKey === "1X2_AWAY") return win(ag > hg);
+    if (low.includes("empate") || /\(x\)/.test(low)) return win(hg === ag);
+    const side = detectSelectedSideFromLabel(pick.label, m.homeName, m.awayName, pick.homeTeamName, pick.awayTeamName);
+    if (side === "HOME") return win(hg > ag);
+    if (side === "AWAY") return win(ag > hg);
+    return stale ? { status: "VOID", actualResult: `Equipo 1X2 no resuelto (${scoreStr})` } : { status: "PENDING", actualResult: scoreStr };
+  }
+  return stale ? { status: "VOID", actualResult: `Mercado no soportado (${scoreStr})` } : { status: "PENDING", actualResult: scoreStr };
+}
+function recomputeParlaySlipSettlement(slip, finishedPool, nowMs = Date.now()) {
+  let anyChanged = false;
+  const updatedLegs = slip.legs.map((leg) => {
+    const matched = findMatchingFinishedMatch(
+      {
+        fixtureId: leg.fixtureId,
+        espnEventId: leg.espnEventId,
+        matchName: leg.matchName,
+        sport: leg.sport
+      },
+      finishedPool
+    );
+    if (!matched) {
+      return leg;
+    }
+    const res = evaluatePickAgainstFinishedMatch(
+      {
+        category: String(leg.category),
+        label: leg.label,
+        sport: leg.sport || matched.sport,
+        matchDate: slip.date
+      },
+      matched,
+      nowMs
+    );
+    if (leg.legStatus !== res.status || leg.actualResult !== res.actualResult) {
+      anyChanged = true;
+      return {
+        ...leg,
+        legStatus: res.status,
+        actualResult: res.actualResult
+      };
+    }
+    return leg;
+  });
+  const hasLost = updatedLegs.some((l) => l.legStatus === "LOST");
+  const hasPending = updatedLegs.some((l) => !l.legStatus || l.legStatus === "PENDING");
+  const wonLegs = updatedLegs.filter((l) => l.legStatus === "WON");
+  const allVoid = updatedLegs.length > 0 && updatedLegs.every((l) => l.legStatus === "VOID");
+  let nextStatus = "PENDING";
+  let nextEffectiveOdds = slip.totalOdds;
+  if (hasLost) {
+    nextStatus = "LOST";
+    nextEffectiveOdds = slip.totalOdds;
+  } else if (hasPending) {
+    nextStatus = "PENDING";
+    nextEffectiveOdds = slip.totalOdds;
+  } else if (allVoid) {
+    nextStatus = "VOID";
+    nextEffectiveOdds = 1;
+  } else {
+    nextStatus = "WON";
+    nextEffectiveOdds = Number(
+      wonLegs.reduce((acc, l) => acc * Math.max(1, l.odds || 1), 1).toFixed(2)
+    );
+  }
+  const nextWeekKey = slip.weekKey || getIsoWeekKey(slip.date);
+  if (slip.status !== nextStatus || slip.effectiveOdds !== nextEffectiveOdds || slip.weekKey !== nextWeekKey) {
+    anyChanged = true;
+  }
+  const nextSlip = {
+    ...slip,
+    weekKey: nextWeekKey,
+    legs: updatedLegs,
+    status: nextStatus,
+    effectiveOdds: nextEffectiveOdds,
+    evaluationDate: nextStatus !== "PENDING" ? slip.evaluationDate || new Date(nowMs).toISOString() : void 0
+  };
+  return { slip: nextSlip, changed: anyChanged };
+}
+function summarizeGroup(key, label, items) {
+  const total = items.length;
+  const won = items.filter((i) => i.status === "WON").length;
+  const lost = items.filter((i) => i.status === "LOST").length;
+  const voidCount = items.filter((i) => i.status === "VOID").length;
+  const pending = items.filter((i) => i.status === "PENDING").length;
+  const resolved = won + lost;
+  const winRate = resolved > 0 ? Number((won / resolved * 100).toFixed(1)) : 0;
+  const avgOdds = total > 0 ? Number((items.reduce((s, i) => s + (i.odd || 1), 0) / total).toFixed(2)) : 0;
+  let net = 0;
+  for (const it of items) {
+    if (it.status === "WON") net += Math.max(0, (it.odd || 1) - 1);
+    else if (it.status === "LOST") net -= 1;
+  }
+  const netYieldUnits = Number(net.toFixed(2));
+  const yieldPercent = resolved > 0 ? Number((net / resolved * 100).toFixed(1)) : 0;
+  return {
+    key,
+    label,
+    total,
+    won,
+    lost,
+    voidCount,
+    pending,
+    resolved,
+    winRate,
+    avgOdds,
+    netYieldUnits,
+    yieldPercent
+  };
+}
+function computeParlayEfficiencyStats(slips) {
+  const normalized = (slips || []).map((s) => ({
+    slip: s,
+    status: s.status || "PENDING",
+    odd: s.status === "WON" ? s.effectiveOdds ?? s.totalOdds : s.totalOdds,
+    weekKey: s.weekKey || getIsoWeekKey(s.date),
+    monthKey: (s.date || "").slice(0, 7) || "2026-11"
+  }));
+  const overallBase = summarizeGroup("ALL", "Global", normalized);
+  const legMarketMap = /* @__PURE__ */ new Map();
+  let legTotal = 0;
+  let legWon = 0;
+  let legLost = 0;
+  let legVoid = 0;
+  for (const { slip } of normalized) {
+    for (const leg of slip.legs || []) {
+      const st = leg.legStatus || (slip.status === "WON" ? "WON" : slip.status === "VOID" ? "VOID" : "PENDING");
+      legTotal++;
+      if (st === "WON") legWon++;
+      else if (st === "LOST") legLost++;
+      else if (st === "VOID") legVoid++;
+      const cat = String(leg.category || "OTHER");
+      const arr = legMarketMap.get(cat) || [];
+      arr.push({ status: st, odd: leg.odds || 1.3 });
+      legMarketMap.set(cat, arr);
+    }
+  }
+  const legResolved = legWon + legLost;
+  const legWinRate = legResolved > 0 ? Number((legWon / legResolved * 100).toFixed(1)) : 0;
+  const weekMap = /* @__PURE__ */ new Map();
+  const monthMap = /* @__PURE__ */ new Map();
+  const profileMap = /* @__PURE__ */ new Map();
+  for (const item of normalized) {
+    weekMap.set(item.weekKey, [...weekMap.get(item.weekKey) || [], item]);
+    monthMap.set(item.monthKey, [...monthMap.get(item.monthKey) || [], item]);
+    profileMap.set(item.slip.profile, [...profileMap.get(item.slip.profile) || [], item]);
+  }
+  const byWeek = Array.from(weekMap.entries()).map(([k, arr]) => summarizeGroup(k, getSpanishWeekLabel(k), arr)).sort((a, b) => b.key.localeCompare(a.key));
+  const byMonth = Array.from(monthMap.entries()).map(([k, arr]) => summarizeGroup(k, getSpanishMonthLabelLedger(k), arr)).sort((a, b) => b.key.localeCompare(a.key));
+  const PROFILE_LABELS = {
+    CONSERVATIVE: "Conservador (~2.00)",
+    BALANCED: "Equilibrado (~3.00)",
+    HIGH_ODDS: "Cuota Alta (~6.00)"
+  };
+  const byProfile = ["CONSERVATIVE", "BALANCED", "HIGH_ODDS"].map((p) => {
+    const row = summarizeGroup(p, PROFILE_LABELS[p] || p, profileMap.get(p) || []);
+    return { ...row };
+  });
+  const byLegMarket = Array.from(legMarketMap.entries()).map(([k, arr]) => summarizeGroup(k, k, arr)).sort((a, b) => b.total - a.total);
+  return {
+    overall: {
+      ...overallBase,
+      legTotal,
+      legWon,
+      legLost,
+      legVoid,
+      legWinRate
+    },
+    byWeek,
+    byMonth,
+    byProfile,
+    byLegMarket
+  };
+}
+function computeSinglesEfficiencyStats(singles) {
+  const normalized = (singles || []).map((s) => ({
+    s,
+    status: s.status || "PENDING",
+    odd: s.estimatedBookieOdd || 1.4,
+    weekKey: s.weekKey || getIsoWeekKey(s.matchDate),
+    monthKey: (s.matchDate || "").slice(0, 7) || "2026-11"
+  }));
+  const overall = summarizeGroup("ALL", "Global Sencillas", normalized);
+  const weekMap = /* @__PURE__ */ new Map();
+  const monthMap = /* @__PURE__ */ new Map();
+  const typeMap = /* @__PURE__ */ new Map();
+  const sportMap = /* @__PURE__ */ new Map();
+  const marketMap = /* @__PURE__ */ new Map();
+  for (const item of normalized) {
+    weekMap.set(item.weekKey, [...weekMap.get(item.weekKey) || [], item]);
+    monthMap.set(item.monthKey, [...monthMap.get(item.monthKey) || [], item]);
+    typeMap.set(item.s.betType, [...typeMap.get(item.s.betType) || [], item]);
+    sportMap.set(item.s.sport || "SOCCER", [...sportMap.get(item.s.sport || "SOCCER") || [], item]);
+    const mKey = item.s.marketKey || "OTHER";
+    marketMap.set(mKey, [...marketMap.get(mKey) || [], item]);
+  }
+  const byWeek = Array.from(weekMap.entries()).map(([k, arr]) => summarizeGroup(k, getSpanishWeekLabel(k), arr)).sort((a, b) => b.key.localeCompare(a.key));
+  const byMonth = Array.from(monthMap.entries()).map(([k, arr]) => summarizeGroup(k, getSpanishMonthLabelLedger(k), arr)).sort((a, b) => b.key.localeCompare(a.key));
+  const byType = [
+    summarizeGroup("BANKER", "Bankers Seguros", typeMap.get("BANKER") || []),
+    summarizeGroup("HIGH_VALUE", "Alta Cuota (+EV)", typeMap.get("HIGH_VALUE") || [])
+  ];
+  const bySport = [
+    summarizeGroup("SOCCER", "F\xFAtbol", sportMap.get("SOCCER") || []),
+    summarizeGroup("NBA", "Baloncesto (NBA/NCAA)", sportMap.get("NBA") || [])
+  ];
+  const byMarket = Array.from(marketMap.entries()).map(([k, arr]) => summarizeGroup(k, k, arr)).sort((a, b) => b.total - a.total);
+  return { overall, byWeek, byMonth, byType, bySport, byMarket };
+}
+
 // src/services/securityShield.ts
 import crypto from "node:crypto";
 var JWT_SECRET = process.env.JWT_SECRET_KEY || process.env.ADMIN_MASTER_KEY || "SPORTSTATS_PRO_ZERO_TRUST_JWT_HMAC_KEY_2026_V4";
@@ -522,7 +1073,7 @@ async function setSupabaseKvCache(cacheId, payload, timestamp = Date.now()) {
     });
     if (cacheId.includes("_schedule_") || cacheId.startsWith("espn_schedule_")) {
       const threeDaysAgoIso = new Date(Date.now() - 3 * 24 * 60 * 60 * 1e3).toISOString();
-      client.from("sportstats_config").delete().eq("color_theme", "kv-cache").neq("id", "__server_telemetry_v1__").neq("id", "__deleted_users_v1__").neq("id", "__admin_user_feedback_v1__").lt("updated_at", threeDaysAgoIso).then(
+      client.from("sportstats_config").delete().eq("color_theme", "kv-cache").neq("id", "__server_telemetry_v1__").neq("id", "__deleted_users_v1__").neq("id", "__admin_user_feedback_v1__").neq("id", "__gmetrics_smart_parlays_v3__").neq("id", "__gmetrics_singles_history_v1__").neq("id", "__admin_monthly_parlays_v2__").lt("updated_at", threeDaysAgoIso).then(
         () => {
         },
         () => {
@@ -1416,6 +1967,65 @@ BEGIN
   END IF;
 END $$;
 `;
+var PARLAYS_SINGLES_HISTORY_SQL = `
+CREATE TABLE IF NOT EXISTS gmetrics_parlay_history (
+  id TEXT PRIMARY KEY,
+  bet_date TEXT NOT NULL,
+  week_key TEXT NOT NULL,
+  profile TEXT NOT NULL,
+  total_odds NUMERIC NOT NULL,
+  effective_odds NUMERIC,
+  legs JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  engine_version TEXT,
+  created_at BIGINT NOT NULL,
+  settled_at BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_parlay_hist_date ON gmetrics_parlay_history(bet_date DESC);
+CREATE INDEX IF NOT EXISTS idx_parlay_hist_week ON gmetrics_parlay_history(week_key);
+CREATE INDEX IF NOT EXISTS idx_parlay_hist_status ON gmetrics_parlay_history(status);
+ALTER TABLE gmetrics_parlay_history ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS gmetrics_singles_history (
+  id TEXT PRIMARY KEY,
+  bet_date TEXT NOT NULL,
+  week_key TEXT NOT NULL,
+  fixture_id TEXT NOT NULL,
+  espn_event_id TEXT,
+  sport TEXT NOT NULL,
+  league TEXT,
+  match_title TEXT NOT NULL,
+  home_team TEXT,
+  away_team TEXT,
+  bet_type TEXT NOT NULL,
+  market_key TEXT NOT NULL,
+  selection_label TEXT NOT NULL,
+  category_label TEXT,
+  probability NUMERIC NOT NULL,
+  fair_odd NUMERIC,
+  estimated_odd NUMERIC NOT NULL,
+  value_edge_pct NUMERIC,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  actual_result TEXT,
+  created_at BIGINT NOT NULL,
+  settled_at BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_singles_hist_date ON gmetrics_singles_history(bet_date DESC);
+CREATE INDEX IF NOT EXISTS idx_singles_hist_week ON gmetrics_singles_history(week_key);
+CREATE INDEX IF NOT EXISTS idx_singles_hist_status ON gmetrics_singles_history(status);
+CREATE INDEX IF NOT EXISTS idx_singles_hist_type ON gmetrics_singles_history(bet_type);
+ALTER TABLE gmetrics_singles_history ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'gmetrics_parlay_history' AND policyname = 'Allow server full access parlay history') THEN
+    CREATE POLICY "Allow server full access parlay history" ON gmetrics_parlay_history FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'gmetrics_singles_history' AND policyname = 'Allow server full access singles history') THEN
+    CREATE POLICY "Allow server full access singles history" ON gmetrics_singles_history FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+`;
 var SUPABASE_SQL_SCHEMA = `
 -- =========================================================================
 -- TABLAS OFICIALES PARA SPORTSTATS PRO EN SUPABASE (PostgreSQL)
@@ -1508,6 +2118,8 @@ BEGIN
 END $$;
 
 ${PICK_LEDGER_SQL}
+
+${PARLAYS_SINGLES_HISTORY_SQL}
 `;
 async function verifyOAuthIdentityToken(token, expectedEmail, client) {
   const cleanExpected = expectedEmail.toLowerCase().trim();
@@ -2254,6 +2866,347 @@ async function purgeOldPickLedgerRows(maxDays = 35) {
     console.warn("[PickLedger] purge exception:", err);
     return 0;
   }
+}
+var PARLAY_KV_FALLBACK_KEY = "__gmetrics_smart_parlays_v3__";
+var SINGLES_KV_FALLBACK_KEY = "__gmetrics_singles_history_v1__";
+function isMissingTableError(err) {
+  if (!err) return false;
+  const code = String(err.code || "");
+  const msg = String(err.message || "");
+  return code === "42P01" || code === "PGRST205" || /does not exist|could not find the table/i.test(msg);
+}
+function getCutoffDateStr(maxDays) {
+  const ts = Date.now() - Math.max(0, maxDays) * 864e5;
+  return new Date(ts - 5 * 36e5).toISOString().slice(0, 10);
+}
+function isNonSeedSlip(s) {
+  return Boolean(
+    s && s.id && !String(s.id).includes("seed") && !s.legs?.some((l) => String(l?.fixtureId || "").startsWith("seed_"))
+  );
+}
+function mapParlayRowToSlip(row) {
+  return {
+    id: String(row.id),
+    date: String(row.bet_date),
+    weekKey: String(row.week_key || getIsoWeekKey(String(row.bet_date))),
+    profile: row.profile,
+    legs: Array.isArray(row.legs) ? row.legs : [],
+    totalOdds: Number(row.total_odds || 1),
+    effectiveOdds: row.effective_odds !== null && row.effective_odds !== void 0 ? Number(row.effective_odds) : Number(row.total_odds || 1),
+    status: row.status || "PENDING",
+    evaluationDate: row.settled_at ? new Date(Number(row.settled_at)).toISOString() : void 0,
+    engineVersion: row.engine_version || void 0,
+    createdAt: Number(row.created_at || Date.now())
+  };
+}
+function mapSlipToParlayRow(s) {
+  const settledAt = s.status !== "PENDING" ? s.evaluationDate ? Date.parse(s.evaluationDate) || Date.now() : Date.now() : null;
+  return {
+    id: s.id,
+    bet_date: s.date,
+    week_key: s.weekKey || getIsoWeekKey(s.date),
+    profile: s.profile,
+    total_odds: Number(s.totalOdds || 1),
+    effective_odds: Number(s.effectiveOdds ?? s.totalOdds ?? 1),
+    legs: s.legs || [],
+    status: s.status || "PENDING",
+    engine_version: s.engineVersion || null,
+    created_at: s.createdAt || Date.now(),
+    settled_at: settledAt
+  };
+}
+function mapSingleRowToItem(row) {
+  return {
+    id: String(row.id),
+    fixtureId: String(row.fixture_id),
+    espnEventId: row.espn_event_id ? String(row.espn_event_id) : void 0,
+    sport: row.sport === "NBA" ? "NBA" : "SOCCER",
+    matchTitle: String(row.match_title),
+    homeTeamName: String(row.home_team || ""),
+    awayTeamName: String(row.away_team || ""),
+    leagueName: String(row.league || ""),
+    matchDate: String(row.bet_date),
+    matchTime: "",
+    weekKey: String(row.week_key || getIsoWeekKey(String(row.bet_date))),
+    marketKey: String(row.market_key),
+    selectionLabel: String(row.selection_label),
+    categoryLabel: String(row.category_label || ""),
+    betType: row.bet_type === "HIGH_VALUE" ? "HIGH_VALUE" : "BANKER",
+    probability: Number(row.probability || 0),
+    fairMinOdd: Number(row.fair_odd || 1.3),
+    estimatedBookieOdd: Number(row.estimated_odd || 1.4),
+    valueEdgePct: Number(row.value_edge_pct || 0),
+    recommendedKellyStakePct: 2.5,
+    reasoning: "",
+    tacticalFactor: "",
+    status: row.status || "PENDING",
+    actualResult: row.actual_result || void 0,
+    settledAt: row.settled_at ? Number(row.settled_at) : void 0,
+    createdAt: Number(row.created_at || Date.now())
+  };
+}
+function buildCanonicalSingleId(s) {
+  const dateStr = String(s.matchDate || "").slice(0, 10) || new Date(Date.now() - 5 * 36e5).toISOString().slice(0, 10);
+  const normId = normalizeMatchId(s.espnEventId || s.fixtureId) || String(s.fixtureId || "0");
+  const mKey = String(s.marketKey || "PICK").replace(/[^a-zA-Z0-9_-]/g, "");
+  return `single_${dateStr}_${normId}_${mKey}`;
+}
+async function loadParlayHistory(maxDays = 35) {
+  const client = getSupabaseClient();
+  const cutoff = getCutoffDateStr(maxDays);
+  if (client) {
+    try {
+      const { data, error } = await client.from("gmetrics_parlay_history").select("*").gte("bet_date", cutoff).order("bet_date", { ascending: false }).order("created_at", { ascending: false }).limit(300);
+      if (!error && Array.isArray(data)) {
+        const tableSlips = data.map(mapParlayRowToSlip).filter(isNonSeedSlip);
+        if (tableSlips.length > 0) {
+          return { slips: tableSlips, storageMode: "table" };
+        }
+        const kvOld = await getSupabaseKvCache(PARLAY_KV_FALLBACK_KEY);
+        const kvSlips = (kvOld?.data?.slips || []).filter((s) => isNonSeedSlip(s) && s.date >= cutoff);
+        if (kvSlips.length > 0) {
+          await client.from("gmetrics_parlay_history").upsert(kvSlips.map(mapSlipToParlayRow), { onConflict: "id", ignoreDuplicates: true });
+          return { slips: kvSlips, storageMode: "table" };
+        }
+        return { slips: [], storageMode: "table" };
+      }
+      if (error && !isMissingTableError(error)) {
+        console.warn("[ParlayHistory] query error:", error.message);
+      }
+    } catch (err) {
+      console.warn("[ParlayHistory] load exception:", err);
+    }
+  }
+  const kv = await getSupabaseKvCache(PARLAY_KV_FALLBACK_KEY);
+  const slips = (kv?.data?.slips || []).filter((s) => isNonSeedSlip(s) && s.date >= cutoff).map((s) => ({ ...s, weekKey: s.weekKey || getIsoWeekKey(s.date) }));
+  return { slips, storageMode: "kv_fallback" };
+}
+async function upsertParlayHistory(slips, replacePendingDate) {
+  const cleanSlips = (slips || []).filter(isNonSeedSlip);
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      if (replacePendingDate) {
+        const { error: delErr } = await client.from("gmetrics_parlay_history").delete().eq("bet_date", replacePendingDate).eq("status", "PENDING");
+        if (delErr && isMissingTableError(delErr)) {
+          throw new Error("MISSING_TABLE");
+        }
+      }
+      if (cleanSlips.length > 0) {
+        const ids = cleanSlips.map((s) => s.id);
+        const { data: existingRows, error: selErr } = await client.from("gmetrics_parlay_history").select("id,status").in("id", ids);
+        if (selErr && isMissingTableError(selErr)) {
+          throw new Error("MISSING_TABLE");
+        }
+        const settledIds = new Set(
+          (existingRows || []).filter((r) => r.status && r.status !== "PENDING").map((r) => String(r.id))
+        );
+        const toWrite = cleanSlips.filter((s) => !(s.status === "PENDING" && settledIds.has(s.id)));
+        if (toWrite.length > 0) {
+          const { error: upErr } = await client.from("gmetrics_parlay_history").upsert(toWrite.map(mapSlipToParlayRow), { onConflict: "id" });
+          if (upErr) {
+            if (isMissingTableError(upErr)) throw new Error("MISSING_TABLE");
+            console.warn("[ParlayHistory] upsert error:", upErr.message);
+            return false;
+          }
+        }
+      }
+      return true;
+    } catch (err) {
+      if (err?.message !== "MISSING_TABLE") {
+        console.warn("[ParlayHistory] upsert exception:", err);
+      }
+    }
+  }
+  const kv = await getSupabaseKvCache(PARLAY_KV_FALLBACK_KEY);
+  let pool = (kv?.data?.slips || []).filter(isNonSeedSlip);
+  if (replacePendingDate) {
+    pool = pool.filter((s) => !(s.date === replacePendingDate && s.status === "PENDING"));
+  }
+  const map = /* @__PURE__ */ new Map();
+  pool.forEach((s) => map.set(s.id, s));
+  cleanSlips.forEach((s) => {
+    const prev = map.get(s.id);
+    if (prev && prev.status !== "PENDING" && s.status === "PENDING") return;
+    map.set(s.id, { ...s, weekKey: s.weekKey || getIsoWeekKey(s.date) });
+  });
+  const merged = Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 200);
+  return setSupabaseKvCache(PARLAY_KV_FALLBACK_KEY, { updatedAt: Date.now(), slips: merged });
+}
+async function loadSinglesHistory(maxDays = 35) {
+  const client = getSupabaseClient();
+  const cutoff = getCutoffDateStr(maxDays);
+  if (client) {
+    try {
+      const { data, error } = await client.from("gmetrics_singles_history").select("*").gte("bet_date", cutoff).order("bet_date", { ascending: false }).order("created_at", { ascending: false }).limit(800);
+      if (!error && Array.isArray(data)) {
+        return { singles: data.map(mapSingleRowToItem), storageMode: "table" };
+      }
+      if (error && !isMissingTableError(error)) {
+        console.warn("[SinglesHistory] query error:", error.message);
+      }
+    } catch (err) {
+      console.warn("[SinglesHistory] load exception:", err);
+    }
+  }
+  const kv = await getSupabaseKvCache(SINGLES_KV_FALLBACK_KEY);
+  const singles = (kv?.data?.singles || []).filter((s) => s && s.matchDate >= cutoff).map((s) => ({ ...s, weekKey: s.weekKey || getIsoWeekKey(s.matchDate) }));
+  return { singles, storageMode: "kv_fallback" };
+}
+async function sealSinglesHistory(singles) {
+  if (!singles || singles.length === 0) return 0;
+  const now = Date.now();
+  const normalized = singles.map((s) => {
+    const id = buildCanonicalSingleId(s);
+    const betDate = String(s.matchDate || "").slice(0, 10) || new Date(now - 5 * 36e5).toISOString().slice(0, 10);
+    return {
+      ...s,
+      id,
+      matchDate: betDate,
+      weekKey: s.weekKey || getIsoWeekKey(betDate),
+      status: "PENDING",
+      createdAt: s.createdAt || now
+    };
+  });
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const rows = normalized.map((s) => ({
+        id: s.id,
+        bet_date: s.matchDate,
+        week_key: s.weekKey,
+        fixture_id: String(s.fixtureId),
+        espn_event_id: s.espnEventId ? String(s.espnEventId) : null,
+        sport: s.sport || "SOCCER",
+        league: s.leagueName || "",
+        match_title: s.matchTitle,
+        home_team: s.homeTeamName || "",
+        away_team: s.awayTeamName || "",
+        bet_type: s.betType,
+        market_key: s.marketKey,
+        selection_label: s.selectionLabel,
+        category_label: s.categoryLabel || "",
+        probability: Number(s.probability),
+        fair_odd: Number(s.fairMinOdd),
+        estimated_odd: Number(s.estimatedBookieOdd),
+        value_edge_pct: Number(s.valueEdgePct),
+        status: "PENDING",
+        actual_result: null,
+        created_at: s.createdAt,
+        settled_at: null
+      }));
+      const { error } = await client.from("gmetrics_singles_history").upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+      if (!error) return rows.length;
+      if (!isMissingTableError(error)) {
+        console.warn("[SinglesHistory] seal error:", error.message);
+        return 0;
+      }
+    } catch (err) {
+      console.warn("[SinglesHistory] seal exception:", err);
+    }
+  }
+  const kv = await getSupabaseKvCache(SINGLES_KV_FALLBACK_KEY);
+  const existing = kv?.data?.singles || [];
+  const map = /* @__PURE__ */ new Map();
+  existing.forEach((item) => map.set(item.id, item));
+  let added = 0;
+  normalized.forEach((item) => {
+    if (!map.has(item.id)) {
+      map.set(item.id, item);
+      added++;
+    }
+  });
+  if (added > 0) {
+    const merged = Array.from(map.values()).sort((a, b) => b.matchDate.localeCompare(a.matchDate) || (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 800);
+    await setSupabaseKvCache(SINGLES_KV_FALLBACK_KEY, { updatedAt: now, singles: merged });
+  }
+  return added;
+}
+async function updateSinglesSettlement(updates) {
+  if (!updates || updates.length === 0) return 0;
+  const client = getSupabaseClient();
+  let updatedCount = 0;
+  if (client) {
+    try {
+      let useFallback = false;
+      for (const u of updates) {
+        const { error } = await client.from("gmetrics_singles_history").update({
+          status: u.status,
+          actual_result: u.actualResult,
+          settled_at: u.settledAt
+        }).eq("id", u.id).eq("status", "PENDING");
+        if (error) {
+          if (isMissingTableError(error)) {
+            useFallback = true;
+            break;
+          }
+        } else {
+          updatedCount++;
+        }
+      }
+      if (!useFallback) return updatedCount;
+    } catch {
+    }
+  }
+  const kv = await getSupabaseKvCache(SINGLES_KV_FALLBACK_KEY);
+  const pool = kv?.data?.singles || [];
+  if (pool.length === 0) return 0;
+  const updMap = new Map(updates.map((u) => [u.id, u]));
+  const next = pool.map((s) => {
+    const u = updMap.get(s.id);
+    if (u && (!s.status || s.status === "PENDING")) {
+      updatedCount++;
+      return { ...s, status: u.status, actualResult: u.actualResult, settledAt: u.settledAt };
+    }
+    return s;
+  });
+  if (updatedCount > 0) {
+    await setSupabaseKvCache(SINGLES_KV_FALLBACK_KEY, { updatedAt: Date.now(), singles: next });
+  }
+  return updatedCount;
+}
+async function purgeOldParlaysAndSingles(maxDays = 35) {
+  const client = getSupabaseClient();
+  const cutoff = getCutoffDateStr(maxDays);
+  let purgedParlays = 0;
+  let purgedSingles = 0;
+  if (client) {
+    try {
+      const pQuery = client.from("gmetrics_parlay_history").delete({ count: "exact" });
+      const pRes = maxDays <= 0 ? await pQuery.gte("created_at", 0) : await pQuery.lt("bet_date", cutoff);
+      if (!pRes.error) purgedParlays = pRes.count || 0;
+    } catch {
+    }
+    try {
+      const sQuery = client.from("gmetrics_singles_history").delete({ count: "exact" });
+      const sRes = maxDays <= 0 ? await sQuery.gte("created_at", 0) : await sQuery.lt("bet_date", cutoff);
+      if (!sRes.error) purgedSingles = sRes.count || 0;
+    } catch {
+    }
+  }
+  try {
+    const kvP = await getSupabaseKvCache(PARLAY_KV_FALLBACK_KEY);
+    if (kvP?.data?.slips) {
+      const kept = maxDays <= 0 ? [] : kvP.data.slips.filter((s) => s.date >= cutoff);
+      if (kept.length !== kvP.data.slips.length) {
+        purgedParlays = Math.max(purgedParlays, kvP.data.slips.length - kept.length);
+        await setSupabaseKvCache(PARLAY_KV_FALLBACK_KEY, { updatedAt: Date.now(), slips: kept });
+      }
+    }
+  } catch {
+  }
+  try {
+    const kvS = await getSupabaseKvCache(SINGLES_KV_FALLBACK_KEY);
+    if (kvS?.data?.singles) {
+      const kept = maxDays <= 0 ? [] : kvS.data.singles.filter((s) => s.matchDate >= cutoff);
+      if (kept.length !== kvS.data.singles.length) {
+        purgedSingles = Math.max(purgedSingles, kvS.data.singles.length - kept.length);
+        await setSupabaseKvCache(SINGLES_KV_FALLBACK_KEY, { updatedAt: Date.now(), singles: kept });
+      }
+    }
+  } catch {
+  }
+  return { purgedParlays, purgedSingles };
 }
 
 // src/services/pickLedger.ts
@@ -4897,6 +5850,7 @@ function extractNBABettingMarketSuggestions(fixture, analysis) {
     if (odds >= 1.3 && expectedValue > 0) {
       suggestions.push({
         fixtureId: fixture.id,
+        espnEventId: fixture.espnEventId || normalizeMatchId(fixture.id),
         matchName,
         leagueName,
         category,
@@ -5795,7 +6749,8 @@ function extractMatchBettingMarketSuggestions(fixture, analysis) {
         odds,
         impliedProb,
         expectedValue,
-        availableInColombianBooks: true
+        availableInColombianBooks: true,
+        espnEventId: fixture.espnEventId || String(fixture.id)
       });
     }
   };
@@ -5982,7 +6937,9 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
     const cKey = getCanonicalMatchKey(match.homeTeam.name, match.awayTeam.name);
     if (!cKey || cKey === "|") continue;
     if (!matchCandidatesMap.has(cKey)) {
-      const suggestions = extractMatchBettingMarketSuggestions(match);
+      const suggestions = extractMatchBettingMarketSuggestions(match).filter(
+        (s) => !UNVERIFIABLE_PARLAY_CATEGORIES.has(String(s.category))
+      );
       if (suggestions.length > 0) {
         matchCandidatesMap.set(cKey, { fixture: match, suggestions });
       }
@@ -5993,7 +6950,9 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
     const cKey = getCanonicalMatchKey(nbaMatch.homeTeam.name, nbaMatch.awayTeam.name);
     if (!cKey || cKey === "|") continue;
     if (!matchCandidatesMap.has(cKey)) {
-      const nbaSuggestions = extractNBABettingMarketSuggestions(nbaMatch);
+      const nbaSuggestions = extractNBABettingMarketSuggestions(nbaMatch).filter(
+        (s) => !UNVERIFIABLE_PARLAY_CATEGORIES.has(String(s.category))
+      );
       if (nbaSuggestions.length > 0) {
         matchCandidatesMap.set(cKey, { fixture: nbaMatch, suggestions: nbaSuggestions });
       }
@@ -6127,11 +7086,14 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
     return {
       id: `smart_parlay_${profile.toLowerCase()}_${todayStr.replace(/-/g, "")}_${Math.random().toString(36).substring(2, 7)}`,
       date: todayStr,
+      weekKey: getIsoWeekKey(todayStr),
       profile,
       legs: finalCombo,
       totalOdds,
+      effectiveOdds: totalOdds,
       status: "PENDING",
-      engineVersion: PARLAY_ENGINE_VERSION
+      engineVersion: PARLAY_ENGINE_VERSION,
+      createdAt: Date.now()
     };
   };
   const usedHashes = /* @__PURE__ */ new Set();
@@ -8405,13 +9367,13 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
       const payload = { fixtures: results, nbaEvents: nbaFinishedEvents };
       if (results.length > 0 || nbaFinishedEvents.length > 0) {
         setCacheItem(auditCacheKey, payload);
-        auditPendingSmartParlaysWithFinishedMatches(results, nbaFinishedEvents).catch(() => {
+        auditPendingParlaysAndSingles(results, nbaFinishedEvents, false).catch(() => {
         });
       }
       return payload;
     });
     if (auditPayload) {
-      auditPendingSmartParlaysWithFinishedMatches(auditPayload.fixtures || [], auditPayload.nbaEvents || []).catch(() => {
+      auditPendingParlaysAndSingles(auditPayload.fixtures || [], auditPayload.nbaEvents || [], false).catch(() => {
       });
       settlePickLedgerWithFinished(auditPayload.fixtures || [], auditPayload.nbaEvents || []).catch(() => {
       });
@@ -10456,7 +11418,7 @@ async function loadSmartParlaysStore(forceRemote = false) {
   }
   if (loadedStore) {
     const cleanSlips = loadedStore.slips.filter(
-      (s) => s && s.id && !s.id.includes("seed") && !s.id.includes("_seed_") && !s.legs?.some((l) => String(l.fixtureId || "").startsWith("seed_")) && !(s.status === "PENDING" && s.engineVersion !== PARLAY_ENGINE_VERSION)
+      (s) => s && s.id && !s.id.includes("seed") && !s.id.includes("_seed_") && !s.legs?.some((l) => String(l.fixtureId || "").startsWith("seed_"))
     );
     if (cleanSlips.length !== loadedStore.slips.length) {
       loadedStore.slips = cleanSlips;
@@ -10492,251 +11454,353 @@ async function saveSmartParlaysStore(store) {
     }
   }
 }
-function evaluateLegResult(leg, finishedMatch) {
-  if (!finishedMatch) return "PENDING";
-  const homeGoals = Number(finishedMatch.goals?.home ?? finishedMatch.currentScore?.home ?? 0);
-  const awayGoals = Number(finishedMatch.goals?.away ?? finishedMatch.currentScore?.away ?? 0);
-  const totalGoals = homeGoals + awayGoals;
-  const homeCorners = Number(finishedMatch.liveStats?.home?.corners ?? 0);
-  const awayCorners = Number(finishedMatch.liveStats?.away?.corners ?? 0);
-  const totalCorners = homeCorners + awayCorners;
-  const cat = String(leg.category);
-  const label = leg.label.toLowerCase();
-  switch (cat) {
-    case "1X2":
-    case "ONE_X_TWO": {
-      if (label.includes("(1)") || label.includes("gana " + (finishedMatch.teams?.home?.name || "").toLowerCase())) {
-        return homeGoals > awayGoals ? "WON" : "LOST";
-      }
-      if (label.includes("(2)") || label.includes("gana " + (finishedMatch.teams?.away?.name || "").toLowerCase())) {
-        return awayGoals > homeGoals ? "WON" : "LOST";
-      }
-      if (label.includes("(x)") || label.includes("empate")) {
-        return homeGoals === awayGoals ? "WON" : "LOST";
-      }
-      return "LOST";
-    }
-    case "DOUBLE_CHANCE": {
-      if (label.includes("1x") || label.includes("local o empate")) {
-        return homeGoals >= awayGoals ? "WON" : "LOST";
-      }
-      if (label.includes("x2") || label.includes("empate o") || label.includes("o empate")) {
-        return awayGoals >= homeGoals ? "WON" : "LOST";
-      }
-      if (label.includes("12") || label.includes("cualquiera gana")) {
-        return homeGoals !== awayGoals ? "WON" : "LOST";
-      }
-      return "LOST";
-    }
-    case "TOTAL_GOALS": {
-      if (label.includes("1.5")) {
-        return label.includes("m\xE1s") || label.includes("over") ? totalGoals > 1.5 ? "WON" : "LOST" : totalGoals < 1.5 ? "WON" : "LOST";
-      }
-      if (label.includes("2.5")) {
-        return label.includes("m\xE1s") || label.includes("over") ? totalGoals > 2.5 ? "WON" : "LOST" : totalGoals < 2.5 ? "WON" : "LOST";
-      }
-      return totalGoals > 1.5 ? "WON" : "LOST";
-    }
-    case "BTTS": {
-      const bttsHit = homeGoals > 0 && awayGoals > 0;
-      if (label.includes("s\xED") || label.includes("si") || label.includes("yes")) {
-        return bttsHit ? "WON" : "LOST";
-      }
-      if (label.includes("no")) {
-        return !bttsHit ? "WON" : "LOST";
-      }
-      return "LOST";
-    }
-    case "TOTAL_CORNERS_MATCH": {
-      if (label.includes("7.5")) {
-        return totalCorners > 7.5 ? "WON" : "LOST";
-      }
-      if (label.includes("8.5")) {
-        return totalCorners > 8.5 ? "WON" : "LOST";
-      }
-      if (label.includes("9.5")) {
-        return totalCorners > 9.5 ? "WON" : "LOST";
-      }
-      if (label.includes("10.5")) {
-        return label.includes("menos") ? totalCorners < 10.5 ? "WON" : "LOST" : totalCorners > 10.5 ? "WON" : "LOST";
-      }
-      return totalCorners > 8.5 ? "WON" : "LOST";
-    }
-    case "TOTAL_CARDS": {
-      const homeYellows = Number(finishedMatch.liveStats?.home?.yellowCards ?? 0);
-      const awayYellows = Number(finishedMatch.liveStats?.away?.yellowCards ?? 0);
-      const totalCards = homeYellows + awayYellows;
-      if (label.includes("3.5")) {
-        return label.includes("m\xE1s") || label.includes("over") ? totalCards > 3.5 ? "WON" : "LOST" : totalCards < 3.5 ? "WON" : "LOST";
-      }
-      if (label.includes("4.5")) {
-        return label.includes("m\xE1s") || label.includes("over") ? totalCards > 4.5 ? "WON" : "LOST" : totalCards < 4.5 ? "WON" : "LOST";
-      }
-      if (label.includes("5.5")) {
-        return label.includes("menos") ? totalCards < 5.5 ? "WON" : "LOST" : totalCards > 5.5 ? "WON" : "LOST";
-      }
-      return totalCards > 3.5 ? "WON" : "LOST";
-    }
-    case "PLAYER_SHOTS_ON_TARGET": {
-      return "PENDING";
-    }
-    case "HALF_WITH_MOST_GOALS": {
-      if (label.includes("2.\xAA mitad") || label.includes("2\xAA mitad") || label.includes("segunda mitad")) {
-        if (label.includes("0.5")) {
-          const events = Array.isArray(finishedMatch.events || finishedMatch.liveEvents) ? finishedMatch.events || finishedMatch.liveEvents : [];
-          const secondHalfGoals = events.filter((e) => e.type === "GOAL" && Number(e.minute) > 45).length;
-          if (secondHalfGoals > 0) return "WON";
-          if (finishedMatch.status === "FINISHED" || finishedMatch.statusShort === "FT") {
-            return "LOST";
-          }
-          return "PENDING";
-        }
-      }
-      return "PENDING";
-    }
-    case "DRAW_NO_BET": {
-      if (homeGoals === awayGoals) {
-        return "VOID";
-      }
-      if (label.includes("local") || label.includes(String(finishedMatch.teams?.home?.name || "").toLowerCase())) {
-        return homeGoals > awayGoals ? "WON" : "LOST";
-      }
-      return awayGoals > homeGoals ? "WON" : "LOST";
-    }
-    case "NBA_TOTAL_POINTS": {
-      const isPlayerProp = label.includes(":") || label.includes("triples");
-      if (isPlayerProp) {
-        return "PENDING";
-      }
-      const matchLine = label.match(/(\d+(?:\.\d+)?)/);
-      const line = matchLine ? parseFloat(matchLine[1]) : 0;
-      if (line > 0) {
-        const totalPoints = homeGoals + awayGoals;
-        if (label.includes("m\xE1s") || label.includes("over")) {
-          return totalPoints > line ? "WON" : "LOST";
-        }
-        if (label.includes("menos") || label.includes("under")) {
-          return totalPoints < line ? "WON" : "LOST";
-        }
-      }
-      return "PENDING";
-    }
-    case "NBA_PLAYER_POINTS":
-    case "NBA_PLAYER_THREES": {
-      return "PENDING";
-    }
-    case "NBA_MONEYLINE": {
-      const hName = String(finishedMatch.teams?.home?.name || "").toLowerCase();
-      const aName = String(finishedMatch.teams?.away?.name || "").toLowerCase();
-      if (hName && label.includes(hName.split(" ")[0])) {
-        return homeGoals > awayGoals ? "WON" : "LOST";
-      }
-      if (aName && label.includes(aName.split(" ")[0])) {
-        return awayGoals > homeGoals ? "WON" : "LOST";
-      }
-      return "PENDING";
-    }
-    case "NBA_SPREAD": {
-      const matchSpread = label.match(/([+-]?\d+(?:\.\d+)?)/);
-      const spreadVal = matchSpread ? parseFloat(matchSpread[1]) : 0;
-      const hName = String(finishedMatch.teams?.home?.name || "").toLowerCase();
-      const aName = String(finishedMatch.teams?.away?.name || "").toLowerCase();
-      if (hName && label.includes(hName.split(" ")[0])) {
-        return homeGoals + spreadVal > awayGoals ? "WON" : "LOST";
-      }
-      if (aName && label.includes(aName.split(" ")[0])) {
-        return awayGoals + spreadVal > homeGoals ? "WON" : "LOST";
-      }
-      return "PENDING";
-    }
-    default:
-      return "PENDING";
+function normalizeSoccerItemToFinished(f) {
+  if (!f) return null;
+  const id = String(f?.espnEventId || f?.fixture?.id || "");
+  if (!id) return null;
+  const hName = String(f?.teams?.home?.name || "");
+  const aName = String(f?.teams?.away?.name || "");
+  if (!hName || !aName) return null;
+  const hGoals = Number(f?.goals?.home ?? f?.currentScore?.home ?? 0);
+  const aGoals = Number(f?.goals?.away ?? f?.currentScore?.away ?? 0);
+  const hs = f?.liveStats?.home;
+  const as = f?.liveStats?.away;
+  const totalCorners = hs && as ? Number(hs.corners || 0) + Number(as.corners || 0) : null;
+  const totalYellows = hs && as ? Number(hs.yellowCards || 0) + Number(as.yellowCards || 0) : null;
+  const totalReds = hs && as ? Number(hs.redCards || 0) + Number(as.redCards || 0) : null;
+  const totalShots = hs && as ? Number(hs.shots || 0) + Number(as.shots || 0) : 0;
+  const hasStatsTelemetry = Boolean(
+    hs && as && (totalCorners > 0 || (totalYellows || 0) + (totalReds || 0) > 0 || totalShots > 0)
+  );
+  const events = Array.isArray(f?.liveEvents) ? f.liveEvents : Array.isArray(f?.events) ? f.events : [];
+  const goalEvents = events.filter((e) => e?.type === "GOAL");
+  const totGoals = hGoals + aGoals;
+  let firstHalfGoals = null;
+  let secondHalfGoals = null;
+  let hasEventsTelemetry = false;
+  if (totGoals === 0) {
+    firstHalfGoals = 0;
+    secondHalfGoals = 0;
+    hasEventsTelemetry = true;
+  } else if (goalEvents.length > 0) {
+    firstHalfGoals = goalEvents.filter((e) => Number(e.minute || 0) <= 45).length;
+    secondHalfGoals = goalEvents.filter((e) => Number(e.minute || 0) > 45).length;
+    hasEventsTelemetry = true;
   }
+  const rawTs = f?.fixture?.timestamp ? Number(f.fixture.timestamp) * 1e3 : Date.parse(String(f?.fixture?.date || ""));
+  const finishedAtMs = isFinite(rawTs) && rawTs > 0 ? rawTs + 115 * 6e4 : void 0;
+  const dateStr = f?.fixture?.date ? String(f.fixture.date).slice(0, 10) : void 0;
+  return {
+    id,
+    espnEventId: String(f?.espnEventId || id),
+    sport: "SOCCER",
+    homeName: hName,
+    awayName: aName,
+    homeScore: hGoals,
+    awayScore: aGoals,
+    corners: totalCorners,
+    yellowCards: totalYellows,
+    redCards: totalReds,
+    hasStatsTelemetry,
+    firstHalfGoals,
+    secondHalfGoals,
+    hasEventsTelemetry,
+    finishedAtMs,
+    dateStr
+  };
 }
-async function auditPendingSmartParlaysWithFinishedMatches(finishedFixtures, finishedNBAEvents = []) {
-  const normFixtures = Array.isArray(finishedFixtures) ? finishedFixtures : [];
-  const normNBA = (Array.isArray(finishedNBAEvents) ? finishedNBAEvents : []).map((bev) => {
-    if (!bev) return null;
-    const comp = bev.competitions?.[0];
-    const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
-    const homeComp = competitors.find((c) => c.homeAway === "home") || competitors[0];
-    const awayComp = competitors.find((c) => c.homeAway === "away") || competitors[1];
-    const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || "");
-    const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || "");
-    const homeScore = parseInt(String(homeComp?.score ?? "0"), 10) || 0;
-    const awayScore = parseInt(String(awayComp?.score ?? "0"), 10) || 0;
-    return {
-      id: String(bev.id || ""),
-      espnEventId: String(bev.id || ""),
-      sport: "NBA",
-      teams: {
-        home: { name: homeName },
-        away: { name: awayName }
-      },
-      goals: {
-        home: homeScore,
-        away: awayScore
-      },
-      currentScore: {
-        home: homeScore,
-        away: awayScore
-      },
-      status: "FINISHED",
-      rawEvent: bev
-    };
-  }).filter(Boolean);
-  const allFinished = [...normFixtures, ...normNBA];
-  if (allFinished.length === 0) return;
-  const store = await loadSmartParlaysStore();
-  const pendingSlips = store.slips.filter((s) => s.status === "PENDING");
-  if (pendingSlips.length === 0) return;
-  let modified = false;
-  for (const slip of pendingSlips) {
-    let hasLoss = false;
-    let pendingCount = 0;
-    let wonCount = 0;
-    let voidCount = 0;
-    for (const leg of slip.legs) {
-      const matchedFixture = allFinished.find((f) => {
-        if (!f) return false;
-        if (String(f.id) === String(leg.fixtureId) || String(f.espnEventId) === String(leg.fixtureId)) return true;
-        const hName = String(f.teams?.home?.name || "").toLowerCase();
-        const aName = String(f.teams?.away?.name || "").toLowerCase();
-        const lMatch = leg.matchName.toLowerCase();
-        return hName && aName && lMatch.includes(hName.split(" ")[0]) && lMatch.includes(aName.split(" ")[0]);
-      });
-      if (!matchedFixture) {
-        pendingCount++;
-        continue;
-      }
-      const legRes = evaluateLegResult(leg, matchedFixture);
-      if (legRes === "LOST") {
-        hasLoss = true;
-        break;
-      } else if (legRes === "WON") {
-        wonCount++;
-      } else if (legRes === "VOID") {
-        voidCount++;
-      } else {
-        pendingCount++;
+function normalizeBasketballEventToFinished(bev) {
+  if (!bev) return null;
+  const state = String(bev?.status?.type?.state || "").toLowerCase();
+  const desc = String(bev?.status?.type?.description || "").toLowerCase();
+  if (state !== "post" && bev?.status?.type?.completed !== true && !desc.includes("final")) {
+    return null;
+  }
+  const comp = bev?.competitions?.[0];
+  const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
+  const homeComp = competitors.find((c) => c.homeAway === "home") || competitors[0];
+  const awayComp = competitors.find((c) => c.homeAway === "away") || competitors[1];
+  const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || "");
+  const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || "");
+  if (!homeName || !awayName) return null;
+  const hp = parseInt(String(homeComp?.score ?? ""), 10);
+  const ap = parseInt(String(awayComp?.score ?? ""), 10);
+  if (isNaN(hp) || isNaN(ap) || hp + ap < 70) return null;
+  const rawTs = Date.parse(String(bev?.date || ""));
+  const finishedAtMs = isFinite(rawTs) && rawTs > 0 ? rawTs + 135 * 6e4 : void 0;
+  return {
+    id: String(bev.id || ""),
+    espnEventId: String(bev.id || ""),
+    sport: "NBA",
+    homeName,
+    awayName,
+    homeScore: hp,
+    awayScore: ap,
+    corners: null,
+    yellowCards: null,
+    redCards: null,
+    hasStatsTelemetry: false,
+    firstHalfGoals: null,
+    secondHalfGoals: null,
+    hasEventsTelemetry: false,
+    finishedAtMs,
+    dateStr: bev?._auditDateStr || (bev?.date ? String(bev.date).slice(0, 10) : void 0)
+  };
+}
+async function fetchFinishedMatchesForDates(dates, includeExtraBasketball, pendingTelemetryTargets) {
+  const uniqueDates = Array.from(new Set(dates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))).slice(0, 6);
+  if (uniqueDates.length === 0) return [];
+  const pool = [];
+  const soccerNeedEnrich = [];
+  const SETTLE_TTL = 10 * 60 * 1e3;
+  for (const dStr of uniqueDates) {
+    const espnDate = dStr.replace(/-/g, "");
+    const sCacheKey = `settlement_soccer_v1_${espnDate}`;
+    let sEventsRaw = getCacheItem(sCacheKey);
+    if (!sEventsRaw || Date.now() - sEventsRaw.timestamp > SETTLE_TTL) {
+      try {
+        const fetched = await runSingleFlight(sCacheKey, async () => {
+          const sbRes = await fetchWithStrictTimeout(
+            `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=300`,
+            { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0" }, timeoutMs: 5e3 }
+          );
+          if (!sbRes.ok) return [];
+          const sbData = await sbRes.json();
+          const evs = Array.isArray(sbData?.events) ? sbData.events : [];
+          const out = [];
+          for (const ev of evs) {
+            const st = String(ev?.status?.type?.state || "").toLowerCase();
+            if (st !== "post" && ev?.status?.type?.completed !== true) continue;
+            const comp = ev?.competitions?.[0];
+            if (!comp) continue;
+            const competitors = Array.isArray(comp.competitors) ? comp.competitors : [];
+            const homeComp = competitors.find((c) => c.homeAway === "home") || competitors[0];
+            const awayComp = competitors.find((c) => c.homeAway === "away") || competitors[1];
+            if (!homeComp || !awayComp) continue;
+            const hName = String(homeComp?.team?.displayName || homeComp?.team?.name || "Local");
+            const aName = String(awayComp?.team?.displayName || awayComp?.team?.name || "Visitante");
+            const tel = extractEspnScoreboardTelemetry(ev, comp, homeComp, awayComp, hName, aName, 90, true);
+            out.push({
+              espnEventId: String(ev.id || ""),
+              liveStats: tel.liveStats,
+              liveEvents: tel.liveEvents,
+              fixture: { id: parseInt(String(ev.id || "0"), 10) || 0, date: ev.date, timestamp: Math.floor(new Date(ev.date).getTime() / 1e3) },
+              teams: { home: { name: hName }, away: { name: aName } },
+              goals: { home: parseInt(String(homeComp?.score || "0"), 10) || 0, away: parseInt(String(awayComp?.score || "0"), 10) || 0 }
+            });
+          }
+          return out;
+        });
+        if (fetched.length > 0) setCacheItem(sCacheKey, fetched);
+        sEventsRaw = { timestamp: Date.now(), data: fetched };
+      } catch {
+        sEventsRaw = { timestamp: Date.now(), data: [] };
       }
     }
-    if (hasLoss) {
-      slip.status = "LOST";
-      slip.evaluationDate = (/* @__PURE__ */ new Date()).toISOString();
-      modified = true;
-    } else if (pendingCount === 0 && wonCount > 0) {
-      slip.status = "WON";
-      slip.evaluationDate = (/* @__PURE__ */ new Date()).toISOString();
-      modified = true;
-    } else if (pendingCount === 0 && voidCount === slip.legs.length) {
-      slip.status = "VOID";
-      slip.evaluationDate = (/* @__PURE__ */ new Date()).toISOString();
-      modified = true;
+    for (const rawItem of sEventsRaw.data || []) {
+      const norm = normalizeSoccerItemToFinished(rawItem);
+      if (norm) {
+        pool.push(norm);
+        if ((!norm.hasStatsTelemetry || !norm.hasEventsTelemetry) && pendingTelemetryTargets.length > 0) {
+          const hitTarget = findMatchingFinishedMatch(
+            { fixtureId: norm.id, espnEventId: norm.espnEventId, matchName: `${norm.homeName} vs ${norm.awayName}`, sport: "SOCCER" },
+            [norm]
+          );
+          if (hitTarget && pendingTelemetryTargets.some((t) => findMatchingFinishedMatch({ ...t, sport: "SOCCER" }, [norm]))) {
+            soccerNeedEnrich.push({ item: rawItem, norm });
+          }
+        }
+      }
+    }
+    const bCacheKey = `settlement_bball_v1_${espnDate}_${includeExtraBasketball ? "all" : "nba"}`;
+    let bEventsRaw = getCacheItem(bCacheKey);
+    if (!bEventsRaw || Date.now() - bEventsRaw.timestamp > SETTLE_TTL) {
+      const urls = [
+        `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${espnDate}`,
+        ...includeExtraBasketball ? [
+          `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?dates=${espnDate}&limit=60`,
+          `https://site.api.espn.com/apis/site/v2/sports/basketball/womens-college-basketball/scoreboard?dates=${espnDate}&limit=60`,
+          `https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard?dates=${espnDate}`,
+          `https://site.api.espn.com/apis/site/v2/sports/basketball/fiba/scoreboard?dates=${espnDate}`
+        ] : []
+      ];
+      try {
+        const fetchedB = await runSingleFlight(bCacheKey, async () => {
+          const collected = [];
+          const resps = await Promise.allSettled(
+            urls.map(
+              (u) => fetchWithStrictTimeout(u, {
+                headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0" },
+                timeoutMs: 4500
+              }).then((r) => r.ok ? r.json() : null)
+            )
+          );
+          for (const r of resps) {
+            if (r.status === "fulfilled" && Array.isArray(r.value?.events)) {
+              for (const ev of r.value.events) {
+                ev._auditDateStr = dStr;
+                collected.push(ev);
+              }
+            }
+          }
+          return collected;
+        });
+        if (fetchedB.length > 0) setCacheItem(bCacheKey, fetchedB);
+        bEventsRaw = { timestamp: Date.now(), data: fetchedB };
+      } catch {
+        bEventsRaw = { timestamp: Date.now(), data: [] };
+      }
+    }
+    for (const bev of bEventsRaw.data || []) {
+      const norm = normalizeBasketballEventToFinished(bev);
+      if (norm) pool.push(norm);
     }
   }
-  if (modified) {
-    await saveSmartParlaysStore(store);
+  if (soccerNeedEnrich.length > 0) {
+    await Promise.allSettled(
+      soccerNeedEnrich.slice(0, 15).map(async ({ item }) => {
+        try {
+          const enriched = await fetchEspnMatchSummaryTelemetry(
+            item.espnEventId,
+            item.teams.home.name,
+            item.teams.away.name,
+            90,
+            true,
+            { liveStats: item.liveStats, liveEvents: item.liveEvents || [] }
+          );
+          if (enriched?.liveStats) {
+            item.liveStats = enriched.liveStats;
+            item.liveEvents = enriched.liveEvents;
+            const refreshed = normalizeSoccerItemToFinished(item);
+            if (refreshed) {
+              const idx = pool.findIndex((p) => p.sport === "SOCCER" && p.espnEventId === refreshed.espnEventId);
+              if (idx >= 0) pool[idx] = refreshed;
+            }
+          }
+        } catch {
+        }
+      })
+    );
+  }
+  return pool;
+}
+var lastParlaySinglesSettleAt = 0;
+var lastParlaySinglesPurgeAt = 0;
+async function auditPendingParlaysAndSingles(extraFixtures = [], extraNBAEvents = [], forceCheck = false) {
+  if (!isSupabaseConfigured()) return;
+  const now = Date.now();
+  const isFullScan = extraFixtures.length === 0 && extraNBAEvents.length === 0;
+  const cooldown = forceCheck ? 45e3 : 3 * 6e4;
+  if (isFullScan && now - lastParlaySinglesSettleAt < cooldown) {
+    return;
+  }
+  if (isFullScan) {
+    lastParlaySinglesSettleAt = now;
+  }
+  try {
+    const [{ slips }, { singles }] = await Promise.all([loadParlayHistory(35), loadSinglesHistory(35)]);
+    const pendingSlips = slips.filter((s) => s.status === "PENDING");
+    const pendingSingles = singles.filter((s) => !s.status || s.status === "PENDING");
+    if (pendingSlips.length === 0 && pendingSingles.length === 0) {
+      if (now - lastParlaySinglesPurgeAt > 36e5) {
+        lastParlaySinglesPurgeAt = now;
+        purgeOldParlaysAndSingles(35).catch(() => {
+        });
+      }
+      return;
+    }
+    const pool = [];
+    for (const f of extraFixtures || []) {
+      const n = normalizeSoccerItemToFinished(f);
+      if (n) pool.push(n);
+    }
+    for (const bev of extraNBAEvents || []) {
+      const n = normalizeBasketballEventToFinished(bev);
+      if (n) pool.push(n);
+    }
+    const neededDates = /* @__PURE__ */ new Set();
+    const pendingTelemetryTargets = [];
+    let includeExtraBasketball = false;
+    for (const s of pendingSlips) {
+      if (s.date) neededDates.add(s.date);
+      for (const l of s.legs || []) {
+        const cat = String(l.category || "");
+        if (cat === "TOTAL_CORNERS_MATCH" || cat === "TOTAL_CARDS" || cat === "HALF_WITH_MOST_GOALS") {
+          pendingTelemetryTargets.push({ fixtureId: l.fixtureId, espnEventId: l.espnEventId, matchName: l.matchName });
+        }
+        const isBball = l.sport === "NBA" || String(l.fixtureId || "").startsWith("nba-espn-") || cat.startsWith("NBA_");
+        if (isBball && (l.leagueName || "").trim().toLowerCase() !== "nba") {
+          includeExtraBasketball = true;
+        }
+      }
+    }
+    for (const sg of pendingSingles) {
+      if (sg.matchDate) neededDates.add(sg.matchDate);
+      if (sg.marketKey?.startsWith("CORNERS_")) {
+        pendingTelemetryTargets.push({ fixtureId: sg.fixtureId, espnEventId: sg.espnEventId, matchName: sg.matchTitle });
+      }
+      if (sg.sport === "NBA" && (sg.leagueName || "").trim().toLowerCase() !== "nba") {
+        includeExtraBasketball = true;
+      }
+    }
+    if (extraFixtures.length === 0 && extraNBAEvents.length === 0) {
+      const fetchedPool = await fetchFinishedMatchesForDates(
+        Array.from(neededDates).sort((a, b) => b.localeCompare(a)),
+        includeExtraBasketball,
+        pendingTelemetryTargets
+      );
+      pool.push(...fetchedPool);
+    }
+    if (pool.length > 0) {
+      const modifiedSlips = [];
+      for (const slip of pendingSlips) {
+        const { slip: updated, changed } = recomputeParlaySlipSettlement(slip, pool, now);
+        if (changed) modifiedSlips.push(updated);
+      }
+      if (modifiedSlips.length > 0) {
+        await upsertParlayHistory(modifiedSlips);
+      }
+      const singleUpdates = [];
+      for (const sg of pendingSingles) {
+        const matched = findMatchingFinishedMatch(
+          {
+            fixtureId: sg.fixtureId,
+            espnEventId: sg.espnEventId,
+            matchName: sg.matchTitle,
+            homeTeamName: sg.homeTeamName,
+            awayTeamName: sg.awayTeamName,
+            sport: sg.sport
+          },
+          pool
+        );
+        if (!matched) continue;
+        const res = evaluatePickAgainstFinishedMatch(
+          {
+            marketKey: sg.marketKey,
+            label: sg.selectionLabel,
+            sport: sg.sport,
+            matchDate: sg.matchDate,
+            homeTeamName: sg.homeTeamName,
+            awayTeamName: sg.awayTeamName
+          },
+          matched,
+          now
+        );
+        if (res.status !== "PENDING") {
+          singleUpdates.push({ id: sg.id, status: res.status, actualResult: res.actualResult, settledAt: now });
+        }
+      }
+      if (singleUpdates.length > 0) {
+        await updateSinglesSettlement(singleUpdates);
+      }
+    }
+    if (now - lastParlaySinglesPurgeAt > 36e5) {
+      lastParlaySinglesPurgeAt = now;
+      purgeOldParlaysAndSingles(35).catch(() => {
+      });
+    }
+  } catch (err) {
+    console.warn("[Settlement] Error auditando parlays/sencillas:", err);
   }
 }
 app.get("/api/parlays/metrics", dataRateLimitMiddleware, async (req, res) => {
@@ -10749,52 +11813,34 @@ app.get("/api/parlays/metrics", dataRateLimitMiddleware, async (req, res) => {
   }
   clearAuthFailures(req);
   try {
-    const store = await loadSmartParlaysStore();
-    const todayStr = getColombiaDateStr(0);
-    const todaySlips = store.slips.filter((s) => s.date === todayStr);
-    if (todaySlips.length === 0) {
-      const sharedUpcoming = getCacheItem(`upcoming_v10_${todayStr}`) || getCacheItem(`upcoming_v9_${todayStr}`) || getCacheItem(`upcoming_v8_${todayStr}`);
-      const availableMatches = sharedUpcoming?.data || [];
-      if (availableMatches.length >= 2) {
-        const generated = generateSmartParlays(availableMatches, todayStr);
-        if (generated.length > 0) {
-          store.slips.unshift(...generated);
-          await saveSmartParlaysStore(store);
-        }
-      }
-    }
-    const totalGenerated = store.slips.length;
-    const totalWon = store.slips.filter((s) => s.status === "WON").length;
-    const totalLost = store.slips.filter((s) => s.status === "LOST").length;
-    const totalPending = store.slips.filter((s) => s.status === "PENDING").length;
-    const totalVoid = store.slips.filter((s) => s.status === "VOID").length;
-    const resolvedCount = totalWon + totalLost;
-    const winRate = resolvedCount > 0 ? Number((totalWon / resolvedCount * 100).toFixed(1)) : 0;
-    const avgOdds = totalGenerated > 0 ? Number((store.slips.reduce((acc, s) => acc + s.totalOdds, 0) / totalGenerated).toFixed(2)) : 0;
-    let netProfitUnits = 0;
-    for (const slip of store.slips) {
-      if (slip.status === "WON") {
-        netProfitUnits += slip.totalOdds - 1;
-      } else if (slip.status === "LOST") {
-        netProfitUnits -= 1;
-      }
-    }
-    const netYieldUnits = Number(netProfitUnits.toFixed(2));
-    const yieldPercent = resolvedCount > 0 ? Number((netProfitUnits / resolvedCount * 100).toFixed(1)) : 0;
+    const forceRefresh = req.query.refresh === "true";
+    await auditPendingParlaysAndSingles([], [], forceRefresh);
+    const { slips, storageMode } = await loadParlayHistory(35);
+    const stats = computeParlayEfficiencyStats(slips);
     return res.json({
       success: true,
+      storageMode,
       metrics: {
-        totalGenerated,
-        totalWon,
-        totalLost,
-        totalPending,
-        totalVoid,
-        winRate,
-        avgOdds,
-        netYieldUnits,
-        yieldPercent
+        totalGenerated: stats.overall.total,
+        totalWon: stats.overall.won,
+        totalLost: stats.overall.lost,
+        totalPending: stats.overall.pending,
+        totalVoid: stats.overall.voidCount,
+        winRate: stats.overall.winRate,
+        avgOdds: stats.overall.avgOdds,
+        netYieldUnits: stats.overall.netYieldUnits,
+        yieldPercent: stats.overall.yieldPercent,
+        legWinRate: stats.overall.legWinRate,
+        legTotal: stats.overall.legTotal,
+        legWon: stats.overall.legWon,
+        legLost: stats.overall.legLost,
+        legVoid: stats.overall.legVoid
       },
-      slips: store.slips
+      weeklyStats: stats.byWeek,
+      monthlyStats: stats.byMonth,
+      profileStats: stats.byProfile,
+      legMarketStats: stats.byLegMarket,
+      slips
     });
   } catch (err) {
     return res.status(500).json({
@@ -10814,7 +11860,6 @@ app.post("/api/parlays/generate-day", async (req, res) => {
   }
   clearAuthFailures(req);
   try {
-    const store = await loadSmartParlaysStore(true);
     const todayStr = getColombiaDateStr(0);
     const { fixtures: incomingFixtures, nbaFixtures: incomingNBAFixtures, force = true } = req.body || {};
     let candidateFixtures = [];
@@ -10853,16 +11898,27 @@ app.post("/api/parlays/generate-day", async (req, res) => {
         error: "No se encontraron combinaciones que cumplan los filtros cuantitativos de cuota y +EV para los partidos de hoy."
       });
     }
-    if (force) {
-      store.slips = store.slips.filter((s) => s.date !== todayStr);
-    }
-    store.slips.unshift(...generated);
-    await saveSmartParlaysStore(store);
+    const now = Date.now();
+    const weekKey = getIsoWeekKey(todayStr);
+    generated = generated.map((s) => ({
+      ...s,
+      weekKey: s.weekKey || weekKey,
+      effectiveOdds: s.effectiveOdds ?? s.totalOdds,
+      createdAt: s.createdAt || now
+    }));
+    await upsertParlayHistory(generated, force ? todayStr : void 0);
+    const { slips, storageMode } = await loadParlayHistory(35);
+    const stats = computeParlayEfficiencyStats(slips);
     return res.json({
       success: true,
+      storageMode,
       message: `Se generaron exitosamente ${generated.length} parlays reales para la jornada de hoy (${todayStr}) \xB7 motor ${PARLAY_ENGINE_VERSION}.`,
       generatedCount: generated.length,
-      slips: store.slips
+      slips,
+      weeklyStats: stats.byWeek,
+      monthlyStats: stats.byMonth,
+      profileStats: stats.byProfile,
+      legMarketStats: stats.byLegMarket
     });
   } catch (err) {
     return res.status(500).json({
@@ -10901,6 +11957,117 @@ app.post("/api/parlays/purge-seeds", async (req, res) => {
       error: "Error al purgar boletos semilla",
       details: err instanceof Error ? err.message : String(err)
     });
+  }
+});
+app.post("/api/admin/singles/seal", dataRateLimitMiddleware, async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado." });
+  }
+  clearAuthFailures(req);
+  try {
+    const rawList = Array.isArray(req.body?.singles) ? req.body.singles.slice(0, 30) : [];
+    const todayStr = getColombiaDateStr(0);
+    const now = Date.now();
+    const valid = [];
+    for (const item of rawList) {
+      if (!item || typeof item !== "object") continue;
+      const fixtureId = sanitizeText(String(item.fixtureId || ""), 60);
+      const marketKey = sanitizeText(String(item.marketKey || ""), 40);
+      const selectionLabel = sanitizeText(String(item.selectionLabel || ""), 120);
+      const matchTitle = sanitizeText(String(item.matchTitle || ""), 120);
+      const prob = Number(item.probability);
+      const odd = Number(item.estimatedBookieOdd);
+      if (!fixtureId || !marketKey || !selectionLabel || !matchTitle) continue;
+      if (!isFinite(prob) || prob < 20 || prob > 99) continue;
+      if (!isFinite(odd) || odd < 1.05 || odd > 25) continue;
+      const matchDate = /^\d{4}-\d{2}-\d{2}$/.test(String(item.matchDate || "")) ? String(item.matchDate) : todayStr;
+      const espnEventId = item.espnEventId ? sanitizeText(String(item.espnEventId), 40) : normalizeMatchId(fixtureId);
+      const betType = item.betType === "HIGH_VALUE" ? "HIGH_VALUE" : "BANKER";
+      const sport = item.sport === "NBA" ? "NBA" : "SOCCER";
+      const singleObj = {
+        id: "",
+        fixtureId,
+        espnEventId,
+        sport,
+        matchTitle,
+        homeTeamName: sanitizeText(String(item.homeTeamName || ""), 70),
+        awayTeamName: sanitizeText(String(item.awayTeamName || ""), 70),
+        leagueName: sanitizeText(String(item.leagueName || ""), 70),
+        matchDate,
+        matchTime: sanitizeText(String(item.matchTime || ""), 15),
+        weekKey: getIsoWeekKey(matchDate),
+        marketKey,
+        selectionLabel,
+        categoryLabel: sanitizeText(String(item.categoryLabel || ""), 60),
+        betType,
+        probability: Number(prob.toFixed(1)),
+        fairMinOdd: Number(Math.max(1.01, Number(item.fairMinOdd || 100 / prob)).toFixed(2)),
+        estimatedBookieOdd: Number(odd.toFixed(2)),
+        valueEdgePct: Number(Number(item.valueEdgePct || 0).toFixed(1)),
+        recommendedKellyStakePct: Number(Number(item.recommendedKellyStakePct || 2.5).toFixed(1)),
+        reasoning: "",
+        tacticalFactor: "",
+        status: "PENDING",
+        createdAt: now
+      };
+      singleObj.id = buildCanonicalSingleId(singleObj);
+      valid.push(singleObj);
+    }
+    const sealed = await sealSinglesHistory(valid);
+    return res.json({ success: true, sealed });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al sellar apuestas sencillas" });
+  }
+});
+app.get("/api/admin/singles/metrics", dataRateLimitMiddleware, async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado." });
+  }
+  clearAuthFailures(req);
+  try {
+    const forceRefresh = req.query.refresh === "true";
+    await auditPendingParlaysAndSingles([], [], forceRefresh);
+    const { singles, storageMode } = await loadSinglesHistory(35);
+    const stats = computeSinglesEfficiencyStats(singles);
+    return res.json({
+      success: true,
+      storageMode,
+      singles,
+      metrics: stats.overall,
+      weeklyStats: stats.byWeek,
+      monthlyStats: stats.byMonth,
+      byType: stats.byType,
+      bySport: stats.bySport,
+      byMarket: stats.byMarket
+    });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al consultar m\xE9tricas de apuestas sencillas" });
+  }
+});
+app.post("/api/admin/parlays-singles/purge", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado." });
+  }
+  clearAuthFailures(req);
+  try {
+    const rawDays = req.body?.maxDays;
+    const maxDays = rawDays === 0 ? 0 : Math.max(0, parseInt(String(rawDays ?? "30"), 10) || 30);
+    const result = await purgeOldParlaysAndSingles(maxDays);
+    return res.json({ success: true, ...result });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al purgar historial de parlays y sencillas" });
   }
 });
 var ADMIN_USER_FEEDBACK_CACHE_KEY = "__admin_user_feedback_v1__";

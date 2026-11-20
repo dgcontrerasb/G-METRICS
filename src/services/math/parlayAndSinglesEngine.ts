@@ -479,6 +479,7 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
       });
       singles.push({
         ...item,
+        espnEventId: item.espnEventId || fixture.espnEventId || String(fixture.id),
         bayesianLcb: bayes.lowerCredibleBound
       });
     };

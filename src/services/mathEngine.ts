@@ -21,6 +21,7 @@ import {
   SmartParlaySlip
 } from '../types';
 import { getSoccerLineupData, resolveTeamStarPlayerName } from './lineupService';
+import { getIsoWeekKey, UNVERIFIABLE_PARLAY_CATEGORIES } from './parlaySinglesLedger';
 import {
   extractNBABettingMarketSuggestions,
   generateGMetricsNBABankerPicks
@@ -1103,7 +1104,8 @@ export function extractMatchBettingMarketSuggestions(
         odds,
         impliedProb,
         expectedValue,
-        availableInColombianBooks: true
+        availableInColombianBooks: true,
+        espnEventId: fixture.espnEventId || String(fixture.id)
       });
     }
   };
@@ -1319,7 +1321,9 @@ export function generateSmartParlays(
     const cKey = getCanonicalMatchKey(match.homeTeam.name, match.awayTeam.name);
     if (!cKey || cKey === '|') continue;
     if (!matchCandidatesMap.has(cKey)) {
-      const suggestions = extractMatchBettingMarketSuggestions(match);
+      const suggestions = extractMatchBettingMarketSuggestions(match).filter(
+        (s) => !UNVERIFIABLE_PARLAY_CATEGORIES.has(String(s.category))
+      );
       if (suggestions.length > 0) {
         matchCandidatesMap.set(cKey, { fixture: match, suggestions });
       }
@@ -1332,7 +1336,9 @@ export function generateSmartParlays(
     const cKey = getCanonicalMatchKey(nbaMatch.homeTeam.name, nbaMatch.awayTeam.name);
     if (!cKey || cKey === '|') continue;
     if (!matchCandidatesMap.has(cKey)) {
-      const nbaSuggestions = extractNBABettingMarketSuggestions(nbaMatch);
+      const nbaSuggestions = extractNBABettingMarketSuggestions(nbaMatch).filter(
+        (s) => !UNVERIFIABLE_PARLAY_CATEGORIES.has(String(s.category))
+      );
       if (nbaSuggestions.length > 0) {
         matchCandidatesMap.set(cKey, { fixture: nbaMatch, suggestions: nbaSuggestions });
       }
@@ -1528,11 +1534,14 @@ export function generateSmartParlays(
     return {
       id: `smart_parlay_${profile.toLowerCase()}_${todayStr.replace(/-/g, '')}_${Math.random().toString(36).substring(2, 7)}`,
       date: todayStr,
+      weekKey: getIsoWeekKey(todayStr),
       profile,
       legs: finalCombo,
       totalOdds,
+      effectiveOdds: totalOdds,
       status: 'PENDING',
-      engineVersion: PARLAY_ENGINE_VERSION
+      engineVersion: PARLAY_ENGINE_VERSION,
+      createdAt: Date.now()
     };
   };
 

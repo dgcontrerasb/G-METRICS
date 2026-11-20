@@ -37,10 +37,27 @@ import {
   fetchPendingPickLedger,
   settlePickLedgerRow,
   fetchPickLedgerForStats,
-  purgeOldPickLedgerRows
+  purgeOldPickLedgerRows,
+  loadParlayHistory,
+  upsertParlayHistory,
+  loadSinglesHistory,
+  sealSinglesHistory,
+  updateSinglesSettlement,
+  purgeOldParlaysAndSingles,
+  buildCanonicalSingleId
 } from './src/services/supabaseServer';
 import { validateLedgerPickShape, settleLedgerPick, computeLedgerMarketStats, LEDGER_MAX_SOCCER_PICKS_PER_MATCH } from './src/services/pickLedger';
-import { SmartParlaySlip, BettingMarketSuggestion } from './src/types';
+import {
+  NormalizedFinishedMatch,
+  normalizeMatchId,
+  getIsoWeekKey,
+  findMatchingFinishedMatch,
+  evaluatePickAgainstFinishedMatch,
+  recomputeParlaySlipSettlement,
+  computeParlayEfficiencyStats,
+  computeSinglesEfficiencyStats
+} from './src/services/parlaySinglesLedger';
+import { SmartParlaySlip, BettingMarketSuggestion, GMetricsSingleBetSuggestion } from './src/types';
 import { generateSmartParlays, PARLAY_ENGINE_VERSION, getCanonicalPickSignature } from './src/services/mathEngine';
 import { fetchWithStrictTimeout } from './src/services/resilientFetch';
 import {
@@ -2541,13 +2558,13 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
       const payload = { fixtures: results, nbaEvents: nbaFinishedEvents };
       if (results.length > 0 || nbaFinishedEvents.length > 0) {
         setCacheItem(auditCacheKey, payload);
-        auditPendingSmartParlaysWithFinishedMatches(results, nbaFinishedEvents).catch(() => {});
+        auditPendingParlaysAndSingles(results, nbaFinishedEvents, false).catch(() => {});
       }
       return payload;
     });
 
     if (auditPayload) {
-      auditPendingSmartParlaysWithFinishedMatches(auditPayload.fixtures || [], auditPayload.nbaEvents || []).catch(() => {});
+      auditPendingParlaysAndSingles(auditPayload.fixtures || [], auditPayload.nbaEvents || [], false).catch(() => {});
       settlePickLedgerWithFinished(auditPayload.fixtures || [], auditPayload.nbaEvents || []).catch(() => {});
     }
     return res.json({
@@ -5000,16 +5017,14 @@ async function loadSmartParlaysStore(forceRemote = false): Promise<SmartParlaysS
   }
 
   if (loadedStore) {
-    // FILTRADO ESTRICTO ANTI-MOCK: Remover permanentemente boletos semillas hardcodeados
-    // y boletos PENDIENTES generados por versiones anteriores del motor (los resueltos se conservan).
+    // FILTRADO ESTRICTO ANTI-MOCK: Remover boletos semillas hardcodeados (conservar pendientes de versiones previas)
     const cleanSlips = loadedStore.slips.filter(
       (s) =>
         s &&
         s.id &&
         !s.id.includes('seed') &&
         !s.id.includes('_seed_') &&
-        !s.legs?.some((l: any) => String(l.fixtureId || '').startsWith('seed_')) &&
-        !(s.status === 'PENDING' && s.engineVersion !== PARLAY_ENGINE_VERSION)
+        !s.legs?.some((l: any) => String(l.fixtureId || '').startsWith('seed_'))
     );
     if (cleanSlips.length !== loadedStore.slips.length) {
       loadedStore.slips = cleanSlips;
@@ -5049,284 +5064,392 @@ async function saveSmartParlaysStore(store: SmartParlaysStore): Promise<void> {
   }
 }
 
-function evaluateLegResult(leg: BettingMarketSuggestion, finishedMatch: any): 'WON' | 'LOST' | 'VOID' | 'PENDING' {
-  if (!finishedMatch) return 'PENDING';
+function normalizeSoccerItemToFinished(f: any): NormalizedFinishedMatch | null {
+  if (!f) return null;
+  const id = String(f?.espnEventId || f?.fixture?.id || '');
+  if (!id) return null;
+  const hName = String(f?.teams?.home?.name || '');
+  const aName = String(f?.teams?.away?.name || '');
+  if (!hName || !aName) return null;
 
-  const homeGoals = Number(finishedMatch.goals?.home ?? finishedMatch.currentScore?.home ?? 0);
-  const awayGoals = Number(finishedMatch.goals?.away ?? finishedMatch.currentScore?.away ?? 0);
-  const totalGoals = homeGoals + awayGoals;
+  const hGoals = Number(f?.goals?.home ?? f?.currentScore?.home ?? 0);
+  const aGoals = Number(f?.goals?.away ?? f?.currentScore?.away ?? 0);
+  const hs = f?.liveStats?.home;
+  const as = f?.liveStats?.away;
+  const totalCorners = hs && as ? Number(hs.corners || 0) + Number(as.corners || 0) : null;
+  const totalYellows = hs && as ? Number(hs.yellowCards || 0) + Number(as.yellowCards || 0) : null;
+  const totalReds = hs && as ? Number(hs.redCards || 0) + Number(as.redCards || 0) : null;
+  const totalShots = hs && as ? Number(hs.shots || 0) + Number(as.shots || 0) : 0;
+  const hasStatsTelemetry = Boolean(
+    hs && as && (totalCorners! > 0 || (totalYellows || 0) + (totalReds || 0) > 0 || totalShots > 0)
+  );
 
-  const homeCorners = Number(finishedMatch.liveStats?.home?.corners ?? 0);
-  const awayCorners = Number(finishedMatch.liveStats?.away?.corners ?? 0);
-  const totalCorners = homeCorners + awayCorners;
-
-  const cat = String(leg.category);
-  const label = leg.label.toLowerCase();
-
-  switch (cat) {
-    case '1X2':
-    case 'ONE_X_TWO': {
-      if (label.includes('(1)') || label.includes('gana ' + (finishedMatch.teams?.home?.name || '').toLowerCase())) {
-        return homeGoals > awayGoals ? 'WON' : 'LOST';
-      }
-      if (label.includes('(2)') || label.includes('gana ' + (finishedMatch.teams?.away?.name || '').toLowerCase())) {
-        return awayGoals > homeGoals ? 'WON' : 'LOST';
-      }
-      if (label.includes('(x)') || label.includes('empate')) {
-        return homeGoals === awayGoals ? 'WON' : 'LOST';
-      }
-      return 'LOST';
-    }
-
-    case 'DOUBLE_CHANCE': {
-      if (label.includes('1x') || label.includes('local o empate')) {
-        return homeGoals >= awayGoals ? 'WON' : 'LOST';
-      }
-      if (label.includes('x2') || label.includes('empate o') || label.includes('o empate')) {
-        return awayGoals >= homeGoals ? 'WON' : 'LOST';
-      }
-      if (label.includes('12') || label.includes('cualquiera gana')) {
-        return homeGoals !== awayGoals ? 'WON' : 'LOST';
-      }
-      return 'LOST';
-    }
-
-    case 'TOTAL_GOALS': {
-      if (label.includes('1.5')) {
-        return label.includes('más') || label.includes('over') ? (totalGoals > 1.5 ? 'WON' : 'LOST') : (totalGoals < 1.5 ? 'WON' : 'LOST');
-      }
-      if (label.includes('2.5')) {
-        return label.includes('más') || label.includes('over') ? (totalGoals > 2.5 ? 'WON' : 'LOST') : (totalGoals < 2.5 ? 'WON' : 'LOST');
-      }
-      return totalGoals > 1.5 ? 'WON' : 'LOST';
-    }
-
-    case 'BTTS': {
-      const bttsHit = homeGoals > 0 && awayGoals > 0;
-      if (label.includes('sí') || label.includes('si') || label.includes('yes')) {
-        return bttsHit ? 'WON' : 'LOST';
-      }
-      if (label.includes('no')) {
-        return !bttsHit ? 'WON' : 'LOST';
-      }
-      return 'LOST';
-    }
-
-    case 'TOTAL_CORNERS_MATCH': {
-      if (label.includes('7.5')) {
-        return totalCorners > 7.5 ? 'WON' : 'LOST';
-      }
-      if (label.includes('8.5')) {
-        return totalCorners > 8.5 ? 'WON' : 'LOST';
-      }
-      if (label.includes('9.5')) {
-        return totalCorners > 9.5 ? 'WON' : 'LOST';
-      }
-      if (label.includes('10.5')) {
-        return label.includes('menos') ? (totalCorners < 10.5 ? 'WON' : 'LOST') : (totalCorners > 10.5 ? 'WON' : 'LOST');
-      }
-      return totalCorners > 8.5 ? 'WON' : 'LOST';
-    }
-
-    case 'TOTAL_CARDS': {
-      const homeYellows = Number(finishedMatch.liveStats?.home?.yellowCards ?? 0);
-      const awayYellows = Number(finishedMatch.liveStats?.away?.yellowCards ?? 0);
-      const totalCards = homeYellows + awayYellows;
-      if (label.includes('3.5')) {
-        return label.includes('más') || label.includes('over') ? (totalCards > 3.5 ? 'WON' : 'LOST') : (totalCards < 3.5 ? 'WON' : 'LOST');
-      }
-      if (label.includes('4.5')) {
-        return label.includes('más') || label.includes('over') ? (totalCards > 4.5 ? 'WON' : 'LOST') : (totalCards < 4.5 ? 'WON' : 'LOST');
-      }
-      if (label.includes('5.5')) {
-        return label.includes('menos') ? (totalCards < 5.5 ? 'WON' : 'LOST') : (totalCards > 5.5 ? 'WON' : 'LOST');
-      }
-      return totalCards > 3.5 ? 'WON' : 'LOST';
-    }
-
-    case 'PLAYER_SHOTS_ON_TARGET': {
-      // Boxscore de tiros individuales de fútbol: si no está disponible en tiempo real, permanece PENDING hasta auditoría final
-      return 'PENDING';
-    }
-
-    case 'HALF_WITH_MOST_GOALS': {
-      if (label.includes('2.ª mitad') || label.includes('2ª mitad') || label.includes('segunda mitad')) {
-        if (label.includes('0.5')) {
-          const events = Array.isArray(finishedMatch.events || finishedMatch.liveEvents) ? (finishedMatch.events || finishedMatch.liveEvents) : [];
-          const secondHalfGoals = events.filter((e: any) => e.type === 'GOAL' && Number(e.minute) > 45).length;
-          if (secondHalfGoals > 0) return 'WON';
-          if (finishedMatch.status === 'FINISHED' || finishedMatch.statusShort === 'FT') {
-            return 'LOST';
-          }
-          return 'PENDING';
-        }
-      }
-      return 'PENDING';
-    }
-
-    case 'DRAW_NO_BET': {
-      if (homeGoals === awayGoals) {
-        return 'VOID';
-      }
-      if (label.includes('local') || label.includes(String(finishedMatch.teams?.home?.name || '').toLowerCase())) {
-        return homeGoals > awayGoals ? 'WON' : 'LOST';
-      }
-      return awayGoals > homeGoals ? 'WON' : 'LOST';
-    }
-
-    case 'NBA_TOTAL_POINTS': {
-      const isPlayerProp = label.includes(':') || label.includes('triples');
-      if (isPlayerProp) {
-        // Player props individuales requieren boxscore granular por jugador. Si no está disponible, permanece PENDING.
-        return 'PENDING';
-      }
-      const matchLine = label.match(/(\d+(?:\.\d+)?)/);
-      const line = matchLine ? parseFloat(matchLine[1]) : 0;
-      if (line > 0) {
-        const totalPoints = homeGoals + awayGoals;
-        if (label.includes('más') || label.includes('over')) {
-          return totalPoints > line ? 'WON' : 'LOST';
-        }
-        if (label.includes('menos') || label.includes('under')) {
-          return totalPoints < line ? 'WON' : 'LOST';
-        }
-      }
-      return 'PENDING';
-    }
-
-    case 'NBA_PLAYER_POINTS':
-    case 'NBA_PLAYER_THREES': {
-      // Player props de puntos y triples de la NBA permanecen PENDING hasta auditar boxscore final
-      return 'PENDING';
-    }
-
-    case 'NBA_MONEYLINE': {
-      const hName = String(finishedMatch.teams?.home?.name || '').toLowerCase();
-      const aName = String(finishedMatch.teams?.away?.name || '').toLowerCase();
-      if (hName && label.includes(hName.split(' ')[0])) {
-        return homeGoals > awayGoals ? 'WON' : 'LOST';
-      }
-      if (aName && label.includes(aName.split(' ')[0])) {
-        return awayGoals > homeGoals ? 'WON' : 'LOST';
-      }
-      return 'PENDING';
-    }
-
-    case 'NBA_SPREAD': {
-      const matchSpread = label.match(/([+-]?\d+(?:\.\d+)?)/);
-      const spreadVal = matchSpread ? parseFloat(matchSpread[1]) : 0;
-      const hName = String(finishedMatch.teams?.home?.name || '').toLowerCase();
-      const aName = String(finishedMatch.teams?.away?.name || '').toLowerCase();
-      if (hName && label.includes(hName.split(' ')[0])) {
-        return (homeGoals + spreadVal) > awayGoals ? 'WON' : 'LOST';
-      }
-      if (aName && label.includes(aName.split(' ')[0])) {
-        return (awayGoals + spreadVal) > homeGoals ? 'WON' : 'LOST';
-      }
-      return 'PENDING';
-    }
-
-    default:
-      return 'PENDING';
+  const events = Array.isArray(f?.liveEvents) ? f.liveEvents : Array.isArray(f?.events) ? f.events : [];
+  const goalEvents = events.filter((e: any) => e?.type === 'GOAL');
+  const totGoals = hGoals + aGoals;
+  let firstHalfGoals: number | null = null;
+  let secondHalfGoals: number | null = null;
+  let hasEventsTelemetry = false;
+  if (totGoals === 0) {
+    firstHalfGoals = 0;
+    secondHalfGoals = 0;
+    hasEventsTelemetry = true;
+  } else if (goalEvents.length > 0) {
+    firstHalfGoals = goalEvents.filter((e: any) => Number(e.minute || 0) <= 45).length;
+    secondHalfGoals = goalEvents.filter((e: any) => Number(e.minute || 0) > 45).length;
+    hasEventsTelemetry = true;
   }
+
+  const rawTs = f?.fixture?.timestamp ? Number(f.fixture.timestamp) * 1000 : Date.parse(String(f?.fixture?.date || ''));
+  const finishedAtMs = isFinite(rawTs) && rawTs > 0 ? rawTs + 115 * 60_000 : undefined;
+  const dateStr = f?.fixture?.date ? String(f.fixture.date).slice(0, 10) : undefined;
+
+  return {
+    id,
+    espnEventId: String(f?.espnEventId || id),
+    sport: 'SOCCER',
+    homeName: hName,
+    awayName: aName,
+    homeScore: hGoals,
+    awayScore: aGoals,
+    corners: totalCorners,
+    yellowCards: totalYellows,
+    redCards: totalReds,
+    hasStatsTelemetry,
+    firstHalfGoals,
+    secondHalfGoals,
+    hasEventsTelemetry,
+    finishedAtMs,
+    dateStr
+  };
 }
 
-async function auditPendingSmartParlaysWithFinishedMatches(
-  finishedFixtures: any[],
-  finishedNBAEvents: any[] = []
-): Promise<void> {
-  const normFixtures = Array.isArray(finishedFixtures) ? finishedFixtures : [];
-  const normNBA = (Array.isArray(finishedNBAEvents) ? finishedNBAEvents : []).map((bev) => {
-    if (!bev) return null;
-    const comp = bev.competitions?.[0];
-    const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
-    const homeComp = competitors.find((c: any) => c.homeAway === 'home') || competitors[0];
-    const awayComp = competitors.find((c: any) => c.homeAway === 'away') || competitors[1];
-    const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || '');
-    const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || '');
-    const homeScore = parseInt(String(homeComp?.score ?? '0'), 10) || 0;
-    const awayScore = parseInt(String(awayComp?.score ?? '0'), 10) || 0;
-    return {
-      id: String(bev.id || ''),
-      espnEventId: String(bev.id || ''),
-      sport: 'NBA',
-      teams: {
-        home: { name: homeName },
-        away: { name: awayName }
-      },
-      goals: {
-        home: homeScore,
-        away: awayScore
-      },
-      currentScore: {
-        home: homeScore,
-        away: awayScore
-      },
-      status: 'FINISHED',
-      rawEvent: bev
-    };
-  }).filter(Boolean);
+function normalizeBasketballEventToFinished(bev: any): NormalizedFinishedMatch | null {
+  if (!bev) return null;
+  const state = String(bev?.status?.type?.state || '').toLowerCase();
+  const desc = String(bev?.status?.type?.description || '').toLowerCase();
+  if (state !== 'post' && bev?.status?.type?.completed !== true && !desc.includes('final')) {
+    return null;
+  }
+  const comp = bev?.competitions?.[0];
+  const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
+  const homeComp = competitors.find((c: any) => c.homeAway === 'home') || competitors[0];
+  const awayComp = competitors.find((c: any) => c.homeAway === 'away') || competitors[1];
+  const homeName = String(homeComp?.team?.displayName || homeComp?.team?.name || '');
+  const awayName = String(awayComp?.team?.displayName || awayComp?.team?.name || '');
+  if (!homeName || !awayName) return null;
+  const hp = parseInt(String(homeComp?.score ?? ''), 10);
+  const ap = parseInt(String(awayComp?.score ?? ''), 10);
+  if (isNaN(hp) || isNaN(ap) || hp + ap < 70) return null;
 
-  const allFinished = [...normFixtures, ...normNBA];
-  if (allFinished.length === 0) return;
+  const rawTs = Date.parse(String(bev?.date || ''));
+  const finishedAtMs = isFinite(rawTs) && rawTs > 0 ? rawTs + 135 * 60_000 : undefined;
 
-  const store = await loadSmartParlaysStore();
-  const pendingSlips = store.slips.filter((s) => s.status === 'PENDING');
-  if (pendingSlips.length === 0) return;
+  return {
+    id: String(bev.id || ''),
+    espnEventId: String(bev.id || ''),
+    sport: 'NBA',
+    homeName,
+    awayName,
+    homeScore: hp,
+    awayScore: ap,
+    corners: null,
+    yellowCards: null,
+    redCards: null,
+    hasStatsTelemetry: false,
+    firstHalfGoals: null,
+    secondHalfGoals: null,
+    hasEventsTelemetry: false,
+    finishedAtMs,
+    dateStr: bev?._auditDateStr || (bev?.date ? String(bev.date).slice(0, 10) : undefined)
+  };
+}
 
-  let modified = false;
+async function fetchFinishedMatchesForDates(
+  dates: string[],
+  includeExtraBasketball: boolean,
+  pendingTelemetryTargets: Array<{ fixtureId?: string; espnEventId?: string; matchName: string }>
+): Promise<NormalizedFinishedMatch[]> {
+  const uniqueDates = Array.from(new Set(dates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))).slice(0, 6);
+  if (uniqueDates.length === 0) return [];
 
-  for (const slip of pendingSlips) {
-    let hasLoss = false;
-    let pendingCount = 0;
-    let wonCount = 0;
-    let voidCount = 0;
+  const pool: NormalizedFinishedMatch[] = [];
+  const soccerNeedEnrich: Array<{ item: any; norm: NormalizedFinishedMatch }> = [];
+  const SETTLE_TTL = 10 * 60 * 1000;
 
-    for (const leg of slip.legs) {
-      const matchedFixture = allFinished.find((f: any) => {
-        if (!f) return false;
-        if (String(f.id) === String(leg.fixtureId) || String(f.espnEventId) === String(leg.fixtureId)) return true;
-        const hName = String(f.teams?.home?.name || '').toLowerCase();
-        const aName = String(f.teams?.away?.name || '').toLowerCase();
-        const lMatch = leg.matchName.toLowerCase();
-        return hName && aName && lMatch.includes(hName.split(' ')[0]) && lMatch.includes(aName.split(' ')[0]);
-      });
+  for (const dStr of uniqueDates) {
+    const espnDate = dStr.replace(/-/g, '');
 
-      if (!matchedFixture) {
-        pendingCount++;
-        continue;
-      }
-
-      const legRes = evaluateLegResult(leg, matchedFixture);
-      if (legRes === 'LOST') {
-        hasLoss = true;
-        break;
-      } else if (legRes === 'WON') {
-        wonCount++;
-      } else if (legRes === 'VOID') {
-        voidCount++;
-      } else {
-        pendingCount++;
+    // 1. Fútbol (reutiliza caché por fecha, costo $0)
+    const sCacheKey = `settlement_soccer_v1_${espnDate}`;
+    let sEventsRaw = getCacheItem<any[]>(sCacheKey);
+    if (!sEventsRaw || Date.now() - sEventsRaw.timestamp > SETTLE_TTL) {
+      try {
+        const fetched = await runSingleFlight(sCacheKey, async () => {
+          const sbRes = await fetchWithStrictTimeout(
+            `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${espnDate}&limit=300`,
+            { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FutbolStatsPro/3.0' }, timeoutMs: 5000 }
+          );
+          if (!sbRes.ok) return [];
+          const sbData = await sbRes.json();
+          const evs = Array.isArray(sbData?.events) ? sbData.events : [];
+          const out: any[] = [];
+          for (const ev of evs) {
+            const st = String(ev?.status?.type?.state || '').toLowerCase();
+            if (st !== 'post' && ev?.status?.type?.completed !== true) continue;
+            const comp = ev?.competitions?.[0];
+            if (!comp) continue;
+            const competitors = Array.isArray(comp.competitors) ? comp.competitors : [];
+            const homeComp = competitors.find((c: any) => c.homeAway === 'home') || competitors[0];
+            const awayComp = competitors.find((c: any) => c.homeAway === 'away') || competitors[1];
+            if (!homeComp || !awayComp) continue;
+            const hName = String(homeComp?.team?.displayName || homeComp?.team?.name || 'Local');
+            const aName = String(awayComp?.team?.displayName || awayComp?.team?.name || 'Visitante');
+            const tel = extractEspnScoreboardTelemetry(ev, comp, homeComp, awayComp, hName, aName, 90, true);
+            out.push({
+              espnEventId: String(ev.id || ''),
+              liveStats: tel.liveStats,
+              liveEvents: tel.liveEvents,
+              fixture: { id: parseInt(String(ev.id || '0'), 10) || 0, date: ev.date, timestamp: Math.floor(new Date(ev.date).getTime() / 1000) },
+              teams: { home: { name: hName }, away: { name: aName } },
+              goals: { home: parseInt(String(homeComp?.score || '0'), 10) || 0, away: parseInt(String(awayComp?.score || '0'), 10) || 0 }
+            });
+          }
+          return out;
+        });
+        if (fetched.length > 0) setCacheItem(sCacheKey, fetched);
+        sEventsRaw = { timestamp: Date.now(), data: fetched };
+      } catch {
+        sEventsRaw = { timestamp: Date.now(), data: [] };
       }
     }
 
-    if (hasLoss) {
-      slip.status = 'LOST';
-      slip.evaluationDate = new Date().toISOString();
-      modified = true;
-    } else if (pendingCount === 0 && wonCount > 0) {
-      slip.status = 'WON';
-      slip.evaluationDate = new Date().toISOString();
-      modified = true;
-    } else if (pendingCount === 0 && voidCount === slip.legs.length) {
-      slip.status = 'VOID';
-      slip.evaluationDate = new Date().toISOString();
-      modified = true;
+    for (const rawItem of sEventsRaw.data || []) {
+      const norm = normalizeSoccerItemToFinished(rawItem);
+      if (norm) {
+        pool.push(norm);
+        if ((!norm.hasStatsTelemetry || !norm.hasEventsTelemetry) && pendingTelemetryTargets.length > 0) {
+          const hitTarget = findMatchingFinishedMatch(
+            { fixtureId: norm.id, espnEventId: norm.espnEventId, matchName: `${norm.homeName} vs ${norm.awayName}`, sport: 'SOCCER' },
+            [norm]
+          );
+          if (hitTarget && pendingTelemetryTargets.some((t) => findMatchingFinishedMatch({ ...t, sport: 'SOCCER' }, [norm]))) {
+            soccerNeedEnrich.push({ item: rawItem, norm });
+          }
+        }
+      }
+    }
+
+    // 2. Baloncesto (NBA siempre + NCAA/WNBA/FIBA solo si hay pendientes de esas ligas)
+    const bCacheKey = `settlement_bball_v1_${espnDate}_${includeExtraBasketball ? 'all' : 'nba'}`;
+    let bEventsRaw = getCacheItem<any[]>(bCacheKey);
+    if (!bEventsRaw || Date.now() - bEventsRaw.timestamp > SETTLE_TTL) {
+      const urls = [
+        `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${espnDate}`,
+        ...(includeExtraBasketball
+          ? [
+              `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?dates=${espnDate}&limit=60`,
+              `https://site.api.espn.com/apis/site/v2/sports/basketball/womens-college-basketball/scoreboard?dates=${espnDate}&limit=60`,
+              `https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard?dates=${espnDate}`,
+              `https://site.api.espn.com/apis/site/v2/sports/basketball/fiba/scoreboard?dates=${espnDate}`
+            ]
+          : [])
+      ];
+      try {
+        const fetchedB = await runSingleFlight(bCacheKey, async () => {
+          const collected: any[] = [];
+          const resps = await Promise.allSettled(
+            urls.map((u) =>
+              fetchWithStrictTimeout(u, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasketStats/2.0' },
+                timeoutMs: 4500
+              }).then((r) => (r.ok ? r.json() : null))
+            )
+          );
+          for (const r of resps) {
+            if (r.status === 'fulfilled' && Array.isArray(r.value?.events)) {
+              for (const ev of r.value.events) {
+                ev._auditDateStr = dStr;
+                collected.push(ev);
+              }
+            }
+          }
+          return collected;
+        });
+        if (fetchedB.length > 0) setCacheItem(bCacheKey, fetchedB);
+        bEventsRaw = { timestamp: Date.now(), data: fetchedB };
+      } catch {
+        bEventsRaw = { timestamp: Date.now(), data: [] };
+      }
+    }
+
+    for (const bev of bEventsRaw.data || []) {
+      const norm = normalizeBasketballEventToFinished(bev);
+      if (norm) pool.push(norm);
     }
   }
 
-  if (modified) {
-    await saveSmartParlaysStore(store);
+  // Enriquecer únicamente los partidos con pendientes de córners/tarjetas/mitades (máx 15 por ejecución)
+  if (soccerNeedEnrich.length > 0) {
+    await Promise.allSettled(
+      soccerNeedEnrich.slice(0, 15).map(async ({ item }) => {
+        try {
+          const enriched = await fetchEspnMatchSummaryTelemetry(
+            item.espnEventId,
+            item.teams.home.name,
+            item.teams.away.name,
+            90,
+            true,
+            { liveStats: item.liveStats, liveEvents: item.liveEvents || [] }
+          );
+          if (enriched?.liveStats) {
+            item.liveStats = enriched.liveStats;
+            item.liveEvents = enriched.liveEvents;
+            const refreshed = normalizeSoccerItemToFinished(item);
+            if (refreshed) {
+              const idx = pool.findIndex((p) => p.sport === 'SOCCER' && p.espnEventId === refreshed.espnEventId);
+              if (idx >= 0) pool[idx] = refreshed;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      })
+    );
+  }
+
+  return pool;
+}
+
+let lastParlaySinglesSettleAt = 0;
+let lastParlaySinglesPurgeAt = 0;
+
+async function auditPendingParlaysAndSingles(
+  extraFixtures: any[] = [],
+  extraNBAEvents: any[] = [],
+  forceCheck = false
+): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  const now = Date.now();
+  const isFullScan = extraFixtures.length === 0 && extraNBAEvents.length === 0;
+  const cooldown = forceCheck ? 45_000 : 3 * 60_000;
+  if (isFullScan && now - lastParlaySinglesSettleAt < cooldown) {
+    return;
+  }
+  if (isFullScan) {
+    lastParlaySinglesSettleAt = now;
+  }
+
+  try {
+    const [{ slips }, { singles }] = await Promise.all([loadParlayHistory(35), loadSinglesHistory(35)]);
+    const pendingSlips = slips.filter((s) => s.status === 'PENDING');
+    const pendingSingles = singles.filter((s) => !s.status || s.status === 'PENDING');
+
+    if (pendingSlips.length === 0 && pendingSingles.length === 0) {
+      if (now - lastParlaySinglesPurgeAt > 3600_000) {
+        lastParlaySinglesPurgeAt = now;
+        purgeOldParlaysAndSingles(35).catch(() => {});
+      }
+      return;
+    }
+
+    const pool: NormalizedFinishedMatch[] = [];
+    for (const f of extraFixtures || []) {
+      const n = normalizeSoccerItemToFinished(f);
+      if (n) pool.push(n);
+    }
+    for (const bev of extraNBAEvents || []) {
+      const n = normalizeBasketballEventToFinished(bev);
+      if (n) pool.push(n);
+    }
+
+    const neededDates = new Set<string>();
+    const pendingTelemetryTargets: Array<{ fixtureId?: string; espnEventId?: string; matchName: string }> = [];
+    let includeExtraBasketball = false;
+
+    for (const s of pendingSlips) {
+      if (s.date) neededDates.add(s.date);
+      for (const l of s.legs || []) {
+        const cat = String(l.category || '');
+        if (cat === 'TOTAL_CORNERS_MATCH' || cat === 'TOTAL_CARDS' || cat === 'HALF_WITH_MOST_GOALS') {
+          pendingTelemetryTargets.push({ fixtureId: l.fixtureId, espnEventId: l.espnEventId, matchName: l.matchName });
+        }
+        const isBball = l.sport === 'NBA' || String(l.fixtureId || '').startsWith('nba-espn-') || cat.startsWith('NBA_');
+        if (isBball && (l.leagueName || '').trim().toLowerCase() !== 'nba') {
+          includeExtraBasketball = true;
+        }
+      }
+    }
+    for (const sg of pendingSingles) {
+      if (sg.matchDate) neededDates.add(sg.matchDate);
+      if (sg.marketKey?.startsWith('CORNERS_')) {
+        pendingTelemetryTargets.push({ fixtureId: sg.fixtureId, espnEventId: sg.espnEventId, matchName: sg.matchTitle });
+      }
+      if (sg.sport === 'NBA' && (sg.leagueName || '').trim().toLowerCase() !== 'nba') {
+        includeExtraBasketball = true;
+      }
+    }
+
+    if (extraFixtures.length === 0 && extraNBAEvents.length === 0) {
+      const fetchedPool = await fetchFinishedMatchesForDates(
+        Array.from(neededDates).sort((a, b) => b.localeCompare(a)),
+        includeExtraBasketball,
+        pendingTelemetryTargets
+      );
+      pool.push(...fetchedPool);
+    }
+
+    if (pool.length > 0) {
+      const modifiedSlips: SmartParlaySlip[] = [];
+      for (const slip of pendingSlips) {
+        const { slip: updated, changed } = recomputeParlaySlipSettlement(slip, pool, now);
+        if (changed) modifiedSlips.push(updated);
+      }
+      if (modifiedSlips.length > 0) {
+        await upsertParlayHistory(modifiedSlips);
+      }
+
+      const singleUpdates: Array<{ id: string; status: 'WON' | 'LOST' | 'VOID'; actualResult: string; settledAt: number }> = [];
+      for (const sg of pendingSingles) {
+        const matched = findMatchingFinishedMatch(
+          {
+            fixtureId: sg.fixtureId,
+            espnEventId: sg.espnEventId,
+            matchName: sg.matchTitle,
+            homeTeamName: sg.homeTeamName,
+            awayTeamName: sg.awayTeamName,
+            sport: sg.sport
+          },
+          pool
+        );
+        if (!matched) continue;
+        const res = evaluatePickAgainstFinishedMatch(
+          {
+            marketKey: sg.marketKey,
+            label: sg.selectionLabel,
+            sport: sg.sport,
+            matchDate: sg.matchDate,
+            homeTeamName: sg.homeTeamName,
+            awayTeamName: sg.awayTeamName
+          },
+          matched,
+          now
+        );
+        if (res.status !== 'PENDING') {
+          singleUpdates.push({ id: sg.id, status: res.status, actualResult: res.actualResult, settledAt: now });
+        }
+      }
+      if (singleUpdates.length > 0) {
+        await updateSinglesSettlement(singleUpdates);
+      }
+    }
+
+    if (now - lastParlaySinglesPurgeAt > 3600_000) {
+      lastParlaySinglesPurgeAt = now;
+      purgeOldParlaysAndSingles(35).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[Settlement] Error auditando parlays/sencillas:', err);
   }
 }
 
@@ -5341,63 +5464,35 @@ app.get('/api/parlays/metrics', dataRateLimitMiddleware, async (req, res) => {
   }
   clearAuthFailures(req);
   try {
-    const store = await loadSmartParlaysStore();
-    const todayStr = getColombiaDateStr(0);
-
-    // Auto-generación para la fecha de hoy si aún no existen
-    const todaySlips = store.slips.filter((s) => s.date === todayStr);
-    if (todaySlips.length === 0) {
-      const sharedUpcoming =
-        getCacheItem<any[]>(`upcoming_v10_${todayStr}`) ||
-        getCacheItem<any[]>(`upcoming_v9_${todayStr}`) ||
-        getCacheItem<any[]>(`upcoming_v8_${todayStr}`);
-      const availableMatches = sharedUpcoming?.data || [];
-      if (availableMatches.length >= 2) {
-        const generated = generateSmartParlays(availableMatches, todayStr);
-        if (generated.length > 0) {
-          store.slips.unshift(...generated);
-          await saveSmartParlaysStore(store);
-        }
-      }
-    }
-
-    const totalGenerated = store.slips.length;
-    const totalWon = store.slips.filter((s) => s.status === 'WON').length;
-    const totalLost = store.slips.filter((s) => s.status === 'LOST').length;
-    const totalPending = store.slips.filter((s) => s.status === 'PENDING').length;
-    const totalVoid = store.slips.filter((s) => s.status === 'VOID').length;
-
-    const resolvedCount = totalWon + totalLost;
-    const winRate = resolvedCount > 0 ? Number(((totalWon / resolvedCount) * 100).toFixed(1)) : 0;
-    const avgOdds = totalGenerated > 0
-      ? Number((store.slips.reduce((acc, s) => acc + s.totalOdds, 0) / totalGenerated).toFixed(2))
-      : 0;
-
-    let netProfitUnits = 0;
-    for (const slip of store.slips) {
-      if (slip.status === 'WON') {
-        netProfitUnits += (slip.totalOdds - 1);
-      } else if (slip.status === 'LOST') {
-        netProfitUnits -= 1;
-      }
-    }
-    const netYieldUnits = Number(netProfitUnits.toFixed(2));
-    const yieldPercent = resolvedCount > 0 ? Number(((netProfitUnits / resolvedCount) * 100).toFixed(1)) : 0;
+    const forceRefresh = req.query.refresh === 'true';
+    await auditPendingParlaysAndSingles([], [], forceRefresh);
+    const { slips, storageMode } = await loadParlayHistory(35);
+    const stats = computeParlayEfficiencyStats(slips);
 
     return res.json({
       success: true,
+      storageMode,
       metrics: {
-        totalGenerated,
-        totalWon,
-        totalLost,
-        totalPending,
-        totalVoid,
-        winRate,
-        avgOdds,
-        netYieldUnits,
-        yieldPercent
+        totalGenerated: stats.overall.total,
+        totalWon: stats.overall.won,
+        totalLost: stats.overall.lost,
+        totalPending: stats.overall.pending,
+        totalVoid: stats.overall.voidCount,
+        winRate: stats.overall.winRate,
+        avgOdds: stats.overall.avgOdds,
+        netYieldUnits: stats.overall.netYieldUnits,
+        yieldPercent: stats.overall.yieldPercent,
+        legWinRate: stats.overall.legWinRate,
+        legTotal: stats.overall.legTotal,
+        legWon: stats.overall.legWon,
+        legLost: stats.overall.legLost,
+        legVoid: stats.overall.legVoid
       },
-      slips: store.slips
+      weeklyStats: stats.byWeek,
+      monthlyStats: stats.byMonth,
+      profileStats: stats.byProfile,
+      legMarketStats: stats.byLegMarket,
+      slips
     });
   } catch (err: unknown) {
     return res.status(500).json({
@@ -5420,7 +5515,6 @@ app.post('/api/parlays/generate-day', async (req, res) => {
   clearAuthFailures(req);
 
   try {
-    const store = await loadSmartParlaysStore(true);
     const todayStr = getColombiaDateStr(0);
     const { fixtures: incomingFixtures, nbaFixtures: incomingNBAFixtures, force = true } = req.body || {};
 
@@ -5446,10 +5540,8 @@ app.post('/api/parlays/generate-day', async (req, res) => {
       });
     }
 
-    // Con force=true se aplica variación ligera para que regenerar produzca combinaciones nuevas
     let generated = generateSmartParlays(candidateFixtures, todayStr, candidateNBAFixtures, force ? 1 : 0);
 
-    // Validación final estricta de cero duplicados cruzados
     {
       const seenPicks = new Set<string>();
       generated = generated.filter((slip) => {
@@ -5469,19 +5561,30 @@ app.post('/api/parlays/generate-day', async (req, res) => {
       });
     }
 
-    if (force) {
-      // Reemplazar únicamente los de la fecha de hoy
-      store.slips = store.slips.filter((s) => s.date !== todayStr);
-    }
+    const now = Date.now();
+    const weekKey = getIsoWeekKey(todayStr);
+    generated = generated.map((s) => ({
+      ...s,
+      weekKey: s.weekKey || weekKey,
+      effectiveOdds: s.effectiveOdds ?? s.totalOdds,
+      createdAt: s.createdAt || now
+    }));
 
-    store.slips.unshift(...generated);
-    await saveSmartParlaysStore(store);
+    // Al regenerar (force=true), reemplaza SOLO los PENDING de hoy; conserva cualquier boleto de hoy ya liquidado
+    await upsertParlayHistory(generated, force ? todayStr : undefined);
+    const { slips, storageMode } = await loadParlayHistory(35);
+    const stats = computeParlayEfficiencyStats(slips);
 
     return res.json({
       success: true,
+      storageMode,
       message: `Se generaron exitosamente ${generated.length} parlays reales para la jornada de hoy (${todayStr}) · motor ${PARLAY_ENGINE_VERSION}.`,
       generatedCount: generated.length,
-      slips: store.slips
+      slips,
+      weeklyStats: stats.byWeek,
+      monthlyStats: stats.byMonth,
+      profileStats: stats.byProfile,
+      legMarketStats: stats.byLegMarket
     });
   } catch (err: unknown) {
     return res.status(500).json({
@@ -5529,6 +5632,133 @@ app.post('/api/parlays/purge-seeds', async (req, res) => {
       error: 'Error al purgar boletos semilla',
       details: err instanceof Error ? err.message : String(err)
     });
+  }
+});
+
+// ============================================================================
+// APUESTAS SENCILLAS (+EV / BANKERS): SELLADO INMUTABLE, MÉTRICAS & PURGA
+// ============================================================================
+app.post('/api/admin/singles/seal', dataRateLimitMiddleware, async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: 'No autorizado.' });
+  }
+  clearAuthFailures(req);
+
+  try {
+    const rawList = Array.isArray(req.body?.singles) ? req.body.singles.slice(0, 30) : [];
+    const todayStr = getColombiaDateStr(0);
+    const now = Date.now();
+    const valid: GMetricsSingleBetSuggestion[] = [];
+
+    for (const item of rawList) {
+      if (!item || typeof item !== 'object') continue;
+      const fixtureId = sanitizeText(String(item.fixtureId || ''), 60);
+      const marketKey = sanitizeText(String(item.marketKey || ''), 40);
+      const selectionLabel = sanitizeText(String(item.selectionLabel || ''), 120);
+      const matchTitle = sanitizeText(String(item.matchTitle || ''), 120);
+      const prob = Number(item.probability);
+      const odd = Number(item.estimatedBookieOdd);
+      if (!fixtureId || !marketKey || !selectionLabel || !matchTitle) continue;
+      if (!isFinite(prob) || prob < 20 || prob > 99) continue;
+      if (!isFinite(odd) || odd < 1.05 || odd > 25) continue;
+
+      const matchDate = /^\d{4}-\d{2}-\d{2}$/.test(String(item.matchDate || ''))
+        ? String(item.matchDate)
+        : todayStr;
+      const espnEventId = item.espnEventId ? sanitizeText(String(item.espnEventId), 40) : normalizeMatchId(fixtureId);
+      const betType: 'HIGH_VALUE' | 'BANKER' = item.betType === 'HIGH_VALUE' ? 'HIGH_VALUE' : 'BANKER';
+      const sport: 'SOCCER' | 'NBA' = item.sport === 'NBA' ? 'NBA' : 'SOCCER';
+
+      const singleObj: GMetricsSingleBetSuggestion = {
+        id: '',
+        fixtureId,
+        espnEventId,
+        sport,
+        matchTitle,
+        homeTeamName: sanitizeText(String(item.homeTeamName || ''), 70),
+        awayTeamName: sanitizeText(String(item.awayTeamName || ''), 70),
+        leagueName: sanitizeText(String(item.leagueName || ''), 70),
+        matchDate,
+        matchTime: sanitizeText(String(item.matchTime || ''), 15),
+        weekKey: getIsoWeekKey(matchDate),
+        marketKey,
+        selectionLabel,
+        categoryLabel: sanitizeText(String(item.categoryLabel || ''), 60),
+        betType,
+        probability: Number(prob.toFixed(1)),
+        fairMinOdd: Number(Math.max(1.01, Number(item.fairMinOdd || 100 / prob)).toFixed(2)),
+        estimatedBookieOdd: Number(odd.toFixed(2)),
+        valueEdgePct: Number(Number(item.valueEdgePct || 0).toFixed(1)),
+        recommendedKellyStakePct: Number(Number(item.recommendedKellyStakePct || 2.5).toFixed(1)),
+        reasoning: '',
+        tacticalFactor: '',
+        status: 'PENDING',
+        createdAt: now
+      };
+      singleObj.id = buildCanonicalSingleId(singleObj);
+      valid.push(singleObj);
+    }
+
+    const sealed = await sealSinglesHistory(valid);
+    return res.json({ success: true, sealed });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Error al sellar apuestas sencillas' });
+  }
+});
+
+app.get('/api/admin/singles/metrics', dataRateLimitMiddleware, async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: 'No autorizado.' });
+  }
+  clearAuthFailures(req);
+
+  try {
+    const forceRefresh = req.query.refresh === 'true';
+    await auditPendingParlaysAndSingles([], [], forceRefresh);
+    const { singles, storageMode } = await loadSinglesHistory(35);
+    const stats = computeSinglesEfficiencyStats(singles);
+
+    return res.json({
+      success: true,
+      storageMode,
+      singles,
+      metrics: stats.overall,
+      weeklyStats: stats.byWeek,
+      monthlyStats: stats.byMonth,
+      byType: stats.byType,
+      bySport: stats.bySport,
+      byMarket: stats.byMarket
+    });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Error al consultar métricas de apuestas sencillas' });
+  }
+});
+
+app.post('/api/admin/parlays-singles/purge', async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: 'No autorizado.' });
+  }
+  clearAuthFailures(req);
+
+  try {
+    const rawDays = req.body?.maxDays;
+    const maxDays = rawDays === 0 ? 0 : Math.max(0, parseInt(String(rawDays ?? '30'), 10) || 30);
+    const result = await purgeOldParlaysAndSingles(maxDays);
+    return res.json({ success: true, ...result });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Error al purgar historial de parlays y sencillas' });
   }
 });
 
