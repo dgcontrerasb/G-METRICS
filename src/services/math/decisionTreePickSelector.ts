@@ -90,6 +90,20 @@ export function rankCandidatePicksByDecisionTree(
       if (closeMatchPercent >= 68) treeScore -= 8.5; // Penaliza si el partido es muy cerrado
       if (eloDiffAbs < 75) treeScore -= 6.0; // Penaliza si los equipos tienen fuerzas similares
       if (derbyOrRivalry) treeScore -= 7.5; // Penaliza fuertemente en clásicos por imprevisibilidad
+
+      // NODO 2b: Filtro de calibración para Victoria Visitante (históricamente ~30% de acierto salvo brecha abrumadora)
+      const isAwayPick = /visita|visitante/i.test(pick.label) || (!/local/i.test(pick.label) && eloDiffAbs < 110);
+      if (isAwayPick && eloDiffAbs < 120) {
+        treeScore -= 12.0; // Previene que la victoria visitante desplace a selecciones de mayor convicción (1X o +1.5 goles)
+      }
+    }
+
+    // NODO 2c: Calibración empírica para Ambos Equipos Anotan (BTTS)
+    if (pick.category === 'BTTS') {
+      // En ligas profesionales el BTTS natural es ~52%; no debe ser pick de alta convicción a menos que supere 74% de probabilidad pura
+      if (pick.probability < 74) {
+        treeScore -= 7.5;
+      }
     }
 
     // NODO 3: Bonificación de mercados tácticos inmunes al ganador en partidos tensos

@@ -1377,6 +1377,45 @@ async function adminDeleteAppUser(userId, username) {
   }
   return true;
 }
+var PICK_LEDGER_SQL = `
+CREATE TABLE IF NOT EXISTS gmetrics_pick_ledger (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  match_key TEXT NOT NULL,
+  sport TEXT NOT NULL,
+  league TEXT,
+  home TEXT,
+  away TEXT,
+  kickoff_ts BIGINT NOT NULL,
+  market_key TEXT NOT NULL,
+  line NUMERIC NOT NULL DEFAULT -1,
+  category TEXT,
+  label TEXT,
+  prob_model NUMERIC NOT NULL,
+  fair_odd NUMERIC,
+  book_odd NUMERIC,
+  rank INTEGER NOT NULL DEFAULT 1,
+  model_version TEXT,
+  source TEXT NOT NULL DEFAULT 'PRE',
+  sealed_at BIGINT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  settled_at BIGINT,
+  final_home INTEGER,
+  final_away INTEGER,
+  final_corners INTEGER,
+  final_cards INTEGER
+);
+-- Insert-only: un mismo pick de un mismo partido solo se sella UNA vez (el primero gana)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pick_ledger_pick ON gmetrics_pick_ledger(match_key, market_key, line, source);
+CREATE INDEX IF NOT EXISTS idx_pick_ledger_status ON gmetrics_pick_ledger(status, kickoff_ts);
+CREATE INDEX IF NOT EXISTS idx_pick_ledger_market ON gmetrics_pick_ledger(market_key, source);
+ALTER TABLE gmetrics_pick_ledger ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'gmetrics_pick_ledger' AND policyname = 'Allow server full access pick ledger') THEN
+    CREATE POLICY "Allow server full access pick ledger" ON gmetrics_pick_ledger FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+`;
 var SUPABASE_SQL_SCHEMA = `
 -- =========================================================================
 -- TABLAS OFICIALES PARA SPORTSTATS PRO EN SUPABASE (PostgreSQL)
@@ -1467,6 +1506,8 @@ BEGIN
     CREATE POLICY "Allow server full access feedback" ON sportstats_feedback FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
+
+${PICK_LEDGER_SQL}
 `;
 async function verifyOAuthIdentityToken(token, expectedEmail, client) {
   const cleanExpected = expectedEmail.toLowerCase().trim();
@@ -2123,6 +2164,261 @@ async function loadPermanentFeedbackList() {
   } catch {
   }
   return null;
+}
+async function sealPickLedgerRows(rows) {
+  const client = getSupabaseClient();
+  if (!client || rows.length === 0) return 0;
+  const now = Date.now();
+  const payload = rows.map((r) => ({
+    match_key: r.matchKey,
+    sport: r.sport,
+    league: r.league,
+    home: r.home,
+    away: r.away,
+    kickoff_ts: r.kickoffTs,
+    market_key: r.marketKey,
+    line: r.line ?? -1,
+    category: r.category,
+    label: r.label,
+    prob_model: r.probModel,
+    fair_odd: r.fairOdd,
+    rank: r.rank,
+    model_version: r.modelVersion,
+    source: "PRE",
+    sealed_at: now,
+    status: "PENDING"
+  }));
+  try {
+    const { error } = await client.from("gmetrics_pick_ledger").upsert(payload, { onConflict: "match_key,market_key,line,source", ignoreDuplicates: true });
+    if (error) {
+      console.warn("[PickLedger] seal error:", error.message);
+      return 0;
+    }
+    return payload.length;
+  } catch (err) {
+    console.warn("[PickLedger] seal exception:", err);
+    return 0;
+  }
+}
+async function fetchPendingPickLedger(minAgeMs = 3 * 36e5, limit = 800) {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  try {
+    const { data, error } = await client.from("gmetrics_pick_ledger").select("*").eq("status", "PENDING").lt("kickoff_ts", Date.now() - minAgeMs).order("kickoff_ts", { ascending: true }).limit(limit);
+    if (error || !data) return [];
+    return data;
+  } catch {
+    return [];
+  }
+}
+async function settlePickLedgerRow(id, status, fin) {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from("gmetrics_pick_ledger").update({
+      status,
+      settled_at: Date.now(),
+      final_home: fin.home,
+      final_away: fin.away,
+      final_corners: fin.corners ?? null,
+      final_cards: fin.cards ?? null
+    }).eq("id", id).eq("status", "PENDING");
+    return !error;
+  } catch {
+    return false;
+  }
+}
+async function fetchPickLedgerForStats(sinceMs, limit = 5e3) {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  try {
+    const { data, error } = await client.from("gmetrics_pick_ledger").select("market_key,status,prob_model,sport,rank,model_version").gte("sealed_at", sinceMs).order("id", { ascending: false }).limit(limit);
+    if (error || !data) return [];
+    return data;
+  } catch {
+    return [];
+  }
+}
+async function purgeOldPickLedgerRows(maxDays = 35) {
+  const client = getSupabaseClient();
+  if (!client) return 0;
+  const cutoffTs = Date.now() - maxDays * 864e5;
+  try {
+    const { count, error } = await client.from("gmetrics_pick_ledger").delete({ count: "exact" }).lt("kickoff_ts", cutoffTs);
+    if (error) {
+      console.warn("[PickLedger] purge error:", error.message);
+      return 0;
+    }
+    return count || 0;
+  } catch (err) {
+    console.warn("[PickLedger] purge exception:", err);
+    return 0;
+  }
+}
+
+// src/services/pickLedger.ts
+var LEDGER_MODEL_VERSION = "gm-2026-11-19a";
+var LEDGER_MAX_SOCCER_PICKS_PER_MATCH = 4;
+var FIXED_KEYS = [
+  "dc_1x",
+  "dc_x2",
+  "goals_over15",
+  "goals_under35",
+  "btts_yes",
+  "btts_no",
+  "win_home",
+  "win_away",
+  "corners_over",
+  "corners_under",
+  "cards_over",
+  "cards_under",
+  "nba_ml_home",
+  "nba_ml_away",
+  "nba_total_over",
+  "nba_total_under"
+];
+var LEDGER_MARKET_KEYS = new Set(FIXED_KEYS);
+var NEEDS_LINE = /* @__PURE__ */ new Set(["corners_over", "corners_under", "cards_over", "cards_under", "nba_total_over", "nba_total_under"]);
+var round1 = (n) => Math.round(n * 10) / 10;
+function validateLedgerPickShape(p, nowMs = Date.now()) {
+  if (!p || typeof p !== "object") return null;
+  const o = p;
+  const str = (v, max) => typeof v === "string" ? v.trim().slice(0, max) : "";
+  const matchKey = str(o.matchKey, 40);
+  if (!/^[SN]:\d{3,12}$/.test(matchKey)) return null;
+  const sport = matchKey.startsWith("N:") ? "NBA" : "SOCCER";
+  const marketKey = str(o.marketKey, 30);
+  if (!LEDGER_MARKET_KEYS.has(marketKey)) return null;
+  if (sport === "NBA" !== marketKey.startsWith("nba_")) return null;
+  const kickoffTs = Number(o.kickoffTs);
+  if (!isFinite(kickoffTs) || kickoffTs <= nowMs || kickoffTs > nowMs + 72 * 36e5) return null;
+  const prob = Number(o.probModel);
+  if (!isFinite(prob) || prob < 20 || prob > 99.5) return null;
+  const fair = Number(o.fairOdd);
+  if (!isFinite(fair) || fair < 1.01 || fair > 20) return null;
+  let line = null;
+  if (o.line !== null && o.line !== void 0) {
+    line = Number(o.line);
+    if (!isFinite(line) || line < 0 || line > 400) return null;
+  }
+  if (NEEDS_LINE.has(marketKey) && line === null) return null;
+  const rank = Math.round(Number(o.rank));
+  if (!isFinite(rank) || rank < 1 || rank > 6) return null;
+  const home = str(o.home, 80);
+  const away = str(o.away, 80);
+  if (!home || !away) return null;
+  return {
+    matchKey,
+    sport,
+    league: str(o.league, 80),
+    home,
+    away,
+    kickoffTs: Math.round(kickoffTs),
+    marketKey,
+    line,
+    category: str(o.category, 30),
+    label: str(o.label, 120),
+    probModel: round1(prob),
+    fairOdd: Number(fair.toFixed(2)),
+    bookOdd: null,
+    // la cuota real de mercado solo la puede fijar el servidor
+    rank,
+    modelVersion: str(o.modelVersion, 40) || LEDGER_MODEL_VERSION
+  };
+}
+function settleLedgerPick(marketKey, line, d) {
+  const { home: h, away: a } = d;
+  if (!isFinite(h) || !isFinite(a)) return null;
+  const tot = h + a;
+  const win = (b) => b ? "WON" : "LOST";
+  switch (marketKey) {
+    case "dc_1x":
+      return win(h >= a);
+    case "dc_x2":
+      return win(a >= h);
+    case "goals_over15":
+      return win(tot > 1.5);
+    case "goals_under35":
+      return win(tot < 3.5);
+    case "btts_yes":
+      return win(h > 0 && a > 0);
+    case "btts_no":
+      return win(!(h > 0 && a > 0));
+    case "win_home":
+      return win(h > a);
+    case "win_away":
+      return win(a > h);
+    case "nba_ml_home":
+      return h === a ? "VOID" : win(h > a);
+    case "nba_ml_away":
+      return h === a ? "VOID" : win(a > h);
+    case "nba_total_over":
+      if (line === null) return null;
+      return tot === line ? "VOID" : win(tot > line);
+    case "nba_total_under":
+      if (line === null) return null;
+      return tot === line ? "VOID" : win(tot < line);
+    case "corners_over":
+    case "corners_under": {
+      if (line === null || d.corners === null || d.corners === void 0 || d.corners < 3) return null;
+      return marketKey === "corners_over" ? win(d.corners > line) : win(d.corners < line);
+    }
+    case "cards_over":
+    case "cards_under": {
+      if (line === null || d.cards === null || d.cards === void 0) return null;
+      return marketKey === "cards_over" ? win(d.cards > line) : win(d.cards < line);
+    }
+    default:
+      return null;
+  }
+}
+function wilsonInterval(wins, n, z = 1.96) {
+  if (n <= 0) return { low: 0, high: 100 };
+  const p = wins / n;
+  const z2 = z * z;
+  const denom = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / denom;
+  const margin = z * Math.sqrt(p * (1 - p) / n + z2 / (4 * n * n)) / denom;
+  return {
+    low: Math.max(0, round1((center - margin) * 100)),
+    high: Math.min(100, round1((center + margin) * 100))
+  };
+}
+function computeLedgerMarketStats(rows, minSample = 30) {
+  const groups = /* @__PURE__ */ new Map();
+  rows.forEach((r) => {
+    if (r.status !== "WON" && r.status !== "LOST") return;
+    const arr = groups.get(r.market_key) || [];
+    arr.push(r);
+    groups.set(r.market_key, arr);
+  });
+  const stats = [];
+  groups.forEach((arr, marketKey) => {
+    const n = arr.length;
+    const wins = arr.filter((r) => r.status === "WON").length;
+    const hit = wins / n * 100;
+    const avgP = arr.reduce((s, r) => s + r.prob_model, 0) / n;
+    const brier = arr.reduce((s, r) => s + Math.pow(r.prob_model / 100 - (r.status === "WON" ? 1 : 0), 2), 0) / n;
+    const w = wilsonInterval(wins, n);
+    const gap = hit - avgP;
+    let verdict = "CALIBRADO";
+    if (n < minSample) verdict = "MUESTRA_INSUFICIENTE";
+    else if (avgP > w.high) verdict = "SOBREESTIMADO";
+    else if (avgP < w.low) verdict = "SUBESTIMADO";
+    stats.push({
+      marketKey,
+      n,
+      wins,
+      hitRate: round1(hit),
+      avgModelProb: round1(avgP),
+      calibrationGap: round1(gap),
+      brier: Number(brier.toFixed(4)),
+      wilsonLow: w.low,
+      wilsonHigh: w.high,
+      verdict
+    });
+  });
+  return stats.sort((x, y) => y.n - x.n);
 }
 
 // src/services/nbaRostersData.ts
@@ -3997,6 +4293,15 @@ function rankCandidatePicksByDecisionTree(candidates, context) {
       if (closeMatchPercent >= 68) treeScore -= 8.5;
       if (eloDiffAbs < 75) treeScore -= 6;
       if (derbyOrRivalry) treeScore -= 7.5;
+      const isAwayPick = /visita|visitante/i.test(pick.label) || !/local/i.test(pick.label) && eloDiffAbs < 110;
+      if (isAwayPick && eloDiffAbs < 120) {
+        treeScore -= 12;
+      }
+    }
+    if (pick.category === "BTTS") {
+      if (pick.probability < 74) {
+        treeScore -= 7.5;
+      }
     }
     if (pick.category === "DOUBLE_CHANCE") {
       if (closeMatchPercent >= 65) treeScore += 4.5;
@@ -7803,11 +8108,130 @@ app.get(["/api/upcoming", "/api/matches"], dataRateLimitMiddleware, async (req, 
     return res.json({ success: false, error: msg, fixtures: [] });
   }
 });
+var ledgerSealRateMap = /* @__PURE__ */ new Map();
+var ledgerLastSettleAt = 0;
+app.post("/api/pick-ledger/seal", dataRateLimitMiddleware, async (req, res) => {
+  const session = req.userSession;
+  if (!session) return res.status(401).json({ success: false, error: "Sesi\xF3n requerida" });
+  if (!isSupabaseConfigured()) return res.json({ success: true, sealed: 0 });
+  const uKey = String(session.sub || session.username || "anon");
+  const now = Date.now();
+  const bucket = ledgerSealRateMap.get(uKey);
+  if (bucket && bucket.resetAt > now) {
+    if (bucket.count >= 20) return res.status(429).json({ success: false, error: "Demasiados env\xEDos" });
+    bucket.count += 1;
+  } else {
+    ledgerSealRateMap.set(uKey, { count: 1, resetAt: now + 36e5 });
+    if (ledgerSealRateMap.size > 2e3) ledgerSealRateMap.clear();
+  }
+  const raw = Array.isArray(req.body?.picks) ? req.body.picks.slice(0, 60) : [];
+  const valid = raw.map((p) => validateLedgerPickShape(p, now)).filter((p) => p !== null);
+  const perMatch = /* @__PURE__ */ new Map();
+  const accepted = valid.filter((p) => {
+    const c = (perMatch.get(p.matchKey) || 0) + 1;
+    perMatch.set(p.matchKey, c);
+    return c <= (p.sport === "NBA" ? 2 : LEDGER_MAX_SOCCER_PICKS_PER_MATCH);
+  });
+  const sealed = await sealPickLedgerRows(accepted);
+  return res.json({ success: true, sealed });
+});
+async function settlePickLedgerWithFinished(finishedFixtures, finishedNBAEvents) {
+  if (!isSupabaseConfigured()) return;
+  if (Date.now() - ledgerLastSettleAt < 10 * 60 * 1e3) return;
+  ledgerLastSettleAt = Date.now();
+  const pending = await fetchPendingPickLedger();
+  if (pending.length === 0) return;
+  const finals = /* @__PURE__ */ new Map();
+  for (const f of finishedFixtures || []) {
+    const id = String(f?.espnEventId || f?.fixture?.id || "");
+    if (!id) continue;
+    const hs = f?.liveStats?.home;
+    const as = f?.liveStats?.away;
+    const corners = hs && as ? (hs.corners || 0) + (as.corners || 0) : null;
+    const cards = hs && as ? (hs.yellowCards || 0) + (as.yellowCards || 0) + (hs.redCards || 0) + (as.redCards || 0) : null;
+    finals.set(`S:${id}`, {
+      home: Number(f?.goals?.home ?? 0),
+      away: Number(f?.goals?.away ?? 0),
+      corners,
+      cards
+    });
+  }
+  for (const bev of finishedNBAEvents || []) {
+    const comp = bev?.competitions?.[0];
+    const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
+    const h = competitors.find((c) => c.homeAway === "home");
+    const a = competitors.find((c) => c.homeAway === "away");
+    if (!h || !a || !bev?.id) continue;
+    const hp = parseInt(String(h.score ?? ""), 10);
+    const ap = parseInt(String(a.score ?? ""), 10);
+    if (isNaN(hp) || isNaN(ap) || hp + ap < 100) continue;
+    finals.set(`N:${bev.id}`, { home: hp, away: ap, corners: null, cards: null });
+  }
+  for (const row of pending) {
+    const fin = finals.get(row.match_key);
+    if (!fin) continue;
+    const status = settleLedgerPick(row.market_key, row.line < 0 ? null : Number(row.line), fin);
+    if (!status) continue;
+    await settlePickLedgerRow(row.id, status, fin);
+  }
+  purgeOldPickLedgerRows(35).catch(() => {
+  });
+}
+app.post("/api/admin/pick-ledger/purge", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado" });
+  }
+  clearAuthFailures(req);
+  try {
+    const maxDays = Math.max(1, parseInt(String(req.body?.maxDays || "30"), 10) || 30);
+    const purged = await purgeOldPickLedgerRows(maxDays);
+    return res.json({ success: true, purged });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al purgar registros antiguos" });
+  }
+});
+app.get("/api/admin/pick-ledger/stats", async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado" });
+  }
+  clearAuthFailures(req);
+  const cacheKey = "__pick_ledger_stats_v1__";
+  const cached = getCacheItem(cacheKey);
+  if (cached && Date.now() - cached.timestamp < 5 * 60 * 1e3) {
+    return res.json({ success: true, cached: true, ...cached.data });
+  }
+  try {
+    const days = Math.min(120, Math.max(1, parseInt(String(req.query.days || "60"), 10) || 60));
+    const rows = await fetchPickLedgerForStats(Date.now() - days * 864e5);
+    const primary = rows.filter((r) => r.rank === 1);
+    const payload = {
+      totalSealed: rows.length,
+      pending: rows.filter((r) => r.status === "PENDING").length,
+      primaryByMarket: computeLedgerMarketStats(primary),
+      allRanksByMarket: computeLedgerMarketStats(rows),
+      minSampleForCalibration: 30
+    };
+    setCacheItem(cacheKey, payload);
+    return res.json({ success: true, cached: false, ...payload });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al consultar el libro de picks" });
+  }
+});
 app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
   const yesterdayStr = getColombiaDateStr(-1);
   const auditCacheKey = `audit_finished_dia_vencido_v8_${yesterdayStr}`;
   const cachedAudit = getCacheItem(auditCacheKey);
   if (cachedAudit && cachedAudit.data && Array.isArray(cachedAudit.data.fixtures) && cachedAudit.data.fixtures.length > 0 && Date.now() - cachedAudit.timestamp < 30 * 60 * 1e3) {
+    settlePickLedgerWithFinished(cachedAudit.data.fixtures, cachedAudit.data.nbaEvents || []).catch(() => {
+    });
     return res.json({
       success: true,
       source: "audit_cache_dia_vencido",
@@ -7988,6 +8412,8 @@ app.get("/api/audit-finished", dataRateLimitMiddleware, async (_req, res) => {
     });
     if (auditPayload) {
       auditPendingSmartParlaysWithFinishedMatches(auditPayload.fixtures || [], auditPayload.nbaEvents || []).catch(() => {
+      });
+      settlePickLedgerWithFinished(auditPayload.fixtures || [], auditPayload.nbaEvents || []).catch(() => {
       });
     }
     return res.json({

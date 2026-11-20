@@ -32,8 +32,14 @@ import {
   removePushSubscription,
   getActivePushSubscriptions,
   savePermanentFeedbackList,
-  loadPermanentFeedbackList
+  loadPermanentFeedbackList,
+  sealPickLedgerRows,
+  fetchPendingPickLedger,
+  settlePickLedgerRow,
+  fetchPickLedgerForStats,
+  purgeOldPickLedgerRows
 } from './src/services/supabaseServer';
+import { validateLedgerPickShape, settleLedgerPick, computeLedgerMarketStats, LEDGER_MAX_SOCCER_PICKS_PER_MATCH } from './src/services/pickLedger';
 import { SmartParlaySlip, BettingMarketSuggestion } from './src/types';
 import { generateSmartParlays, PARLAY_ENGINE_VERSION, getCanonicalPickSignature } from './src/services/mathEngine';
 import { fetchWithStrictTimeout } from './src/services/resilientFetch';
@@ -2184,6 +2190,146 @@ app.get(['/api/upcoming', '/api/matches'], dataRateLimitMiddleware, async (req, 
 });
 
 // 0.15 Finished Matches Audit Endpoint (Modalidad Día Vencido: Consulta 100% oficial y consolidada)
+// =========================================================================
+// PICK LEDGER: sellado pre-partido inmutable + liquidación + estadísticas reales
+// =========================================================================
+const ledgerSealRateMap = new Map<string, { count: number; resetAt: number }>();
+let ledgerLastSettleAt = 0;
+
+app.post('/api/pick-ledger/seal', dataRateLimitMiddleware, async (req, res) => {
+  const session = (req as any).userSession;
+  if (!session) return res.status(401).json({ success: false, error: 'Sesión requerida' });
+  if (!isSupabaseConfigured()) return res.json({ success: true, sealed: 0 });
+
+  // Límite por usuario: 20 envíos/hora (cada envío ≤ 60 picks)
+  const uKey = String(session.sub || session.username || 'anon');
+  const now = Date.now();
+  const bucket = ledgerSealRateMap.get(uKey);
+  if (bucket && bucket.resetAt > now) {
+    if (bucket.count >= 20) return res.status(429).json({ success: false, error: 'Demasiados envíos' });
+    bucket.count += 1;
+  } else {
+    ledgerSealRateMap.set(uKey, { count: 1, resetAt: now + 3600_000 });
+    if (ledgerSealRateMap.size > 2000) ledgerSealRateMap.clear();
+  }
+
+  const raw = Array.isArray(req.body?.picks) ? req.body.picks.slice(0, 60) : [];
+  const valid = raw
+    .map((p: unknown) => validateLedgerPickShape(p, now))
+    .filter((p: ReturnType<typeof validateLedgerPickShape>): p is NonNullable<typeof p> => p !== null);
+
+  // Tope por partido (fútbol 4 / NBA 2) para evitar inflar la muestra
+  const perMatch = new Map<string, number>();
+  const accepted = valid.filter((p: NonNullable<ReturnType<typeof validateLedgerPickShape>>) => {
+    const c = (perMatch.get(p.matchKey) || 0) + 1;
+    perMatch.set(p.matchKey, c);
+    return c <= (p.sport === 'NBA' ? 2 : LEDGER_MAX_SOCCER_PICKS_PER_MATCH);
+  });
+
+  const sealed = await sealPickLedgerRows(accepted);
+  return res.json({ success: true, sealed });
+});
+
+async function settlePickLedgerWithFinished(finishedFixtures: any[], finishedNBAEvents: any[]): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  if (Date.now() - ledgerLastSettleAt < 10 * 60 * 1000) return; // máx. 1 lectura de BD cada 10 min
+  ledgerLastSettleAt = Date.now();
+
+  const pending = await fetchPendingPickLedger();
+  if (pending.length === 0) return;
+
+  const finals = new Map<string, { home: number; away: number; corners: number | null; cards: number | null }>();
+  for (const f of finishedFixtures || []) {
+    const id = String(f?.espnEventId || f?.fixture?.id || '');
+    if (!id) continue;
+    const hs = f?.liveStats?.home;
+    const as = f?.liveStats?.away;
+    const corners = hs && as ? (hs.corners || 0) + (as.corners || 0) : null;
+    const cards = hs && as ? (hs.yellowCards || 0) + (as.yellowCards || 0) + (hs.redCards || 0) + (as.redCards || 0) : null;
+    finals.set(`S:${id}`, {
+      home: Number(f?.goals?.home ?? 0),
+      away: Number(f?.goals?.away ?? 0),
+      corners,
+      cards
+    });
+  }
+  for (const bev of finishedNBAEvents || []) {
+    const comp = bev?.competitions?.[0];
+    const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
+    const h = competitors.find((c: any) => c.homeAway === 'home');
+    const a = competitors.find((c: any) => c.homeAway === 'away');
+    if (!h || !a || !bev?.id) continue;
+    const hp = parseInt(String(h.score ?? ''), 10);
+    const ap = parseInt(String(a.score ?? ''), 10);
+    if (isNaN(hp) || isNaN(ap) || hp + ap < 100) continue;
+    finals.set(`N:${bev.id}`, { home: hp, away: ap, corners: null, cards: null });
+  }
+
+  for (const row of pending) {
+    const fin = finals.get(row.match_key);
+    if (!fin) continue;
+    const status = settleLedgerPick(row.market_key, row.line < 0 ? null : Number(row.line), fin);
+    if (!status) continue;
+    await settlePickLedgerRow(row.id, status, fin);
+  }
+
+  // Auto-purga rodante de 35 días para mantener la BD en costo $0 y espacio < 600 KB en Supabase
+  purgeOldPickLedgerRows(35).catch(() => {});
+}
+
+// Purga manual / mensual de registros antiguos del libro de picks (Solo Admin)
+app.post('/api/admin/pick-ledger/purge', async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: 'No autorizado' });
+  }
+  clearAuthFailures(req);
+  try {
+    const maxDays = Math.max(1, parseInt(String(req.body?.maxDays || '30'), 10) || 30);
+    const purged = await purgeOldPickLedgerRows(maxDays);
+    return res.json({ success: true, purged });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Error al purgar registros antiguos' });
+  }
+});
+
+// Estadísticas reales (solo admin): eficiencia + calibración por mercado, separando PRE de rank
+app.get('/api/admin/pick-ledger/stats', async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: 'No autorizado' });
+  }
+  clearAuthFailures(req);
+
+  const cacheKey = '__pick_ledger_stats_v1__';
+  const cached = getCacheItem<any>(cacheKey);
+  if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
+    return res.json({ success: true, cached: true, ...cached.data });
+  }
+  try {
+    const days = Math.min(120, Math.max(1, parseInt(String(req.query.days || '60'), 10) || 60));
+    const rows = await fetchPickLedgerForStats(Date.now() - days * 86400_000);
+    const primary = rows.filter((r) => r.rank === 1);
+    const payload = {
+      totalSealed: rows.length,
+      pending: rows.filter((r) => r.status === 'PENDING').length,
+      primaryByMarket: computeLedgerMarketStats(primary),
+      allRanksByMarket: computeLedgerMarketStats(rows),
+      minSampleForCalibration: 30
+    };
+    setCacheItem(cacheKey, payload);
+    return res.json({ success: true, cached: false, ...payload });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Error al consultar el libro de picks' });
+  }
+});
+
 app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
   const yesterdayStr = getColombiaDateStr(-1);
   const auditCacheKey = `audit_finished_dia_vencido_v8_${yesterdayStr}`;
@@ -2197,6 +2343,7 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
     cachedAudit.data.fixtures.length > 0 &&
     Date.now() - cachedAudit.timestamp < 30 * 60 * 1000
   ) {
+    settlePickLedgerWithFinished(cachedAudit.data.fixtures, cachedAudit.data.nbaEvents || []).catch(() => {});
     return res.json({
       success: true,
       source: 'audit_cache_dia_vencido',
@@ -2401,6 +2548,7 @@ app.get('/api/audit-finished', dataRateLimitMiddleware, async (_req, res) => {
 
     if (auditPayload) {
       auditPendingSmartParlaysWithFinishedMatches(auditPayload.fixtures || [], auditPayload.nbaEvents || []).catch(() => {});
+      settlePickLedgerWithFinished(auditPayload.fixtures || [], auditPayload.nbaEvents || []).catch(() => {});
     }
     return res.json({
       success: true,

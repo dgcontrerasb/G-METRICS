@@ -421,7 +421,7 @@ export function resolveRecognizableTeamShortName(fullName: string, rawShort?: st
 
 // Convert raw ESPN / Football-Data hybrid response item into normalized MatchFixture in local timezone
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture {
+export function mapApiSportsFixture(raw: any, fallbackTargetDate: string): MatchFixture {
   const fixtureId = String(raw.fixture?.id || Math.random());
   
   const rawDateOrTimestamp = raw.fixture?.timestamp ? raw.fixture.timestamp * 1000 : raw.fixture?.date;

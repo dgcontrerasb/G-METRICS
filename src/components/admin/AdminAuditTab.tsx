@@ -32,7 +32,7 @@ export const AdminAuditTab: React.FC = () => {
     };
   }, []);
 
-  const handleDownloadExcel = async () => {
+  const handleDownloadCsv = () => {
     if (!summary) return;
     const dateStr = new Date().toISOString().split('T')[0];
     const sportName =
@@ -43,15 +43,24 @@ export const AdminAuditTab: React.FC = () => {
         : sportFilter === 'NBA'
         ? 'NBA_Baloncesto'
         : 'Consolidado_Global';
-    await AccuracyEvaluatorService.exportToExcelFile(
+    AccuracyEvaluatorService.exportToCsvFile(
       summary,
-      `Auditoria_Mensual_${sportName}_${dateStr}.xlsx`,
+      `Auditoria_Mensual_${sportName}_${dateStr}.csv`,
       sportFilter
     );
   };
 
-  const handleResetMonthlyCycle = () => {
+  const handleResetMonthlyCycle = async () => {
     AccuracyEvaluatorService.resetMonthlyCycle();
+    try {
+      await fetch('/api/admin/pick-ledger/purge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxDays: 30 })
+      });
+    } catch {
+      // ignore
+    }
     setConfirmResetCycle(false);
     setIsLoading(true);
     AccuracyEvaluatorService.getRealTimeAuditSummary()
@@ -262,11 +271,12 @@ export const AdminAuditTab: React.FC = () => {
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={handleDownloadExcel}
+            onClick={handleDownloadCsv}
             className="px-3.5 py-2 rounded-xl bg-[#d9b114] hover:bg-[#c29e10] text-[#0b0e14] font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            title="Descargar informe oficial de auditoría mensual en formato CSV (.csv)"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Exportar Excel (.xlsx)</span>
+            <span>Descargar Informe (.csv)</span>
           </button>
 
           {confirmResetCycle ? (

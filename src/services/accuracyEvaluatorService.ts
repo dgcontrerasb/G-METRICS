@@ -1227,6 +1227,98 @@ export class AccuracyEvaluatorService {
   }
 
   /**
+   * Exporta un reporte oficial en formato CSV plano (.csv) con codificación UTF-8 BOM.
+   * Sin dependencias pesadas, 100% compatible con Microsoft Excel y Google Sheets.
+   */
+  public static exportToCsvFile(
+    summary: OverallAccuracySummary,
+    fileName?: string,
+    activeFilter: 'PRIME_SOCCER' | 'SECONDARY_SOCCER' | 'NBA' | 'ALL' = 'ALL'
+  ): void {
+    const allSamples = summary.metricsByCategory.flatMap((c) => c.sampleMatches);
+    const seenKeys = new Set<string>();
+    const uniqueVerifiedSamples = allSamples.filter((rec) => {
+      if (rec.status === 'UNVERIFIED') return false;
+      const key = `${rec.fixtureId}_${rec.marketType}_${rec.predictionLabel}`;
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
+
+    const filteredSamples = uniqueVerifiedSamples.filter((rec) => {
+      if (activeFilter === 'PRIME_SOCCER') return rec.sport === 'SOCCER' && rec.leagueTier === 'PRIME';
+      if (activeFilter === 'SECONDARY_SOCCER') return rec.sport === 'SOCCER' && rec.leagueTier === 'SECONDARY';
+      if (activeFilter === 'NBA') return rec.sport === 'NBA';
+      return true;
+    });
+
+    const targetSamples = filteredSamples.length > 0 ? filteredSamples : uniqueVerifiedSamples;
+
+    const headers = [
+      'ID_Auditoria',
+      'Fecha',
+      'Mes',
+      'Deporte',
+      'Segmento',
+      'Liga_Torneo',
+      'Equipo_Local',
+      'Equipo_Visitante',
+      'Partido',
+      'Familia_Mercado',
+      'Pronostico_Emitido',
+      'Tipo_Linea',
+      'Valor_Linea',
+      'Valor_Esperado_Modelo',
+      'Resultado_Real_Numerico',
+      'Resultado_Real_Detalle',
+      'Estado_Oficial',
+      'Acierto_Binario',
+      'Fallo_Binario',
+      'Muestra_Verificada'
+    ];
+
+    const rows = targetSamples.map((rec, idx) => {
+      const r = AccuracyEvaluatorService.normalizeRecordToTabular(rec, idx + 1);
+      return [
+        `"${r.id_auditoria}"`,
+        `"${r.fecha}"`,
+        `"${r.mes}"`,
+        `"${r.deporte}"`,
+        `"${r.segmento}"`,
+        `"${r.liga}"`,
+        `"${r.equipo_local}"`,
+        `"${r.equipo_visitante}"`,
+        `"${r.partido}"`,
+        `"${r.mercado}"`,
+        `"${r.pronostico_emitido}"`,
+        `"${r.pronostico_tipo}"`,
+        r.linea_pronostico,
+        r.valor_esperado,
+        r.resultado_numerico,
+        `"${r.resultado_detalle}"`,
+        `"${r.estado_oficial}"`,
+        r.es_acierto,
+        r.es_fallo,
+        r.muestra_verificada
+      ].join(';');
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dStr = new Date().toISOString().split('T')[0];
+    const outName = fileName || `Auditoria_Mensual_G_METRICS_${dStr}.csv`;
+
+    link.setAttribute('href', url);
+    link.setAttribute('download', outName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  /**
    * Exporta un libro Excel (.xlsx) 100% estructurado para Tablas Dinámicas y Dashboards:
    * - Fila 1 de CADA hoja = Encabezados limpios (sin celdas combinadas ni filas vacías).
    * - Cero celdas en blanco (todos los campos numéricos y de texto tienen valores válidos).

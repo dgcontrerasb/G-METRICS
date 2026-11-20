@@ -4,6 +4,7 @@ import { fetchUpcomingFixtures, getColombiaDateString, syncLivePulseFixtures, fe
 import { calculateMatchAnalysis, clearAnalysisCacheForFixture } from './services/mathEngine';
 import { fetchNBAFixtures } from './services/nbaApiService';
 import { calculateNBAAnalysis } from './services/nbaEngine';
+import { sealPrematchPicks } from './services/pickLedgerClient';
 import type {
   ExportItem,
   NBAExportItem
@@ -1788,6 +1789,18 @@ export default function App() {
     });
     return map;
   }, [nbaFixtures]);
+
+  // Pick Ledger: sella (insert-only) los picks pre-partido para auditoría real. Debounce 5s, 1 petición por lote.
+  useEffect(() => {
+    if (fixtures.length === 0 && nbaFixtures.length === 0) return;
+    const t = window.setTimeout(() => {
+      sealPrematchPicks(
+        { fixtures, analyses: analysesMap },
+        { fixtures: nbaFixtures, analyses: nbaAnalysesMap }
+      );
+    }, 5000);
+    return () => window.clearTimeout(t);
+  }, [fixtures, nbaFixtures, analysesMap, nbaAnalysesMap]);
 
   // Available basketball leagues with counts
   const availableBasketballLeagues = useMemo(() => {

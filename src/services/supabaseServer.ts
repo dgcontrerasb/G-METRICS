@@ -1356,6 +1356,49 @@ export async function adminDeleteAppUser(userId: string, username?: string): Pro
   return true;
 }
 
+// =========================================================================
+// PICK LEDGER: libro inmutable de picks sellados pre-partido ($0 USD, ~300 B/fila)
+// =========================================================================
+export const PICK_LEDGER_SQL = `
+CREATE TABLE IF NOT EXISTS gmetrics_pick_ledger (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  match_key TEXT NOT NULL,
+  sport TEXT NOT NULL,
+  league TEXT,
+  home TEXT,
+  away TEXT,
+  kickoff_ts BIGINT NOT NULL,
+  market_key TEXT NOT NULL,
+  line NUMERIC NOT NULL DEFAULT -1,
+  category TEXT,
+  label TEXT,
+  prob_model NUMERIC NOT NULL,
+  fair_odd NUMERIC,
+  book_odd NUMERIC,
+  rank INTEGER NOT NULL DEFAULT 1,
+  model_version TEXT,
+  source TEXT NOT NULL DEFAULT 'PRE',
+  sealed_at BIGINT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  settled_at BIGINT,
+  final_home INTEGER,
+  final_away INTEGER,
+  final_corners INTEGER,
+  final_cards INTEGER
+);
+-- Insert-only: un mismo pick de un mismo partido solo se sella UNA vez (el primero gana)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pick_ledger_pick ON gmetrics_pick_ledger(match_key, market_key, line, source);
+CREATE INDEX IF NOT EXISTS idx_pick_ledger_status ON gmetrics_pick_ledger(status, kickoff_ts);
+CREATE INDEX IF NOT EXISTS idx_pick_ledger_market ON gmetrics_pick_ledger(market_key, source);
+ALTER TABLE gmetrics_pick_ledger ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'gmetrics_pick_ledger' AND policyname = 'Allow server full access pick ledger') THEN
+    CREATE POLICY "Allow server full access pick ledger" ON gmetrics_pick_ledger FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+`;
+
 // SQL Script para crear las tablas en Supabase con un solo clic en el SQL Editor de Supabase
 export const SUPABASE_SQL_SCHEMA = `
 -- =========================================================================
@@ -1447,6 +1490,8 @@ BEGIN
     CREATE POLICY "Allow server full access feedback" ON sportstats_feedback FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
+
+${PICK_LEDGER_SQL}
 `;
 
 
@@ -2358,4 +2403,162 @@ export async function loadPermanentFeedbackList(): Promise<any[] | null> {
     }
   } catch {}
   return null;
+}
+
+
+// =========================================================================
+// PICK LEDGER: acceso a datos (solo backend, usa service role)
+// =========================================================================
+export interface PickLedgerDbRow {
+  id: number;
+  match_key: string;
+  sport: string;
+  league: string | null;
+  home: string | null;
+  away: string | null;
+  kickoff_ts: number;
+  market_key: string;
+  line: number;
+  category: string | null;
+  label: string | null;
+  prob_model: number;
+  fair_odd: number | null;
+  rank: number;
+  model_version: string | null;
+  source: string;
+  sealed_at: number;
+  status: 'PENDING' | 'WON' | 'LOST' | 'VOID';
+  settled_at: number | null;
+}
+
+/** Sella picks (insert-only). Los duplicados se ignoran: el PRIMER sellado gana y es inmutable. */
+export async function sealPickLedgerRows(
+  rows: Array<{
+    matchKey: string; sport: string; league: string; home: string; away: string; kickoffTs: number;
+    marketKey: string; line: number | null; category: string; label: string; probModel: number;
+    fairOdd: number; rank: number; modelVersion: string;
+  }>
+): Promise<number> {
+  const client = getSupabaseClient();
+  if (!client || rows.length === 0) return 0;
+  const now = Date.now();
+  const payload = rows.map((r) => ({
+    match_key: r.matchKey,
+    sport: r.sport,
+    league: r.league,
+    home: r.home,
+    away: r.away,
+    kickoff_ts: r.kickoffTs,
+    market_key: r.marketKey,
+    line: r.line ?? -1,
+    category: r.category,
+    label: r.label,
+    prob_model: r.probModel,
+    fair_odd: r.fairOdd,
+    rank: r.rank,
+    model_version: r.modelVersion,
+    source: 'PRE',
+    sealed_at: now,
+    status: 'PENDING'
+  }));
+  try {
+    const { error } = await client
+      .from('gmetrics_pick_ledger')
+      .upsert(payload, { onConflict: 'match_key,market_key,line,source', ignoreDuplicates: true });
+    if (error) {
+      console.warn('[PickLedger] seal error:', error.message);
+      return 0;
+    }
+    return payload.length;
+  } catch (err) {
+    console.warn('[PickLedger] seal exception:', err);
+    return 0;
+  }
+}
+
+/** Picks pendientes cuyo partido ya empezó hace > minAgeMs (candidatos a liquidar). */
+export async function fetchPendingPickLedger(minAgeMs = 3 * 3600_000, limit = 800): Promise<PickLedgerDbRow[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  try {
+    const { data, error } = await client
+      .from('gmetrics_pick_ledger')
+      .select('*')
+      .eq('status', 'PENDING')
+      .lt('kickoff_ts', Date.now() - minAgeMs)
+      .order('kickoff_ts', { ascending: true })
+      .limit(limit);
+    if (error || !data) return [];
+    return data as PickLedgerDbRow[];
+  } catch {
+    return [];
+  }
+}
+
+export async function settlePickLedgerRow(
+  id: number,
+  status: 'WON' | 'LOST' | 'VOID',
+  fin: { home: number; away: number; corners?: number | null; cards?: number | null }
+): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client
+      .from('gmetrics_pick_ledger')
+      .update({
+        status,
+        settled_at: Date.now(),
+        final_home: fin.home,
+        final_away: fin.away,
+        final_corners: fin.corners ?? null,
+        final_cards: fin.cards ?? null
+      })
+      .eq('id', id)
+      .eq('status', 'PENDING');
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/** Lectura para el panel admin (columnas mínimas). */
+export async function fetchPickLedgerForStats(
+  sinceMs: number,
+  limit = 5000
+): Promise<Array<{ market_key: string; status: 'PENDING' | 'WON' | 'LOST' | 'VOID'; prob_model: number; sport: string; rank: number; model_version: string | null }>> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  try {
+    const { data, error } = await client
+      .from('gmetrics_pick_ledger')
+      .select('market_key,status,prob_model,sport,rank,model_version')
+      .gte('sealed_at', sinceMs)
+      .order('id', { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
+    return data as never;
+  } catch {
+    return [];
+  }
+}
+
+/** Purga registros antiguos del ledger (> maxDays) para preservar espacio < 600 KB en Supabase Free Tier */
+export async function purgeOldPickLedgerRows(maxDays = 35): Promise<number> {
+  const client = getSupabaseClient();
+  if (!client) return 0;
+  const cutoffTs = Date.now() - maxDays * 86400_000;
+  try {
+    const { count, error } = await client
+      .from('gmetrics_pick_ledger')
+      .delete({ count: 'exact' })
+      .lt('kickoff_ts', cutoffTs);
+    if (error) {
+      console.warn('[PickLedger] purge error:', error.message);
+      return 0;
+    }
+    return count || 0;
+  } catch (err) {
+    console.warn('[PickLedger] purge exception:', err);
+    return 0;
+  }
 }
