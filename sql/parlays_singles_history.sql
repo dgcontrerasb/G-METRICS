@@ -52,10 +52,9 @@ ALTER TABLE gmetrics_singles_history ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'gmetrics_parlay_history' AND policyname = 'Allow server full access parlay history') THEN
-    CREATE POLICY "Allow server full access parlay history" ON gmetrics_parlay_history FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'gmetrics_singles_history' AND policyname = 'Allow server full access singles history') THEN
-    CREATE POLICY "Allow server full access singles history" ON gmetrics_singles_history FOR ALL USING (true) WITH CHECK (true);
-  END IF;
+  DROP POLICY IF EXISTS "Allow server full access parlay history" ON gmetrics_parlay_history;
+  CREATE POLICY "Allow server full access parlay history" ON gmetrics_parlay_history FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Allow server full access singles history" ON gmetrics_singles_history;
+  CREATE POLICY "Allow server full access singles history" ON gmetrics_singles_history FOR ALL TO service_role USING (true) WITH CHECK (true);
 END $$;

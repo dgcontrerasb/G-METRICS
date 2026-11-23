@@ -418,9 +418,7 @@ export default function App() {
           return;
         } else if (sessionData && !sessionData.authenticated) {
           const hasLocalAdmin = typeof window !== 'undefined' && (
-            localStorage.getItem('sportstats_admin_remember') === 'true' ||
-            sessionStorage.getItem('futbolstats_admin_pin') !== null ||
-            localStorage.getItem('sportstats_admin_saved_pin') !== null
+            localStorage.getItem('sportstats_admin_remember') === 'true'
           );
           if (!hasLocalAdmin) {
             setIsAppUnlocked(false);
@@ -2611,9 +2609,7 @@ export default function App() {
           (activeLicenseInfo?.isValid && !activeLicenseInfo?.isExpired) ||
           activeLicenseInfo?.isPermanent ||
           (typeof window !== 'undefined' && (
-            localStorage.getItem('sportstats_admin_remember') === 'true' ||
-            sessionStorage.getItem('futbolstats_admin_pin') !== null ||
-            localStorage.getItem('sportstats_admin_saved_pin') !== null
+            localStorage.getItem('sportstats_admin_remember') === 'true'
           )) ||
           checkIsProClient()
         )}

@@ -1,13 +1,10 @@
 import React, { useState } from 'react';
 import {
   Shield,
-  Lock,
   Check,
   Copy,
   MessageCircle,
   Database,
-  Eye,
-  EyeOff,
   Sparkles,
   ToggleLeft,
   ToggleRight
@@ -29,10 +26,6 @@ interface AdminSecurityTabProps {
 }
 
 export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({
-  activeServerPin,
-  setActiveServerPin,
-  pinInput,
-  setPinInput,
   adminWhatsApp,
   setAdminWhatsApp,
   freeAccessMode = true,
@@ -42,13 +35,8 @@ export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({
   supabaseSqlSchema,
   buildAdminHeaders
 }) => {
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [showNewPin, setShowNewPin] = useState(false);
-  const [showConfirmPin, setShowConfirmPin] = useState(false);
   const [configSuccess, setConfigSuccess] = useState<string | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
-  const [copiedCurrentPin, setCopiedCurrentPin] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
   const [showSqlGuide, setShowSqlGuide] = useState(false);
   const [isTogglingFreeMode, setIsTogglingFreeMode] = useState(false);
@@ -58,15 +46,10 @@ export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({
     setIsTogglingFreeMode(true);
     setConfigSuccess(null);
     setConfigError(null);
-    const currentPin =
-      pinInput.trim() ||
-      sessionStorage.getItem('futbolstats_admin_pin') ||
-      localStorage.getItem('sportstats_admin_saved_pin') ||
-      activeServerPin;
     try {
       const res = await fetch('/api/license/config', {
         method: 'POST',
-        headers: buildAdminHeaders(currentPin, true, true),
+        headers: buildAdminHeaders('', true, true),
         body: JSON.stringify({
           freeAccessMode: nextMode
         })
@@ -91,58 +74,23 @@ export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({
     }
   };
 
-  const handleSendCredentialsToWhatsApp = (pinToSend: string) => {
-    const cleanPhone = (adminWhatsApp || '573213902708').replace(/[^0-9]/g, '');
-    const msg = `🔐 *Respaldo Privado de Administrador · G METRICS*\n\n📌 *Tu PIN Actual Activo:* ${pinToSend}\n\n_Guarda este mensaje en tu chat personal para tener siempre tu llave de acceso a la mano._`;
-    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     setConfigSuccess(null);
     setConfigError(null);
 
-    const currentPin =
-      pinInput.trim() ||
-      sessionStorage.getItem('futbolstats_admin_pin') ||
-      localStorage.getItem('sportstats_admin_saved_pin') ||
-      activeServerPin;
-
-    if (newPin && newPin.trim().length < 4) {
-      setConfigError('El nuevo PIN debe tener al menos 4 caracteres.');
-      return;
-    }
-
-    if (newPin && newPin !== confirmPin) {
-      setConfigError('El nuevo PIN y su confirmación no coinciden.');
-      return;
-    }
-
     try {
       const res = await fetch('/api/license/config', {
         method: 'POST',
-        headers: buildAdminHeaders(currentPin, true, true),
+        headers: buildAdminHeaders('', true, true),
         body: JSON.stringify({
-          newPin: newPin.trim() || undefined,
           adminWhatsApp: adminWhatsApp.trim()
         })
       });
 
       const data = await res.json();
       if (data.success) {
-        if (newPin.trim()) {
-          const updatedPin = newPin.trim();
-          setPinInput(updatedPin);
-          setActiveServerPin(updatedPin);
-          sessionStorage.setItem('futbolstats_admin_pin', updatedPin);
-          localStorage.setItem('sportstats_admin_saved_pin', updatedPin);
-          setNewPin('');
-          setConfirmPin('');
-          setConfigSuccess(`¡PIN de administrador actualizado con éxito! Tu nuevo PIN activo es: ${updatedPin}`);
-        } else {
-          setConfigSuccess('¡Configuración guardada con éxito!');
-        }
+        setConfigSuccess('¡WhatsApp de contacto actualizado con éxito!');
         setTimeout(() => setConfigSuccess(null), 5000);
       } else {
         setConfigError(data.error || 'Error al guardar configuración');
@@ -154,61 +102,20 @@ export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({
 
   return (
     <div className="space-y-4 font-sans text-white">
-      {/* Credenciales Actuales */}
-      <div className="p-4 rounded-2xl bg-[#0b0e14] border border-[#30363d] space-y-3">
+      {/* Estado de Seguridad Google OAuth */}
+      <div className="p-4 rounded-2xl bg-[#0b0e14] border border-emerald-500/30 space-y-2">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
             <Shield className="w-4 h-4 text-[#d9b114]" />
-            <span>Credenciales Actuales de Administrador</span>
+            <span>Autenticación de Administrador</span>
           </h4>
-          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-bold text-[#00ff66]">
-            PIN Activo
+          <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-bold text-[#00ff66]">
+            Google OAuth Exclusivo
           </span>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-3 flex items-center justify-between gap-2">
-            <div>
-              <span className="block text-[10px] uppercase tracking-wider text-[#8b949e] font-semibold">
-                PIN Actual
-              </span>
-              <span className="font-mono text-base font-bold text-white tracking-widest">
-                {activeServerPin || pinInput || '••••'}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(activeServerPin);
-                setCopiedCurrentPin(true);
-                setTimeout(() => setCopiedCurrentPin(false), 2000);
-              }}
-              className="px-2.5 py-1.5 rounded-lg bg-[#0b0e14] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
-            >
-              {copiedCurrentPin ? <Check className="w-3.5 h-3.5 text-[#00ff66]" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedCurrentPin ? 'Copiado' : 'Copiar'}</span>
-            </button>
-          </div>
-
-          <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-3 flex items-center justify-between gap-2">
-            <div>
-              <span className="block text-[10px] uppercase tracking-wider text-[#8b949e] font-semibold">
-                Respaldo Personal
-              </span>
-              <span className="text-xs text-[#8b949e]">
-                Enviar copia privada a tu WhatsApp
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => handleSendCredentialsToWhatsApp(activeServerPin)}
-              className="shrink-0 py-1.5 px-2.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-[#00ff66] font-semibold text-xs flex items-center gap-1 transition cursor-pointer"
-            >
-              <MessageCircle className="w-3.5 h-3.5 text-[#00ff66]" />
-              <span>Enviar</span>
-            </button>
-          </div>
-        </div>
+        <p className="text-xs text-[#8b949e]">
+          El acceso al Panel de Administrador está blindado exclusivamente mediante sesión criptográfica verificada con tu cuenta de Google autorizada. El acceso por PIN y llaves maestras ha sido eliminado permanentemente.
+        </p>
       </div>
 
       {/* MODO ACCESO LIBRE (COMUNIDAD / APERTURA TOTAL) */}
@@ -265,80 +172,26 @@ export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({
         </div>
       </div>
 
-      {/* Cambiar PIN y WhatsApp */}
+      {/* WhatsApp de Contacto */}
       <form onSubmit={handleSaveConfig} className="space-y-4">
         <div className="p-4 rounded-2xl bg-[#0b0e14] border border-[#30363d] space-y-3">
           <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-            <Lock className="w-3.5 h-3.5 text-[#d9b114]" />
-            <span>Actualizar PIN y WhatsApp de Contacto</span>
+            <MessageCircle className="w-3.5 h-3.5 text-[#d9b114]" />
+            <span>WhatsApp de Soporte y Contacto</span>
           </h4>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] font-semibold text-[#8b949e]">
-                  Nuevo PIN:
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowNewPin(!showNewPin)}
-                  className="text-[10px] text-[#8b949e] hover:text-white flex items-center gap-1 cursor-pointer"
-                >
-                  {showNewPin ? <EyeOff className="w-3 h-3 text-[#d9b114]" /> : <Eye className="w-3 h-3" />}
-                  <span>{showNewPin ? 'Ocultar' : 'Ver'}</span>
-                </button>
-              </div>
-              <input
-                type={showNewPin ? 'text' : 'password'}
-                value={newPin}
-                onChange={(e) => {
-                  setNewPin(e.target.value);
-                  setConfigError(null);
-                }}
-                placeholder="Mínimo 4 dígitos"
-                className="w-full bg-[#161b22] border border-[#30363d] rounded-xl px-3 py-2 text-xs text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114] transition"
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] font-semibold text-[#8b949e]">
-                  Confirmar PIN:
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPin(!showConfirmPin)}
-                  className="text-[10px] text-[#8b949e] hover:text-white flex items-center gap-1 cursor-pointer"
-                >
-                  {showConfirmPin ? <EyeOff className="w-3 h-3 text-[#d9b114]" /> : <Eye className="w-3 h-3" />}
-                  <span>{showConfirmPin ? 'Ocultar' : 'Ver'}</span>
-                </button>
-              </div>
-              <input
-                type={showConfirmPin ? 'text' : 'password'}
-                value={confirmPin}
-                onChange={(e) => {
-                  setConfirmPin(e.target.value);
-                  setConfigError(null);
-                }}
-                placeholder="Repite el nuevo PIN"
-                className="w-full bg-[#161b22] border border-[#30363d] rounded-xl px-3 py-2 text-xs text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114] transition"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-semibold text-[#8b949e] mb-1">
-                WhatsApp Admin:
-              </label>
-              <input
-                type="text"
-                value={adminWhatsApp}
-                onChange={(e) => setAdminWhatsApp(e.target.value)}
-                placeholder="Ej: 573213902708"
-                className="w-full bg-[#161b22] border border-[#30363d] rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114] transition"
-                required
-              />
-            </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-[#8b949e] mb-1">
+              Número de WhatsApp Admin (con código de país, sin +):
+            </label>
+            <input
+              type="text"
+              value={adminWhatsApp}
+              onChange={(e) => setAdminWhatsApp(e.target.value)}
+              placeholder="Ej: 573213902708"
+              className="w-full bg-[#161b22] border border-[#30363d] rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114] transition"
+              required
+            />
           </div>
 
           {configError && (

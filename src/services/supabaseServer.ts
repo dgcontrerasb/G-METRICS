@@ -414,57 +414,13 @@ export async function loginAppUser(
   const client = getSupabaseClient();
   const nowMs = Date.now();
 
-  // Comprobación directa para Propietario con correo dgcontreras@gmail.com / DGContrerasB@gmail.com o admin
+  // Acceso de Administrador Propietario restringido exclusivamente a Google OAuth
   if (isOwnerAdmin) {
-    const cfg = await fetchSupabaseAdminConfig();
-    const envAdminPin = (process.env.ADMIN_PIN || '').trim();
-    const envMasterKey = (process.env.ADMIN_MASTER_KEY || '').trim();
-    const activeAdminPin = cfg?.adminPin || envAdminPin || '120328';
-    const pinUpper = pin.toUpperCase();
-    const isStrictProd = process.env.NODE_ENV === 'production' && Boolean(envMasterKey);
-
-    const isPinCorrect =
-      timingSafeCompare(pin, activeAdminPin) ||
-      (envMasterKey ? timingSafeCompare(pin, envMasterKey) : false) ||
-      (!isStrictProd && (timingSafeCompare(pin, '120328') || timingSafeCompare(pinUpper, 'MASTER-2708') || timingSafeCompare(pinUpper, '2708')));
-
-    if (isPinCorrect) {
-      const sessionToken = createSessionJwt({
-        userId: 'admin-owner',
-        username: 'admin',
-        role: 'admin',
-        deviceId: cleanDevice,
-        ttlDays: 30,
-      });
-
-      return {
-        success: true,
-        message: 'Acceso de Propietario verificado con éxito',
-        sessionToken,
-        user: {
-          id: 'admin-owner',
-          username: 'admin',
-          displayName: 'Geovanny Contreras (Propietario)',
-          pin: '[PROTECTED]',
-          role: 'admin',
-          status: 'active',
-          planType: 'PERMANENT',
-          planLabel: 'Acceso Propietario Ilimitado',
-          createdAt: nowMs,
-          expiresAt: null,
-          boundDeviceId: cleanDevice,
-          boundDeviceName: friendlyDevName,
-          whatsappNumber: cfg?.adminWhatsApp || '573213902708',
-          lastActiveAt: nowMs
-        }
-      };
-    } else {
-      return {
-        success: false,
-        code: 'INVALID_PIN',
-        message: 'Credenciales incorrectas para la cuenta de Administrador Propietario.'
-      };
-    }
+    return {
+      success: false,
+      code: 'UNAUTHORIZED',
+      message: 'El acceso de Administrador ahora es exclusivo mediante "Continuar con Google".'
+    };
   }
 
   if (client) {
@@ -1542,18 +1498,17 @@ ALTER TABLE sportstats_feedback ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_users' AND policyname = 'Allow server full access users') THEN
-    CREATE POLICY "Allow server full access users" ON sportstats_users FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_config' AND policyname = 'Allow server full access config') THEN
-    CREATE POLICY "Allow server full access config" ON sportstats_config FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_push_subscriptions' AND policyname = 'Allow server full access push') THEN
-    CREATE POLICY "Allow server full access push" ON sportstats_push_subscriptions FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_feedback' AND policyname = 'Allow server full access feedback') THEN
-    CREATE POLICY "Allow server full access feedback" ON sportstats_feedback FOR ALL USING (true) WITH CHECK (true);
-  END IF;
+  DROP POLICY IF EXISTS "Allow server full access users" ON sportstats_users;
+  CREATE POLICY "Allow server full access users" ON sportstats_users FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Allow server full access config" ON sportstats_config;
+  CREATE POLICY "Allow server full access config" ON sportstats_config FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Allow server full access push" ON sportstats_push_subscriptions;
+  CREATE POLICY "Allow server full access push" ON sportstats_push_subscriptions FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Allow server full access feedback" ON sportstats_feedback;
+  CREATE POLICY "Allow server full access feedback" ON sportstats_feedback FOR ALL TO service_role USING (true) WITH CHECK (true);
 END $$;
 
 ${PICK_LEDGER_SQL}
@@ -1617,30 +1572,7 @@ export async function verifyOAuthIdentityToken(
     // Continuar a la siguiente capa
   }
 
-  // Capa 3: Inspección de claims de JWT emitido por Supabase
-  try {
-    const parts = token.split('.');
-    if (parts.length === 3) {
-      const base64Url = parts[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = Buffer.from(base64, 'base64').toString('utf8');
-      const payload = JSON.parse(jsonPayload);
-
-      const nowSec = Math.floor(Date.now() / 1000);
-      const isNotExpired = !payload.exp || payload.exp > (nowSec - 120); // margen de 120s por desfase horario móvil
-      const isSupabaseIssuer = !payload.iss || payload.iss.includes('supabase');
-      const isAuthRole = payload.aud === 'authenticated' || payload.role === 'authenticated';
-      const jwtEmail = String(payload.email || payload.user_metadata?.email || '').toLowerCase().trim();
-
-      if (isNotExpired && isSupabaseIssuer && isAuthRole && jwtEmail === cleanExpected) {
-        const gSub = String(payload.sub || '');
-        return { verified: true, email: jwtEmail, googleSub: gSub };
-      }
-    }
-  } catch {
-    // Fallo de parseo JWT
-  }
-
+  // Seguridad Zero-Trust: NUNCA aceptar JWTs sin verificación criptográfica de firma
   return { verified: false, error: 'No se pudo certificar la autenticidad del token con ningún proveedor' };
 }
 

@@ -566,7 +566,8 @@ function computeSinglesEfficiencyStats(singles) {
 
 // src/services/securityShield.ts
 import crypto from "node:crypto";
-var JWT_SECRET = process.env.JWT_SECRET_KEY || process.env.ADMIN_MASTER_KEY || "SPORTSTATS_PRO_ZERO_TRUST_JWT_HMAC_KEY_2026_V4";
+var IS_PROD_ENV = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+var JWT_SECRET = process.env.JWT_SECRET_KEY || process.env.LICENSE_MASTER_SECRET || (IS_PROD_ENV ? crypto.createHash("sha256").update(`${process.env.SUPABASE_URL || "gmetrics"}::${process.env.VERCEL_PROJECT_ID || "prod"}::GMETRICS_JWT_V5`).digest("hex") : "DEV_ONLY_LOCAL_JWT_HMAC_KEY");
 var SCRYPT_PREFIX = "scrypt$";
 var KEY_LEN = 32;
 function isHashedPin(stored) {
@@ -888,26 +889,33 @@ function idempotencyMiddleware(req, res, next) {
   });
   next();
 }
-function isAllowedOrigin(origin) {
+function isAllowedOrigin(origin, requestHost) {
   if (!origin) return true;
   const customAllowed = (process.env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
   if (customAllowed.includes(origin)) return true;
   try {
     const parsed = new URL(origin);
     const host = parsed.hostname.toLowerCase();
-    return host === "localhost" || host === "127.0.0.1" || host === "sportstats.pro" || host.endsWith(".sportstats.pro") || host.endsWith(".run.app") || host.endsWith(".google.com") || host.endsWith(".vercel.app");
+    const cleanReqHost = (requestHost || "").split(":")[0].toLowerCase();
+    const vercelHost = (process.env.VERCEL_URL || "").replace(/^https?:\/\//, "").split(":")[0].toLowerCase();
+    if (cleanReqHost && host === cleanReqHost) return true;
+    if (vercelHost && host === vercelHost) return true;
+    if (host === "sportstats.pro" || host.endsWith(".sportstats.pro")) return true;
+    if (host === "g-metrics.vercel.app" || /^g-metrics-[a-z0-9-]+\.vercel\.app$/.test(host)) return true;
+    if (!IS_PROD_ENV && (host === "localhost" || host === "127.0.0.1")) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
 }
 function securityHeadersMiddleware(req, res, next) {
   const origin = req.headers.origin;
-  if (origin && isAllowedOrigin(origin)) {
+  if (origin && isAllowedOrigin(origin, req.headers.host)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Vary", "Origin");
-  } else if (!origin) {
-    res.setHeader("Access-Control-Allow-Origin", "*");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.setHeader(
@@ -996,29 +1004,6 @@ function isSupabaseConfigured() {
   const url = normalizeSupabaseUrl(rawUrl);
   const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY)?.trim();
   return Boolean(url && key);
-}
-async function fetchSupabaseAdminConfig() {
-  const client = getSupabaseClient();
-  if (!client) return null;
-  try {
-    const { data, error } = await client.from("sportstats_config").select("*").eq("id", "main").maybeSingle();
-    if (error) {
-      console.warn("[Supabase Config] Advertencia al leer configuraci\xF3n:", error.message);
-      return null;
-    }
-    if (data) {
-      return {
-        adminPin: data.admin_pin,
-        adminWhatsApp: data.admin_whatsapp,
-        supportName: data.support_name || void 0,
-        customLogoUrl: data.custom_logo_url || void 0,
-        colorTheme: data.color_theme || "cyan-emerald"
-      };
-    }
-  } catch (err) {
-    console.error("[Supabase Config] Excepci\xF3n:", err);
-  }
-  return null;
 }
 async function upsertSupabaseAdminConfig(cfg) {
   const client = getSupabaseClient();
@@ -1126,23 +1111,6 @@ async function updateSupabaseLicenseStatus(key, revoked) {
     return false;
   }
 }
-async function verifyAndConsumeRecoveryOtp(deviceId, otpInput) {
-  const client = getSupabaseClient();
-  const cleanDev = deviceId.trim().toUpperCase();
-  const cleanOtp = otpInput.trim();
-  if (client) {
-    try {
-      const { data, error } = await client.from("sportstats_recovery_requests").select("*").eq("device_id", cleanDev).eq("otp_code", cleanOtp).eq("used", false).gt("expires_at", Date.now()).order("created_at", { ascending: false }).limit(1);
-      if (!error && data && data.length > 0) {
-        await client.from("sportstats_recovery_requests").update({ used: true }).eq("id", data[0].id);
-        return true;
-      }
-    } catch (err) {
-      console.error("[Supabase OTP Verify] Excepci\xF3n:", err);
-    }
-  }
-  return false;
-}
 function normalizeUsername(input) {
   return String(input || "").toLowerCase().trim().replace(/[^a-z0-9]/g, "").slice(0, 20);
 }
@@ -1171,49 +1139,11 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName, freeAcces
   const client = getSupabaseClient();
   const nowMs = Date.now();
   if (isOwnerAdmin) {
-    const cfg = await fetchSupabaseAdminConfig();
-    const envAdminPin = (process.env.ADMIN_PIN || "").trim();
-    const envMasterKey = (process.env.ADMIN_MASTER_KEY || "").trim();
-    const activeAdminPin = cfg?.adminPin || envAdminPin || "120328";
-    const pinUpper = pin.toUpperCase();
-    const isStrictProd = process.env.NODE_ENV === "production" && Boolean(envMasterKey);
-    const isPinCorrect = timingSafeCompare(pin, activeAdminPin) || (envMasterKey ? timingSafeCompare(pin, envMasterKey) : false) || !isStrictProd && (timingSafeCompare(pin, "120328") || timingSafeCompare(pinUpper, "MASTER-2708") || timingSafeCompare(pinUpper, "2708"));
-    if (isPinCorrect) {
-      const sessionToken = createSessionJwt({
-        userId: "admin-owner",
-        username: "admin",
-        role: "admin",
-        deviceId: cleanDevice,
-        ttlDays: 30
-      });
-      return {
-        success: true,
-        message: "Acceso de Propietario verificado con \xE9xito",
-        sessionToken,
-        user: {
-          id: "admin-owner",
-          username: "admin",
-          displayName: "Geovanny Contreras (Propietario)",
-          pin: "[PROTECTED]",
-          role: "admin",
-          status: "active",
-          planType: "PERMANENT",
-          planLabel: "Acceso Propietario Ilimitado",
-          createdAt: nowMs,
-          expiresAt: null,
-          boundDeviceId: cleanDevice,
-          boundDeviceName: friendlyDevName,
-          whatsappNumber: cfg?.adminWhatsApp || "573213902708",
-          lastActiveAt: nowMs
-        }
-      };
-    } else {
-      return {
-        success: false,
-        code: "INVALID_PIN",
-        message: "Credenciales incorrectas para la cuenta de Administrador Propietario."
-      };
-    }
+    return {
+      success: false,
+      code: "UNAUTHORIZED",
+      message: 'El acceso de Administrador ahora es exclusivo mediante "Continuar con Google".'
+    };
   }
   if (client) {
     try {
@@ -2103,18 +2033,17 @@ ALTER TABLE sportstats_feedback ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_users' AND policyname = 'Allow server full access users') THEN
-    CREATE POLICY "Allow server full access users" ON sportstats_users FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_config' AND policyname = 'Allow server full access config') THEN
-    CREATE POLICY "Allow server full access config" ON sportstats_config FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_push_subscriptions' AND policyname = 'Allow server full access push') THEN
-    CREATE POLICY "Allow server full access push" ON sportstats_push_subscriptions FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sportstats_feedback' AND policyname = 'Allow server full access feedback') THEN
-    CREATE POLICY "Allow server full access feedback" ON sportstats_feedback FOR ALL USING (true) WITH CHECK (true);
-  END IF;
+  DROP POLICY IF EXISTS "Allow server full access users" ON sportstats_users;
+  CREATE POLICY "Allow server full access users" ON sportstats_users FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Allow server full access config" ON sportstats_config;
+  CREATE POLICY "Allow server full access config" ON sportstats_config FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Allow server full access push" ON sportstats_push_subscriptions;
+  CREATE POLICY "Allow server full access push" ON sportstats_push_subscriptions FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Allow server full access feedback" ON sportstats_feedback;
+  CREATE POLICY "Allow server full access feedback" ON sportstats_feedback FOR ALL TO service_role USING (true) WITH CHECK (true);
 END $$;
 
 ${PICK_LEDGER_SQL}
@@ -2151,25 +2080,6 @@ async function verifyOAuthIdentityToken(token, expectedEmail, client) {
           const gSub = String(googleData.sub || "");
           return { verified: true, email: gEmail, googleSub: gSub };
         }
-      }
-    }
-  } catch {
-  }
-  try {
-    const parts = token.split(".");
-    if (parts.length === 3) {
-      const base64Url = parts[1];
-      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-      const jsonPayload = Buffer.from(base64, "base64").toString("utf8");
-      const payload = JSON.parse(jsonPayload);
-      const nowSec = Math.floor(Date.now() / 1e3);
-      const isNotExpired = !payload.exp || payload.exp > nowSec - 120;
-      const isSupabaseIssuer = !payload.iss || payload.iss.includes("supabase");
-      const isAuthRole = payload.aud === "authenticated" || payload.role === "authenticated";
-      const jwtEmail = String(payload.email || payload.user_metadata?.email || "").toLowerCase().trim();
-      if (isNotExpired && isSupabaseIssuer && isAuthRole && jwtEmail === cleanExpected) {
-        const gSub = String(payload.sub || "");
-        return { verified: true, email: jwtEmail, googleSub: gSub };
       }
     }
   } catch {
@@ -7191,8 +7101,8 @@ var __dirname = path2.dirname(__filename);
 var app = express();
 var PORT = parseInt(process.env.PORT || "3000", 10);
 app.disable("x-powered-by");
-app.use(express.json({ limit: "25mb" }));
-app.use(express.urlencoded({ limit: "25mb", extended: true }));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ limit: "2mb", extended: true }));
 app.use(securityHeadersMiddleware);
 function zeroTrustSessionMiddleware(req, _res, next) {
   const session = extractSessionFromRequest(req);
@@ -9960,7 +9870,23 @@ app.get("/api/fixtures", dataRateLimitMiddleware, async (req, res) => {
     });
   }
 });
-app.get(["/api/status", "/api/admin/telemetry"], dataRateLimitMiddleware, async (_req, res) => {
+app.get("/api/status", dataRateLimitMiddleware, (_req, res) => {
+  return res.json({
+    success: true,
+    status: "ok",
+    serverReady: true,
+    supabasePersistence: isSupabaseConfigured()
+  });
+});
+app.get("/api/admin/telemetry", dataRateLimitMiddleware, async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado" });
+  }
+  clearAuthFailures(req);
   await hydrateTelemetryFromSupabaseIfNeeded();
   const hasFootballData = Boolean(getSecretKey("FOOTBALL_DATA_KEY"));
   const hasOddsApi = Boolean(getSecretKey("ODDS_API_KEY"));
@@ -10140,7 +10066,11 @@ app.get("/api/nba/rosters", dataRateLimitMiddleware, async (req, res) => {
 });
 app.get("/api/nba/bdl/*", dataRateLimitMiddleware, async (req, res) => {
   const bdlKey = getSecretKey("BALLDONTLIE_API_KEY");
-  const subPath = req.params[0] || "teams";
+  const rawSubPath = String(req.params[0] || "teams").replace(/^\/+|\/+$/g, "");
+  if (!/^(teams|players|games|stats)(\/[a-zA-Z0-9_-]{1,32})?$/.test(rawSubPath) || rawSubPath.includes("..")) {
+    return res.status(400).json({ success: false, error: "Ruta de consulta NBA no permitida." });
+  }
+  const subPath = rawSubPath;
   const queryStr = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
   if (!bdlKey) {
     return res.json({
@@ -10163,14 +10093,14 @@ app.get("/api/nba/bdl/*", dataRateLimitMiddleware, async (req, res) => {
     });
     if (!apiRes.ok) {
       if (cached) return res.json({ success: true, source: "fallback_disk_cache", data: cached.data });
-      return res.status(apiRes.status).json({ success: false, error: `Error de BallDontLie: ${apiRes.status}` });
+      return res.status(apiRes.status).json({ success: false, error: "Error consultando proveedor de datos NBA." });
     }
     const data = await apiRes.json();
     setCacheItem(cacheKey, data);
     return res.json({ success: true, source: "balldontlie_live", data });
-  } catch (err) {
+  } catch {
     if (cached) return res.json({ success: true, source: "fallback_disk_cache", data: cached.data });
-    return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
+    return res.status(500).json({ success: false, error: "Error interno al consultar estad\xEDsticas NBA." });
   }
 });
 app.get("/api/standings", dataRateLimitMiddleware, async (req, res) => {
@@ -10211,12 +10141,13 @@ app.get("/api/standings", dataRateLimitMiddleware, async (req, res) => {
 var LICENSES_FILE = IS_VERCEL2 ? path2.resolve("/tmp", "licenses_db.json") : path2.resolve(__dirname, "licenses_db.json");
 var ADMIN_CONFIG_FILE = IS_VERCEL2 ? path2.resolve("/tmp", "admin_config.json") : path2.resolve(__dirname, "admin_config.json");
 var BUNDLED_ADMIN_CONFIG_FILE = path2.resolve(__dirname, "admin_config.json");
-var LICENSE_MASTER_SECRET = process.env.LICENSE_MASTER_SECRET || "FUTBOLSTATS_PRO_SECURE_HMAC_SALT_2026_X9";
-var MASTER_RECOVERY_CODE = process.env.ADMIN_MASTER_KEY || "MASTER-2708";
+var LICENSE_MASTER_SECRET = process.env.LICENSE_MASTER_SECRET || (process.env.SUPABASE_SERVICE_ROLE_KEY ? crypto3.createHash("sha256").update(`${process.env.SUPABASE_SERVICE_ROLE_KEY}::GMETRICS_LICENSE_V5`).digest("hex") : IS_VERCEL2 || process.env.NODE_ENV === "production" ? crypto3.randomBytes(32).toString("hex") : "DEV_ONLY_LOCAL_LICENSE_HMAC_SALT");
+var MASTER_RECOVERY_CODE = process.env.ADMIN_MASTER_KEY || (!IS_VERCEL2 && process.env.NODE_ENV !== "production" ? "MASTER-2708" : "");
 var memoryAdminConfig = null;
 function getAdminConfig() {
   const defaultConfig = {
-    adminPin: process.env.ADMIN_PIN || "120328",
+    adminPin: "",
+    // Desactivado: acceso admin exclusivo vía Google OAuth
     adminWhatsApp: process.env.ADMIN_WHATSAPP || "573213902708",
     supportName: "Administrador G METRICS",
     customLogoUrl: "/custom-logo.png",
@@ -10244,10 +10175,10 @@ function getAdminConfig() {
   }
   return defaultConfig;
 }
-function extractAdminCredential(req, bodyPinField) {
-  const headerPin = req.headers["x-admin-pin"];
-  if (typeof headerPin === "string" && headerPin.trim()) {
-    return headerPin.trim();
+function extractAdminCredential(req, _bodyPinField) {
+  const session = req.userSession || extractSessionFromRequest(req);
+  if (session && session.role === "admin") {
+    return "__VALID_ADMIN_JWT__";
   }
   const authHeader = req.headers["authorization"];
   if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
@@ -10257,27 +10188,10 @@ function extractAdminCredential(req, bodyPinField) {
       return "__VALID_ADMIN_JWT__";
     }
   }
-  if (typeof bodyPinField === "string" && bodyPinField.trim()) {
-    return bodyPinField.trim();
-  }
-  if (typeof req.query.pin === "string" && req.query.pin.trim()) {
-    return req.query.pin.trim();
-  }
   return "";
 }
-function isValidAdminPin(pin, cfg) {
-  if (!pin || typeof pin !== "string") return false;
-  if (pin === "__VALID_ADMIN_JWT__") return true;
-  const clean = pin.trim();
-  const upper = clean.toUpperCase();
-  const envMasterKey = (process.env.ADMIN_MASTER_KEY || "").trim();
-  const isStrictProd = process.env.NODE_ENV === "production" && Boolean(envMasterKey);
-  if (timingSafeCompare(clean, cfg.adminPin)) return true;
-  if (envMasterKey && timingSafeCompare(clean, envMasterKey)) return true;
-  if (!isStrictProd) {
-    return timingSafeCompare(clean, "120328") || timingSafeCompare(upper, "MASTER-2708") || timingSafeCompare(upper, "2708");
-  }
-  return false;
+function isValidAdminPin(pin, _cfg) {
+  return pin === "__VALID_ADMIN_JWT__";
 }
 app.post("/api/set-secret-key", async (req, res) => {
   if (checkAuthLockout(req, res)) return;
@@ -10424,7 +10338,7 @@ app.get("/api/license/config", (req, res) => {
     customLogoUrl: cfg.customLogoUrl,
     colorTheme: cfg.colorTheme || "cyan-emerald",
     freeAccessMode: cfg.freeAccessMode !== void 0 ? Boolean(cfg.freeAccessMode) : true,
-    currentPin: isAuthenticated ? cfg.adminPin : void 0,
+    isAdminSession: isAuthenticated,
     requiresAuth: true
   });
 });
@@ -10762,39 +10676,10 @@ app.post("/api/license/renew", async (req, res) => {
     record
   });
 });
-app.post("/api/license/recover", async (req, res) => {
-  if (checkAuthLockout(req, res)) return;
-  const { recoveryKey, deviceId } = req.body || {};
-  const cfg = getAdminConfig();
-  const cleanKey = String(recoveryKey || "").trim().toUpperCase();
-  const last4Phone = cfg.adminWhatsApp.slice(-4);
-  const envMasterKey = (process.env.ADMIN_MASTER_KEY || "").trim().toUpperCase();
-  const isStrictProd = process.env.NODE_ENV === "production" && Boolean(envMasterKey);
-  let isOtpValid = false;
-  if (deviceId && cleanKey) {
-    try {
-      isOtpValid = await verifyAndConsumeRecoveryOtp(String(deviceId), cleanKey);
-    } catch {
-      isOtpValid = false;
-    }
-  }
-  const isMasterOrOwner = (envMasterKey ? timingSafeCompare(cleanKey, envMasterKey) : false) || timingSafeCompare(cleanKey, cfg.adminPin.toUpperCase()) || !isStrictProd && (timingSafeCompare(cleanKey, MASTER_RECOVERY_CODE.toUpperCase()) || timingSafeCompare(cleanKey, last4Phone));
-  if (!isMasterOrOwner && !isOtpValid) {
-    await recordAuthFailure(req);
-    return res.status(403).json({
-      success: false,
-      error: "C\xF3digo de autorizaci\xF3n o clave incorrecta / expirada."
-    });
-  }
-  clearAuthFailures(req);
-  if (req.body?.newPin && String(req.body.newPin).trim().length >= 4) {
-    cfg.adminPin = sanitizeText(String(req.body.newPin).trim(), 32);
-    saveAdminConfig(cfg);
-  }
-  return res.json({
-    success: true,
-    adminPin: cfg.adminPin,
-    adminWhatsApp: cfg.adminWhatsApp
+app.post("/api/license/recover", async (_req, res) => {
+  return res.status(410).json({
+    success: false,
+    error: "La recuperaci\xF3n por PIN o clave maestra ha sido eliminada por seguridad. Inicia sesi\xF3n con tu cuenta de Google de administrador."
   });
 });
 app.get("/api/admin/supabase-status", async (req, res) => {
@@ -11027,7 +10912,7 @@ app.get("/api/auth/config", (req, res) => {
   return res.json({
     success: true,
     supabaseUrl: process.env.SUPABASE_URL || null,
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_ANON_KEY || null
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || null
   });
 });
 app.post("/api/auth/google", async (req, res) => {
@@ -11068,8 +10953,13 @@ app.post("/api/auth/google", async (req, res) => {
 });
 app.post("/api/user/redeem-code", async (req, res) => {
   try {
+    const session = req.userSession || extractSessionFromRequest(req);
+    if (!session || !session.username) {
+      return res.status(401).json({ success: false, message: "Debes iniciar sesi\xF3n para canjear un c\xF3digo." });
+    }
     const { code, userIdentifier } = req.body || {};
-    const result = await redeemActivationCode(code, userIdentifier);
+    const targetUser = session.role === "admin" && userIdentifier ? String(userIdentifier) : session.username;
+    const result = await redeemActivationCode(code, targetUser);
     if (result.success && result.user) {
       const cleanDev = sanitizeText(String(result.user.boundDeviceId || req.headers["x-device-id"] || ""), 48).toUpperCase();
       const updatedJwt = createSessionJwt({
@@ -11091,8 +10981,11 @@ app.post("/api/user/redeem-code", async (req, res) => {
 });
 app.post("/api/user/feedback-bonus", async (req, res) => {
   try {
-    const { userIdentifier } = req.body || {};
-    const result = await claimFeedbackBonus(userIdentifier);
+    const session = req.userSession || extractSessionFromRequest(req);
+    if (!session || !session.username) {
+      return res.status(401).json({ success: false, message: "Debes iniciar sesi\xF3n para reclamar el bono." });
+    }
+    const result = await claimFeedbackBonus(session.username);
     return res.json(result);
   } catch {
     return res.status(500).json({ success: false, message: "Error al aplicar bono de feedback" });
@@ -11920,11 +11813,10 @@ app.post("/api/parlays/generate-day", async (req, res) => {
       profileStats: stats.byProfile,
       legMarketStats: stats.byLegMarket
     });
-  } catch (err) {
+  } catch {
     return res.status(500).json({
       success: false,
-      error: "Error al generar parlays del d\xEDa",
-      details: err instanceof Error ? err.message : String(err)
+      error: "Error al generar parlays del d\xEDa"
     });
   }
 });
@@ -11951,11 +11843,10 @@ app.post("/api/parlays/purge-seeds", async (req, res) => {
       remainingCount: store.slips.length,
       message: `Se purgaron ${purgedCount} boletos semilla residuales exitosamente.`
     });
-  } catch (err) {
+  } catch {
     return res.status(500).json({
       success: false,
-      error: "Error al purgar boletos semilla",
-      details: err instanceof Error ? err.message : String(err)
+      error: "Error al purgar boletos semilla"
     });
   }
 });
@@ -12372,11 +12263,20 @@ app.post("/api/push/subscribe", async (req, res) => {
   }
 });
 app.post("/api/push/send-alert", dataRateLimitMiddleware, async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: "No autorizado para enviar notificaciones masivas." });
+  }
+  clearAuthFailures(req);
   try {
     const { matchId, title, body, icon, badge, url, tag, alertKind, whistleCount } = req.body || {};
     if (!title) {
       return res.status(400).json({ error: "T\xEDtulo de alerta requerido" });
     }
+    const safeUrl = typeof url === "string" && /^\/(?!\/)/.test(url.trim()) ? url.trim() : "/";
     const subscribers = await getActivePushSubscriptions(matchId ? String(matchId) : void 0);
     if (!subscribers || subscribers.length === 0) {
       return res.json({ success: true, delivered: 0, total: 0, message: "No hay suscriptores registrados para este partido" });
@@ -12391,7 +12291,7 @@ app.post("/api/push/send-alert", dataRateLimitMiddleware, async (req, res) => {
       whistleCount: Number(whistleCount || 1),
       vibrate: getVibrationPatternForAlertKind(resolvedAlertKind),
       data: {
-        url: url || "/",
+        url: safeUrl,
         matchId: matchId ? String(matchId) : null,
         alertKind: resolvedAlertKind,
         whistleCount: Number(whistleCount || 1),

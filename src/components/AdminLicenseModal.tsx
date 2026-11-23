@@ -66,15 +66,21 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
   fixtures = [],
   nbaFixtures = []
 }) => {
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
+  const isCurrentGoogleUserAdmin = useCallback((): boolean => {
+    try {
+      const raw = localStorage.getItem('sportstats_auth_user');
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u?.role === 'admin') return true;
+      }
+    } catch {
+      // ignore
+    }
     return localStorage.getItem('sportstats_admin_remember') === 'true';
-  });
-  const [pinInput, setPinInput] = useState(() => {
-    return localStorage.getItem('sportstats_admin_saved_pin') || '';
-  });
-  const [showPinInput, setShowPinInput] = useState(false);
-  const [showRecoveryNewPin, setShowRecoveryNewPin] = useState(false);
-  const [pinError, setPinError] = useState<string | null>(null);
+  }, []);
+
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => isCurrentGoogleUserAdmin());
+  const [pinInput, setPinInput] = useState('');
 
   const [activeTab, setActiveTab] = useState<
     'USERS' | 'PARLAYS_BETA' | 'MONITOR' | 'AUDIT' | 'FEEDBACK' | 'CONFIG'
@@ -88,39 +94,23 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
   const [appUsersList, setAppUsersList] = useState<SupabaseUserItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
-  // Config & Security PIN
+  // Config
   const [adminWhatsApp, setAdminWhatsApp] = useState('573213902708');
   const [freeAccessMode, setFreeAccessMode] = useState<boolean>(true);
-  const [activeServerPin, setActiveServerPin] = useState(() => {
-    return (
-      sessionStorage.getItem('futbolstats_admin_pin') ||
-      localStorage.getItem('sportstats_admin_saved_pin') ||
-      ''
-    );
-  });
+  const [activeServerPin, setActiveServerPin] = useState('');
 
   // Supabase Database Status & SQL Helper
   const [supabaseConfigured, setSupabaseConfigured] = useState(false);
   const [supabaseProject, setSupabaseProject] = useState<string | null>(null);
   const [supabaseSqlSchema, setSupabaseSqlSchema] = useState<string | null>(null);
 
-  // Emergency Recovery States (when PIN is forgotten)
-  const [showRecoveryMode, setShowRecoveryMode] = useState(false);
-  const [recoveryKeyInput, setRecoveryKeyInput] = useState('');
-  const [recoveryNewPin, setRecoveryNewPin] = useState('');
-  const [recoveryError, setRecoveryError] = useState<string | null>(null);
-  const [recoverySuccessMsg, setRecoverySuccessMsg] = useState<string | null>(null);
-
   const buildAdminHeaders = useCallback(
-    (pin?: string, includeJson = false, idempotent = false): Record<string, string> => {
+    (_pin?: string, includeJson = false, idempotent = false): Record<string, string> => {
       const headers: Record<string, string> = {};
       if (includeJson) {
         headers['Content-Type'] = 'application/json';
       }
-      if (pin && pin.trim()) {
-        headers['x-admin-pin'] = pin.trim();
-      }
-      const jwt = sessionStorage.getItem('sportstats_session_jwt');
+      const jwt = sessionStorage.getItem('sportstats_session_jwt') || localStorage.getItem('sportstats_session_jwt');
       if (jwt) {
         headers['Authorization'] = `Bearer ${jwt}`;
       }
@@ -134,37 +124,30 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
 
   const loadConfig = useCallback(async () => {
     try {
-      const storedPin =
-        sessionStorage.getItem('futbolstats_admin_pin') ||
-        localStorage.getItem('sportstats_admin_saved_pin') ||
-        '';
       const res = await fetch('/api/license/config', {
-        headers: buildAdminHeaders(storedPin)
+        headers: buildAdminHeaders()
       });
       const data = await res.json();
       if (data.success) {
         if (data.adminWhatsApp) setAdminWhatsApp(data.adminWhatsApp);
         if (typeof data.freeAccessMode === 'boolean') setFreeAccessMode(data.freeAccessMode);
-        if (data.currentPin) {
-          setActiveServerPin(data.currentPin);
-          localStorage.setItem('sportstats_admin_saved_pin', data.currentPin);
+        if (data.isAdminSession) {
+          setIsAdminAuthenticated(true);
         }
       }
 
-      if (storedPin) {
-        fetch('/api/admin/supabase-status', {
-          headers: buildAdminHeaders(storedPin)
+      fetch('/api/admin/supabase-status', {
+        headers: buildAdminHeaders()
+      })
+        .then((r) => r.json())
+        .then((sb) => {
+          if (sb && sb.success) {
+            setSupabaseConfigured(Boolean(sb.configured));
+            setSupabaseProject(sb.supabaseProject || null);
+            if (sb.sqlSchema) setSupabaseSqlSchema(sb.sqlSchema);
+          }
         })
-          .then((r) => r.json())
-          .then((sb) => {
-            if (sb && sb.success) {
-              setSupabaseConfigured(Boolean(sb.configured));
-              setSupabaseProject(sb.supabaseProject || null);
-              if (sb.sqlSchema) setSupabaseSqlSchema(sb.sqlSchema);
-            }
-          })
-          .catch(() => {});
-      }
+        .catch(() => {});
     } catch {
       // fallback
     }
@@ -173,7 +156,9 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
   const loadServerTelemetry = useCallback(async () => {
     setIsLoadingTelemetry(true);
     try {
-      const res = await fetch('/api/admin/telemetry');
+      const res = await fetch('/api/admin/telemetry', {
+        headers: buildAdminHeaders(activeServerPin)
+      });
       const data = await res.json();
       if (data && (data.status === 'ok' || data.onlineNowCount !== undefined)) {
         setServerTelemetry(data);
@@ -183,7 +168,7 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
     } finally {
       setIsLoadingTelemetry(false);
     }
-  }, []);
+  }, [activeServerPin, buildAdminHeaders]);
 
   const getLocalDeletedUsernames = useCallback((): Set<string> => {
     try {
@@ -304,135 +289,23 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      const hasAdmin = isCurrentGoogleUserAdmin();
+      setIsAdminAuthenticated(hasAdmin);
       loadConfig();
-      loadServerTelemetry();
-      const isRemembered = localStorage.getItem('sportstats_admin_remember') === 'true';
-      const savedPin = localStorage.getItem('sportstats_admin_saved_pin') || '';
-      if (isRemembered && savedPin) {
-        setIsAdminAuthenticated(true);
-        setActiveServerPin(savedPin);
-        loadAppUsers(savedPin);
+      if (hasAdmin) {
+        loadServerTelemetry();
+        loadAppUsers('');
       }
       const interval = setInterval(() => {
-        loadServerTelemetry();
+        if (isCurrentGoogleUserAdmin()) {
+          loadServerTelemetry();
+        }
       }, 15000);
       return () => clearInterval(interval);
-    } else {
-      setShowRecoveryMode(false);
-      setRecoveryKeyInput('');
-      setRecoveryError(null);
-      setRecoverySuccessMsg(null);
     }
-  }, [isOpen, loadConfig, loadAppUsers, loadServerTelemetry]);
-
-  const unlockAdminDeviceAndAuthenticate = (validPinUsed: string) => {
-    localStorage.setItem('sportstats_admin_remember', 'true');
-    localStorage.setItem('sportstats_admin_saved_pin', validPinUsed);
-    sessionStorage.setItem('futbolstats_admin_pin', validPinUsed);
-    setActiveServerPin(validPinUsed);
-    setIsAdminAuthenticated(true);
-
-    // Unlock admin device permanently with VIP license
-    const devId = getOrCreateDeviceId();
-    const masterToken = createLicenseToken(devId, 'PERMANENT');
-    const check = verifyLicenseToken(masterToken.key, devId);
-    saveActiveLicense(masterToken.key, check);
-
-    loadAppUsers(validPinUsed);
-    loadConfig();
-    if (onLicenseChanged) onLicenseChanged();
-  };
-
-  // Handle Admin PIN verification against server via x-admin-pin header
-  const handleVerifyPin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPinError(null);
-    const pin = pinInput.trim();
-
-    if (!pin) {
-      setPinError('Ingresa tu PIN de Administrador.');
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/license/list', {
-        headers: buildAdminHeaders(pin)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.currentPin) {
-          setActiveServerPin(data.currentPin);
-        }
-        unlockAdminDeviceAndAuthenticate(pin);
-        return;
-      } else if (res.status === 429) {
-        const errData = await res.json().catch(() => ({}));
-        setPinError(errData.message || 'Demasiados intentos fallidos. Espera unos minutos.');
-        return;
-      } else {
-        setPinError('Código o credencial no válida.');
-      }
-    } catch {
-      if (activeServerPin && pin === activeServerPin) {
-        unlockAdminDeviceAndAuthenticate(pin);
-      } else {
-        setPinError('Error de conexión al verificar credenciales.');
-      }
-    }
-  };
-
-  const handleEmergencyRecovery = async () => {
-    setRecoveryError(null);
-    setRecoverySuccessMsg(null);
-    const cleanKey = recoveryKeyInput.trim();
-
-    if (!cleanKey) {
-      setRecoveryError('Ingresa tu clave maestra de recuperación.');
-      return;
-    }
-
-    if (recoveryNewPin.trim() && recoveryNewPin.trim().length < 4) {
-      setRecoveryError('El nuevo PIN debe tener al menos 4 caracteres.');
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/license/recover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...buildAdminHeaders(undefined, false, true) },
-        body: JSON.stringify({
-          recoveryKey: cleanKey,
-          deviceId: getOrCreateDeviceId(),
-          newPin: recoveryNewPin.trim() || undefined
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const pinToUse = recoveryNewPin.trim() || data.adminPin;
-        setActiveServerPin(pinToUse);
-        setPinInput(pinToUse);
-        sessionStorage.setItem('futbolstats_admin_pin', pinToUse);
-        localStorage.setItem('sportstats_admin_saved_pin', pinToUse);
-        unlockAdminDeviceAndAuthenticate(pinToUse);
-        setShowRecoveryMode(false);
-        setRecoveryKeyInput('');
-        setRecoveryNewPin('');
-        return;
-      } else if (res.status === 429) {
-        const errData = await res.json().catch(() => ({}));
-        setRecoveryError(errData.message || 'Demasiados intentos fallidos. Espera 15 minutos.');
-        return;
-      } else {
-        setRecoveryError('Clave de recuperación no válida.');
-        return;
-      }
-    } catch {
-      setRecoveryError('Error de conexión con el servidor al validar la clave de recuperación.');
-    }
-  };
+  }, [isOpen, isCurrentGoogleUserAdmin, loadConfig, loadAppUsers, loadServerTelemetry]);
 
   const handleCloseModal = () => {
-    setPinError(null);
     onClose();
   };
 
@@ -443,6 +316,8 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
       localStorage.removeItem('sportstats_admin_saved_pin');
       localStorage.removeItem('sportstats_auth_user');
       localStorage.removeItem('sportstats_client_name');
+      localStorage.removeItem('sportstats_session_jwt');
+      sessionStorage.removeItem('sportstats_session_jwt');
       sessionStorage.removeItem('futbolstats_admin_pin');
       sessionStorage.removeItem('sportstats_exp_alert_dismissed');
     } catch {
@@ -451,7 +326,6 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
     setIsAdminAuthenticated(false);
     setPinInput('');
     setActiveServerPin('');
-    setPinError(null);
     onClose();
     if (onLogout) {
       onLogout();
@@ -462,11 +336,10 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
 
   if (!isOpen) return null;
 
-  // STATE 1: Discrete Security Verification Box (Fintech Light White)
+  // STATE 1: Acceso Restringido (Exclusivo Google OAuth de Administrador)
   if (!isAdminAuthenticated) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        {/* Backdrop blur independiente (fondo visible y difuminado cristalino) */}
         <div
           onClick={handleCloseModal}
           className="fixed inset-0 bg-black/25 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
@@ -489,178 +362,19 @@ export const AdminLicenseModal: React.FC<AdminLicenseModalProps> = ({
           </div>
 
           <h3 className="text-base font-bold text-white tracking-tight mb-1">
-            {showRecoveryMode ? 'Recuperación de Acceso' : 'Verificación de Seguridad'}
+            Acceso Restringido
           </h3>
-          <p className="text-xs text-[#8b949e] mb-4">
-            {showRecoveryMode
-              ? 'Solicita tu código de recuperación por WhatsApp o ingresa tu clave.'
-              : 'Ingresa el código de autorización para continuar.'}
+          <p className="text-xs text-[#8b949e] mb-5 leading-relaxed">
+            El Panel de Administración ahora utiliza verificación exclusiva por <span className="text-white font-semibold">Google OAuth</span>. Inicia sesión con tu cuenta de Google de administrador para continuar.
           </p>
 
-          {!showRecoveryMode ? (
-            <form onSubmit={handleVerifyPin} className="space-y-3.5">
-              <div className="relative">
-                <input
-                  type={showPinInput ? 'text' : 'password'}
-                  value={pinInput}
-                  onChange={(e) => {
-                    setPinInput(e.target.value);
-                    setPinError(null);
-                  }}
-                  placeholder="••••••"
-                  autoFocus
-                  className="w-full bg-[#0b0e14] border border-[#30363d] rounded-xl pl-4 pr-11 py-2.5 text-center text-lg font-mono tabular-nums tracking-widest text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114] focus:bg-[#0b0e14] transition"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPinInput(!showPinInput)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-[#8b949e] hover:text-white cursor-pointer"
-                  title={showPinInput ? 'Ocultar PIN' : 'Ver PIN'}
-                >
-                  {showPinInput ? <EyeOff className="w-4 h-4 text-[#d9b114]" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-
-              {pinError && (
-                <div className="space-y-2">
-                  <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 py-2 px-3 rounded-lg font-medium">
-                    {pinError}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowRecoveryMode(true);
-                      setRecoveryError(null);
-                      setRecoverySuccessMsg(null);
-                    }}
-                    className="text-[11px] font-semibold text-[#d9b114] hover:underline underline-offset-2 transition cursor-pointer"
-                  >
-                    ¿Olvidaste tu código? Recuperar acceso
-                  </button>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2.5 pt-1">
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs bg-[#0b0e14] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] transition cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-[#161b22] hover:bg-[#21262d] text-white border border-[#30363d] hover:border-[#d9b114]/50 transition shadow-xs active:scale-95 cursor-pointer"
-                >
-                  Verificar
-                </button>
-              </div>
-            </form>
-          ) : (
-            <div className="space-y-3.5 text-left">
-              <button
-                type="button"
-                onClick={() => {
-                  const devId = getOrCreateDeviceId();
-                  const cleanPhone = (adminWhatsApp || '573213902708').replace(/[^0-9]/g, '');
-                  const msg = `⚠️ *Solicitud de Autorización / Recuperación · G METRICS*\n\nHola Administrador, se solicita verificación de seguridad para el dispositivo:\n📱 *Dispositivo:* ${devId}\n\nSi reconoces este intento, envía la clave de acceso correspondiente.`;
-                  const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
-                  window.open(url, '_blank', 'noopener,noreferrer');
-                }}
-                className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer flex items-center justify-center gap-2"
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>Solicitar código por WhatsApp</span>
-              </button>
-
-              <div className="pt-2 border-t border-[#30363d] space-y-2.5">
-                <div>
-                  <label className="block text-[11px] font-semibold text-[#8b949e] mb-1">
-                    Código de autorización recibido:
-                  </label>
-                  <input
-                    type="text"
-                    value={recoveryKeyInput}
-                    onChange={(e) => {
-                      setRecoveryKeyInput(e.target.value);
-                      setRecoveryError(null);
-                    }}
-                    placeholder="Código o clave de autorización"
-                    autoFocus
-                    className="w-full bg-[#0b0e14] border border-[#30363d] rounded-lg px-3.5 py-2 text-center text-xs font-mono tracking-wider text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114] transition"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[11px] font-semibold text-[#8b949e]">
-                      Nuevo PIN (Opcional):
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowRecoveryNewPin(!showRecoveryNewPin)}
-                      className="text-[10px] text-[#8b949e] hover:text-white flex items-center gap-1 cursor-pointer"
-                    >
-                      {showRecoveryNewPin ? <EyeOff className="w-3 h-3 text-[#d9b114]" /> : <Eye className="w-3 h-3" />}
-                      <span>{showRecoveryNewPin ? 'Ocultar' : 'Ver'}</span>
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type={showRecoveryNewPin ? 'text' : 'password'}
-                      value={recoveryNewPin}
-                      onChange={(e) => setRecoveryNewPin(e.target.value)}
-                      placeholder="Mínimo 4 dígitos"
-                      className="w-full bg-[#0b0e14] border border-[#30363d] rounded-lg pl-3.5 pr-10 py-2 text-center text-xs font-mono tracking-wider text-white placeholder-[#8b949e] focus:outline-none focus:border-[#d9b114] transition"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowRecoveryNewPin(!showRecoveryNewPin)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#8b949e] hover:text-white cursor-pointer"
-                      title={showRecoveryNewPin ? 'Ocultar PIN' : 'Ver PIN'}
-                    >
-                      {showRecoveryNewPin ? <EyeOff className="w-4 h-4 text-[#d9b114]" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {recoveryError && (
-                <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 py-2 px-3 rounded-lg text-center font-medium">
-                  {recoveryError}
-                </div>
-              )}
-
-              {recoverySuccessMsg && (
-                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 py-2 px-3 rounded-lg text-center font-semibold">
-                  {recoverySuccessMsg}
-                </div>
-              )}
-
-              <div className="space-y-2 pt-1">
-                <button
-                  type="button"
-                  onClick={handleEmergencyRecovery}
-                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-[#d9b114] hover:bg-[#c29e10] text-[#0b0e14] transition shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <Key className="w-3.5 h-3.5" />
-                  <span>Verificar y Desbloquear</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowRecoveryMode(false);
-                    setRecoveryKeyInput('');
-                    setRecoveryError(null);
-                  }}
-                  className="w-full py-2 px-4 rounded-xl font-semibold text-xs bg-[#0b0e14] hover:bg-[#21262d] text-[#8b949e] hover:text-white border border-[#30363d] transition cursor-pointer text-center"
-                >
-                  Volver a ingresar PIN
-                </button>
-              </div>
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={handleCloseModal}
+            className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-[#d9b114] hover:bg-[#c29e10] text-[#0b0e14] transition shadow-xs cursor-pointer"
+          >
+            Entendido
+          </button>
         </div>
       </div>
     );

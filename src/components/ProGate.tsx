@@ -4,10 +4,9 @@ import { verifyLicenseToken } from '../services/licenseService';
 
 export function checkIsProClient(): boolean {
   if (typeof window === 'undefined') return false;
-  // 1. Verificación directa de administrador por credenciales locales o sesión
+  // 1. Verificación directa de administrador por sesión de Google
   try {
     if (localStorage.getItem('sportstats_admin_remember') === 'true') return true;
-    if (sessionStorage.getItem('futbolstats_admin_pin') || localStorage.getItem('sportstats_admin_saved_pin')) return true;
   } catch {}
 
   // 2. Verificación de objeto de usuario autenticado

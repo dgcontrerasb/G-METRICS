@@ -129,8 +129,8 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 app.disable('x-powered-by');
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ limit: '25mb', extended: true }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ limit: '2mb', extended: true }));
 
 // Global Helmet-grade security headers, CORS validation & payload sanitization
 app.use(securityHeadersMiddleware);
@@ -3257,8 +3257,26 @@ app.get('/api/fixtures', dataRateLimitMiddleware, async (req, res) => {
   }
 });
 
-// 2. Status Check & Real-Time Telemetry
-app.get(['/api/status', '/api/admin/telemetry'], dataRateLimitMiddleware, async (_req, res) => {
+// 2. Status Check público mínimo + Real-Time Telemetry (SOLO ADMINISTRADOR)
+app.get('/api/status', dataRateLimitMiddleware, (_req, res) => {
+  return res.json({
+    success: true,
+    status: 'ok',
+    serverReady: true,
+    supabasePersistence: isSupabaseConfigured()
+  });
+});
+
+app.get('/api/admin/telemetry', dataRateLimitMiddleware, async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: 'No autorizado' });
+  }
+  clearAuthFailures(req);
+
   await hydrateTelemetryFromSupabaseIfNeeded();
   const hasFootballData = Boolean(getSecretKey('FOOTBALL_DATA_KEY'));
   const hasOddsApi = Boolean(getSecretKey('ODDS_API_KEY'));
@@ -3469,7 +3487,11 @@ app.get('/api/nba/rosters', dataRateLimitMiddleware, async (req, res) => {
 // 2b-4. BallDontLie API Proxy (Refuerzo opcional de estadísticas y jugadores NBA)
 app.get('/api/nba/bdl/*', dataRateLimitMiddleware, async (req, res) => {
   const bdlKey = getSecretKey('BALLDONTLIE_API_KEY');
-  const subPath = req.params[0] || 'teams';
+  const rawSubPath = String(req.params[0] || 'teams').replace(/^\/+|\/+$/g, '');
+  if (!/^(teams|players|games|stats)(\/[a-zA-Z0-9_-]{1,32})?$/.test(rawSubPath) || rawSubPath.includes('..')) {
+    return res.status(400).json({ success: false, error: 'Ruta de consulta NBA no permitida.' });
+  }
+  const subPath = rawSubPath;
   const queryStr = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
 
   if (!bdlKey) {
@@ -3495,14 +3517,14 @@ app.get('/api/nba/bdl/*', dataRateLimitMiddleware, async (req, res) => {
     });
     if (!apiRes.ok) {
       if (cached) return res.json({ success: true, source: 'fallback_disk_cache', data: cached.data });
-      return res.status(apiRes.status).json({ success: false, error: `Error de BallDontLie: ${apiRes.status}` });
+      return res.status(apiRes.status).json({ success: false, error: 'Error consultando proveedor de datos NBA.' });
     }
     const data = await apiRes.json();
     setCacheItem(cacheKey, data);
     return res.json({ success: true, source: 'balldontlie_live', data });
-  } catch (err: unknown) {
+  } catch {
     if (cached) return res.json({ success: true, source: 'fallback_disk_cache', data: cached.data });
-    return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
+    return res.status(500).json({ success: false, error: 'Error interno al consultar estadísticas NBA.' });
   }
 });
 
@@ -3549,7 +3571,13 @@ app.get('/api/standings', dataRateLimitMiddleware, async (req, res) => {
 const LICENSES_FILE = IS_VERCEL ? path.resolve('/tmp', 'licenses_db.json') : path.resolve(__dirname, 'licenses_db.json');
 const ADMIN_CONFIG_FILE = IS_VERCEL ? path.resolve('/tmp', 'admin_config.json') : path.resolve(__dirname, 'admin_config.json');
 const BUNDLED_ADMIN_CONFIG_FILE = path.resolve(__dirname, 'admin_config.json');
-const LICENSE_MASTER_SECRET = process.env.LICENSE_MASTER_SECRET || 'FUTBOLSTATS_PRO_SECURE_HMAC_SALT_2026_X9';
+const LICENSE_MASTER_SECRET =
+  process.env.LICENSE_MASTER_SECRET ||
+  (process.env.SUPABASE_SERVICE_ROLE_KEY
+    ? crypto.createHash('sha256').update(`${process.env.SUPABASE_SERVICE_ROLE_KEY}::GMETRICS_LICENSE_V5`).digest('hex')
+    : IS_VERCEL || process.env.NODE_ENV === 'production'
+      ? crypto.randomBytes(32).toString('hex')
+      : 'DEV_ONLY_LOCAL_LICENSE_HMAC_SALT');
 
 interface AdminConfig {
   adminPin: string;
@@ -3560,12 +3588,12 @@ interface AdminConfig {
   freeAccessMode?: boolean;
 }
 
-const MASTER_RECOVERY_CODE = process.env.ADMIN_MASTER_KEY || 'MASTER-2708';
+const MASTER_RECOVERY_CODE = process.env.ADMIN_MASTER_KEY || (!IS_VERCEL && process.env.NODE_ENV !== 'production' ? 'MASTER-2708' : '');
 let memoryAdminConfig: AdminConfig | null = null;
 
 function getAdminConfig(): AdminConfig {
   const defaultConfig: AdminConfig = {
-    adminPin: process.env.ADMIN_PIN || '120328',
+    adminPin: '', // Desactivado: acceso admin exclusivo vía Google OAuth
     adminWhatsApp: process.env.ADMIN_WHATSAPP || '573213902708',
     supportName: 'Administrador G METRICS',
     customLogoUrl: '/custom-logo.png',
@@ -3594,10 +3622,10 @@ function getAdminConfig(): AdminConfig {
   return defaultConfig;
 }
 
-function extractAdminCredential(req: express.Request, bodyPinField?: unknown): string {
-  const headerPin = req.headers['x-admin-pin'];
-  if (typeof headerPin === 'string' && headerPin.trim()) {
-    return headerPin.trim();
+function extractAdminCredential(req: express.Request, _bodyPinField?: unknown): string {
+  const session = (req as any).userSession || extractSessionFromRequest(req);
+  if (session && session.role === 'admin') {
+    return '__VALID_ADMIN_JWT__';
   }
   const authHeader = req.headers['authorization'];
   if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
@@ -3607,35 +3635,11 @@ function extractAdminCredential(req: express.Request, bodyPinField?: unknown): s
       return '__VALID_ADMIN_JWT__';
     }
   }
-  if (typeof bodyPinField === 'string' && bodyPinField.trim()) {
-    return bodyPinField.trim();
-  }
-  if (typeof req.query.pin === 'string' && req.query.pin.trim()) {
-    return req.query.pin.trim();
-  }
   return '';
 }
 
-function isValidAdminPin(pin: unknown, cfg: AdminConfig): boolean {
-  if (!pin || typeof pin !== 'string') return false;
-  if (pin === '__VALID_ADMIN_JWT__') return true;
-
-  const clean = pin.trim();
-  const upper = clean.toUpperCase();
-  const envMasterKey = (process.env.ADMIN_MASTER_KEY || '').trim();
-  const isStrictProd = process.env.NODE_ENV === 'production' && Boolean(envMasterKey);
-
-  if (timingSafeCompare(clean, cfg.adminPin)) return true;
-  if (envMasterKey && timingSafeCompare(clean, envMasterKey)) return true;
-
-  if (!isStrictProd) {
-    return (
-      timingSafeCompare(clean, '120328') ||
-      timingSafeCompare(upper, 'MASTER-2708') ||
-      timingSafeCompare(upper, '2708')
-    );
-  }
-  return false;
+function isValidAdminPin(pin: unknown, _cfg?: AdminConfig): boolean {
+  return pin === '__VALID_ADMIN_JWT__';
 }
 
 app.post('/api/set-secret-key', async (req, res) => {
@@ -3811,7 +3815,7 @@ app.get('/api/license/config', (req, res) => {
     customLogoUrl: cfg.customLogoUrl,
     colorTheme: cfg.colorTheme || 'cyan-emerald',
     freeAccessMode: cfg.freeAccessMode !== undefined ? Boolean(cfg.freeAccessMode) : true,
-    currentPin: isAuthenticated ? cfg.adminPin : undefined,
+    isAdminSession: isAuthenticated,
     requiresAuth: true
   });
 });
@@ -4193,48 +4197,10 @@ app.post('/api/license/renew', async (req, res) => {
   });
 });
 
-app.post('/api/license/recover', async (req, res) => {
-  if (checkAuthLockout(req, res)) return;
-
-  const { recoveryKey, deviceId } = req.body || {};
-  const cfg = getAdminConfig();
-  const cleanKey = String(recoveryKey || '').trim().toUpperCase();
-  const last4Phone = cfg.adminWhatsApp.slice(-4);
-  const envMasterKey = (process.env.ADMIN_MASTER_KEY || '').trim().toUpperCase();
-  const isStrictProd = process.env.NODE_ENV === 'production' && Boolean(envMasterKey);
-
-  let isOtpValid = false;
-  if (deviceId && cleanKey) {
-    try {
-      isOtpValid = await verifyAndConsumeRecoveryOtp(String(deviceId), cleanKey);
-    } catch {
-      isOtpValid = false;
-    }
-  }
-
-  const isMasterOrOwner =
-    (envMasterKey ? timingSafeCompare(cleanKey, envMasterKey) : false) ||
-    timingSafeCompare(cleanKey, cfg.adminPin.toUpperCase()) ||
-    (!isStrictProd && (timingSafeCompare(cleanKey, MASTER_RECOVERY_CODE.toUpperCase()) || timingSafeCompare(cleanKey, last4Phone)));
-
-  if (!isMasterOrOwner && !isOtpValid) {
-    await recordAuthFailure(req);
-    return res.status(403).json({
-      success: false,
-      error: 'Código de autorización o clave incorrecta / expirada.'
-    });
-  }
-  clearAuthFailures(req);
-
-  if (req.body?.newPin && String(req.body.newPin).trim().length >= 4) {
-    cfg.adminPin = sanitizeText(String(req.body.newPin).trim(), 32);
-    saveAdminConfig(cfg);
-  }
-
-  return res.json({
-    success: true,
-    adminPin: cfg.adminPin,
-    adminWhatsApp: cfg.adminWhatsApp
+app.post('/api/license/recover', async (_req, res) => {
+  return res.status(410).json({
+    success: false,
+    error: 'La recuperación por PIN o clave maestra ha sido eliminada por seguridad. Inicia sesión con tu cuenta de Google de administrador.'
   });
 });
 
@@ -4514,7 +4480,7 @@ app.get('/api/auth/config', (req, res) => {
   return res.json({
     success: true,
     supabaseUrl: process.env.SUPABASE_URL || null,
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_ANON_KEY || null
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || null
   });
 });
 
@@ -4557,8 +4523,13 @@ app.post('/api/auth/google', async (req, res) => {
 
 app.post('/api/user/redeem-code', async (req, res) => {
   try {
+    const session = (req as any).userSession || extractSessionFromRequest(req);
+    if (!session || !session.username) {
+      return res.status(401).json({ success: false, message: 'Debes iniciar sesión para canjear un código.' });
+    }
     const { code, userIdentifier } = req.body || {};
-    const result = await redeemActivationCode(code, userIdentifier);
+    const targetUser = session.role === 'admin' && userIdentifier ? String(userIdentifier) : session.username;
+    const result = await redeemActivationCode(code, targetUser);
     if (result.success && result.user) {
       const cleanDev = sanitizeText(String(result.user.boundDeviceId || req.headers['x-device-id'] || ''), 48).toUpperCase();
       const updatedJwt = createSessionJwt({
@@ -4581,8 +4552,11 @@ app.post('/api/user/redeem-code', async (req, res) => {
 
 app.post('/api/user/feedback-bonus', async (req, res) => {
   try {
-    const { userIdentifier } = req.body || {};
-    const result = await claimFeedbackBonus(userIdentifier);
+    const session = (req as any).userSession || extractSessionFromRequest(req);
+    if (!session || !session.username) {
+      return res.status(401).json({ success: false, message: 'Debes iniciar sesión para reclamar el bono.' });
+    }
+    const result = await claimFeedbackBonus(session.username);
     return res.json(result);
   } catch {
     return res.status(500).json({ success: false, message: 'Error al aplicar bono de feedback' });
@@ -5586,11 +5560,10 @@ app.post('/api/parlays/generate-day', async (req, res) => {
       profileStats: stats.byProfile,
       legMarketStats: stats.byLegMarket
     });
-  } catch (err: unknown) {
+  } catch {
     return res.status(500).json({
       success: false,
-      error: 'Error al generar parlays del día',
-      details: err instanceof Error ? err.message : String(err)
+      error: 'Error al generar parlays del día'
     });
   }
 });
@@ -5626,11 +5599,10 @@ app.post('/api/parlays/purge-seeds', async (req, res) => {
       remainingCount: store.slips.length,
       message: `Se purgaron ${purgedCount} boletos semilla residuales exitosamente.`
     });
-  } catch (err: unknown) {
+  } catch {
     return res.status(500).json({
       success: false,
-      error: 'Error al purgar boletos semilla',
-      details: err instanceof Error ? err.message : String(err)
+      error: 'Error al purgar boletos semilla'
     });
   }
 });
@@ -6161,11 +6133,21 @@ app.post('/api/push/subscribe', async (req, res) => {
 });
 
 app.post('/api/push/send-alert', dataRateLimitMiddleware, async (req, res) => {
+  if (checkAuthLockout(req, res)) return;
+  const pin = extractAdminCredential(req);
+  const cfg = getAdminConfig();
+  if (!isValidAdminPin(pin, cfg)) {
+    await recordAuthFailure(req);
+    return res.status(403).json({ success: false, error: 'No autorizado para enviar notificaciones masivas.' });
+  }
+  clearAuthFailures(req);
+
   try {
     const { matchId, title, body, icon, badge, url, tag, alertKind, whistleCount } = req.body || {};
     if (!title) {
       return res.status(400).json({ error: 'Título de alerta requerido' });
     }
+    const safeUrl = typeof url === 'string' && /^\/(?!\/)/.test(url.trim()) ? url.trim() : '/';
 
     const subscribers = await getActivePushSubscriptions(matchId ? String(matchId) : undefined);
     if (!subscribers || subscribers.length === 0) {
@@ -6182,7 +6164,7 @@ app.post('/api/push/send-alert', dataRateLimitMiddleware, async (req, res) => {
       whistleCount: Number(whistleCount || 1),
       vibrate: getVibrationPatternForAlertKind(resolvedAlertKind),
       data: {
-        url: url || '/',
+        url: safeUrl,
         matchId: matchId ? String(matchId) : null,
         alertKind: resolvedAlertKind,
         whistleCount: Number(whistleCount || 1),

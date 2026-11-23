@@ -32,7 +32,6 @@ CREATE INDEX IF NOT EXISTS idx_pick_ledger_market ON gmetrics_pick_ledger(market
 ALTER TABLE gmetrics_pick_ledger ENABLE ROW LEVEL SECURITY;
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'gmetrics_pick_ledger' AND policyname = 'Allow server full access pick ledger') THEN
-    CREATE POLICY "Allow server full access pick ledger" ON gmetrics_pick_ledger FOR ALL USING (true) WITH CHECK (true);
-  END IF;
+  DROP POLICY IF EXISTS "Allow server full access pick ledger" ON gmetrics_pick_ledger;
+  CREATE POLICY "Allow server full access pick ledger" ON gmetrics_pick_ledger FOR ALL TO service_role USING (true) WITH CHECK (true);
 END $$;

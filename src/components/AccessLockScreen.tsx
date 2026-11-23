@@ -657,8 +657,6 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
           }
 
           if (data.user.role === 'admin') {
-            sessionStorage.setItem('futbolstats_admin_pin', '120328');
-            localStorage.setItem('sportstats_admin_saved_pin', '120328');
             localStorage.setItem('sportstats_admin_remember', 'true');
           } else {
             localStorage.removeItem('sportstats_admin_saved_pin');

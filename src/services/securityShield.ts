@@ -13,10 +13,13 @@ import type { Request, Response, NextFunction } from 'express';
  * 7. Cabeceras HTTP de seguridad (Helmet-grade) y política CORS restrictiva.
  */
 
+const IS_PROD_ENV = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
 const JWT_SECRET =
   process.env.JWT_SECRET_KEY ||
-  process.env.ADMIN_MASTER_KEY ||
-  'SPORTSTATS_PRO_ZERO_TRUST_JWT_HMAC_KEY_2026_V4';
+  process.env.LICENSE_MASTER_SECRET ||
+  (IS_PROD_ENV
+    ? crypto.createHash('sha256').update(`${process.env.SUPABASE_URL || 'gmetrics'}::${process.env.VERCEL_PROJECT_ID || 'prod'}::GMETRICS_JWT_V5`).digest('hex')
+    : 'DEV_ONLY_LOCAL_JWT_HMAC_KEY');
 
 // ============================================================================
 // 1. ENCRIPTACIÓN UNIDIRECCIONAL DE PINS (SCRYPT + TIMING-SAFE EQUAL)
@@ -489,7 +492,7 @@ export function idempotencyMiddleware(req: Request, res: Response, next: NextFun
 // 6. CABECERAS HTTP HELMET-GRADE Y RESTRICCIÓN CORS
 // ============================================================================
 
-function isAllowedOrigin(origin: string | undefined): boolean {
+function isAllowedOrigin(origin: string | undefined, requestHost?: string): boolean {
   if (!origin) return true; // Peticiones same-origin o server-to-server
   const customAllowed = (process.env.ALLOWED_ORIGINS || '')
     .split(',')
@@ -501,15 +504,18 @@ function isAllowedOrigin(origin: string | undefined): boolean {
   try {
     const parsed = new URL(origin);
     const host = parsed.hostname.toLowerCase();
-    return (
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === 'sportstats.pro' ||
-      host.endsWith('.sportstats.pro') ||
-      host.endsWith('.run.app') ||
-      host.endsWith('.google.com') ||
-      host.endsWith('.vercel.app')
-    );
+    const cleanReqHost = (requestHost || '').split(':')[0].toLowerCase();
+    const vercelHost = (process.env.VERCEL_URL || '').replace(/^https?:\/\//, '').split(':')[0].toLowerCase();
+
+    if (cleanReqHost && host === cleanReqHost) return true;
+    if (vercelHost && host === vercelHost) return true;
+    if (host === 'sportstats.pro' || host.endsWith('.sportstats.pro')) return true;
+    if (host === 'g-metrics.vercel.app' || /^g-metrics-[a-z0-9-]+\.vercel\.app$/.test(host)) return true;
+
+    if (!IS_PROD_ENV && (host === 'localhost' || host === '127.0.0.1')) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -518,12 +524,10 @@ function isAllowedOrigin(origin: string | undefined): boolean {
 export function securityHeadersMiddleware(req: Request, res: Response, next: NextFunction): void {
   const origin = req.headers.origin;
 
-  if (origin && isAllowedOrigin(origin)) {
+  if (origin && isAllowedOrigin(origin, req.headers.host)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Vary', 'Origin');
-  } else if (!origin) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
   }
 
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');

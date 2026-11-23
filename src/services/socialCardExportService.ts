@@ -5,6 +5,15 @@ import { GMETRICS_GOLD_LOGO_DATA_URI } from './gmetricsLogoB64';
 
 export type ExportMediaFormat = 'PNG' | 'PDF';
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /**
  * Servicio de Exportación Visual de Alto Impacto para Redes Sociales (Facebook / IG)
  * Estilo Editorial White Luxury (Sin cápsulas innecesarias, tipografía pura y números limpios sin círculos)
@@ -44,13 +53,13 @@ export class SocialCardExportService {
             <span style="font-family: monospace; font-size: 18px; font-weight: 900; color: #B45309; min-width: 22px; text-align: center; line-height: 1.25; flex-shrink: 0;">${idx + 1}</span>
             <div style="min-width: 0; flex: 1;">
               <div style="color: #0F172A; font-size: 15.5px; font-weight: 800; line-height: 1.3; word-break: break-word;">
-                ${leg.matchName}
+                ${escapeHtml(leg.matchName)}
               </div>
               <div style="font-size: 14.5px; font-weight: 700; color: #B45309; margin-top: 3px;">
-                ${leg.label}
+                ${escapeHtml(leg.label)}
               </div>
               <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">
-                <span style="font-weight: 700; color: #475569;">${leg.sport === 'NBA' || (leg.leagueName || '').toLowerCase().includes('nba') ? '🏀 Baloncesto' : '⚽ Fútbol'}</span> · ${leg.leagueName}
+                <span style="font-weight: 700; color: #475569;">${leg.sport === 'NBA' || (leg.leagueName || '').toLowerCase().includes('nba') ? '🏀 Baloncesto' : '⚽ Fútbol'}</span> · ${escapeHtml(leg.leagueName)}
               </div>
             </div>
           </div>
@@ -182,13 +191,13 @@ export class SocialCardExportService {
             <span style="font-family: monospace; font-size: 18px; font-weight: 900; color: #B45309; min-width: 22px; text-align: center; line-height: 1.25; flex-shrink: 0;">${idx + 1}</span>
             <div style="min-width: 0; flex: 1;">
               <div style="color: #0F172A; font-size: 15.5px; font-weight: 800; line-height: 1.3; word-break: break-word;">
-                ${item.matchTitle} <span style="font-size: 11.5px; color: #64748B; font-weight: 600;">(${item.sport === 'NBA' ? '🏀 Baloncesto' : '⚽ Fútbol'} · ${item.leagueName})</span>
+                ${escapeHtml(item.matchTitle)} <span style="font-size: 11.5px; color: #64748B; font-weight: 600;">(${item.sport === 'NBA' ? '🏀 Baloncesto' : '⚽ Fútbol'} · ${escapeHtml(item.leagueName)})</span>
               </div>
               <div style="font-size: 14.5px; font-weight: 700; color: #B45309; margin-top: 3px;">
-                ${item.selectionLabel}
+                ${escapeHtml(item.selectionLabel)}
               </div>
               <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">
-                Mercado: <span style="color: #334155; font-weight: 600;">${item.categoryLabel}</span>
+                Mercado: <span style="color: #334155; font-weight: 600;">${escapeHtml(item.categoryLabel)}</span>
               </div>
             </div>
           </div>
