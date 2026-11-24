@@ -567,7 +567,7 @@ function computeSinglesEfficiencyStats(singles) {
 // src/services/securityShield.ts
 import crypto from "node:crypto";
 var IS_PROD_ENV = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
-var JWT_SECRET = process.env.JWT_SECRET_KEY || process.env.LICENSE_MASTER_SECRET || (IS_PROD_ENV ? crypto.createHash("sha256").update(`${process.env.SUPABASE_URL || "gmetrics"}::${process.env.VERCEL_PROJECT_ID || "prod"}::GMETRICS_JWT_V5`).digest("hex") : "DEV_ONLY_LOCAL_JWT_HMAC_KEY");
+var JWT_SECRET = (process.env.JWT_SECRET_KEY || "").trim() || (IS_PROD_ENV ? crypto.randomBytes(32).toString("hex") : "DEV_ONLY_LOCAL_JWT_HMAC_KEY");
 var SCRYPT_PREFIX = "scrypt$";
 var KEY_LEN = 32;
 function isHashedPin(stored) {
