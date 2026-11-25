@@ -16,9 +16,66 @@ import {
   LayoutGrid,
   List,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Clock
 } from 'lucide-react';
 import type { SupabaseUserItem } from '../AdminLicenseModal';
+
+function formatLastConnectionInfo(lastActiveAt?: number | null, createdAt?: number | null): {
+  dateText: string;
+  relativeText: string;
+  inactiveDays: number;
+  toneClass: string;
+  isFallbackCreated: boolean;
+} {
+  const hasRealLastActive = Boolean(lastActiveAt && Number(lastActiveAt) > 0);
+  const refTs = hasRealLastActive ? Number(lastActiveAt) : Number(createdAt || 0);
+  if (!refTs) {
+    return {
+      dateText: 'Sin registro',
+      relativeText: '',
+      inactiveDays: 0,
+      toneClass: 'text-[#8b949e]',
+      isFallbackCreated: false
+    };
+  }
+  const now = Date.now();
+  const diffMs = Math.max(0, now - refTs);
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+
+  const dateText = new Date(refTs).toLocaleString('es-CO', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  let relativeText = 'Ahora';
+  if (diffDays >= 1) {
+    relativeText = `hace ${diffDays}d`;
+  } else if (diffHours >= 1) {
+    relativeText = `hace ${diffHours}h`;
+  } else if (diffMins >= 1) {
+    relativeText = `hace ${diffMins}m`;
+  }
+
+  const toneClass =
+    diffDays >= 28
+      ? 'text-rose-400'
+      : diffDays >= 20
+      ? 'text-amber-400'
+      : 'text-[#8b949e]';
+
+  return {
+    dateText: hasRealLastActive ? dateText : `Reg. ${dateText}`,
+    relativeText,
+    inactiveDays: diffDays,
+    toneClass,
+    isFallbackCreated: !hasRealLastActive
+  };
+}
 
 interface AdminUsersTabProps {
   appUsersList: SupabaseUserItem[];
@@ -45,9 +102,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 }) => {
   const [userFilter, setUserFilter] = useState<'ALL' | 'ONLINE' | 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'BOUND'>('ALL');
   const [userSearch, setUserSearch] = useState('');
-  const [adminUserViewMode, setAdminUserViewMode] = useState<'CARDS' | 'COMPACT'>('CARDS');
+  const [adminUserViewMode, setAdminUserViewMode] = useState<'CARDS' | 'COMPACT'>('COMPACT');
+  const [activeToolPanel, setActiveToolPanel] = useState<'NONE' | 'VIP_CODE' | 'QUICK_USER'>('NONE');
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(10);
+  const [pageSize, setPageSize] = useState<number>(25);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [confirmDeleteUserKey, setConfirmDeleteUserKey] = useState<string | null>(null);
   const [newQuickUsername, setNewQuickUsername] = useState('');
@@ -502,8 +560,42 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         </div>
       )}
 
-      {/* Generador de Códigos VIP Dinámicos (Diseño Nativo Integrado) */}
-      <div className="bg-[#161b22] p-3.5 rounded-2xl border border-[#30363d] space-y-2.5 shadow-xl">
+      {/* Barra compacta de herramientas colapsables (da protagonismo a la lista de usuarios) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-[#161b22] px-3 py-2 rounded-xl border border-[#30363d]">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setActiveToolPanel((p) => (p === 'VIP_CODE' ? 'NONE' : 'VIP_CODE'))}
+            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 border transition cursor-pointer ${
+              activeToolPanel === 'VIP_CODE'
+                ? 'bg-[#00ff66] text-black border-[#00ff66]'
+                : 'bg-[#0b0e14] text-[#00ff66] border-[#00ff66]/30 hover:bg-[#00ff66]/10'
+            }`}
+          >
+            <Gift className="w-3.5 h-3.5" />
+            <span>Generar Código VIP</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveToolPanel((p) => (p === 'QUICK_USER' ? 'NONE' : 'QUICK_USER'))}
+            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 border transition cursor-pointer ${
+              activeToolPanel === 'QUICK_USER'
+                ? 'bg-[#d9b114] text-black border-[#d9b114]'
+                : 'bg-[#0b0e14] text-[#d9b114] border-[#d9b114]/30 hover:bg-[#d9b114]/10'
+            }`}
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>Crear / Activar Usuario</span>
+          </button>
+        </div>
+        <span className="text-[10.5px] text-[#8b949e] hidden sm:inline">
+          Auto-limpieza: cuentas con &gt;30 días sin conexión se eliminan automáticamente
+        </span>
+      </div>
+
+      {/* Generador de Códigos VIP Dinámicos (Desplegable) */}
+      {activeToolPanel === 'VIP_CODE' && (
+      <div className="bg-[#161b22] p-3 rounded-xl border border-[#30363d] space-y-2 shadow-xl animate-fadeIn">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2">
             <span className="w-7 h-7 rounded-lg bg-[#00ff66]/10 border border-[#00ff66]/30 flex items-center justify-center text-[#00ff66] shrink-0">
@@ -565,11 +657,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           </div>
         )}
       </div>
+      )}
 
-      {/* Quick Create / Activate User Form */}
+      {/* Quick Create / Activate User Form (Desplegable) */}
+      {activeToolPanel === 'QUICK_USER' && (
       <form
         onSubmit={handleCreateOrUpdateQuickUser}
-        className="bg-[#161b22] p-3.5 rounded-2xl border border-[#30363d] space-y-2.5 shadow-xl"
+        className="bg-[#161b22] p-3 rounded-xl border border-[#30363d] space-y-2 shadow-xl animate-fadeIn"
       >
         <div className="flex items-center justify-between">
           <span className="text-xs font-black text-white flex items-center gap-1.5">
@@ -627,6 +721,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           </button>
         </div>
       </form>
+      )}
 
       {/* Filter & Search Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#161b22] p-2.5 rounded-xl border border-[#30363d] shadow-lg">
@@ -735,16 +830,16 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           ) : adminUserViewMode === 'COMPACT' ? (
             <div className="overflow-x-auto rounded-xl border border-[#30363d] bg-[#161b22] shadow-xl">
               <table className="w-full text-left text-xs">
-                <thead className="bg-[#0b0e14] border-b border-[#30363d] text-[#8b949e] font-semibold text-[11px] uppercase tracking-wider">
+                <thead className="bg-[#0b0e14] border-b border-[#30363d] text-[#8b949e] font-semibold text-[10px] uppercase tracking-wider">
                   <tr>
-                    <th className="py-2.5 px-3">Usuario</th>
-                    <th className="py-2.5 px-3">Estado / Plan</th>
-                    <th className="py-2.5 px-3">Dispositivo</th>
-                    <th className="py-2.5 px-3">Conexión</th>
-                    <th className="py-2.5 px-3 text-right">Acciones</th>
+                    <th className="py-2 px-2.5">Usuario</th>
+                    <th className="py-2 px-2.5">Estado</th>
+                    <th className="py-2 px-2.5">Dispositivo</th>
+                    <th className="py-2 px-2.5">Últ. conexión</th>
+                    <th className="py-2 px-2.5 text-right">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#30363d]">
+                <tbody className="divide-y divide-[#30363d]/70">
                   {paginatedUsers.map((u) => {
                     const isSuspended = u.status === 'suspended';
                     const isExpired = u.isExpired || (u.expiresAt ? u.expiresAt < Date.now() : false);
@@ -758,64 +853,73 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                             (ou.username && ou.username.toLowerCase() === (u.username || '').toLowerCase()) ||
                             (ou.deviceId && u.boundDeviceId && ou.deviceId === u.boundDeviceId)
                         ));
+                    const conn = formatLastConnectionInfo(u.lastActiveAt, u.createdAt);
                     return (
-                      <tr key={u.id} className="hover:bg-[#0b0e14]/60 transition">
-                        <td className="py-2.5 px-3">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-mono font-bold text-[#d9b114] bg-[#d9b114]/10 px-1.5 py-0.5 rounded border border-[#d9b114]/30">
+                      <tr key={u.id} className="hover:bg-[#0b0e14]/70 transition">
+                        <td className="py-1.5 px-2.5 max-w-[240px]">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-mono font-bold text-[11px] text-[#d9b114] bg-[#d9b114]/10 px-1.5 py-0.5 rounded border border-[#d9b114]/30 shrink-0">
                               @{u.username}
                             </span>
-                            {u.displayName && <span className="text-white font-medium text-[11px]">{u.displayName}</span>}
-                            {u.role === 'admin' && <span className="text-[10px] bg-[#d9b114]/20 text-[#d9b114] border border-[#d9b114]/40 px-1 rounded font-black">Admin</span>}
+                            {u.displayName && (
+                              <span className="text-white/90 font-medium text-[11px] truncate">
+                                {u.displayName}
+                              </span>
+                            )}
+                            {u.role === 'admin' && (
+                              <span className="text-[9.5px] bg-[#d9b114]/20 text-[#d9b114] border border-[#d9b114]/40 px-1 rounded font-black shrink-0">
+                                Admin
+                              </span>
+                            )}
                           </div>
-                          {u.notes && <p className="text-[10px] text-[#8b949e] truncate max-w-[200px] mt-0.5">{u.notes}</p>}
                         </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${
+                        <td className="py-1.5 px-2.5 whitespace-nowrap">
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${
                             isSuspended
                               ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
                               : isExpired
                               ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
                               : 'bg-[#00ff66]/10 text-[#00ff66] border-[#00ff66]/30'
                           }`}>
-                            {isSuspended ? 'SUSPENDIDO' : isExpired ? 'VENCIDO' : `${daysLeft != null ? daysLeft + 'd restantes' : 'ACTIVO'}`}
+                            {isSuspended ? 'SUSP.' : isExpired ? 'VENC.' : `${daysLeft != null ? daysLeft + 'd' : 'ACTIVO'}`}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-[11px] whitespace-nowrap">
+                        <td className="py-1.5 px-2.5 text-[10.5px] whitespace-nowrap">
                           {isBound ? (
-                            <span className="inline-flex items-center gap-1 text-white/90 font-mono text-[10px]">
-                              <Smartphone className="w-3 h-3 text-[#d9b114] shrink-0" />
-                              <span className="truncate max-w-[90px]">{u.boundDeviceId?.slice(0, 8)}...</span>
+                            <span className="inline-flex items-center gap-1 text-white/85 font-mono text-[10px]" title={u.boundDeviceName || u.boundDeviceId || ''}>
+                              <Smartphone className="w-3 h-3 text-cyan-400 shrink-0" />
+                              <span className="truncate max-w-[85px]">{u.boundDeviceName || u.boundDeviceId?.slice(0, 8)}</span>
                             </span>
                           ) : (
-                            <span className="text-[#8b949e] text-[10px]">Sin vincular</span>
+                            <span className="text-[#8b949e] text-[10px]">Libre</span>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap text-[11px]">
+                        <td className="py-1.5 px-2.5 whitespace-nowrap">
                           {isUserOnline ? (
-                            <span className="text-[#00ff66] font-black flex items-center gap-1">
-                              <span className="w-2 h-2 rounded-full bg-[#00ff66] animate-pulse"></span> En Línea
+                            <span className="text-[#00ff66] font-black text-[10.5px] flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#00ff66] animate-pulse"></span> En línea
                             </span>
                           ) : (
-                            <span className="text-[#8b949e] text-[10px]">
-                              {u.lastActiveAt ? new Date(u.lastActiveAt).toLocaleDateString() : '—'}
+                            <span className={`font-mono text-[10.5px] tabular-nums ${conn.toneClass}`} title={conn.isFallbackCreated ? 'Fecha de registro (sin conexión posterior registrada aún)' : 'Última conexión registrada'}>
+                              {conn.dateText}
+                              {conn.relativeText ? ` · ${conn.relativeText}` : ''}
                             </span>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                        <td className="py-1.5 px-2.5 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
                               onClick={() => handleRenewUser(u.id, u.username, 30, 'ADD')}
-                              className="px-2 py-0.5 rounded bg-[#00ff66]/10 hover:bg-[#00ff66]/20 text-[#00ff66] border border-[#00ff66]/30 text-[10px] font-black transition cursor-pointer"
+                              className="px-1.5 py-0.5 rounded bg-[#00ff66]/10 hover:bg-[#00ff66]/20 text-[#00ff66] border border-[#00ff66]/30 text-[10px] font-black transition cursor-pointer"
                               title="+30 Días"
                             >
                               +30d
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleToggleUserStatus(u.username, u.status)}
-                              className="px-2 py-0.5 rounded bg-[#0b0e14] hover:bg-[#30363d] text-white border border-[#30363d] text-[10px] font-semibold transition cursor-pointer"
+                              onClick={() => handleToggleUserStatus(u.id, u.status, u.username)}
+                              className="px-1.5 py-0.5 rounded bg-[#0b0e14] hover:bg-[#30363d] text-white border border-[#30363d] text-[10px] font-semibold transition cursor-pointer"
                               title={isSuspended ? 'Reactivar' : 'Pausar'}
                             >
                               {isSuspended ? 'Activar' : 'Pausar'}
@@ -824,10 +928,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleResetUserDevice(u.id, u.username)}
-                                className="px-2 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-[10px] font-medium transition cursor-pointer"
+                                className="px-1.5 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-[10px] font-medium transition cursor-pointer"
                                 title="Desvincular Dispositivo"
                               >
-                                Desvinc.
+                                Liberar
                               </button>
                             )}
                             {confirmDeleteUserKey === (u.username || u.id) ? (
@@ -835,14 +939,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteUser(u.id, u.username)}
-                                  className="text-rose-400 font-bold text-[10px]"
+                                  className="text-rose-400 font-bold text-[10px] cursor-pointer"
                                 >
                                   Sí
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setConfirmDeleteUserKey(null)}
-                                  className="text-[#8b949e] text-[10px]"
+                                  className="text-[#8b949e] text-[10px] cursor-pointer"
                                 >
                                   No
                                 </button>
@@ -866,7 +970,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
               </table>
             </div>
           ) : (
-            paginatedUsers.map((u) => {
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+            {paginatedUsers.map((u) => {
               const isSuspended = u.status === 'suspended';
               const isExpired = u.isExpired || (u.expiresAt ? u.expiresAt < Date.now() : false);
               const isBound = !!u.boundDeviceId;
@@ -1078,6 +1183,29 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                           </span>
                         )}
                       </div>
+
+                      {/* Última conexión (auto-purga tras 30 días de inactividad) */}
+                      {(() => {
+                        const conn = formatLastConnectionInfo(u.lastActiveAt, u.createdAt);
+                        return (
+                          <div className="mt-1.5 pt-1.5 border-t border-[#30363d] flex items-center justify-between gap-2">
+                            <span className="text-[10px] uppercase font-semibold text-[#8b949e] flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-[#8b949e]" />
+                              <span>Últ. conexión</span>
+                            </span>
+                            {isUserOnline ? (
+                              <span className="font-mono text-[10.5px] font-bold text-[#00ff66]">
+                                Ahora (En línea)
+                              </span>
+                            ) : (
+                              <span className={`font-mono text-[10.5px] tabular-nums font-semibold ${conn.toneClass}`}>
+                                {conn.dateText}
+                                {conn.relativeText ? ` · ${conn.relativeText}` : ''}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -1204,7 +1332,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                   </div>
                 </div>
               );
-            })
+            })}
+            </div>
           )}
 
           {/* Barra de Paginación */}

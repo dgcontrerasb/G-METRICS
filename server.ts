@@ -20,6 +20,11 @@ import {
   adminToggleAppUserStatus,
   adminUpsertAppUser,
   adminDeleteAppUser,
+  getInactivityGraceEpochMs,
+  isUserInactiveExpired,
+  purgeInactiveUserById,
+  touchUserLastActiveIfStale,
+  sweepInactiveAppUsers,
   getSupabaseKvCache,
   setSupabaseKvCache,
   SUPABASE_SQL_SCHEMA,
@@ -3992,6 +3997,14 @@ app.post('/api/license/heartbeat', (req, res) => {
     deviceInfo: cleanDevInfo || undefined
   });
 
+  // Persistir última conexión real en Supabase (throttle 15 min en RAM)
+  const hbSession = extractSessionFromRequest(req);
+  if (hbSession?.sub && hbSession.sub !== 'admin-owner') {
+    touchUserLastActiveIfStale(hbSession.sub, null, Date.now(), hbSession.username || cleanUsername);
+  } else if (cleanUsername && cleanUsername !== 'admin') {
+    touchUserLastActiveIfStale('', null, Date.now(), cleanUsername);
+  }
+
   const found = db.find(item => item.key === cleanKey || item.deviceId === cleanDev);
 
   if (found) {
@@ -4437,6 +4450,9 @@ app.get('/api/auth/session', async (req, res) => {
   let latestRole = session.role;
   let latestUsername = session.username;
   let isSuspended = false;
+  let inactivePurged = false;
+  const cfg = getAdminConfig();
+  const isFreePromoActive = cfg.freeAccessMode !== undefined ? Boolean(cfg.freeAccessMode) : true;
 
   // Consulta autoritativa en vivo a Supabase si no es el admin propietario
   if (isSupabaseConfigured() && session.sub && session.sub !== 'admin-owner') {
@@ -4445,17 +4461,35 @@ app.get('/api/auth/session', async (req, res) => {
       if (client) {
         const { data: dbUser } = await client
           .from('sportstats_users')
-          .select('expires_at, role, status, username')
+          .select('expires_at, role, status, username, last_active_at, created_at, plan_type')
           .eq('id', session.sub)
           .maybeSingle();
 
-        if (dbUser) {
-          if (dbUser.status === 'suspended' || dbUser.status === 'deleted') {
-            isSuspended = true;
+        if (!dbUser) {
+          // La cuenta ya fue eliminada de la base de datos (por inactividad o por el admin)
+          isSuspended = true;
+        } else if (dbUser.status === 'suspended' || dbUser.status === 'deleted') {
+          isSuspended = true;
+        } else {
+          const nowMs = Date.now();
+          const graceEpochMs = await getInactivityGraceEpochMs();
+          if (isUserInactiveExpired(dbUser, nowMs, graceEpochMs, isFreePromoActive)) {
+            await purgeInactiveUserById(session.sub, dbUser.username || session.username);
+            activeOnlineSessions.forEach((entry, key) => {
+              if (
+                (dbUser.username && entry.username.toLowerCase() === String(dbUser.username).toLowerCase()) ||
+                (session.deviceId && entry.deviceId.toUpperCase() === session.deviceId.toUpperCase())
+              ) {
+                activeOnlineSessions.delete(key);
+              }
+            });
+            inactivePurged = true;
           } else {
             latestExpiresAt = dbUser.expires_at ? Number(dbUser.expires_at) : null;
             latestRole = dbUser.role || session.role;
             if (dbUser.username) latestUsername = dbUser.username;
+            // Actualizar última conexión en Supabase (máx. 1 escritura cada 6h por usuario)
+            touchUserLastActiveIfStale(session.sub, dbUser.last_active_at, nowMs);
           }
         }
       }
@@ -4464,19 +4498,20 @@ app.get('/api/auth/session', async (req, res) => {
     }
   }
 
-  if (isSuspended) {
+  if (inactivePurged || isSuspended) {
     clearSecureSessionCookie(res);
     return res.json({
       success: true,
       authenticated: false,
       isVip: false,
       user: null,
-      message: 'Cuenta suspendida o eliminada'
+      code: inactivePurged ? 'INACTIVE_EXPIRED' : 'ACCOUNT_REMOVED',
+      message: inactivePurged
+        ? 'Tu cuenta fue eliminada automáticamente por más de 30 días sin conexión. Por favor regístrate nuevamente.'
+        : 'Cuenta suspendida o eliminada'
     });
   }
 
-  const cfg = getAdminConfig();
-  const isFreePromoActive = cfg.freeAccessMode !== undefined ? Boolean(cfg.freeAccessMode) : true;
   const isVip = Boolean(
     latestRole === 'admin' ||
     (latestExpiresAt !== null && latestExpiresAt !== undefined && Number(latestExpiresAt) > Date.now()) ||
@@ -4655,6 +4690,18 @@ app.get('/api/admin/users/list', async (req, res) => {
   clearAuthFailures(req);
 
   try {
+    const isFreeMode = cfg.freeAccessMode !== undefined ? Boolean(cfg.freeAccessMode) : true;
+    // Barrido automático con throttle (máx. 1 vez cada 12h) para limpiar cuentas > 30 días sin conexión
+    const sweep = await sweepInactiveAppUsers({ freeAccessMode: isFreeMode });
+    if (sweep.purgedUsernames.length > 0) {
+      const purgedSet = new Set(sweep.purgedUsernames);
+      activeOnlineSessions.forEach((entry, key) => {
+        if (purgedSet.has(entry.username.toLowerCase())) {
+          activeOnlineSessions.delete(key);
+        }
+      });
+    }
+
     const users = await adminListAppUsers();
     const onlineList = getActiveOnlineUsersList();
     const enrichedUsers = users.map((u) => {
@@ -4815,6 +4862,44 @@ app.post('/api/admin/users/delete', async (req, res) => {
     success: ok,
     message: ok ? 'Usuario eliminado permanentemente' : 'No se pudo eliminar el usuario'
   });
+});
+
+// Cron diario gratuito (Vercel Hobby) o disparo manual de Admin para purgar cuentas > 30 días sin conexión
+app.get('/api/cron/cleanup-inactive-users', async (req, res) => {
+  const cronSecret = (process.env.CRON_SECRET || '').trim();
+  const authHeader = String(req.headers.authorization || '').trim();
+  const isVercelCron = Boolean(cronSecret && authHeader === `Bearer ${cronSecret}`);
+  const cfg = getAdminConfig();
+  const adminCred = extractAdminCredential(req);
+  const isAdminAuth = isValidAdminPin(adminCred, cfg);
+
+  // En Vercel Hobby sin CRON_SECRET configurado, aceptar únicamente si trae el header x-vercel-cron
+  const isVercelHeader = Boolean(process.env.VERCEL && req.headers['x-vercel-cron'] === '1' && !cronSecret);
+
+  if (!isVercelCron && !isAdminAuth && !isVercelHeader) {
+    return res.status(403).json({ success: false, error: 'No autorizado' });
+  }
+
+  try {
+    const isFreeMode = cfg.freeAccessMode !== undefined ? Boolean(cfg.freeAccessMode) : true;
+    const result = await sweepInactiveAppUsers({ force: true, freeAccessMode: isFreeMode });
+    if (result.purgedUsernames.length > 0) {
+      const purgedSet = new Set(result.purgedUsernames);
+      activeOnlineSessions.forEach((entry, key) => {
+        if (purgedSet.has(entry.username.toLowerCase())) {
+          activeOnlineSessions.delete(key);
+        }
+      });
+    }
+    return res.json({
+      success: true,
+      purgedCount: result.purgedCount,
+      graceEpochIso: new Date(result.graceEpochMs).toISOString(),
+      skipped: Boolean(result.skipped)
+    });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Error al ejecutar limpieza de inactivos' });
+  }
 });
 
 // ============================================================================

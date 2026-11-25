@@ -19,6 +19,12 @@
       ]
     }
   ],
+  "crons": [
+    {
+      "path": "/api/cron/cleanup-inactive-users",
+      "schedule": "0 4 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api",

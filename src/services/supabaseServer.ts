@@ -221,6 +221,7 @@ export async function setSupabaseKvCache<T = unknown>(cacheId: string, payload: 
         .eq('color_theme', 'kv-cache')
         .neq('id', '__server_telemetry_v1__')
         .neq('id', '__deleted_users_v1__')
+        .neq('id', '__inactivity_grace_epoch_v1__')
         .neq('id', '__admin_user_feedback_v1__')
         .neq('id', '__gmetrics_smart_parlays_v3__')
         .neq('id', '__gmetrics_singles_history_v1__')
@@ -477,6 +478,17 @@ export async function loginAppUser(
               success: false,
               code: 'USER_NOT_FOUND',
               message: 'Esta cuenta ha sido eliminada por el administrador.'
+            };
+          }
+
+          // Purga automática por inactividad > 30 días (respeta periodo de gracia y VIP pagado vigente)
+          const graceEpochMs = await getInactivityGraceEpochMs();
+          if (isUserInactiveExpired(data, nowMs, graceEpochMs, freeAccessMode)) {
+            await purgeInactiveUserById(data.id, data.username);
+            return {
+              success: false,
+              code: 'USER_NOT_FOUND',
+              message: 'Tu cuenta fue eliminada automáticamente por más de 30 días sin conexión. Por favor regístrate nuevamente.'
             };
           }
 
@@ -1318,6 +1330,232 @@ export async function adminDeleteAppUser(userId: string, username?: string): Pro
 }
 
 // =========================================================================
+// PURGA AUTOMÁTICA POR INACTIVIDAD (> 30 DÍAS) + PERIODO DE GRACIA ($0 USD)
+// =========================================================================
+export const USER_INACTIVITY_LIMIT_MS = 30 * 24 * 60 * 60 * 1000; // 30 días
+const LAST_ACTIVE_TOUCH_THROTTLE_MS = 15 * 60 * 1000; // Actualizar BD máx 1 vez cada 15 min por usuario (preciso y $0)
+const INACTIVITY_SWEEP_THROTTLE_MS = 12 * 60 * 60 * 1000; // Barrido automático máx 1 vez cada 12h
+const INACTIVITY_GRACE_KV_KEY = '__inactivity_grace_epoch_v1__';
+
+let cachedInactivityGraceEpochMs: number | null = null;
+let lastInactivitySweepAt = 0;
+const recentLastActiveTouchMap = new Map<string, number>();
+
+export async function getInactivityGraceEpochMs(): Promise<number> {
+  if (cachedInactivityGraceEpochMs !== null) return cachedInactivityGraceEpochMs;
+  const nowMs = Date.now();
+  try {
+    const kv = await getSupabaseKvCache<{ epochMs: number }>(INACTIVITY_GRACE_KV_KEY);
+    if (kv?.data && typeof kv.data.epochMs === 'number' && kv.data.epochMs > 0) {
+      cachedInactivityGraceEpochMs = kv.data.epochMs;
+      return cachedInactivityGraceEpochMs;
+    }
+    await setSupabaseKvCache(INACTIVITY_GRACE_KV_KEY, { epochMs: nowMs }, nowMs);
+  } catch {
+    // fallback en memoria si Supabase no responde temporalmente
+  }
+  cachedInactivityGraceEpochMs = nowMs;
+  return cachedInactivityGraceEpochMs;
+}
+
+export function isUserInactiveExpired(
+  userRow: {
+    role?: string | null;
+    plan_type?: string | null;
+    planType?: string | null;
+    expires_at?: number | string | null;
+    expiresAt?: number | null;
+    last_active_at?: number | string | null;
+    lastActiveAt?: number | null;
+    created_at?: number | string | null;
+    createdAt?: number | null;
+  },
+  nowMs: number,
+  graceEpochMs: number,
+  freeAccessMode = true
+): boolean {
+  if (!userRow) return false;
+  if (String(userRow.role || '').toLowerCase() === 'admin') return false;
+
+  // Cuando el administrador active los cobros (!freeAccessMode), jamás borrar cuentas VIP pagadas vigentes
+  if (!freeAccessMode) {
+    const planType = String(userRow.plan_type ?? userRow.planType ?? '').toUpperCase();
+    const rawExp = userRow.expires_at ?? userRow.expiresAt;
+    const expiresAt = rawExp !== null && rawExp !== undefined && rawExp !== '' ? Number(rawExp) : null;
+    const isNonPaidPlan = planType === 'FREE_PROMO' || planType === 'GOOGLE_TRIAL' || planType === 'PENDING' || planType === '';
+    if (planType === 'PERMANENT') return false;
+    if (expiresAt !== null && Number.isFinite(expiresAt) && expiresAt > nowMs && !isNonPaidPlan) {
+      return false;
+    }
+  }
+
+  const rawLast = userRow.last_active_at ?? userRow.lastActiveAt;
+  const rawCreated = userRow.created_at ?? userRow.createdAt;
+  const lastActiveMs = rawLast !== null && rawLast !== undefined && rawLast !== '' ? Number(rawLast) : 0;
+  const createdMs = rawCreated !== null && rawCreated !== undefined && rawCreated !== '' ? Number(rawCreated) : 0;
+
+  // Todos los usuarios existentes inician con 30 días de gracia desde graceEpochMs
+  const baselineMs = Math.max(lastActiveMs || createdMs || graceEpochMs, graceEpochMs);
+  return nowMs - baselineMs > USER_INACTIVITY_LIMIT_MS;
+}
+
+// Borrado FÍSICO por inactividad: NO agrega al usuario a __deleted_users_v1__ para permitirle volver a registrarse
+export async function purgeInactiveUserById(userId: string, username?: string): Promise<boolean> {
+  const cleanId = String(userId || '').trim();
+  const cleanUsername = username ? normalizeUsername(username) : '';
+
+  const localUsers = getLocalUsersDb();
+  const remaining = localUsers.filter((u) => {
+    const uname = String(u.username || '').toLowerCase().trim();
+    const matchId = cleanId && u.id === cleanId;
+    const matchUser = cleanUsername && uname === cleanUsername;
+    return !(matchId || matchUser);
+  });
+  if (remaining.length !== localUsers.length) {
+    saveLocalUsersDb(remaining);
+  }
+
+  // Garantizar que NO quede bloqueado en tombstones si vuelve a registrarse
+  if (cleanUsername) {
+    const deletedSet = getDeletedUsernamesSet();
+    if (deletedSet.has(cleanUsername)) {
+      deletedSet.delete(cleanUsername);
+      saveDeletedUsernamesSet(deletedSet, true);
+    }
+  }
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      if (isValidUuid(cleanId)) {
+        await client.from('sportstats_users').delete().eq('id', cleanId);
+      } else if (cleanId) {
+        await client.from('sportstats_users').delete().eq('id', cleanId);
+      }
+      if (cleanUsername) {
+        await client.from('sportstats_users').delete().ilike('username', cleanUsername);
+      }
+    } catch (err) {
+      console.warn('[purgeInactiveUserById warning]:', err);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export function touchUserLastActiveIfStale(
+  userId: string,
+  currentLastActiveAt?: number | string | null,
+  nowMs = Date.now(),
+  usernameFallback?: string
+): void {
+  const cleanId = String(userId || '').trim();
+  const cleanUser = usernameFallback ? normalizeUsername(usernameFallback) : '';
+  if (cleanId === 'admin-owner' || (!cleanId && !cleanUser)) return;
+
+  const cacheKey = cleanId || `u:${cleanUser}`;
+  const memPrev = recentLastActiveTouchMap.get(cacheKey) || 0;
+  const dbPrev = currentLastActiveAt !== null && currentLastActiveAt !== undefined && currentLastActiveAt !== ''
+    ? Number(currentLastActiveAt)
+    : 0;
+  const latestKnown = Math.max(memPrev, dbPrev);
+  if (latestKnown > 0 && nowMs - latestKnown < LAST_ACTIVE_TOUCH_THROTTLE_MS) return;
+
+  recentLastActiveTouchMap.set(cacheKey, nowMs);
+  if (recentLastActiveTouchMap.size > 500) {
+    recentLastActiveTouchMap.clear();
+    recentLastActiveTouchMap.set(cacheKey, nowMs);
+  }
+
+  const client = getSupabaseClient();
+  if (!client) return;
+  const query = cleanId && isValidUuid(cleanId)
+    ? client.from('sportstats_users').update({ last_active_at: nowMs }).eq('id', cleanId)
+    : cleanUser
+    ? client.from('sportstats_users').update({ last_active_at: nowMs }).ilike('username', cleanUser)
+    : client.from('sportstats_users').update({ last_active_at: nowMs }).eq('id', cleanId);
+
+  query.then(
+    () => {},
+    () => {}
+  );
+}
+
+export async function sweepInactiveAppUsers(options?: {
+  force?: boolean;
+  freeAccessMode?: boolean;
+}): Promise<{ purgedCount: number; purgedUsernames: string[]; graceEpochMs: number; skipped?: boolean }> {
+  const nowMs = Date.now();
+  const force = Boolean(options?.force);
+  const freeAccessMode = options?.freeAccessMode !== undefined ? Boolean(options.freeAccessMode) : true;
+  const graceEpochMs = await getInactivityGraceEpochMs();
+
+  // Si aún no han pasado 30 días desde el inicio del periodo de gracia, no hay cuentas elegibles
+  if (nowMs - graceEpochMs <= USER_INACTIVITY_LIMIT_MS) {
+    return { purgedCount: 0, purgedUsernames: [], graceEpochMs, skipped: true };
+  }
+
+  if (!force && nowMs - lastInactivitySweepAt < INACTIVITY_SWEEP_THROTTLE_MS) {
+    return { purgedCount: 0, purgedUsernames: [], graceEpochMs, skipped: true };
+  }
+  lastInactivitySweepAt = nowMs;
+
+  const purgedUsernames: string[] = [];
+
+  // 1. Limpieza en almacenamiento local
+  const localUsers = getLocalUsersDb();
+  const keptLocal: AppUser[] = [];
+  for (const u of localUsers) {
+    if (isUserInactiveExpired(u, nowMs, graceEpochMs, freeAccessMode)) {
+      if (u.username) purgedUsernames.push(u.username.toLowerCase());
+    } else {
+      keptLocal.push(u);
+    }
+  }
+  if (keptLocal.length !== localUsers.length) {
+    saveLocalUsersDb(keptLocal);
+  }
+
+  // 2. Limpieza física en Supabase
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const { data, error } = await client
+        .from('sportstats_users')
+        .select('id, username, role, plan_type, expires_at, last_active_at, created_at')
+        .neq('role', 'admin');
+
+      if (!error && Array.isArray(data)) {
+        const idsToDelete: string[] = [];
+        for (const row of data) {
+          if (isUserInactiveExpired(row, nowMs, graceEpochMs, freeAccessMode)) {
+            if (row.id) idsToDelete.push(String(row.id));
+            if (row.username) {
+              const uname = String(row.username).toLowerCase().trim();
+              if (uname && !purgedUsernames.includes(uname)) purgedUsernames.push(uname);
+            }
+          }
+        }
+
+        if (idsToDelete.length > 0) {
+          await client.from('sportstats_users').delete().in('id', idsToDelete);
+          console.log(`[Inactivity Sweep] Eliminadas ${idsToDelete.length} cuentas inactivas (>30 días).`);
+        }
+      }
+    } catch (err) {
+      console.warn('[sweepInactiveAppUsers warning]:', err);
+    }
+  }
+
+  return {
+    purgedCount: purgedUsernames.length,
+    purgedUsernames,
+    graceEpochMs
+  };
+}
+
+// =========================================================================
 // PICK LEDGER: libro inmutable de picks sellados pre-partido ($0 USD, ~300 B/fila)
 // =========================================================================
 export const PICK_LEDGER_SQL = `
@@ -1724,6 +1962,16 @@ export async function loginOrRegisterGoogleUser(
         return { success: false, code: 'USER_NOT_FOUND', message: 'Esta cuenta ha sido eliminada por el administrador.' };
       }
 
+      // Purga automática por inactividad > 30 días: borra la cuenta vieja y permite re-registro limpio abajo
+      const graceEpochMs = await getInactivityGraceEpochMs();
+      if (isUserInactiveExpired(existingUser, nowMs, graceEpochMs, freeAccessMode)) {
+        await purgeInactiveUserById(existingUser.id, existingUser.username);
+        existingUser = null;
+      }
+    }
+
+    if (existingUser) {
+
       // Si el usuario proporcionó un PIN personalizado durante este registro/vincular, actualizar su hash
       if (customPin && customPin.trim().length >= 4) {
         const newPinHash = hashUserPin(customPin.trim());
@@ -1751,6 +1999,11 @@ export async function loginOrRegisterGoogleUser(
           message: `Esta cuenta ya está vinculada a otro dispositivo (${existingUser.bound_device_name || 'dispositivo principal'}).`,
           boundDeviceName: existingUser.bound_device_name
         };
+      } else {
+        await client.from('sportstats_users').update({
+          last_active_at: nowMs,
+          bound_device_name: friendlyDevName
+        }).eq('id', existingUser.id);
       }
 
       const hasExplicitActiveVip = Boolean(

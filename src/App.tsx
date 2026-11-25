@@ -421,6 +421,14 @@ export default function App() {
             localStorage.getItem('sportstats_admin_remember') === 'true'
           );
           if (!hasLocalAdmin) {
+            try {
+              localStorage.removeItem('sportstats_session_jwt');
+              sessionStorage.removeItem('sportstats_session_jwt');
+              localStorage.removeItem('sportstats_auth_user');
+              localStorage.removeItem('sportstats_client_name');
+            } catch {
+              // ignore
+            }
             setIsAppUnlocked(false);
             setActiveLicenseInfo(null);
             return;

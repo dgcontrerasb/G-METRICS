@@ -1058,7 +1058,7 @@ async function setSupabaseKvCache(cacheId, payload, timestamp = Date.now()) {
     });
     if (cacheId.includes("_schedule_") || cacheId.startsWith("espn_schedule_")) {
       const threeDaysAgoIso = new Date(Date.now() - 3 * 24 * 60 * 60 * 1e3).toISOString();
-      client.from("sportstats_config").delete().eq("color_theme", "kv-cache").neq("id", "__server_telemetry_v1__").neq("id", "__deleted_users_v1__").neq("id", "__admin_user_feedback_v1__").neq("id", "__gmetrics_smart_parlays_v3__").neq("id", "__gmetrics_singles_history_v1__").neq("id", "__admin_monthly_parlays_v2__").lt("updated_at", threeDaysAgoIso).then(
+      client.from("sportstats_config").delete().eq("color_theme", "kv-cache").neq("id", "__server_telemetry_v1__").neq("id", "__deleted_users_v1__").neq("id", "__inactivity_grace_epoch_v1__").neq("id", "__admin_user_feedback_v1__").neq("id", "__gmetrics_smart_parlays_v3__").neq("id", "__gmetrics_singles_history_v1__").neq("id", "__admin_monthly_parlays_v2__").lt("updated_at", threeDaysAgoIso).then(
         () => {
         },
         () => {
@@ -1180,6 +1180,15 @@ async function loginAppUser(rawUsername, rawPin, deviceId, deviceName, freeAcces
               success: false,
               code: "USER_NOT_FOUND",
               message: "Esta cuenta ha sido eliminada por el administrador."
+            };
+          }
+          const graceEpochMs = await getInactivityGraceEpochMs();
+          if (isUserInactiveExpired(data, nowMs, graceEpochMs, freeAccessMode)) {
+            await purgeInactiveUserById(data.id, data.username);
+            return {
+              success: false,
+              code: "USER_NOT_FOUND",
+              message: "Tu cuenta fue eliminada autom\xE1ticamente por m\xE1s de 30 d\xEDas sin conexi\xF3n. Por favor reg\xEDstrate nuevamente."
             };
           }
           if (data.status === "pending") {
@@ -1858,6 +1867,165 @@ async function adminDeleteAppUser(userId, username) {
   }
   return true;
 }
+var USER_INACTIVITY_LIMIT_MS = 30 * 24 * 60 * 60 * 1e3;
+var LAST_ACTIVE_TOUCH_THROTTLE_MS = 15 * 60 * 1e3;
+var INACTIVITY_SWEEP_THROTTLE_MS = 12 * 60 * 60 * 1e3;
+var INACTIVITY_GRACE_KV_KEY = "__inactivity_grace_epoch_v1__";
+var cachedInactivityGraceEpochMs = null;
+var lastInactivitySweepAt = 0;
+var recentLastActiveTouchMap = /* @__PURE__ */ new Map();
+async function getInactivityGraceEpochMs() {
+  if (cachedInactivityGraceEpochMs !== null) return cachedInactivityGraceEpochMs;
+  const nowMs = Date.now();
+  try {
+    const kv = await getSupabaseKvCache(INACTIVITY_GRACE_KV_KEY);
+    if (kv?.data && typeof kv.data.epochMs === "number" && kv.data.epochMs > 0) {
+      cachedInactivityGraceEpochMs = kv.data.epochMs;
+      return cachedInactivityGraceEpochMs;
+    }
+    await setSupabaseKvCache(INACTIVITY_GRACE_KV_KEY, { epochMs: nowMs }, nowMs);
+  } catch {
+  }
+  cachedInactivityGraceEpochMs = nowMs;
+  return cachedInactivityGraceEpochMs;
+}
+function isUserInactiveExpired(userRow, nowMs, graceEpochMs, freeAccessMode = true) {
+  if (!userRow) return false;
+  if (String(userRow.role || "").toLowerCase() === "admin") return false;
+  if (!freeAccessMode) {
+    const planType = String(userRow.plan_type ?? userRow.planType ?? "").toUpperCase();
+    const rawExp = userRow.expires_at ?? userRow.expiresAt;
+    const expiresAt = rawExp !== null && rawExp !== void 0 && rawExp !== "" ? Number(rawExp) : null;
+    const isNonPaidPlan = planType === "FREE_PROMO" || planType === "GOOGLE_TRIAL" || planType === "PENDING" || planType === "";
+    if (planType === "PERMANENT") return false;
+    if (expiresAt !== null && Number.isFinite(expiresAt) && expiresAt > nowMs && !isNonPaidPlan) {
+      return false;
+    }
+  }
+  const rawLast = userRow.last_active_at ?? userRow.lastActiveAt;
+  const rawCreated = userRow.created_at ?? userRow.createdAt;
+  const lastActiveMs = rawLast !== null && rawLast !== void 0 && rawLast !== "" ? Number(rawLast) : 0;
+  const createdMs = rawCreated !== null && rawCreated !== void 0 && rawCreated !== "" ? Number(rawCreated) : 0;
+  const baselineMs = Math.max(lastActiveMs || createdMs || graceEpochMs, graceEpochMs);
+  return nowMs - baselineMs > USER_INACTIVITY_LIMIT_MS;
+}
+async function purgeInactiveUserById(userId, username) {
+  const cleanId = String(userId || "").trim();
+  const cleanUsername = username ? normalizeUsername(username) : "";
+  const localUsers = getLocalUsersDb();
+  const remaining = localUsers.filter((u) => {
+    const uname = String(u.username || "").toLowerCase().trim();
+    const matchId = cleanId && u.id === cleanId;
+    const matchUser = cleanUsername && uname === cleanUsername;
+    return !(matchId || matchUser);
+  });
+  if (remaining.length !== localUsers.length) {
+    saveLocalUsersDb(remaining);
+  }
+  if (cleanUsername) {
+    const deletedSet = getDeletedUsernamesSet();
+    if (deletedSet.has(cleanUsername)) {
+      deletedSet.delete(cleanUsername);
+      saveDeletedUsernamesSet(deletedSet, true);
+    }
+  }
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      if (isValidUuid(cleanId)) {
+        await client.from("sportstats_users").delete().eq("id", cleanId);
+      } else if (cleanId) {
+        await client.from("sportstats_users").delete().eq("id", cleanId);
+      }
+      if (cleanUsername) {
+        await client.from("sportstats_users").delete().ilike("username", cleanUsername);
+      }
+    } catch (err) {
+      console.warn("[purgeInactiveUserById warning]:", err);
+      return false;
+    }
+  }
+  return true;
+}
+function touchUserLastActiveIfStale(userId, currentLastActiveAt, nowMs = Date.now(), usernameFallback) {
+  const cleanId = String(userId || "").trim();
+  const cleanUser = usernameFallback ? normalizeUsername(usernameFallback) : "";
+  if (cleanId === "admin-owner" || !cleanId && !cleanUser) return;
+  const cacheKey = cleanId || `u:${cleanUser}`;
+  const memPrev = recentLastActiveTouchMap.get(cacheKey) || 0;
+  const dbPrev = currentLastActiveAt !== null && currentLastActiveAt !== void 0 && currentLastActiveAt !== "" ? Number(currentLastActiveAt) : 0;
+  const latestKnown = Math.max(memPrev, dbPrev);
+  if (latestKnown > 0 && nowMs - latestKnown < LAST_ACTIVE_TOUCH_THROTTLE_MS) return;
+  recentLastActiveTouchMap.set(cacheKey, nowMs);
+  if (recentLastActiveTouchMap.size > 500) {
+    recentLastActiveTouchMap.clear();
+    recentLastActiveTouchMap.set(cacheKey, nowMs);
+  }
+  const client = getSupabaseClient();
+  if (!client) return;
+  const query = cleanId && isValidUuid(cleanId) ? client.from("sportstats_users").update({ last_active_at: nowMs }).eq("id", cleanId) : cleanUser ? client.from("sportstats_users").update({ last_active_at: nowMs }).ilike("username", cleanUser) : client.from("sportstats_users").update({ last_active_at: nowMs }).eq("id", cleanId);
+  query.then(
+    () => {
+    },
+    () => {
+    }
+  );
+}
+async function sweepInactiveAppUsers(options) {
+  const nowMs = Date.now();
+  const force = Boolean(options?.force);
+  const freeAccessMode = options?.freeAccessMode !== void 0 ? Boolean(options.freeAccessMode) : true;
+  const graceEpochMs = await getInactivityGraceEpochMs();
+  if (nowMs - graceEpochMs <= USER_INACTIVITY_LIMIT_MS) {
+    return { purgedCount: 0, purgedUsernames: [], graceEpochMs, skipped: true };
+  }
+  if (!force && nowMs - lastInactivitySweepAt < INACTIVITY_SWEEP_THROTTLE_MS) {
+    return { purgedCount: 0, purgedUsernames: [], graceEpochMs, skipped: true };
+  }
+  lastInactivitySweepAt = nowMs;
+  const purgedUsernames = [];
+  const localUsers = getLocalUsersDb();
+  const keptLocal = [];
+  for (const u of localUsers) {
+    if (isUserInactiveExpired(u, nowMs, graceEpochMs, freeAccessMode)) {
+      if (u.username) purgedUsernames.push(u.username.toLowerCase());
+    } else {
+      keptLocal.push(u);
+    }
+  }
+  if (keptLocal.length !== localUsers.length) {
+    saveLocalUsersDb(keptLocal);
+  }
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const { data, error } = await client.from("sportstats_users").select("id, username, role, plan_type, expires_at, last_active_at, created_at").neq("role", "admin");
+      if (!error && Array.isArray(data)) {
+        const idsToDelete = [];
+        for (const row of data) {
+          if (isUserInactiveExpired(row, nowMs, graceEpochMs, freeAccessMode)) {
+            if (row.id) idsToDelete.push(String(row.id));
+            if (row.username) {
+              const uname = String(row.username).toLowerCase().trim();
+              if (uname && !purgedUsernames.includes(uname)) purgedUsernames.push(uname);
+            }
+          }
+        }
+        if (idsToDelete.length > 0) {
+          await client.from("sportstats_users").delete().in("id", idsToDelete);
+          console.log(`[Inactivity Sweep] Eliminadas ${idsToDelete.length} cuentas inactivas (>30 d\xEDas).`);
+        }
+      }
+    } catch (err) {
+      console.warn("[sweepInactiveAppUsers warning]:", err);
+    }
+  }
+  return {
+    purgedCount: purgedUsernames.length,
+    purgedUsernames,
+    graceEpochMs
+  };
+}
 var PICK_LEDGER_SQL = `
 CREATE TABLE IF NOT EXISTS gmetrics_pick_ledger (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -2193,6 +2361,13 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
       if (existingUser.status === "deleted") {
         return { success: false, code: "USER_NOT_FOUND", message: "Esta cuenta ha sido eliminada por el administrador." };
       }
+      const graceEpochMs = await getInactivityGraceEpochMs();
+      if (isUserInactiveExpired(existingUser, nowMs, graceEpochMs, freeAccessMode)) {
+        await purgeInactiveUserById(existingUser.id, existingUser.username);
+        existingUser = null;
+      }
+    }
+    if (existingUser) {
       if (customPin && customPin.trim().length >= 4) {
         const newPinHash = hashUserPin(customPin.trim());
         await client.from("sportstats_users").update({
@@ -2216,6 +2391,11 @@ async function loginOrRegisterGoogleUser(rawEmail, rawDisplayName, deviceId, dev
           message: `Esta cuenta ya est\xE1 vinculada a otro dispositivo (${existingUser.bound_device_name || "dispositivo principal"}).`,
           boundDeviceName: existingUser.bound_device_name
         };
+      } else {
+        await client.from("sportstats_users").update({
+          last_active_at: nowMs,
+          bound_device_name: friendlyDevName
+        }).eq("id", existingUser.id);
       }
       const hasExplicitActiveVip = Boolean(
         existingUser.expires_at !== null && existingUser.expires_at !== void 0 && Number(existingUser.expires_at) > nowMs
@@ -10491,6 +10671,12 @@ app.post("/api/license/heartbeat", (req, res) => {
     deviceId: cleanDev || void 0,
     deviceInfo: cleanDevInfo || void 0
   });
+  const hbSession = extractSessionFromRequest(req);
+  if (hbSession?.sub && hbSession.sub !== "admin-owner") {
+    touchUserLastActiveIfStale(hbSession.sub, null, Date.now(), hbSession.username || cleanUsername);
+  } else if (cleanUsername && cleanUsername !== "admin") {
+    touchUserLastActiveIfStale("", null, Date.now(), cleanUsername);
+  }
   const found = db.find((item) => item.key === cleanKey || item.deviceId === cleanDev);
   if (found) {
     if (cleanKey && cleanDev && found.deviceId && !found.deviceId.includes("ALL")) {
@@ -10869,18 +11055,34 @@ app.get("/api/auth/session", async (req, res) => {
   let latestRole = session.role;
   let latestUsername = session.username;
   let isSuspended = false;
+  let inactivePurged = false;
+  const cfg = getAdminConfig();
+  const isFreePromoActive = cfg.freeAccessMode !== void 0 ? Boolean(cfg.freeAccessMode) : true;
   if (isSupabaseConfigured() && session.sub && session.sub !== "admin-owner") {
     try {
       const client = getSupabaseClient();
       if (client) {
-        const { data: dbUser } = await client.from("sportstats_users").select("expires_at, role, status, username").eq("id", session.sub).maybeSingle();
-        if (dbUser) {
-          if (dbUser.status === "suspended" || dbUser.status === "deleted") {
-            isSuspended = true;
+        const { data: dbUser } = await client.from("sportstats_users").select("expires_at, role, status, username, last_active_at, created_at, plan_type").eq("id", session.sub).maybeSingle();
+        if (!dbUser) {
+          isSuspended = true;
+        } else if (dbUser.status === "suspended" || dbUser.status === "deleted") {
+          isSuspended = true;
+        } else {
+          const nowMs = Date.now();
+          const graceEpochMs = await getInactivityGraceEpochMs();
+          if (isUserInactiveExpired(dbUser, nowMs, graceEpochMs, isFreePromoActive)) {
+            await purgeInactiveUserById(session.sub, dbUser.username || session.username);
+            activeOnlineSessions.forEach((entry, key) => {
+              if (dbUser.username && entry.username.toLowerCase() === String(dbUser.username).toLowerCase() || session.deviceId && entry.deviceId.toUpperCase() === session.deviceId.toUpperCase()) {
+                activeOnlineSessions.delete(key);
+              }
+            });
+            inactivePurged = true;
           } else {
             latestExpiresAt = dbUser.expires_at ? Number(dbUser.expires_at) : null;
             latestRole = dbUser.role || session.role;
             if (dbUser.username) latestUsername = dbUser.username;
+            touchUserLastActiveIfStale(session.sub, dbUser.last_active_at, nowMs);
           }
         }
       }
@@ -10888,18 +11090,17 @@ app.get("/api/auth/session", async (req, res) => {
       console.warn("[Session Sync Warning]: Fallback a claims de JWT por error de BD:", err);
     }
   }
-  if (isSuspended) {
+  if (inactivePurged || isSuspended) {
     clearSecureSessionCookie(res);
     return res.json({
       success: true,
       authenticated: false,
       isVip: false,
       user: null,
-      message: "Cuenta suspendida o eliminada"
+      code: inactivePurged ? "INACTIVE_EXPIRED" : "ACCOUNT_REMOVED",
+      message: inactivePurged ? "Tu cuenta fue eliminada autom\xE1ticamente por m\xE1s de 30 d\xEDas sin conexi\xF3n. Por favor reg\xEDstrate nuevamente." : "Cuenta suspendida o eliminada"
     });
   }
-  const cfg = getAdminConfig();
-  const isFreePromoActive = cfg.freeAccessMode !== void 0 ? Boolean(cfg.freeAccessMode) : true;
   const isVip = Boolean(
     latestRole === "admin" || latestExpiresAt !== null && latestExpiresAt !== void 0 && Number(latestExpiresAt) > Date.now() || isFreePromoActive && (session.authProvider === "google" || latestRole === "client")
   );
@@ -11060,6 +11261,16 @@ app.get("/api/admin/users/list", async (req, res) => {
   }
   clearAuthFailures(req);
   try {
+    const isFreeMode = cfg.freeAccessMode !== void 0 ? Boolean(cfg.freeAccessMode) : true;
+    const sweep = await sweepInactiveAppUsers({ freeAccessMode: isFreeMode });
+    if (sweep.purgedUsernames.length > 0) {
+      const purgedSet = new Set(sweep.purgedUsernames);
+      activeOnlineSessions.forEach((entry, key) => {
+        if (purgedSet.has(entry.username.toLowerCase())) {
+          activeOnlineSessions.delete(key);
+        }
+      });
+    }
     const users = await adminListAppUsers();
     const onlineList = getActiveOnlineUsersList();
     const enrichedUsers = users.map((u) => {
@@ -11182,6 +11393,38 @@ app.post("/api/admin/users/delete", async (req, res) => {
     success: ok,
     message: ok ? "Usuario eliminado permanentemente" : "No se pudo eliminar el usuario"
   });
+});
+app.get("/api/cron/cleanup-inactive-users", async (req, res) => {
+  const cronSecret = (process.env.CRON_SECRET || "").trim();
+  const authHeader = String(req.headers.authorization || "").trim();
+  const isVercelCron = Boolean(cronSecret && authHeader === `Bearer ${cronSecret}`);
+  const cfg = getAdminConfig();
+  const adminCred = extractAdminCredential(req);
+  const isAdminAuth = isValidAdminPin(adminCred, cfg);
+  const isVercelHeader = Boolean(process.env.VERCEL && req.headers["x-vercel-cron"] === "1" && !cronSecret);
+  if (!isVercelCron && !isAdminAuth && !isVercelHeader) {
+    return res.status(403).json({ success: false, error: "No autorizado" });
+  }
+  try {
+    const isFreeMode = cfg.freeAccessMode !== void 0 ? Boolean(cfg.freeAccessMode) : true;
+    const result = await sweepInactiveAppUsers({ force: true, freeAccessMode: isFreeMode });
+    if (result.purgedUsernames.length > 0) {
+      const purgedSet = new Set(result.purgedUsernames);
+      activeOnlineSessions.forEach((entry, key) => {
+        if (purgedSet.has(entry.username.toLowerCase())) {
+          activeOnlineSessions.delete(key);
+        }
+      });
+    }
+    return res.json({
+      success: true,
+      purgedCount: result.purgedCount,
+      graceEpochIso: new Date(result.graceEpochMs).toISOString(),
+      skipped: Boolean(result.skipped)
+    });
+  } catch {
+    return res.status(500).json({ success: false, error: "Error al ejecutar limpieza de inactivos" });
+  }
 });
 var ADMIN_MONTHLY_PARLAYS_CACHE_KEY = "__admin_monthly_parlays_v2__";
 function getColombiaCurrentMonthKey() {
