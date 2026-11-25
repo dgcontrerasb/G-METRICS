@@ -132,6 +132,13 @@ export interface MatchFixture {
   };
   derbyOrRivalry?: boolean;
   h2h?: H2HSummary;
+  externalOdds?: {
+    homeOdds?: number;
+    drawOdds?: number;
+    awayOdds?: number;
+    overUnder?: number;
+    provider?: string;
+  };
 }
 
 export type Match = MatchFixture;

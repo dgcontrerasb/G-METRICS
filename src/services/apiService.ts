@@ -261,33 +261,75 @@ function matchKnownClub(name: string, country?: string): ClubProfile | null {
   return null;
 }
 
-function getTeamRating(name: string, id: number, isHome: boolean, country?: string) {
+function parseEspnFormString(rawForm?: string): ('W' | 'D' | 'L')[] | null {
+  if (!rawForm || typeof rawForm !== 'string') return null;
+  const cleaned = rawForm.toUpperCase().replace(/[^WDL]/g, '').split('').slice(-5) as ('W' | 'D' | 'L')[];
+  return cleaned.length >= 2 ? cleaned : null;
+}
+
+function parseEspnSoccerRecord(rawRecord?: string): { wins: number; draws: number; losses: number; total: number; ppg: number } | null {
+  if (!rawRecord || typeof rawRecord !== 'string') return null;
+  const parts = rawRecord.trim().split('-').map((n) => parseInt(n, 10));
+  if (parts.length < 2 || parts.some((n) => isNaN(n) || n < 0)) return null;
+  const wins = parts[0] || 0;
+  const draws = parts.length >= 3 ? parts[1] || 0 : 0;
+  const losses = parts.length >= 3 ? parts[2] || 0 : parts[1] || 0;
+  const total = wins + draws + losses;
+  if (total < 2) return null;
+  return { wins, draws, losses, total, ppg: (wins * 3 + draws) / total };
+}
+
+function getTeamRating(name: string, _id: number, isHome: boolean, country?: string, espnForm?: string, espnRecord?: string) {
   const matched = matchKnownClub(name, country);
+  const realForm = parseEspnFormString(espnForm);
+  const realRecord = parseEspnSoccerRecord(espnRecord);
+  const formPpg = realForm ? realForm.reduce((acc, r) => acc + (r === 'W' ? 3 : r === 'D' ? 1 : 0), 0) / realForm.length : null;
+  const realSignalPpg = realRecord && formPpg !== null ? realRecord.ppg * 0.65 + formPpg * 0.35 : (realRecord ? realRecord.ppg : formPpg);
+
   if (matched) {
+    let atk = matched.atk;
+    let def = matched.def;
+    let rank = matched.rank;
+    const points = realRecord ? realRecord.wins * 3 + realRecord.draws : Math.max(15, 75 - matched.rank * 3);
+    if (realSignalPpg !== null) {
+      const delta = (realSignalPpg - 1.5) * 0.14;
+      atk = Math.max(0.78, Math.min(1.75, Math.round((atk + delta) * 100) / 100));
+      def = Math.max(0.62, Math.min(1.42, Math.round((def - delta * 0.85) * 100) / 100));
+      if (realRecord && realRecord.total >= 6) rank = Math.max(1, Math.min(20, Math.round(20 - (realRecord.ppg / 3) * 19)));
+    }
     return {
-      rank: matched.rank,
-      points: Math.max(15, 75 - matched.rank * 3),
-      attackStrength: matched.atk,
-      defenseStrength: matched.def,
+      rank,
+      points,
+      form: realForm || (['W', 'D', 'W', 'D', 'W'] as ('W' | 'D' | 'L')[]),
+      attackStrength: atk,
+      defenseStrength: def,
       shots: matched.shots,
       starName: matched.star,
       starPos: matched.starPos
     };
   }
 
-  const hash = (id * 17 + name.length * 31 + (isHome ? 13 : 7)) % 100;
-  const rank = Math.max(1, Math.min(20, Math.floor(hash / 5) + 1));
-  const attackStrength = Math.round((1.45 - (rank * 0.035) + ((hash % 10) * 0.015)) * 100) / 100;
-  const defenseStrength = Math.round((0.72 + (rank * 0.032) - ((hash % 8) * 0.01)) * 100) / 100;
-  const shots = Math.round((16.5 - rank * 0.28) * 10) / 10;
-  const points = Math.max(18, 72 - rank * 3);
+  if (realSignalPpg !== null) {
+    const normalized = (realSignalPpg - 1.38) / 1.62;
+    return {
+      rank: Math.max(1, Math.min(20, Math.round(20 - (realSignalPpg / 3) * 19))),
+      points: realRecord ? realRecord.wins * 3 + realRecord.draws : Math.max(12, Math.round(realSignalPpg * 16)),
+      form: realForm || (['D', 'W', 'D', 'L', 'D'] as ('W' | 'D' | 'L')[]),
+      attackStrength: Math.max(0.78, Math.min(1.52, Math.round((1.05 + normalized * 0.34) * 100) / 100)),
+      defenseStrength: Math.max(0.72, Math.min(1.38, Math.round((1.02 - normalized * 0.28) * 100) / 100)),
+      shots: Math.max(8.5, Math.min(16.0, Math.round((11.6 + normalized * 2.8) * 10) / 10)),
+      starName: resolveTeamStarPlayerName(name),
+      starPos: 'Delantero'
+    };
+  }
 
   return {
-    rank,
-    points,
-    attackStrength: Math.max(0.75, Math.min(1.65, attackStrength)),
-    defenseStrength: Math.max(0.65, Math.min(1.40, defenseStrength)),
-    shots: Math.max(9.0, shots),
+    rank: 10,
+    points: 25,
+    form: (isHome ? ['D', 'W', 'D', 'L', 'D'] : ['L', 'D', 'W', 'D', 'L']) as ('W' | 'D' | 'L')[],
+    attackStrength: 1.02,
+    defenseStrength: 1.00,
+    shots: 11.4,
     starName: resolveTeamStarPlayerName(name),
     starPos: 'Delantero'
   };
@@ -542,14 +584,15 @@ export function mapApiSportsFixture(raw: any, fallbackTargetDate: string): Match
   const awayTeamId = raw.teams?.away?.id || 2;
 
   const leagueCountry = raw.league?.country || 'Internacional';
-  const homeRating = getTeamRating(homeTeamName, homeTeamId, true, leagueCountry);
-  const awayRating = getTeamRating(awayTeamName, awayTeamId, false, leagueCountry);
+  const homeRating = getTeamRating(homeTeamName, homeTeamId, true, leagueCountry, raw.espnForm?.home, raw.espnRecords?.home);
+  const awayRating = getTeamRating(awayTeamName, awayTeamId, false, leagueCountry, raw.espnForm?.away, raw.espnRecords?.away);
 
   return {
     id: fixtureId,
     espnEventId: raw.espnEventId ? String(raw.espnEventId) : undefined,
     sourceProviders: Array.isArray(raw.sourceProviders) ? raw.sourceProviders.map(String) : undefined,
     footballDataCrossCheck: raw.footballDataCrossCheck || undefined,
+    externalOdds: raw.externalOdds || undefined,
     date: matchDate,
     time: kickoff,
     startTimestamp: matchTimestampMs > 0 ? matchTimestampMs : undefined,
@@ -574,7 +617,7 @@ export function mapApiSportsFixture(raw: any, fallbackTargetDate: string): Match
       logo: raw.teams?.home?.logo || '',
       rank: homeRating.rank,
       points: homeRating.points,
-      form: ['W', 'D', 'W', 'W', 'L'],
+      form: homeRating.form,
       attackStrength: homeRating.attackStrength,
       defenseStrength: homeRating.defenseStrength,
       avgShotsPerMatch: homeRating.shots,
@@ -600,7 +643,7 @@ export function mapApiSportsFixture(raw: any, fallbackTargetDate: string): Match
       logo: raw.teams?.away?.logo || '',
       rank: awayRating.rank,
       points: awayRating.points,
-      form: ['W', 'L', 'D', 'W', 'W'],
+      form: awayRating.form,
       attackStrength: awayRating.attackStrength,
       defenseStrength: awayRating.defenseStrength,
       avgShotsPerMatch: awayRating.shots,

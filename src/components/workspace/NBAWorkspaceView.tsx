@@ -201,7 +201,7 @@ export const NBAWorkspaceView: React.FC<NBAWorkspaceViewProps> = React.memo(({
               <span>Top Picks Baloncesto · {nbaTopPicks.length} Oportunidades</span>
             </div>
             <h2 className="text-xs sm:text-sm font-bold text-white tracking-tight">
-              Pronósticos Destacados de Baloncesto (&ge;68% y +EV)
+              Pronósticos Destacados de Baloncesto (&ge;62% y +EV)
             </h2>
             <p className="text-[11px] text-[#8b949e] max-w-lg mx-auto">
               Encuentros seleccionados y ordenados por mayor ventaja probabilística en Moneyline, Hándicap o Puntos.
@@ -225,26 +225,106 @@ export const NBAWorkspaceView: React.FC<NBAWorkspaceViewProps> = React.memo(({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {nbaTopPicks.slice(0, visibleMatchLimit).map(({ fixture, analysis }, idx, arr) => (
-                <CompactNBAMatchRow
-                  key={fixture.id}
-                  fixture={fixture}
-                  analysis={analysis!}
-                  isSelected={selectedFixtureIds.has(fixture.id)}
-                  onToggleSelect={onToggleSelect}
-                  isExpanded={expandedCardIds.has(fixture.id)}
-                  onToggleExpand={() => onToggleCardExpand(fixture.id)}
-                  onOpenDetail={onOpenNBADetail}
-                  onSelectSpotlight={onSelectNBASpotlight}
-                  isSpotlightActive={activeSpotlightFixtureId === fixture.id}
-                  viewMode={viewMode}
-                  isRecentlyUpdated={recentlyUpdatedFixtureIds.has(fixture.id)}
-                  isFavorite={favoriteFixtureIds.has(fixture.id)}
-                  onToggleFavorite={onToggleFavorite}
-                  isFullWidthDesktop={arr.length % 2 === 1 && idx === arr.length - 1}
-                />
-              ))}
+            <div className="space-y-3">
+              {/* Hero Card "Joya del Día NBA": Partido #1 con Mayor Ventaja Probabilística */}
+              {nbaTopPicks.length > 0 && nbaTopPicks[0].analysis && (
+                <div className="rounded-3xl p-4 sm:p-5 transition-all bg-[#161b22] border border-[#d9b114]/50 shadow-xl">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-6 h-6 rounded-full bg-[#d9b114]/20 border border-[#d9b114]/50 text-[#d9b114] font-black text-xs flex items-center justify-center shadow-2xs shrink-0">
+                        ⭐
+                      </span>
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-[#d9b114] bg-[#d9b114]/15 px-2 py-0.5 rounded-full border border-[#d9b114]/40">
+                          Joya del Día NBA · Motor Cuantitativo
+                        </span>
+                        <h3 className="text-sm sm:text-base font-black text-white tracking-tight mt-1 truncate">
+                          {nbaTopPicks[0].fixture.homeTeam?.name} vs {nbaTopPicks[0].fixture.awayTeam?.name}
+                        </h3>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="px-2.5 py-1 rounded-full bg-[#00ff66]/15 border border-[#00ff66]/40 text-[#00ff66] font-black text-[10.5px] uppercase tracking-wider shadow-xs">
+                        +EV Estrella
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Fila Métrica Hero NBA */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center pt-2 border-t border-[#21262d]">
+                    <div className="sm:col-span-8 flex flex-wrap items-center gap-3">
+                      <div className="px-3 py-1.5 rounded-xl bg-[#0b0e14] border border-[#30363d] shadow-2xs">
+                        <span className="text-[9.5px] text-[#8b949e] font-bold block uppercase">Pronóstico Principal</span>
+                        <span className="text-xs font-black text-white">
+                          {nbaTopPicks[0].advice?.topPick?.plainTitle ||
+                            nbaTopPicks[0].advice?.topPick?.label ||
+                            (nbaTopPicks[0].analysis.pHomeWin >= nbaTopPicks[0].analysis.pAwayWin
+                              ? `Gana ${nbaTopPicks[0].fixture.homeTeam?.shortName} (ML)`
+                              : `Gana ${nbaTopPicks[0].fixture.awayTeam?.shortName} (ML)`)}
+                        </span>
+                      </div>
+                      <div className="px-3 py-1.5 rounded-xl bg-[#0b0e14] border border-[#30363d] shadow-2xs font-mono">
+                        <span className="text-[9.5px] text-[#8b949e] font-bold block uppercase">Cuota / Prob.</span>
+                        <span className="text-xs font-black font-mono tabular-nums text-[#00ff66]">
+                          @{(
+                            nbaTopPicks[0].advice?.topPick?.fairOdd ||
+                            Math.max(
+                              1.18,
+                              100 / Math.max(50, nbaTopPicks[0].advice?.topPick?.probability || Math.max(nbaTopPicks[0].analysis.pHomeWin, nbaTopPicks[0].analysis.pAwayWin))
+                            )
+                          ).toFixed(2)}{' '}
+                          ({Math.round(nbaTopPicks[0].advice?.topPick?.probability || Math.max(nbaTopPicks[0].analysis.pHomeWin, nbaTopPicks[0].analysis.pAwayWin))}%)
+                        </span>
+                      </div>
+                      <div className="px-3 py-1.5 rounded-xl bg-[#0b0e14] border border-[#30363d] shadow-2xs font-mono">
+                        <span className="text-[9.5px] text-[#8b949e] font-bold block uppercase">Proyección Total</span>
+                        <span className="text-xs font-black font-mono tabular-nums text-white">
+                          {(nbaTopPicks[0].analysis.preMatchTotalPoints ?? nbaTopPicks[0].analysis.projectedTotalPoints).toFixed(1)} pts
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-4 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (typeof window !== 'undefined' && window.innerWidth >= 1280 && onSelectNBASpotlight) {
+                            onSelectNBASpotlight(nbaTopPicks[0].fixture, nbaTopPicks[0].analysis!);
+                          } else {
+                            onOpenNBADetail(nbaTopPicks[0].fixture, nbaTopPicks[0].analysis!);
+                          }
+                        }}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#0b0e14] hover:bg-[#1c2129] border border-[#d9b114]/60 text-[#d9b114] font-bold text-xs tracking-tight shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <span>Ver Radar NBA</span>
+                        <span className="text-xs">⚡</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {nbaTopPicks.slice(0, visibleMatchLimit).map(({ fixture, analysis }, idx, arr) => (
+                  <CompactNBAMatchRow
+                    key={fixture.id}
+                    fixture={fixture}
+                    analysis={analysis!}
+                    isSelected={selectedFixtureIds.has(fixture.id)}
+                    onToggleSelect={onToggleSelect}
+                    isExpanded={expandedCardIds.has(fixture.id)}
+                    onToggleExpand={() => onToggleCardExpand(fixture.id)}
+                    onOpenDetail={onOpenNBADetail}
+                    onSelectSpotlight={onSelectNBASpotlight}
+                    isSpotlightActive={activeSpotlightFixtureId === fixture.id}
+                    viewMode={viewMode}
+                    isRecentlyUpdated={recentlyUpdatedFixtureIds.has(fixture.id)}
+                    isFavorite={favoriteFixtureIds.has(fixture.id)}
+                    onToggleFavorite={onToggleFavorite}
+                    isFullWidthDesktop={arr.length % 2 === 1 && idx === arr.length - 1}
+                  />
+                ))}
+              </div>
 
               {nbaTopPicks.length > visibleMatchLimit && (
                 <div className="md:col-span-2 pt-2 flex flex-row items-center justify-center gap-2">

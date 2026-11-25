@@ -106,20 +106,26 @@ export function rankCandidatePicksByDecisionTree(
       }
     }
 
-    // NODO 3: Bonificación de mercados tácticos inmunes al ganador en partidos tensos
+    // NODO 3: Calibración por varianza empírica de mercado
+    // Doble Oportunidad y Goles Seguros (+1.5 / -3.5) tienen menor varianza real que Córners/Tarjetas
     if (pick.category === 'DOUBLE_CHANCE') {
-      if (closeMatchPercent >= 65) treeScore += 4.5;
+      treeScore += 2.2;
+      if (closeMatchPercent >= 65) treeScore += 3.5;
     } else if (pick.category === 'CORNERS') {
-      if (urgencyScore >= 7) treeScore += 3.8;
-      if (derbyOrRivalry) treeScore += 3.2;
+      // Córners tiene alta varianza real (se frena cuando un equipo gana 2-0 temprano);
+      // exigir ventaja clara y evitar que desplace sistemáticamente a Goles o Doble Oportunidad
+      treeScore -= 5.5;
+      if (urgencyScore >= 8 && derbyOrRivalry) treeScore += 2.0;
     } else if (pick.category === 'CARDS') {
-      if (derbyOrRivalry) treeScore += 5.0;
-      if (urgencyScore >= 8) treeScore += 3.5;
+      // Tarjetas depende fuertemente del criterio arbitral en vivo; penalizar varianza base
+      treeScore -= 6.0;
+      if (derbyOrRivalry && urgencyScore >= 8) treeScore += 2.5;
     } else if (pick.category === 'SAFE_GOALS') {
+      treeScore += 2.0;
       if (pick.label.includes('Más de 1.5') && urgencyScore >= 6.5) treeScore += 2.5;
       if (pick.label.includes('Menos de 3.5') && closeMatchPercent >= 70) treeScore += 3.0;
     } else if (pick.category === 'HALF_GOALS') {
-      if (totalFatigue > 0.05) treeScore += 2.8; // Mayor resolución en 2T por desgaste
+      if (totalFatigue > 0.05) treeScore += 1.5;
     }
 
     return {

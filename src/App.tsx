@@ -1918,16 +1918,35 @@ export default function App() {
       .slice(0, 12);
   }, [availableCompetitionGroups]);
 
-  // Fast Top Picks for NBA
+  // Fast Top Picks for NBA (calibrado para baloncesto: >= 62% o señal GREEN / +EV verificado)
   const nbaTopPicks = useMemo(() => {
-    return filteredNBAFixtures
+    const scored = filteredNBAFixtures
       .map((f) => {
         const a = nbaAnalysesMap[f.id];
         const advice = a ? getNBADidacticAdvice(f, a) : null;
         return { fixture: f, analysis: a, advice };
       })
-      .filter((item) => item.advice && (item.advice.signal === 'GREEN' || (item.advice.topPick && item.advice.topPick.probability >= 68)))
-      .sort((a, b) => (b.advice?.topPick?.probability || 0) - (a.advice?.topPick?.probability || 0));
+      .filter((item) => item.analysis && item.advice);
+
+    const qualified = scored
+      .filter(
+        (item) =>
+          item.advice!.signal === 'GREEN' ||
+          (item.advice!.topPick && item.advice!.topPick.probability >= 62) ||
+          Boolean(item.analysis!.marketOdds?.valueBetDetected)
+      )
+      .sort((a, b) => {
+        const aGreen = a.advice?.signal === 'GREEN' ? 1 : 0;
+        const bGreen = b.advice?.signal === 'GREEN' ? 1 : 0;
+        if (aGreen !== bGreen) return bGreen - aGreen;
+        return (b.advice?.topPick?.probability || 0) - (a.advice?.topPick?.probability || 0);
+      });
+
+    if (qualified.length > 0) return qualified;
+    // Si hay jornada NBA pero ningún juego supera 62%, mostrar el #1 más sólido como Joya del Día
+    return [...scored]
+      .sort((a, b) => (b.advice?.topPick?.probability || 0) - (a.advice?.topPick?.probability || 0))
+      .slice(0, 1);
   }, [filteredNBAFixtures, nbaAnalysesMap]);
 
   // Live fixtures for NBA

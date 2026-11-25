@@ -1525,10 +1525,52 @@ async function fetchEspnSoccerFixtures(targetDate: string, clientTz = 'America/B
         ? extractEspnScoreboardTelemetry(ev, comp, homeComp, awayComp, homeName, awayName, elapsedMin || 45, false)
         : undefined;
 
+      // Extraer forma real (L5), récord de temporada y cuotas reales de mercado que ESPN ya incluye ($0 USD)
+      const americanToDecimal = (val: any): number | undefined => {
+        const n = typeof val === 'number' ? val : parseFloat(String(val ?? ''));
+        if (!isFinite(n) || n === 0) return undefined;
+        if (n >= 1.01 && n <= 35 && Math.abs(n) < 100) return Math.round(n * 100) / 100; // ya es decimal
+        if (n > 0) return Math.round((1 + n / 100) * 100) / 100;
+        return Math.round((1 + 100 / Math.abs(n)) * 100) / 100;
+      };
+      const rawOddsObj = Array.isArray(comp?.odds) && comp.odds.length > 0 ? comp.odds[0] : null;
+      const parsedHomeOdds = americanToDecimal(rawOddsObj?.homeTeamOdds?.moneyLine ?? rawOddsObj?.moneyline?.home?.close?.odds);
+      const parsedAwayOdds = americanToDecimal(rawOddsObj?.awayTeamOdds?.moneyLine ?? rawOddsObj?.moneyline?.away?.close?.odds);
+      const parsedDrawOdds = americanToDecimal(rawOddsObj?.drawOdds?.moneyLine ?? rawOddsObj?.moneyline?.draw?.close?.odds);
+      const parsedOverUnder = typeof rawOddsObj?.overUnder === 'number' && isFinite(rawOddsObj.overUnder) ? rawOddsObj.overUnder : undefined;
+      const externalOdds =
+        parsedHomeOdds && parsedAwayOdds
+          ? {
+              homeOdds: parsedHomeOdds,
+              drawOdds: parsedDrawOdds,
+              awayOdds: parsedAwayOdds,
+              overUnder: parsedOverUnder,
+              provider: String(rawOddsObj?.provider?.name || 'Consenso ESPN Market')
+            }
+          : undefined;
+
+      const homeRecordSummary =
+        (Array.isArray(homeComp?.records)
+          ? (homeComp.records.find((r: any) => r?.type === 'total') || homeComp.records[0])?.summary
+          : undefined) || undefined;
+      const awayRecordSummary =
+        (Array.isArray(awayComp?.records)
+          ? (awayComp.records.find((r: any) => r?.type === 'total') || awayComp.records[0])?.summary
+          : undefined) || undefined;
+
       mapped.push({
         espnEventId,
         liveStats: sbTelemetry?.liveStats,
         liveEvents: sbTelemetry?.liveEvents,
+        externalOdds,
+        espnForm: {
+          home: typeof homeComp?.form === 'string' ? homeComp.form : undefined,
+          away: typeof awayComp?.form === 'string' ? awayComp.form : undefined
+        },
+        espnRecords: {
+          home: typeof homeRecordSummary === 'string' ? homeRecordSummary : undefined,
+          away: typeof awayRecordSummary === 'string' ? awayRecordSummary : undefined
+        },
         fixture: {
           id: parseInt(espnEventId || '0', 10) || Math.floor(Math.random() * 900000 + 100000),
           date: ev.date,

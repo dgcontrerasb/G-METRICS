@@ -5167,18 +5167,20 @@ function rankCandidatePicksByDecisionTree(candidates, context) {
       }
     }
     if (pick.category === "DOUBLE_CHANCE") {
-      if (closeMatchPercent >= 65) treeScore += 4.5;
+      treeScore += 2.2;
+      if (closeMatchPercent >= 65) treeScore += 3.5;
     } else if (pick.category === "CORNERS") {
-      if (urgencyScore >= 7) treeScore += 3.8;
-      if (derbyOrRivalry) treeScore += 3.2;
+      treeScore -= 5.5;
+      if (urgencyScore >= 8 && derbyOrRivalry) treeScore += 2;
     } else if (pick.category === "CARDS") {
-      if (derbyOrRivalry) treeScore += 5;
-      if (urgencyScore >= 8) treeScore += 3.5;
+      treeScore -= 6;
+      if (derbyOrRivalry && urgencyScore >= 8) treeScore += 2.5;
     } else if (pick.category === "SAFE_GOALS") {
+      treeScore += 2;
       if (pick.label.includes("M\xE1s de 1.5") && urgencyScore >= 6.5) treeScore += 2.5;
       if (pick.label.includes("Menos de 3.5") && closeMatchPercent >= 70) treeScore += 3;
     } else if (pick.category === "HALF_GOALS") {
-      if (totalFatigue > 0.05) treeScore += 2.8;
+      if (totalFatigue > 0.05) treeScore += 1.5;
     }
     return {
       pick,
@@ -5327,16 +5329,25 @@ function calculateNBAAnalysis(fixture) {
   if (awayTeam.restDays === 0) baseAwayScore -= 2.6;
   if (homeTeam.restDays >= 3) baseHomeScore += 1.2;
   const nbaLineup = getNBALineupData(fixture);
-  const homeRosterInjuries = [...nbaLineup.homeStarters, ...nbaLineup.homeBench].filter((p) => p.isInjured);
-  const awayRosterInjuries = [...nbaLineup.awayStarters, ...nbaLineup.awayBench].filter((p) => p.isInjured);
-  homeRosterInjuries.forEach((p) => {
-    if (p.injuryStatus === "Out") baseHomeScore -= 2.2;
-    else if (p.injuryStatus === "GTD") baseHomeScore -= 1;
-  });
-  awayRosterInjuries.forEach((p) => {
-    if (p.injuryStatus === "Out") baseAwayScore -= 2.2;
-    else if (p.injuryStatus === "GTD") baseAwayScore -= 1;
-  });
+  const homeStarNames = new Set((homeTeam.keyPlayers || []).map((kp) => kp.name.toLowerCase()));
+  const awayStarNames = new Set((awayTeam.keyPlayers || []).map((kp) => kp.name.toLowerCase()));
+  const calcInjuryPenalty = (starters, bench, starNames) => {
+    let penalty = 0;
+    starters.forEach((p) => {
+      if (!p.isInjured) return;
+      const isStar = starNames.has((p.name || "").toLowerCase());
+      if (p.injuryStatus === "Out") penalty += isStar ? 4.6 : 2.3;
+      else if (p.injuryStatus === "GTD") penalty += isStar ? 1.9 : 0.9;
+    });
+    bench.forEach((p) => {
+      if (!p.isInjured) return;
+      if (p.injuryStatus === "Out") penalty += 0.6;
+      else if (p.injuryStatus === "GTD") penalty += 0.25;
+    });
+    return Math.min(11, penalty);
+  };
+  baseHomeScore -= calcInjuryPenalty(nbaLineup.homeStarters, nbaLineup.homeBench, homeStarNames);
+  baseAwayScore -= calcInjuryPenalty(nbaLineup.awayStarters, nbaLineup.awayBench, awayStarNames);
   const rawPreMatchTotalPoints = Math.round((baseHomeScore + baseAwayScore) * 10) / 10;
   const fairTotalLine = Math.floor(rawPreMatchTotalPoints - 6.5) + 0.5;
   const homeWinPct = homeTeam.wins && homeTeam.wins + homeTeam.losses > 0 ? homeTeam.wins / (homeTeam.wins + homeTeam.losses) : 0.52;
@@ -5947,6 +5958,29 @@ function calculateMatchAnalysis(fixture) {
   pHomeWin = Math.round((0.7 * dcHomeWin + 0.3 * eloBt.eloHomeWinProb) * 10) / 10;
   pDraw = Math.round((0.7 * dcDraw + 0.3 * eloBt.eloDrawProb) * 10) / 10;
   pAwayWin = Math.round((0.7 * dcAwayWin + 0.3 * eloBt.eloAwayWinProb) * 10) / 10;
+  const extHomeOdd = fixture.externalOdds?.homeOdds;
+  const extDrawOdd = fixture.externalOdds?.drawOdds;
+  const extAwayOdd = fixture.externalOdds?.awayOdds;
+  const hasRealSoccerOdds = Boolean(
+    typeof extHomeOdd === "number" && typeof extAwayOdd === "number" && isFinite(extHomeOdd) && isFinite(extAwayOdd) && extHomeOdd >= 1.03 && extHomeOdd <= 35 && extAwayOdd >= 1.03 && extAwayOdd <= 35 && (!extDrawOdd || isFinite(extDrawOdd) && extDrawOdd >= 1.5 && extDrawOdd <= 25)
+  );
+  if (hasRealSoccerOdds && extHomeOdd && extAwayOdd) {
+    const invH = 1 / extHomeOdd;
+    const invA = 1 / extAwayOdd;
+    const invD = extDrawOdd ? 1 / extDrawOdd : Math.max(0.14, 1.06 - invH - invA);
+    const overround = invH + invD + invA;
+    if (overround >= 0.96 && overround <= 1.25) {
+      const mktH = invH / overround * 100;
+      const mktD = invD / overround * 100;
+      const mktA = invA / overround * 100;
+      const maxDiv = Math.max(Math.abs(pHomeWin - mktH), Math.abs(pAwayWin - mktA));
+      const modelWeight = maxDiv <= 15 ? 0.45 : 0.25;
+      const mktWeight = 1 - modelWeight;
+      pHomeWin = Math.round((pHomeWin * modelWeight + mktH * mktWeight) * 10) / 10;
+      pDraw = Math.round((pDraw * modelWeight + mktD * mktWeight) * 10) / 10;
+      pAwayWin = Math.round((pAwayWin * modelWeight + mktA * mktWeight) * 10) / 10;
+    }
+  }
   const diff1x2 = 100 - (pHomeWin + pDraw + pAwayWin);
   pDraw = Math.max(1, Math.round((pDraw + diff1x2) * 10) / 10);
   const fairOddsHome = pHomeWin > 0 ? Math.round(100 / pHomeWin * 100) / 100 : 99;
@@ -6239,14 +6273,12 @@ function calculateMatchAnalysis(fixture) {
   const closeMatchPercent = Math.round(closeMatchProb * 10) / 10;
   const wideWinPercent = Math.round(wideWinProb * 10) / 10;
   const margin = 1.05;
-  const noiseHome = fixture.id.charCodeAt(0) % 7 - 3;
-  const noiseAway = fixture.id.charCodeAt(fixture.id.length - 1) % 7 - 3;
-  const rawMarketHomeProb = Math.max(12, Math.min(82, pHomeWin + noiseHome));
-  const rawMarketAwayProb = Math.max(12, Math.min(82, pAwayWin + noiseAway));
-  const rawMarketDrawProb = Math.max(12, 100 - (rawMarketHomeProb + rawMarketAwayProb));
-  const bookmakerHomeOdds = Math.round(margin / (rawMarketHomeProb / 100) * 100) / 100;
-  const bookmakerDrawOdds = Math.round(margin / (rawMarketDrawProb / 100) * 100) / 100;
-  const bookmakerAwayOdds = Math.round(margin / (rawMarketAwayProb / 100) * 100) / 100;
+  const fallbackMarketHomeProb = Math.max(12, Math.min(82, pHomeWin));
+  const fallbackMarketAwayProb = Math.max(12, Math.min(82, pAwayWin));
+  const fallbackMarketDrawProb = Math.max(12, 100 - (fallbackMarketHomeProb + fallbackMarketAwayProb));
+  const bookmakerHomeOdds = hasRealSoccerOdds && extHomeOdd ? extHomeOdd : Math.round(margin / (fallbackMarketHomeProb / 100) * 100) / 100;
+  const bookmakerDrawOdds = hasRealSoccerOdds && extDrawOdd ? extDrawOdd : Math.round(margin / (fallbackMarketDrawProb / 100) * 100) / 100;
+  const bookmakerAwayOdds = hasRealSoccerOdds && extAwayOdd ? extAwayOdd : Math.round(margin / (fallbackMarketAwayProb / 100) * 100) / 100;
   const impliedHomeProb = Math.round(1 / bookmakerHomeOdds * 1e3) / 10;
   const impliedDrawProb = Math.round(1 / bookmakerDrawOdds * 1e3) / 10;
   const impliedAwayProb = Math.round(1 / bookmakerAwayOdds * 1e3) / 10;
@@ -6257,24 +6289,26 @@ function calculateMatchAnalysis(fixture) {
   const edgeHome = Math.round((pHomeWin - impliedHomeProb) * 10) / 10;
   const edgeAway = Math.round((pAwayWin - impliedAwayProb) * 10) / 10;
   const edgeDraw = Math.round((pDraw - impliedDrawProb) * 10) / 10;
-  if (edgeHome >= 4) {
-    valueBetDetected = true;
-    valueSide = "1";
-    valueEdgePercent = edgeHome;
-    valueExplanation = `Ventaja en ${homeShort}: Nuestro modelo proyecta ${pHomeWin}% vs cuota de mercado de ${bookmakerHomeOdds.toFixed(2)} (implica ${impliedHomeProb}%). Valor de +${edgeHome}%.`;
-  } else if (edgeAway >= 4) {
-    valueBetDetected = true;
-    valueSide = "2";
-    valueEdgePercent = edgeAway;
-    valueExplanation = `Ventaja en ${awayShort}: Nuestro modelo proyecta ${pAwayWin}% vs cuota de mercado de ${bookmakerAwayOdds.toFixed(2)} (implica ${impliedAwayProb}%). Valor de +${edgeAway}%.`;
-  } else if (edgeDraw >= 4.5) {
-    valueBetDetected = true;
-    valueSide = "X";
-    valueEdgePercent = edgeDraw;
-    valueExplanation = `Ventaja en Empate: Nuestro modelo proyecta ${pDraw}% vs cuota de mercado de ${bookmakerDrawOdds.toFixed(2)} (implica ${impliedDrawProb}%). Valor de +${edgeDraw}%.`;
+  if (hasRealSoccerOdds) {
+    if (edgeHome >= 4) {
+      valueBetDetected = true;
+      valueSide = "1";
+      valueEdgePercent = edgeHome;
+      valueExplanation = `Ventaja en ${homeShort}: Nuestro modelo proyecta ${pHomeWin}% vs cuota real de ${bookmakerHomeOdds.toFixed(2)} (implica ${impliedHomeProb}%). Valor de +${edgeHome}%.`;
+    } else if (edgeAway >= 4) {
+      valueBetDetected = true;
+      valueSide = "2";
+      valueEdgePercent = edgeAway;
+      valueExplanation = `Ventaja en ${awayShort}: Nuestro modelo proyecta ${pAwayWin}% vs cuota real de ${bookmakerAwayOdds.toFixed(2)} (implica ${impliedAwayProb}%). Valor de +${edgeAway}%.`;
+    } else if (edgeDraw >= 4.5) {
+      valueBetDetected = true;
+      valueSide = "X";
+      valueEdgePercent = edgeDraw;
+      valueExplanation = `Ventaja en Empate: Nuestro modelo proyecta ${pDraw}% vs cuota real de ${bookmakerDrawOdds.toFixed(2)} (implica ${impliedDrawProb}%). Valor de +${edgeDraw}%.`;
+    }
   }
   const marketOdds = {
-    provider: "Consenso de Mercado (The Odds API)",
+    provider: hasRealSoccerOdds ? fixture.externalOdds?.provider || "Consenso Real de Mercado (ESPN)" : "L\xEDnea Justa del Modelo (Sin cuota externa)",
     bookmakerHomeOdds,
     bookmakerDrawOdds,
     bookmakerAwayOdds,
@@ -8240,10 +8274,40 @@ async function fetchEspnSoccerFixtures(targetDate, clientTz = "America/Bogota") 
         }
       }
       const sbTelemetry = isLive ? extractEspnScoreboardTelemetry(ev, comp, homeComp, awayComp, homeName, awayName, elapsedMin || 45, false) : void 0;
+      const americanToDecimal = (val) => {
+        const n = typeof val === "number" ? val : parseFloat(String(val ?? ""));
+        if (!isFinite(n) || n === 0) return void 0;
+        if (n >= 1.01 && n <= 35 && Math.abs(n) < 100) return Math.round(n * 100) / 100;
+        if (n > 0) return Math.round((1 + n / 100) * 100) / 100;
+        return Math.round((1 + 100 / Math.abs(n)) * 100) / 100;
+      };
+      const rawOddsObj = Array.isArray(comp?.odds) && comp.odds.length > 0 ? comp.odds[0] : null;
+      const parsedHomeOdds = americanToDecimal(rawOddsObj?.homeTeamOdds?.moneyLine ?? rawOddsObj?.moneyline?.home?.close?.odds);
+      const parsedAwayOdds = americanToDecimal(rawOddsObj?.awayTeamOdds?.moneyLine ?? rawOddsObj?.moneyline?.away?.close?.odds);
+      const parsedDrawOdds = americanToDecimal(rawOddsObj?.drawOdds?.moneyLine ?? rawOddsObj?.moneyline?.draw?.close?.odds);
+      const parsedOverUnder = typeof rawOddsObj?.overUnder === "number" && isFinite(rawOddsObj.overUnder) ? rawOddsObj.overUnder : void 0;
+      const externalOdds = parsedHomeOdds && parsedAwayOdds ? {
+        homeOdds: parsedHomeOdds,
+        drawOdds: parsedDrawOdds,
+        awayOdds: parsedAwayOdds,
+        overUnder: parsedOverUnder,
+        provider: String(rawOddsObj?.provider?.name || "Consenso ESPN Market")
+      } : void 0;
+      const homeRecordSummary = (Array.isArray(homeComp?.records) ? (homeComp.records.find((r) => r?.type === "total") || homeComp.records[0])?.summary : void 0) || void 0;
+      const awayRecordSummary = (Array.isArray(awayComp?.records) ? (awayComp.records.find((r) => r?.type === "total") || awayComp.records[0])?.summary : void 0) || void 0;
       mapped.push({
         espnEventId,
         liveStats: sbTelemetry?.liveStats,
         liveEvents: sbTelemetry?.liveEvents,
+        externalOdds,
+        espnForm: {
+          home: typeof homeComp?.form === "string" ? homeComp.form : void 0,
+          away: typeof awayComp?.form === "string" ? awayComp.form : void 0
+        },
+        espnRecords: {
+          home: typeof homeRecordSummary === "string" ? homeRecordSummary : void 0,
+          away: typeof awayRecordSummary === "string" ? awayRecordSummary : void 0
+        },
         fixture: {
           id: parseInt(espnEventId || "0", 10) || Math.floor(Math.random() * 9e5 + 1e5),
           date: ev.date,

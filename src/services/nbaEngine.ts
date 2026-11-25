@@ -114,20 +114,33 @@ export function calculateNBAAnalysis(fixture: NBAMatchFixture): NBAAnalysis {
   if (awayTeam.restDays === 0) baseAwayScore -= 2.6; // Road back-to-back penalty
   if (homeTeam.restDays >= 3) baseHomeScore += 1.2;
 
-  // Lineup Absence & Injury Factor (Out / GTD calibration)
+  // Lineup Absence & Injury Factor ponderado por rol real (Estrella > Titular > Banca)
   const nbaLineup = getNBALineupData(fixture);
-  const homeRosterInjuries = [...nbaLineup.homeStarters, ...nbaLineup.homeBench].filter(p => p.isInjured);
-  const awayRosterInjuries = [...nbaLineup.awayStarters, ...nbaLineup.awayBench].filter(p => p.isInjured);
+  const homeStarNames = new Set((homeTeam.keyPlayers || []).map((kp) => kp.name.toLowerCase()));
+  const awayStarNames = new Set((awayTeam.keyPlayers || []).map((kp) => kp.name.toLowerCase()));
 
-  homeRosterInjuries.forEach(p => {
-    if (p.injuryStatus === 'Out') baseHomeScore -= 2.2;
-    else if (p.injuryStatus === 'GTD') baseHomeScore -= 1.0;
-  });
+  const calcInjuryPenalty = (
+    starters: typeof nbaLineup.homeStarters,
+    bench: typeof nbaLineup.homeBench,
+    starNames: Set<string>
+  ): number => {
+    let penalty = 0;
+    starters.forEach((p) => {
+      if (!p.isInjured) return;
+      const isStar = starNames.has((p.name || '').toLowerCase());
+      if (p.injuryStatus === 'Out') penalty += isStar ? 4.6 : 2.3;
+      else if (p.injuryStatus === 'GTD') penalty += isStar ? 1.9 : 0.9;
+    });
+    bench.forEach((p) => {
+      if (!p.isInjured) return;
+      if (p.injuryStatus === 'Out') penalty += 0.6;
+      else if (p.injuryStatus === 'GTD') penalty += 0.25;
+    });
+    return Math.min(11.0, penalty);
+  };
 
-  awayRosterInjuries.forEach(p => {
-    if (p.injuryStatus === 'Out') baseAwayScore -= 2.2;
-    else if (p.injuryStatus === 'GTD') baseAwayScore -= 1.0;
-  });
+  baseHomeScore -= calcInjuryPenalty(nbaLineup.homeStarters, nbaLineup.homeBench, homeStarNames);
+  baseAwayScore -= calcInjuryPenalty(nbaLineup.awayStarters, nbaLineup.awayBench, awayStarNames);
 
   // 2. IMMUTABLE PRE-MATCH BASELINES & LIVE IN-PLAY ADAPTIVE RE-ESTIMATION
   // Las líneas y probabilidades pre-partido jamás se recalibran con cuartos completados ni marcador final.

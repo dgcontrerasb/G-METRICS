@@ -223,6 +223,41 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
   pDraw = Math.round((0.70 * dcDraw + 0.30 * eloBt.eloDrawProb) * 10) / 10;
   pAwayWin = Math.round((0.70 * dcAwayWin + 0.30 * eloBt.eloAwayWinProb) * 10) / 10;
 
+  // Anclaje Bayesiano a Cuotas Reales Pre-Partido de Mercado (cuando ESPN entrega cuotas 1X2 válidas)
+  const extHomeOdd = fixture.externalOdds?.homeOdds;
+  const extDrawOdd = fixture.externalOdds?.drawOdds;
+  const extAwayOdd = fixture.externalOdds?.awayOdds;
+  const hasRealSoccerOdds = Boolean(
+    typeof extHomeOdd === 'number' &&
+      typeof extAwayOdd === 'number' &&
+      isFinite(extHomeOdd) &&
+      isFinite(extAwayOdd) &&
+      extHomeOdd >= 1.03 &&
+      extHomeOdd <= 35 &&
+      extAwayOdd >= 1.03 &&
+      extAwayOdd <= 35 &&
+      (!extDrawOdd || (isFinite(extDrawOdd) && extDrawOdd >= 1.5 && extDrawOdd <= 25))
+  );
+
+  if (hasRealSoccerOdds && extHomeOdd && extAwayOdd) {
+    const invH = 1 / extHomeOdd;
+    const invA = 1 / extAwayOdd;
+    const invD = extDrawOdd ? 1 / extDrawOdd : Math.max(0.14, 1.06 - invH - invA);
+    const overround = invH + invD + invA;
+    if (overround >= 0.96 && overround <= 1.25) {
+      const mktH = (invH / overround) * 100;
+      const mktD = (invD / overround) * 100;
+      const mktA = (invA / overround) * 100;
+      const maxDiv = Math.max(Math.abs(pHomeWin - mktH), Math.abs(pAwayWin - mktA));
+      // Si el modelo diverge mucho del mercado (>15%), dar mayor peso al mercado real (suele reflejar bajas/rotaciones)
+      const modelWeight = maxDiv <= 15 ? 0.45 : 0.25;
+      const mktWeight = 1 - modelWeight;
+      pHomeWin = Math.round((pHomeWin * modelWeight + mktH * mktWeight) * 10) / 10;
+      pDraw = Math.round((pDraw * modelWeight + mktD * mktWeight) * 10) / 10;
+      pAwayWin = Math.round((pAwayWin * modelWeight + mktA * mktWeight) * 10) / 10;
+    }
+  }
+
   // Assure sum is exactly 100
   const diff1x2 = 100 - (pHomeWin + pDraw + pAwayWin);
   pDraw = Math.max(1, Math.round((pDraw + diff1x2) * 10) / 10);
@@ -585,15 +620,22 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
   const wideWinPercent = Math.round(wideWinProb * 10) / 10;
 
   const margin = 1.05;
-  const noiseHome = (fixture.id.charCodeAt(0) % 7) - 3;
-  const noiseAway = (fixture.id.charCodeAt(fixture.id.length - 1) % 7) - 3;
-  const rawMarketHomeProb = Math.max(12, Math.min(82, pHomeWin + noiseHome));
-  const rawMarketAwayProb = Math.max(12, Math.min(82, pAwayWin + noiseAway));
-  const rawMarketDrawProb = Math.max(12, 100 - (rawMarketHomeProb + rawMarketAwayProb));
+  const fallbackMarketHomeProb = Math.max(12, Math.min(82, pHomeWin));
+  const fallbackMarketAwayProb = Math.max(12, Math.min(82, pAwayWin));
+  const fallbackMarketDrawProb = Math.max(12, 100 - (fallbackMarketHomeProb + fallbackMarketAwayProb));
 
-  const bookmakerHomeOdds = Math.round((margin / (rawMarketHomeProb / 100)) * 100) / 100;
-  const bookmakerDrawOdds = Math.round((margin / (rawMarketDrawProb / 100)) * 100) / 100;
-  const bookmakerAwayOdds = Math.round((margin / (rawMarketAwayProb / 100)) * 100) / 100;
+  const bookmakerHomeOdds =
+    hasRealSoccerOdds && extHomeOdd
+      ? extHomeOdd
+      : Math.round((margin / (fallbackMarketHomeProb / 100)) * 100) / 100;
+  const bookmakerDrawOdds =
+    hasRealSoccerOdds && extDrawOdd
+      ? extDrawOdd
+      : Math.round((margin / (fallbackMarketDrawProb / 100)) * 100) / 100;
+  const bookmakerAwayOdds =
+    hasRealSoccerOdds && extAwayOdd
+      ? extAwayOdd
+      : Math.round((margin / (fallbackMarketAwayProb / 100)) * 100) / 100;
 
   const impliedHomeProb = Math.round((1 / bookmakerHomeOdds) * 1000) / 10;
   const impliedDrawProb = Math.round((1 / bookmakerDrawOdds) * 1000) / 10;
@@ -608,25 +650,30 @@ export function calculateMatchAnalysis(fixture: MatchFixture): MatchAnalysis {
   const edgeAway = Math.round((pAwayWin - impliedAwayProb) * 10) / 10;
   const edgeDraw = Math.round((pDraw - impliedDrawProb) * 10) / 10;
 
-  if (edgeHome >= 4.0) {
-    valueBetDetected = true;
-    valueSide = '1';
-    valueEdgePercent = edgeHome;
-    valueExplanation = `Ventaja en ${homeShort}: Nuestro modelo proyecta ${pHomeWin}% vs cuota de mercado de ${bookmakerHomeOdds.toFixed(2)} (implica ${impliedHomeProb}%). Valor de +${edgeHome}%.`;
-  } else if (edgeAway >= 4.0) {
-    valueBetDetected = true;
-    valueSide = '2';
-    valueEdgePercent = edgeAway;
-    valueExplanation = `Ventaja en ${awayShort}: Nuestro modelo proyecta ${pAwayWin}% vs cuota de mercado de ${bookmakerAwayOdds.toFixed(2)} (implica ${impliedAwayProb}%). Valor de +${edgeAway}%.`;
-  } else if (edgeDraw >= 4.5) {
-    valueBetDetected = true;
-    valueSide = 'X';
-    valueEdgePercent = edgeDraw;
-    valueExplanation = `Ventaja en Empate: Nuestro modelo proyecta ${pDraw}% vs cuota de mercado de ${bookmakerDrawOdds.toFixed(2)} (implica ${impliedDrawProb}%). Valor de +${edgeDraw}%.`;
+  // Solo marcar +EV cuando existen cuotas reales de mercado (nunca sobre cuotas sintéticas)
+  if (hasRealSoccerOdds) {
+    if (edgeHome >= 4.0) {
+      valueBetDetected = true;
+      valueSide = '1';
+      valueEdgePercent = edgeHome;
+      valueExplanation = `Ventaja en ${homeShort}: Nuestro modelo proyecta ${pHomeWin}% vs cuota real de ${bookmakerHomeOdds.toFixed(2)} (implica ${impliedHomeProb}%). Valor de +${edgeHome}%.`;
+    } else if (edgeAway >= 4.0) {
+      valueBetDetected = true;
+      valueSide = '2';
+      valueEdgePercent = edgeAway;
+      valueExplanation = `Ventaja en ${awayShort}: Nuestro modelo proyecta ${pAwayWin}% vs cuota real de ${bookmakerAwayOdds.toFixed(2)} (implica ${impliedAwayProb}%). Valor de +${edgeAway}%.`;
+    } else if (edgeDraw >= 4.5) {
+      valueBetDetected = true;
+      valueSide = 'X';
+      valueEdgePercent = edgeDraw;
+      valueExplanation = `Ventaja en Empate: Nuestro modelo proyecta ${pDraw}% vs cuota real de ${bookmakerDrawOdds.toFixed(2)} (implica ${impliedDrawProb}%). Valor de +${edgeDraw}%.`;
+    }
   }
 
   const marketOdds: MarketOddsComparison = {
-    provider: 'Consenso de Mercado (The Odds API)',
+    provider: hasRealSoccerOdds
+      ? fixture.externalOdds?.provider || 'Consenso Real de Mercado (ESPN)'
+      : 'Línea Justa del Modelo (Sin cuota externa)',
     bookmakerHomeOdds,
     bookmakerDrawOdds,
     bookmakerAwayOdds,
