@@ -865,16 +865,18 @@ export const AccessLockScreen: React.FC<AccessLockScreenProps> = ({
 
             <div className="h-7 flex items-baseline gap-2 min-w-0">
               <span className="font-mono text-2xl font-bold text-[#00ff66] leading-none tabular-nums">
-                {auditSummary.globalAccuracy}%
+                {auditSummary.totalPicksAudited > 0 ? `${auditSummary.globalAccuracy}%` : '—'}
               </span>
               <span className="text-[13px] font-semibold text-white truncate">
-                Acierto real auditado
+                {auditSummary.totalPicksAudited > 0 ? 'Acierto real auditado' : 'Sincronizando auditoría...'}
               </span>
             </div>
 
             <div className="h-5 flex items-center justify-between gap-3 text-xs min-w-0">
               <span className="text-[#8b949e] truncate">
-                {auditSummary.totalPicksAudited} picks sellados pre-partido
+                {auditSummary.totalPicksAudited > 0
+                  ? `${auditSummary.totalPicksWon}/${auditSummary.totalPicksAudited} partidos oficiales verificados`
+                  : 'Evaluando resultados oficiales ESPN'}
               </span>
               <button
                 type="button"

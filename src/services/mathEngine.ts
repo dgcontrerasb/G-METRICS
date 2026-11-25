@@ -1157,120 +1157,64 @@ export function extractMatchBettingMarketSuggestions(
     }
   };
 
-  // 1. MERCADO 1X2
-  if (dixonColes.pHomeWin >= 50) {
+  // 1. MERCADO 1X2 (Solo favoritos claros con respaldo estructural xG; sin monedas al aire de 48-50%)
+  if (dixonColes.pHomeWin >= 64 && dixonColes.lambdaHome - dixonColes.lambdaAway >= 0.55) {
     addCandidate(BetMarketCategory.ONE_X_TWO, `Gana ${homeShort} (1)`, dixonColes.pHomeWin / 100, 0.045);
   }
-  if (dixonColes.pAwayWin >= 48) {
+  if (dixonColes.pAwayWin >= 62 && dixonColes.lambdaAway - dixonColes.lambdaHome >= 0.55) {
     addCandidate(BetMarketCategory.ONE_X_TWO, `Gana ${awayShort} (2)`, dixonColes.pAwayWin / 100, 0.045);
   }
 
-  // 2. MERCADO DOUBLE_CHANCE (Doble Oportunidad)
-  if (goalsMarket.doubleChance1X >= 64) {
-    addCandidate(BetMarketCategory.DOUBLE_CHANCE, `${homeShort} o Empate (1X)`, goalsMarket.doubleChance1X / 100, 0.038);
+  // 2. MERCADO DOUBLE_CHANCE (Doble Oportunidad — núcleo de alta estabilidad en parlays)
+  if (goalsMarket.doubleChance1X >= 73) {
+    addCandidate(BetMarketCategory.DOUBLE_CHANCE, `${homeShort} o Empate (1X)`, goalsMarket.doubleChance1X / 100, 0.04);
   }
-  if (goalsMarket.doubleChanceX2 >= 64) {
-    addCandidate(BetMarketCategory.DOUBLE_CHANCE, `Empate o ${awayShort} (X2)`, goalsMarket.doubleChanceX2 / 100, 0.038);
-  }
-  if (goalsMarket.doubleChance12 >= 70) {
-    addCandidate(BetMarketCategory.DOUBLE_CHANCE, `Cualquiera Gana (12)`, goalsMarket.doubleChance12 / 100, 0.035);
+  if (goalsMarket.doubleChanceX2 >= 73) {
+    addCandidate(BetMarketCategory.DOUBLE_CHANCE, `Empate o ${awayShort} (X2)`, goalsMarket.doubleChanceX2 / 100, 0.04);
   }
 
-  // 3. MERCADO TOTAL_GOALS (Over / Under 1.5, 2.5)
-  if (goalsMarket.over15 >= 66) {
+  // 3. MERCADO TOTAL_GOALS (Solo líneas elásticas de alta probabilidad: Over 1.5 y Under 3.5; Over/Under 2.5 solo si >= 65%)
+  if (goalsMarket.over15 >= 74 && dixonColes.totalXG >= 2.45) {
     addCandidate(BetMarketCategory.TOTAL_GOALS, `Más de 1.5 Goles`, goalsMarket.over15 / 100, 0.04);
   }
-  if (goalsMarket.under15 >= 50) {
-    addCandidate(BetMarketCategory.TOTAL_GOALS, `Menos de 1.5 Goles`, goalsMarket.under15 / 100, 0.045);
+  const probUnder35 = goalsMarket.under35 || (100 - (goalsMarket.over35 || 25));
+  if (probUnder35 >= 76 && dixonColes.totalXG <= 2.65) {
+    addCandidate(BetMarketCategory.TOTAL_GOALS, `Menos de 3.5 Goles`, probUnder35 / 100, 0.04);
   }
-  if (goalsMarket.over25 >= 52) {
-    addCandidate(BetMarketCategory.TOTAL_GOALS, `Más de 2.5 Goles`, goalsMarket.over25 / 100, 0.05);
+  if (goalsMarket.over25 >= 65 && dixonColes.totalXG >= 2.95) {
+    addCandidate(BetMarketCategory.TOTAL_GOALS, `Más de 2.5 Goles`, goalsMarket.over25 / 100, 0.048);
   }
-  if (goalsMarket.under25 >= 55) {
+  if (goalsMarket.under25 >= 65 && dixonColes.totalXG <= 2.05) {
     addCandidate(BetMarketCategory.TOTAL_GOALS, `Menos de 2.5 Goles`, goalsMarket.under25 / 100, 0.045);
   }
 
-  // 4. MERCADO BTTS (Ambos Equipos Marcan)
-  if (goalsMarket.bttsYes >= 53) {
-    addCandidate(BetMarketCategory.BTTS, `Ambos Marcan: Sí`, goalsMarket.bttsYes / 100, 0.042);
+  // 4. MERCADO BTTS (Solo con convicción excepcional >= 67%, nunca 53%)
+  if (goalsMarket.bttsYes >= 67 && dixonColes.totalXG >= 2.85) {
+    addCandidate(BetMarketCategory.BTTS, `Ambos Marcan: Sí`, goalsMarket.bttsYes / 100, 0.045);
   }
-  if (goalsMarket.bttsNo >= 54) {
-    addCandidate(BetMarketCategory.BTTS, `Ambos Marcan: No`, goalsMarket.bttsNo / 100, 0.042);
+  if (goalsMarket.bttsNo >= 68 && dixonColes.totalXG <= 2.00) {
+    addCandidate(BetMarketCategory.BTTS, `Ambos Marcan: No`, goalsMarket.bttsNo / 100, 0.045);
   }
 
-  // 5. MERCADO TOTAL_CORNERS_MATCH
-  if (cornersMarket.over75 >= 70) {
+  // 5. MERCADO TOTAL_CORNERS_MATCH (Solo línea muy conservadora >= 78% para evitar varianza)
+  if (cornersMarket.over75 >= 78 && cornersMarket.expectedTotalCorners >= 10.4) {
     addCandidate(BetMarketCategory.TOTAL_CORNERS_MATCH, `Más de 7.5 Córners`, cornersMarket.over75 / 100, 0.038);
-  } else if (cornersMarket.over85 >= 62) {
-    addCandidate(BetMarketCategory.TOTAL_CORNERS_MATCH, `Más de 8.5 Córners`, cornersMarket.over85 / 100, 0.04);
-  } else if (cornersMarket.over95 >= 54) {
-    addCandidate(BetMarketCategory.TOTAL_CORNERS_MATCH, `Más de 9.5 Córners`, cornersMarket.over95 / 100, 0.045);
-  } else if ((cornersMarket.under105 || 100 - cornersMarket.over105) >= 58) {
-    const underProb = (cornersMarket.under105 || 100 - cornersMarket.over105) / 100;
-    addCandidate(BetMarketCategory.TOTAL_CORNERS_MATCH, `Menos de 10.5 Córners`, underProb, 0.04);
   }
 
-  // 6. MERCADO DRAW_NO_BET (Empate Apuesta No Válida)
+  // 6. MERCADO DRAW_NO_BET (Empate Apuesta No Válida — protege el parlay con VOID en caso de empate)
   const dnbDenominator = dixonColes.pHomeWin + dixonColes.pAwayWin;
   if (dnbDenominator > 0) {
     const dnbHomeProb = dixonColes.pHomeWin / dnbDenominator;
     const dnbAwayProb = dixonColes.pAwayWin / dnbDenominator;
-    if (dnbHomeProb >= 0.58) {
-      addCandidate(BetMarketCategory.DRAW_NO_BET, `Empate No Válido: ${homeShort}`, dnbHomeProb, 0.04);
-    } else if (dnbAwayProb >= 0.58) {
-      addCandidate(BetMarketCategory.DRAW_NO_BET, `Empate No Válido: ${awayShort}`, dnbAwayProb, 0.04);
+    if (dnbHomeProb >= 0.68) {
+      addCandidate(BetMarketCategory.DRAW_NO_BET, `Empate No Válido: ${homeShort}`, dnbHomeProb, 0.042);
+    } else if (dnbAwayProb >= 0.68) {
+      addCandidate(BetMarketCategory.DRAW_NO_BET, `Empate No Válido: ${awayShort}`, dnbAwayProb, 0.042);
     }
   }
 
-  // 7. MERCADO TOTAL_CARDS (Tarjetas Totales y Disciplina)
-  if (refereeCards) {
-    if (refereeCards.over35CardsProb >= 68) {
-      addCandidate(BetMarketCategory.TOTAL_CARDS, `Más de 3.5 Tarjetas`, refereeCards.over35CardsProb / 100, 0.042);
-    } else if (refereeCards.under45CardsProb >= 68) {
-      addCandidate(BetMarketCategory.TOTAL_CARDS, `Menos de 4.5 Tarjetas`, refereeCards.under45CardsProb / 100, 0.04);
-    } else if (refereeCards.under55CardsProb >= 72) {
-      addCandidate(BetMarketCategory.TOTAL_CARDS, `Menos de 5.5 Tarjetas`, refereeCards.under55CardsProb / 100, 0.038);
-    } else if (refereeCards.over45CardsProb >= 58 && refereeCards.rigor === 'Severo') {
-      addCandidate(BetMarketCategory.TOTAL_CARDS, `Más de 4.5 Tarjetas`, refereeCards.over45CardsProb / 100, 0.048);
-    }
-  }
-
-  // 8. MERCADO PLAYER_SHOTS_ON_TARGET (Tiros a Puerta por Jugador Estrella)
-  const isValidPlayerName = (name?: string): boolean => {
-    if (!name || typeof name !== 'string') return false;
-    const clean = name.trim();
-    if (clean.length < 4 || clean.includes('#')) return false;
-    const lower = clean.toLowerCase();
-    if (lower.includes('local') || lower.includes('visitante') || lower.includes('equipo') || lower.includes('jugador')) return false;
-    return true;
-  };
-
-  if (shotsAndPlayers) {
-    if (isValidPlayerName(shotsAndPlayers.homeStar?.name) && (shotsAndPlayers.homeStar.expectedShotsOnTarget || 0) >= 1.15) {
-      const lambdaSOT = shotsAndPlayers.homeStar.expectedShotsOnTarget;
-      const probSOT = Math.round((1 - Math.exp(-lambdaSOT)) * 1000) / 1000;
-      if (probSOT >= 0.65) {
-        addCandidate(BetMarketCategory.PLAYER_SHOTS_ON_TARGET, `${shotsAndPlayers.homeStar.name}: Más de 0.5 Tiros a Puerta`, probSOT, 0.042);
-      }
-    }
-    if (isValidPlayerName(shotsAndPlayers.awayStar?.name) && (shotsAndPlayers.awayStar.expectedShotsOnTarget || 0) >= 1.15) {
-      const lambdaSOT = shotsAndPlayers.awayStar.expectedShotsOnTarget;
-      const probSOT = Math.round((1 - Math.exp(-lambdaSOT)) * 1000) / 1000;
-      if (probSOT >= 0.65) {
-        addCandidate(BetMarketCategory.PLAYER_SHOTS_ON_TARGET, `${shotsAndPlayers.awayStar.name}: Más de 0.5 Tiros a Puerta`, probSOT, 0.042);
-      }
-    }
-  }
-
-  // 9. MERCADO HALF_WITH_MOST_GOALS (Mitades con Más Goles & Goles 2T)
-  if (halfGoals) {
-    const prob2ndHalfGoal = Math.round((1 - Math.exp(-halfGoals.expected2ndHalfGoals)) * 1000) / 1000;
-    if (prob2ndHalfGoal >= 0.72) {
-      addCandidate(BetMarketCategory.HALF_WITH_MOST_GOALS, `2.ª Mitad: Más de 0.5 Goles`, prob2ndHalfGoal, 0.038);
-    } else if (halfGoals.secondHalfPercent >= 48) {
-      addCandidate(BetMarketCategory.HALF_WITH_MOST_GOALS, `Mitad con Más Goles: 2.ª Mitad`, halfGoals.secondHalfPercent / 100, 0.045);
-    }
-  }
+  // Nota cuantitativa v8: Se excluyen TOTAL_CARDS, PLAYER_SHOTS_ON_TARGET y HALF_WITH_MOST_GOALS
+  // de candidatos de Parlay por su altísima varianza empírica y baja trazabilidad en liquidación.
 
   return candidates;
 }
@@ -1337,7 +1281,7 @@ export function getCanonicalPickSignature(matchName: string, label: string): str
  * Versión del motor de parlays. Los boletos PENDIENTES generados con otra versión se purgan
  * automáticamente (los ya resueltos WON/LOST se conservan para no alterar la medición de eficacia).
  */
-export const PARLAY_ENGINE_VERSION = 'v7-zero-dupes';
+export const PARLAY_ENGINE_VERSION = 'v8-quant-precision';
 
 /**
  * Generador Cuantitativo de Parlays Inteligentes Diversificados
@@ -1420,15 +1364,16 @@ export function generateSmartParlays(
     let searchIterations = 0;
     const MAX_SEARCH_ITERATIONS = 15000;
 
-    // Función recursiva para seleccionar numLegs de partidos distintos y categorías distintas
+    // Función recursiva para seleccionar numLegs de partidos 100% distintos maximizando probabilidad conjunta real
+    // Permite hasta 2 patas de la misma categoría estable (ej. 1X + 1X o Over 1.5 + Over 1.5 en partidos distintos)
+    // para NUNCA obligar a meter mercados de alta varianza solo por "no repetir categoría".
     const search = (
       matchIdx: number,
       currentLegs: BettingMarketSuggestion[],
-      usedCategories: Set<string>,
+      catCounts: Map<string, number>,
       currentOdds: number
     ) => {
       if (++searchIterations > MAX_SEARCH_ITERATIONS) return;
-      // Poda por cuota máxima excedida
       if (currentOdds > maxOdds * 1.05) return;
 
       if (currentLegs.length === numLegs) {
@@ -1436,15 +1381,19 @@ export function generateSmartParlays(
           const hash = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join('|');
           if (excludedSlipHashes.has(hash)) return;
 
-          // Score: maximizar probabilidad acumulada + EV promedio, priorizando partidos no utilizados previamente
           const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
+          // Piso estricto de probabilidad conjunta según perfil (nunca emitir loterías)
+          const minJointProb = profile === 'CONSERVATIVE' ? 0.48 : profile === 'BALANCED' ? 0.36 : 0.26;
+          if (cumulativeProb < minJointProb) return;
+
           const avgEV = currentLegs.reduce((acc, l) => acc + l.expectedValue, 0) / numLegs;
           const reusedCount = currentLegs.filter((l) => {
             const parts = l.matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
             const k = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(l.matchName);
             return globalUsedMatchKeys.has(k);
           }).length;
-          const score = cumulativeProb * 100 + avgEV * 10 - (reusedCount * 30) + (variety > 0 ? Math.random() * variety * 12 : 0);
+          // Priorizar abrumadoramente la probabilidad conjunta real (x140) sobre variedad aleatoria
+          const score = cumulativeProb * 140 + avgEV * 8 - (reusedCount * 35) + (variety > 0 ? Math.random() * variety * 6 : 0);
 
           if (score > bestScore) {
             bestScore = score;
@@ -1462,8 +1411,13 @@ export function generateSmartParlays(
         if (!matchEntry) continue;
 
         for (const pick of matchEntry.suggestions) {
-          // REGLA 1 (Anti-Monotonía Estricta): Categorías estrictamente diferentes para todas las patas del boleto
-          if (usedCategories.has(pick.category)) {
+          // Máximo 2 patas de la misma categoría estable en partidos distintos (máximo 1 si es Córners/BTTS)
+          const countInCat = catCounts.get(pick.category) || 0;
+          const maxForCat =
+            pick.category === BetMarketCategory.TOTAL_CORNERS_MATCH || pick.category === BetMarketCategory.BTTS
+              ? 1
+              : 2;
+          if (countInCat >= maxForCat) {
             continue;
           }
 
@@ -1480,48 +1434,54 @@ export function generateSmartParlays(
           }
 
           const nextOdds = Number((currentOdds * pick.odds).toFixed(2));
-          usedCategories.add(pick.category);
+          catCounts.set(pick.category, countInCat + 1);
           currentLegs.push(pick);
 
-          search(i + 1, currentLegs, usedCategories, nextOdds);
+          search(i + 1, currentLegs, catCounts, nextOdds);
 
           currentLegs.pop();
-          usedCategories.delete(pick.category);
+          if (countInCat === 0) catCounts.delete(pick.category);
+          else catCounts.set(pick.category, countInCat);
         }
       }
     };
 
-    search(0, [], new Set(), 1.0);
+    search(0, [], new Map(), 1.0);
 
-    // Fallback: si la ventana estricta no se alcanza por pocos partidos, buscar la más equilibrada
+    // Fallback inteligente: SIEMPRE prioriza probabilidad conjunta (nunca sacrifica acierto por perseguir cuota alta)
     if (!bestCombo) {
-      let closestCombo: BettingMarketSuggestion[] | null = null;
-      let minDistance = Infinity;
+      let bestFallbackCombo: BettingMarketSuggestion[] | null = null;
+      let bestFallbackScore = -Infinity;
       let fallbackIterations = 0;
 
       const fallbackSearch = (
         matchIdx: number,
         currentLegs: BettingMarketSuggestion[],
-        usedCategories: Set<string>,
+        catCounts: Map<string, number>,
         currentOdds: number
       ) => {
         if (++fallbackIterations > MAX_SEARCH_ITERATIONS) return;
-        if (currentOdds > maxOdds * 1.25) return;
+        if (currentOdds > maxOdds * 1.15) return;
 
         if (currentLegs.length === numLegs) {
           const hash = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join('|');
           if (excludedSlipHashes.has(hash)) return;
 
-          const distance = Math.abs(currentOdds - (minOdds + maxOdds) / 2);
+          const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
+          const minJointProb = profile === 'CONSERVATIVE' ? 0.45 : profile === 'BALANCED' ? 0.34 : 0.24;
+          if (cumulativeProb < minJointProb) return;
+
+          const targetMid = (minOdds + maxOdds) / 2;
+          const distancePenalty = Math.abs(currentOdds - targetMid) * 8;
           const reusedCount = currentLegs.filter((l) => {
             const parts = l.matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
             const k = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(l.matchName);
             return globalUsedMatchKeys.has(k);
           }).length;
-          const adjustedDistance = distance + (reusedCount * 2.0);
-          if (adjustedDistance < minDistance) {
-            minDistance = adjustedDistance;
-            closestCombo = [...currentLegs];
+          const fbScore = cumulativeProb * 120 - distancePenalty - (reusedCount * 30);
+          if (fbScore > bestFallbackScore) {
+            bestFallbackScore = fbScore;
+            bestFallbackCombo = [...currentLegs];
           }
           return;
         }
@@ -1534,7 +1494,12 @@ export function generateSmartParlays(
           if (!matchEntry) continue;
 
           for (const pick of matchEntry.suggestions) {
-            if (usedCategories.has(pick.category)) continue;
+            const countInCat = catCounts.get(pick.category) || 0;
+            const maxForCat =
+              pick.category === BetMarketCategory.TOTAL_CORNERS_MATCH || pick.category === BetMarketCategory.BTTS
+                ? 1
+                : 2;
+            if (countInCat >= maxForCat) continue;
 
             const pickSig = getCanonicalPickSignature(pick.matchName, pick.label);
             if (globalUsedPickSignatures.has(pickSig)) continue;
@@ -1542,17 +1507,18 @@ export function generateSmartParlays(
             const priorCats = globalMatchUsedCategories.get(matchKey);
             if (priorCats && priorCats.has(pick.category)) continue;
 
-            usedCategories.add(pick.category);
+            catCounts.set(pick.category, countInCat + 1);
             currentLegs.push(pick);
-            fallbackSearch(i + 1, currentLegs, usedCategories, Number((currentOdds * pick.odds).toFixed(2)));
+            fallbackSearch(i + 1, currentLegs, catCounts, Number((currentOdds * pick.odds).toFixed(2)));
             currentLegs.pop();
-            usedCategories.delete(pick.category);
+            if (countInCat === 0) catCounts.delete(pick.category);
+            else catCounts.set(pick.category, countInCat);
           }
         }
       };
 
-      fallbackSearch(0, [], new Set(), 1.0);
-      bestCombo = closestCombo;
+      fallbackSearch(0, [], new Map(), 1.0);
+      bestCombo = bestFallbackCombo;
     }
 
     if (!bestCombo || (bestCombo as BettingMarketSuggestion[]).length !== numLegs) {
@@ -1594,16 +1560,18 @@ export function generateSmartParlays(
 
   const usedHashes = new Set<string>();
 
-  // 1. PERFIL CONSERVADOR: 2 eventos, cuota entre 1.85 y 2.30
-  const conservativeSlip = findOptimalSlip('CONSERVATIVE', 2, 1.85, 2.30, usedHashes);
+  // 1. PERFIL CONSERVADOR: 2 eventos de élite, cuota 1.55 – 2.05 (probabilidad conjunta real ~55%–68%)
+  const conservativeSlip = findOptimalSlip('CONSERVATIVE', 2, 1.55, 2.05, usedHashes);
   if (conservativeSlip) generatedSlips.push(conservativeSlip);
 
-  // 2. PERFIL EQUILIBRADO: 3 eventos, cuota entre 2.80 y 4.20
-  const balancedSlip = findOptimalSlip('BALANCED', 3, 2.80, 4.20, usedHashes);
+  // 2. PERFIL EQUILIBRADO: 2 a 3 eventos sólidos, cuota 2.05 – 3.10 (probabilidad conjunta real ~40%–52%)
+  const balancedSlip =
+    findOptimalSlip('BALANCED', 3, 2.05, 3.10, usedHashes) ||
+    findOptimalSlip('BALANCED', 2, 1.95, 2.85, usedHashes);
   if (balancedSlip) generatedSlips.push(balancedSlip);
 
-  // 3. PERFIL CUOTA ALTA: 4 eventos (máximo 5), cuota entre 5.00 y 8.50
-  const highOddsSlip = findOptimalSlip('HIGH_ODDS', 4, 5.00, 8.50, usedHashes);
+  // 3. PERFIL CUOTA ALTA / VALOR: máximo 3 eventos (eliminamos loterías de 4 patas a @8.50), cuota 2.90 – 4.80
+  const highOddsSlip = findOptimalSlip('HIGH_ODDS', 3, 2.90, 4.80, usedHashes);
   if (highOddsSlip) generatedSlips.push(highOddsSlip);
 
   // Control Final de Seguridad Post-Generación: Jamás devolver boletos que compartan una apuesta idéntica

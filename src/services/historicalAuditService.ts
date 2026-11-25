@@ -444,12 +444,24 @@ function computeAuditOverviewFromPicks(picks: AuditPickItem[]): HistoricalAuditO
     icon: data.icon
   }));
 
-  // Agrupamiento por fechas en semanas de auditoría reales
+  // Calcular semana ISO actual y rango de fechas real a partir de los picks evaluados
+  const now = new Date();
+  const utcDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const dayNum = utcDate.getUTCDay() || 7;
+  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(utcDate.getUTCFullYear(), 0, 1));
+  const currentIsoWeek = Math.ceil((((utcDate.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  const distinctDates = Array.from(new Set(picks.map((p) => p.date).filter(Boolean))).sort();
+  const dynamicDateRange =
+    distinctDates.length >= 2
+      ? `${distinctDates[0]} a ${distinctDates[distinctDates.length - 1]}`
+      : distinctDates[0] || 'Jornada Reciente';
+
   const weekSummary: WeeklyAuditSummary = {
-    weekNo: 45,
-    year: 2026,
-    label: 'Jornada Oficial Evaluada',
-    dateRange: '07 Nov - 08 Nov, 2026',
+    weekNo: currentIsoWeek,
+    year: utcDate.getUTCFullYear(),
+    label: 'Jornada Oficial Evaluada (100% Real)',
+    dateRange: dynamicDateRange,
     totalPicks: totalAudited,
     wonPicks: totalWon,
     accuracyRate: globalAccuracy,
@@ -479,12 +491,23 @@ function computeAuditOverviewFromPicks(picks: AuditPickItem[]): HistoricalAuditO
     maxConsecutiveStreak,
     avgWinningOdd,
     marketAccuracy,
-    weeks: [weekSummary]
+    weeks: picks.length > 0 ? [weekSummary] : []
   };
 }
 
-// Resumen activo en memoria y persistencia local
-const STORAGE_KEY = 'gmetrics_live_audit_overview_v3';
+// Resumen activo en memoria y persistencia local (v4: 100% datos reales sin colchón histórico fijo)
+const STORAGE_KEY = 'gmetrics_live_audit_overview_v4';
+
+const EMPTY_AUDIT_OVERVIEW: HistoricalAuditOverview = {
+  globalAccuracy: 0,
+  totalPicksAudited: 0,
+  totalPicksWon: 0,
+  accumulatedROI: 0,
+  maxConsecutiveStreak: 0,
+  avgWinningOdd: 0,
+  marketAccuracy: [],
+  weeks: []
+};
 
 function loadStoredAuditOverview(): HistoricalAuditOverview {
   try {
@@ -492,7 +515,7 @@ function loadStoredAuditOverview(): HistoricalAuditOverview {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.globalAccuracy === 'number' && parsed.weeks?.length) {
+        if (parsed && typeof parsed.globalAccuracy === 'number' && parsed.totalPicksAudited > 0) {
           return parsed;
         }
       }
@@ -500,7 +523,7 @@ function loadStoredAuditOverview(): HistoricalAuditOverview {
   } catch {
     // ignore
   }
-  return computeAuditOverviewFromPicks(REAL_OFFICIAL_PICKS_POOL);
+  return EMPTY_AUDIT_OVERVIEW;
 }
 
 let cachedAuditOverview: HistoricalAuditOverview = loadStoredAuditOverview();
@@ -814,8 +837,9 @@ export const syncLatestFinishedAudit = async (): Promise<HistoricalAuditOverview
       });
     });
 
-    if (liveAuditedPicks.length >= 3) {
-      cachedAuditOverview = computeAuditOverviewFromPicks([...liveAuditedPicks, ...REAL_OFFICIAL_PICKS_POOL]);
+    if (liveAuditedPicks.length > 0) {
+      // 100% honestidad: calcular exclusivamente sobre partidos reales finalizados (sin mezclar pool fijo histórico)
+      cachedAuditOverview = computeAuditOverviewFromPicks(liveAuditedPicks);
       notifyAuditListeners();
     }
   } catch {

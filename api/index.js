@@ -5784,28 +5784,30 @@ function extractNBABettingMarketSuggestions(fixture, analysis) {
       });
     }
   };
-  const preMatchTotal = nbaAnalysis.preMatchTotalPoints ?? nbaAnalysis.projectedTotalPoints;
+  const rawPreMatchTotal = nbaAnalysis.preMatchTotalPoints ?? nbaAnalysis.projectedTotalPoints;
+  const extTotal = fixture.externalOdds?.totalPoint ?? (typeof fixture.consensusOdds?.total === "number" ? fixture.consensusOdds.total : void 0);
+  const preMatchTotal = typeof extTotal === "number" && isFinite(extTotal) && extTotal >= 130 && extTotal <= 270 ? Math.round((rawPreMatchTotal * 0.5 + extTotal * 0.5) * 10) / 10 : rawPreMatchTotal;
   const safeOverLine = Math.floor(preMatchTotal - 12.5) + 0.5;
   const zOver = (safeOverLine - preMatchTotal) / sigma;
   const pOver = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zOver)));
-  if (pOver >= 0.72) {
-    addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `M\xE1s de ${safeOverLine} Puntos Totales`, pOver, 0.05);
+  if (pOver >= 0.78) {
+    addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `M\xE1s de ${safeOverLine} Puntos Totales`, pOver, 0.045);
   }
-  if (nbaAnalysis.expectedPace <= 101) {
+  if (nbaAnalysis.expectedPace <= 100.5) {
     const safeUnderLine = Math.floor(preMatchTotal + 13.5) + 0.5;
     const zUnder = (safeUnderLine - preMatchTotal) / sigma;
     const pUnder = Math.max(0.01, Math.min(0.96, normalCDF(zUnder)));
-    if (pUnder >= 0.72) {
-      addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `Menos de ${safeUnderLine} Puntos Totales`, pUnder, 0.05);
+    if (pUnder >= 0.78) {
+      addCandidate("NBA_TOTAL_POINTS" /* NBA_TOTAL_POINTS */, `Menos de ${safeUnderLine} Puntos Totales`, pUnder, 0.045);
     }
   }
   const hasHomeStarOut = (fixture.officialInjuries || []).some(
     (inj) => inj.teamName?.toLowerCase().includes(fixture.homeTeam.name.toLowerCase()) && inj.status === "Out"
   );
-  if (!hasHomeStarOut && nbaAnalysis.pHomeWin >= 65) {
+  if (!hasHomeStarOut && nbaAnalysis.pHomeWin >= 68) {
     const pHome = nbaAnalysis.pHomeWin / 100;
     addCandidate("NBA_MONEYLINE" /* NBA_MONEYLINE */, `Gana ${homeName} (ML)`, pHome, 0.045);
-  } else if (nbaAnalysis.pAwayWin >= 65) {
+  } else if (nbaAnalysis.pAwayWin >= 68) {
     const hasAwayStarOut = (fixture.officialInjuries || []).some(
       (inj) => inj.teamName?.toLowerCase().includes(fixture.awayTeam.name.toLowerCase()) && inj.status === "Out"
     );
@@ -6698,100 +6700,48 @@ function extractMatchBettingMarketSuggestions(fixture, analysis) {
       });
     }
   };
-  if (dixonColes.pHomeWin >= 50) {
+  if (dixonColes.pHomeWin >= 64 && dixonColes.lambdaHome - dixonColes.lambdaAway >= 0.55) {
     addCandidate("1X2" /* ONE_X_TWO */, `Gana ${homeShort} (1)`, dixonColes.pHomeWin / 100, 0.045);
   }
-  if (dixonColes.pAwayWin >= 48) {
+  if (dixonColes.pAwayWin >= 62 && dixonColes.lambdaAway - dixonColes.lambdaHome >= 0.55) {
     addCandidate("1X2" /* ONE_X_TWO */, `Gana ${awayShort} (2)`, dixonColes.pAwayWin / 100, 0.045);
   }
-  if (goalsMarket.doubleChance1X >= 64) {
-    addCandidate("DOUBLE_CHANCE" /* DOUBLE_CHANCE */, `${homeShort} o Empate (1X)`, goalsMarket.doubleChance1X / 100, 0.038);
+  if (goalsMarket.doubleChance1X >= 73) {
+    addCandidate("DOUBLE_CHANCE" /* DOUBLE_CHANCE */, `${homeShort} o Empate (1X)`, goalsMarket.doubleChance1X / 100, 0.04);
   }
-  if (goalsMarket.doubleChanceX2 >= 64) {
-    addCandidate("DOUBLE_CHANCE" /* DOUBLE_CHANCE */, `Empate o ${awayShort} (X2)`, goalsMarket.doubleChanceX2 / 100, 0.038);
+  if (goalsMarket.doubleChanceX2 >= 73) {
+    addCandidate("DOUBLE_CHANCE" /* DOUBLE_CHANCE */, `Empate o ${awayShort} (X2)`, goalsMarket.doubleChanceX2 / 100, 0.04);
   }
-  if (goalsMarket.doubleChance12 >= 70) {
-    addCandidate("DOUBLE_CHANCE" /* DOUBLE_CHANCE */, `Cualquiera Gana (12)`, goalsMarket.doubleChance12 / 100, 0.035);
-  }
-  if (goalsMarket.over15 >= 66) {
+  if (goalsMarket.over15 >= 74 && dixonColes.totalXG >= 2.45) {
     addCandidate("TOTAL_GOALS" /* TOTAL_GOALS */, `M\xE1s de 1.5 Goles`, goalsMarket.over15 / 100, 0.04);
   }
-  if (goalsMarket.under15 >= 50) {
-    addCandidate("TOTAL_GOALS" /* TOTAL_GOALS */, `Menos de 1.5 Goles`, goalsMarket.under15 / 100, 0.045);
+  const probUnder35 = goalsMarket.under35 || 100 - (goalsMarket.over35 || 25);
+  if (probUnder35 >= 76 && dixonColes.totalXG <= 2.65) {
+    addCandidate("TOTAL_GOALS" /* TOTAL_GOALS */, `Menos de 3.5 Goles`, probUnder35 / 100, 0.04);
   }
-  if (goalsMarket.over25 >= 52) {
-    addCandidate("TOTAL_GOALS" /* TOTAL_GOALS */, `M\xE1s de 2.5 Goles`, goalsMarket.over25 / 100, 0.05);
+  if (goalsMarket.over25 >= 65 && dixonColes.totalXG >= 2.95) {
+    addCandidate("TOTAL_GOALS" /* TOTAL_GOALS */, `M\xE1s de 2.5 Goles`, goalsMarket.over25 / 100, 0.048);
   }
-  if (goalsMarket.under25 >= 55) {
+  if (goalsMarket.under25 >= 65 && dixonColes.totalXG <= 2.05) {
     addCandidate("TOTAL_GOALS" /* TOTAL_GOALS */, `Menos de 2.5 Goles`, goalsMarket.under25 / 100, 0.045);
   }
-  if (goalsMarket.bttsYes >= 53) {
-    addCandidate("BTTS" /* BTTS */, `Ambos Marcan: S\xED`, goalsMarket.bttsYes / 100, 0.042);
+  if (goalsMarket.bttsYes >= 67 && dixonColes.totalXG >= 2.85) {
+    addCandidate("BTTS" /* BTTS */, `Ambos Marcan: S\xED`, goalsMarket.bttsYes / 100, 0.045);
   }
-  if (goalsMarket.bttsNo >= 54) {
-    addCandidate("BTTS" /* BTTS */, `Ambos Marcan: No`, goalsMarket.bttsNo / 100, 0.042);
+  if (goalsMarket.bttsNo >= 68 && dixonColes.totalXG <= 2) {
+    addCandidate("BTTS" /* BTTS */, `Ambos Marcan: No`, goalsMarket.bttsNo / 100, 0.045);
   }
-  if (cornersMarket.over75 >= 70) {
+  if (cornersMarket.over75 >= 78 && cornersMarket.expectedTotalCorners >= 10.4) {
     addCandidate("TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */, `M\xE1s de 7.5 C\xF3rners`, cornersMarket.over75 / 100, 0.038);
-  } else if (cornersMarket.over85 >= 62) {
-    addCandidate("TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */, `M\xE1s de 8.5 C\xF3rners`, cornersMarket.over85 / 100, 0.04);
-  } else if (cornersMarket.over95 >= 54) {
-    addCandidate("TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */, `M\xE1s de 9.5 C\xF3rners`, cornersMarket.over95 / 100, 0.045);
-  } else if ((cornersMarket.under105 || 100 - cornersMarket.over105) >= 58) {
-    const underProb = (cornersMarket.under105 || 100 - cornersMarket.over105) / 100;
-    addCandidate("TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */, `Menos de 10.5 C\xF3rners`, underProb, 0.04);
   }
   const dnbDenominator = dixonColes.pHomeWin + dixonColes.pAwayWin;
   if (dnbDenominator > 0) {
     const dnbHomeProb = dixonColes.pHomeWin / dnbDenominator;
     const dnbAwayProb = dixonColes.pAwayWin / dnbDenominator;
-    if (dnbHomeProb >= 0.58) {
-      addCandidate("DRAW_NO_BET" /* DRAW_NO_BET */, `Empate No V\xE1lido: ${homeShort}`, dnbHomeProb, 0.04);
-    } else if (dnbAwayProb >= 0.58) {
-      addCandidate("DRAW_NO_BET" /* DRAW_NO_BET */, `Empate No V\xE1lido: ${awayShort}`, dnbAwayProb, 0.04);
-    }
-  }
-  if (refereeCards) {
-    if (refereeCards.over35CardsProb >= 68) {
-      addCandidate("TOTAL_CARDS" /* TOTAL_CARDS */, `M\xE1s de 3.5 Tarjetas`, refereeCards.over35CardsProb / 100, 0.042);
-    } else if (refereeCards.under45CardsProb >= 68) {
-      addCandidate("TOTAL_CARDS" /* TOTAL_CARDS */, `Menos de 4.5 Tarjetas`, refereeCards.under45CardsProb / 100, 0.04);
-    } else if (refereeCards.under55CardsProb >= 72) {
-      addCandidate("TOTAL_CARDS" /* TOTAL_CARDS */, `Menos de 5.5 Tarjetas`, refereeCards.under55CardsProb / 100, 0.038);
-    } else if (refereeCards.over45CardsProb >= 58 && refereeCards.rigor === "Severo") {
-      addCandidate("TOTAL_CARDS" /* TOTAL_CARDS */, `M\xE1s de 4.5 Tarjetas`, refereeCards.over45CardsProb / 100, 0.048);
-    }
-  }
-  const isValidPlayerName = (name) => {
-    if (!name || typeof name !== "string") return false;
-    const clean = name.trim();
-    if (clean.length < 4 || clean.includes("#")) return false;
-    const lower = clean.toLowerCase();
-    if (lower.includes("local") || lower.includes("visitante") || lower.includes("equipo") || lower.includes("jugador")) return false;
-    return true;
-  };
-  if (shotsAndPlayers) {
-    if (isValidPlayerName(shotsAndPlayers.homeStar?.name) && (shotsAndPlayers.homeStar.expectedShotsOnTarget || 0) >= 1.15) {
-      const lambdaSOT = shotsAndPlayers.homeStar.expectedShotsOnTarget;
-      const probSOT = Math.round((1 - Math.exp(-lambdaSOT)) * 1e3) / 1e3;
-      if (probSOT >= 0.65) {
-        addCandidate("PLAYER_SHOTS_ON_TARGET" /* PLAYER_SHOTS_ON_TARGET */, `${shotsAndPlayers.homeStar.name}: M\xE1s de 0.5 Tiros a Puerta`, probSOT, 0.042);
-      }
-    }
-    if (isValidPlayerName(shotsAndPlayers.awayStar?.name) && (shotsAndPlayers.awayStar.expectedShotsOnTarget || 0) >= 1.15) {
-      const lambdaSOT = shotsAndPlayers.awayStar.expectedShotsOnTarget;
-      const probSOT = Math.round((1 - Math.exp(-lambdaSOT)) * 1e3) / 1e3;
-      if (probSOT >= 0.65) {
-        addCandidate("PLAYER_SHOTS_ON_TARGET" /* PLAYER_SHOTS_ON_TARGET */, `${shotsAndPlayers.awayStar.name}: M\xE1s de 0.5 Tiros a Puerta`, probSOT, 0.042);
-      }
-    }
-  }
-  if (halfGoals) {
-    const prob2ndHalfGoal = Math.round((1 - Math.exp(-halfGoals.expected2ndHalfGoals)) * 1e3) / 1e3;
-    if (prob2ndHalfGoal >= 0.72) {
-      addCandidate("HALF_WITH_MOST_GOALS" /* HALF_WITH_MOST_GOALS */, `2.\xAA Mitad: M\xE1s de 0.5 Goles`, prob2ndHalfGoal, 0.038);
-    } else if (halfGoals.secondHalfPercent >= 48) {
-      addCandidate("HALF_WITH_MOST_GOALS" /* HALF_WITH_MOST_GOALS */, `Mitad con M\xE1s Goles: 2.\xAA Mitad`, halfGoals.secondHalfPercent / 100, 0.045);
+    if (dnbHomeProb >= 0.68) {
+      addCandidate("DRAW_NO_BET" /* DRAW_NO_BET */, `Empate No V\xE1lido: ${homeShort}`, dnbHomeProb, 0.042);
+    } else if (dnbAwayProb >= 0.68) {
+      addCandidate("DRAW_NO_BET" /* DRAW_NO_BET */, `Empate No V\xE1lido: ${awayShort}`, dnbAwayProb, 0.042);
     }
   }
   return candidates;
@@ -6869,7 +6819,7 @@ function getCanonicalPickSignature(matchName, label) {
   const mKey = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(matchName);
   return `${mKey}:::${normalizeBetLabel(label)}`;
 }
-var PARLAY_ENGINE_VERSION = "v7-zero-dupes";
+var PARLAY_ENGINE_VERSION = "v8-quant-precision";
 function generateSmartParlays(availableMatches, targetDate, availableNBAMatches, variety = 0) {
   const hasMatches = Boolean(availableMatches && availableMatches.length > 0);
   const hasNBAMatches = Boolean(availableNBAMatches && availableNBAMatches.length > 0);
@@ -6915,7 +6865,7 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
     let bestScore = -Infinity;
     let searchIterations = 0;
     const MAX_SEARCH_ITERATIONS = 15e3;
-    const search = (matchIdx, currentLegs, usedCategories, currentOdds) => {
+    const search = (matchIdx, currentLegs, catCounts, currentOdds) => {
       if (++searchIterations > MAX_SEARCH_ITERATIONS) return;
       if (currentOdds > maxOdds * 1.05) return;
       if (currentLegs.length === numLegs) {
@@ -6923,13 +6873,15 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
           const hash2 = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join("|");
           if (excludedSlipHashes.has(hash2)) return;
           const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
+          const minJointProb = profile === "CONSERVATIVE" ? 0.48 : profile === "BALANCED" ? 0.36 : 0.26;
+          if (cumulativeProb < minJointProb) return;
           const avgEV = currentLegs.reduce((acc, l) => acc + l.expectedValue, 0) / numLegs;
           const reusedCount = currentLegs.filter((l) => {
             const parts = l.matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
             const k = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(l.matchName);
             return globalUsedMatchKeys.has(k);
           }).length;
-          const score = cumulativeProb * 100 + avgEV * 10 - reusedCount * 30 + (variety > 0 ? Math.random() * variety * 12 : 0);
+          const score = cumulativeProb * 140 + avgEV * 8 - reusedCount * 35 + (variety > 0 ? Math.random() * variety * 6 : 0);
           if (score > bestScore) {
             bestScore = score;
             bestCombo = [...currentLegs];
@@ -6943,7 +6895,9 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
         const matchEntry = matchCandidatesMap.get(matchKey);
         if (!matchEntry) continue;
         for (const pick of matchEntry.suggestions) {
-          if (usedCategories.has(pick.category)) {
+          const countInCat = catCounts.get(pick.category) || 0;
+          const maxForCat = pick.category === "TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */ || pick.category === "BTTS" /* BTTS */ ? 1 : 2;
+          if (countInCat >= maxForCat) {
             continue;
           }
           const pickSig = getCanonicalPickSignature(pick.matchName, pick.label);
@@ -6955,35 +6909,40 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
             continue;
           }
           const nextOdds = Number((currentOdds * pick.odds).toFixed(2));
-          usedCategories.add(pick.category);
+          catCounts.set(pick.category, countInCat + 1);
           currentLegs.push(pick);
-          search(i + 1, currentLegs, usedCategories, nextOdds);
+          search(i + 1, currentLegs, catCounts, nextOdds);
           currentLegs.pop();
-          usedCategories.delete(pick.category);
+          if (countInCat === 0) catCounts.delete(pick.category);
+          else catCounts.set(pick.category, countInCat);
         }
       }
     };
-    search(0, [], /* @__PURE__ */ new Set(), 1);
+    search(0, [], /* @__PURE__ */ new Map(), 1);
     if (!bestCombo) {
-      let closestCombo = null;
-      let minDistance = Infinity;
+      let bestFallbackCombo = null;
+      let bestFallbackScore = -Infinity;
       let fallbackIterations = 0;
-      const fallbackSearch = (matchIdx, currentLegs, usedCategories, currentOdds) => {
+      const fallbackSearch = (matchIdx, currentLegs, catCounts, currentOdds) => {
         if (++fallbackIterations > MAX_SEARCH_ITERATIONS) return;
-        if (currentOdds > maxOdds * 1.25) return;
+        if (currentOdds > maxOdds * 1.15) return;
         if (currentLegs.length === numLegs) {
           const hash2 = currentLegs.map((l) => `${l.fixtureId}_${l.category}`).sort().join("|");
           if (excludedSlipHashes.has(hash2)) return;
-          const distance = Math.abs(currentOdds - (minOdds + maxOdds) / 2);
+          const cumulativeProb = currentLegs.reduce((acc, l) => acc * l.impliedProb, 1);
+          const minJointProb = profile === "CONSERVATIVE" ? 0.45 : profile === "BALANCED" ? 0.34 : 0.24;
+          if (cumulativeProb < minJointProb) return;
+          const targetMid = (minOdds + maxOdds) / 2;
+          const distancePenalty = Math.abs(currentOdds - targetMid) * 8;
           const reusedCount = currentLegs.filter((l) => {
             const parts = l.matchName.split(/\s+vs\s+|\s+v\s+|\s+-\s+/i);
             const k = parts.length >= 2 ? getCanonicalMatchKey(parts[0], parts[1]) : normalizeSportTeamName(l.matchName);
             return globalUsedMatchKeys.has(k);
           }).length;
-          const adjustedDistance = distance + reusedCount * 2;
-          if (adjustedDistance < minDistance) {
-            minDistance = adjustedDistance;
-            closestCombo = [...currentLegs];
+          const fbScore = cumulativeProb * 120 - distancePenalty - reusedCount * 30;
+          if (fbScore > bestFallbackScore) {
+            bestFallbackScore = fbScore;
+            bestFallbackCombo = [...currentLegs];
           }
           return;
         }
@@ -6993,21 +6952,24 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
           const matchEntry = matchCandidatesMap.get(matchKey);
           if (!matchEntry) continue;
           for (const pick of matchEntry.suggestions) {
-            if (usedCategories.has(pick.category)) continue;
+            const countInCat = catCounts.get(pick.category) || 0;
+            const maxForCat = pick.category === "TOTAL_CORNERS_MATCH" /* TOTAL_CORNERS_MATCH */ || pick.category === "BTTS" /* BTTS */ ? 1 : 2;
+            if (countInCat >= maxForCat) continue;
             const pickSig = getCanonicalPickSignature(pick.matchName, pick.label);
             if (globalUsedPickSignatures.has(pickSig)) continue;
             const priorCats = globalMatchUsedCategories.get(matchKey);
             if (priorCats && priorCats.has(pick.category)) continue;
-            usedCategories.add(pick.category);
+            catCounts.set(pick.category, countInCat + 1);
             currentLegs.push(pick);
-            fallbackSearch(i + 1, currentLegs, usedCategories, Number((currentOdds * pick.odds).toFixed(2)));
+            fallbackSearch(i + 1, currentLegs, catCounts, Number((currentOdds * pick.odds).toFixed(2)));
             currentLegs.pop();
-            usedCategories.delete(pick.category);
+            if (countInCat === 0) catCounts.delete(pick.category);
+            else catCounts.set(pick.category, countInCat);
           }
         }
       };
-      fallbackSearch(0, [], /* @__PURE__ */ new Set(), 1);
-      bestCombo = closestCombo;
+      fallbackSearch(0, [], /* @__PURE__ */ new Map(), 1);
+      bestCombo = bestFallbackCombo;
     }
     if (!bestCombo || bestCombo.length !== numLegs) {
       return null;
@@ -7041,11 +7003,11 @@ function generateSmartParlays(availableMatches, targetDate, availableNBAMatches,
     };
   };
   const usedHashes = /* @__PURE__ */ new Set();
-  const conservativeSlip = findOptimalSlip("CONSERVATIVE", 2, 1.85, 2.3, usedHashes);
+  const conservativeSlip = findOptimalSlip("CONSERVATIVE", 2, 1.55, 2.05, usedHashes);
   if (conservativeSlip) generatedSlips.push(conservativeSlip);
-  const balancedSlip = findOptimalSlip("BALANCED", 3, 2.8, 4.2, usedHashes);
+  const balancedSlip = findOptimalSlip("BALANCED", 3, 2.05, 3.1, usedHashes) || findOptimalSlip("BALANCED", 2, 1.95, 2.85, usedHashes);
   if (balancedSlip) generatedSlips.push(balancedSlip);
-  const highOddsSlip = findOptimalSlip("HIGH_ODDS", 4, 5, 8.5, usedHashes);
+  const highOddsSlip = findOptimalSlip("HIGH_ODDS", 3, 2.9, 4.8, usedHashes);
   if (highOddsSlip) generatedSlips.push(highOddsSlip);
   {
     const seenPicks = /* @__PURE__ */ new Set();

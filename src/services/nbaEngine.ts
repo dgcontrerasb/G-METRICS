@@ -1053,33 +1053,38 @@ export function extractNBABettingMarketSuggestions(
     }
   };
 
-  // 1. MERCADO PUNTOS TOTALES CON COJÍN DE SEGURIDAD ELÁSTICO (OVER)
-  const preMatchTotal = nbaAnalysis.preMatchTotalPoints ?? nbaAnalysis.projectedTotalPoints;
+  // 1. MERCADO PUNTOS TOTALES CON COJÍN DE SEGURIDAD ELÁSTICO (OVER) ANCLADO AL TOTAL REAL
+  const rawPreMatchTotal = nbaAnalysis.preMatchTotalPoints ?? nbaAnalysis.projectedTotalPoints;
+  const extTotal = fixture.externalOdds?.totalPoint ?? (typeof fixture.consensusOdds?.total === 'number' ? fixture.consensusOdds.total : undefined);
+  const preMatchTotal =
+    typeof extTotal === 'number' && isFinite(extTotal) && extTotal >= 130 && extTotal <= 270
+      ? Math.round((rawPreMatchTotal * 0.5 + extTotal * 0.5) * 10) / 10
+      : rawPreMatchTotal;
   const safeOverLine = Math.floor(preMatchTotal - 12.5) + 0.5;
   const zOver = (safeOverLine - preMatchTotal) / sigma;
   const pOver = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zOver)));
-  if (pOver >= 0.72) {
-    addCandidate(BetMarketCategory.NBA_TOTAL_POINTS, `Más de ${safeOverLine} Puntos Totales`, pOver, 0.05);
+  if (pOver >= 0.78) {
+    addCandidate(BetMarketCategory.NBA_TOTAL_POINTS, `Más de ${safeOverLine} Puntos Totales`, pOver, 0.045);
   }
 
   // 1b. MERCADO PUNTOS TOTALES (UNDER) EN DUELOS DEFENSIVOS / PACE LENTO
-  if (nbaAnalysis.expectedPace <= 101) {
+  if (nbaAnalysis.expectedPace <= 100.5) {
     const safeUnderLine = Math.floor(preMatchTotal + 13.5) + 0.5;
     const zUnder = (safeUnderLine - preMatchTotal) / sigma;
     const pUnder = Math.max(0.01, Math.min(0.96, normalCDF(zUnder)));
-    if (pUnder >= 0.72) {
-      addCandidate(BetMarketCategory.NBA_TOTAL_POINTS, `Menos de ${safeUnderLine} Puntos Totales`, pUnder, 0.05);
+    if (pUnder >= 0.78) {
+      addCandidate(BetMarketCategory.NBA_TOTAL_POINTS, `Menos de ${safeUnderLine} Puntos Totales`, pUnder, 0.045);
     }
   }
 
-  // 2. MONEYLINE CALIFICADO (Home Favorito con Ventaja Física/Descanso)
+  // 2. MONEYLINE CALIFICADO (>= 68% anclado al mercado y sin bajas estelares)
   const hasHomeStarOut = (fixture.officialInjuries || []).some(
     (inj) => inj.teamName?.toLowerCase().includes(fixture.homeTeam.name.toLowerCase()) && inj.status === 'Out'
   );
-  if (!hasHomeStarOut && nbaAnalysis.pHomeWin >= 65) {
+  if (!hasHomeStarOut && nbaAnalysis.pHomeWin >= 68) {
     const pHome = nbaAnalysis.pHomeWin / 100;
     addCandidate(BetMarketCategory.NBA_MONEYLINE, `Gana ${homeName} (ML)`, pHome, 0.045);
-  } else if (nbaAnalysis.pAwayWin >= 65) {
+  } else if (nbaAnalysis.pAwayWin >= 68) {
     const hasAwayStarOut = (fixture.officialInjuries || []).some(
       (inj) => inj.teamName?.toLowerCase().includes(fixture.awayTeam.name.toLowerCase()) && inj.status === 'Out'
     );
