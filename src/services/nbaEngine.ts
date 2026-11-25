@@ -1150,16 +1150,21 @@ export function generateGMetricsNBABankerPicks(
     const isFiba = Boolean(fixture.league?.id && fixture.league.id !== 'nba');
     const sigma = isFiba ? 11.5 : 13.5;
 
-    // A) TOTAL POINTS OVER CON COJÍN DE SEGURIDAD ELÁSTICO (-12.5 pts)
-    const preMatchTotal = analysis.preMatchTotalPoints ?? analysis.projectedTotalPoints;
+    // A) TOTAL POINTS OVER CON COJÍN DE SEGURIDAD ELÁSTICO (-12.5 pts) ANCLADO AL TOTAL DE MERCADO
+    const rawPreMatchTotal = analysis.preMatchTotalPoints ?? analysis.projectedTotalPoints;
+    const marketTotal = fixture.externalOdds?.totalPoint ?? (typeof fixture.consensusOdds?.total === 'number' ? fixture.consensusOdds.total : undefined);
+    const preMatchTotal =
+      typeof marketTotal === 'number' && isFinite(marketTotal) && marketTotal >= 130 && marketTotal <= 270
+        ? Math.round((rawPreMatchTotal * 0.5 + marketTotal * 0.5) * 10) / 10
+        : rawPreMatchTotal;
     const safeOverLine = Math.floor(preMatchTotal - 12.5) + 0.5;
     const zOver = (safeOverLine - preMatchTotal) / sigma;
     const pOver = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zOver)));
     const probOverPct = Number((pOver * 100).toFixed(1));
 
-    if (probOverPct >= 78) {
+    if (probOverPct >= 80) {
       const fairMinOdd = Number((1 / pOver).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.35, Math.min(1.52, fairMinOdd * 1.09)).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.26, Math.min(1.48, fairMinOdd * 1.06)).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
       results.push({
@@ -1182,21 +1187,21 @@ export function generateGMetricsNBABankerPicks(
         estimatedBookieOdd,
         valueEdgePct,
         recommendedKellyStakePct: 4.5,
-        reasoning: `Línea con cojín elástico de seguridad (-12.5 pts respecto a los ${preMatchTotal} proyectados), elevando la probabilidad matemática al ${probOverPct}%.`,
-        tacticalFactor: `Ritmo proyectado (${analysis.expectedPace} posesiones) y consistencia ofensiva con colchón de absorción de racha fría`
+        reasoning: `Línea con cojín elástico (-12.5 pts respecto al total anclado de ${preMatchTotal} pts), elevando la probabilidad matemática al ${probOverPct}%.`,
+        tacticalFactor: `Ritmo proyectado (${analysis.expectedPace} posesiones) y anclaje de mercado`
       });
     }
 
     // B) TOTAL POINTS UNDER CON COJÍN PREVENTIVO (+13.5 pts) en duelos lentos
-    if (analysis.expectedPace <= 101) {
+    if (analysis.expectedPace <= 100.5) {
       const safeUnderLine = Math.floor(preMatchTotal + 13.5) + 0.5;
       const zUnder = (safeUnderLine - preMatchTotal) / sigma;
       const pUnder = Math.max(0.01, Math.min(0.96, normalCDF(zUnder)));
       const probUnderPct = Number((pUnder * 100).toFixed(1));
 
-      if (probUnderPct >= 78) {
+      if (probUnderPct >= 80) {
         const fairMinOdd = Number((1 / pUnder).toFixed(2));
-        const estimatedBookieOdd = Number(Math.max(1.35, Math.min(1.52, fairMinOdd * 1.09)).toFixed(2));
+        const estimatedBookieOdd = Number(Math.max(1.26, Math.min(1.48, fairMinOdd * 1.06)).toFixed(2));
         const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
         results.push({
@@ -1219,24 +1224,31 @@ export function generateGMetricsNBABankerPicks(
           estimatedBookieOdd,
           valueEdgePct,
           recommendedKellyStakePct: 4.5,
-          reasoning: `Colchón preventivo de +13.5 pts en un duelo de posesiones pausadas (${analysis.expectedPace} pace) y defensa estructurada.`,
+          reasoning: `Colchón preventivo de +13.5 pts sobre el total anclado (${preMatchTotal} pts) en duelo de posesiones pausadas (${analysis.expectedPace} pace).`,
           tacticalFactor: 'Control riguroso de posesión y baja frecuencia de triples en transición'
         });
       }
     }
 
-    // C) MONEYLINE CALIFICADO (Local con descanso y ventaja de Net Rating)
+    // C) MONEYLINE CALIFICADO (Local o Visitante con clara superioridad real y sin bajas estelares)
     const hasHomeStarOut = (fixture.officialInjuries || []).some(
       (inj) => inj.teamName?.toLowerCase().includes(fixture.homeTeam.name.toLowerCase()) && inj.status === 'Out'
+    );
+    const hasAwayStarOut = (fixture.officialInjuries || []).some(
+      (inj) => inj.teamName?.toLowerCase().includes(fixture.awayTeam.name.toLowerCase()) && inj.status === 'Out'
     );
     const netDiff = fixture.homeTeam.netRating - fixture.awayTeam.netRating;
     const restAdvantage = fixture.homeTeam.restDays >= 1 && fixture.awayTeam.restDays === 0;
 
-    if (!hasHomeStarOut && analysis.pHomeWin >= 70 && (restAdvantage || netDiff >= 3.0)) {
+    if (!hasHomeStarOut && analysis.pHomeWin >= 72 && (restAdvantage || netDiff >= 3.5)) {
       const pHome = analysis.pHomeWin / 100;
       const prob = Number(analysis.pHomeWin.toFixed(1));
       const fairMinOdd = Number((1 / pHome).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.36, Math.min(1.58, fairMinOdd * 1.08)).toFixed(2));
+      const realHomeMl = fixture.externalOdds?.homeMoneyline || fixture.consensusOdds?.homeMoneyline;
+      const estimatedBookieOdd =
+        typeof realHomeMl === 'number' && realHomeMl >= 1.15
+          ? realHomeMl
+          : Number(Math.max(1.26, Math.min(1.52, fairMinOdd * 1.05)).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
       results.push({
@@ -1259,89 +1271,46 @@ export function generateGMetricsNBABankerPicks(
         estimatedBookieOdd,
         valueEdgePct,
         recommendedKellyStakePct: 5.0,
-        reasoning: `Solidez de localía con ${prob}% de probabilidad normalizada, descanso superior (${fixture.homeTeam.restDays} vs ${fixture.awayTeam.restDays} días) y sin bajas estelares.`,
+        reasoning: `Solidez de localía con ${prob}% de probabilidad anclada al mercado, descanso (${fixture.homeTeam.restDays} vs ${fixture.awayTeam.restDays} días) y sin bajas estelares.`,
         tacticalFactor: 'Superioridad neta en rating ofensivo/defensivo y ventaja de descanso'
       });
+    } else if (!hasAwayStarOut && analysis.pAwayWin >= 72 && netDiff <= -4.0) {
+      const pAway = analysis.pAwayWin / 100;
+      const prob = Number(analysis.pAwayWin.toFixed(1));
+      const fairMinOdd = Number((1 / pAway).toFixed(2));
+      const realAwayMl = fixture.externalOdds?.awayMoneyline || fixture.consensusOdds?.awayMoneyline;
+      const estimatedBookieOdd =
+        typeof realAwayMl === 'number' && realAwayMl >= 1.15
+          ? realAwayMl
+          : Number(Math.max(1.26, Math.min(1.52, fairMinOdd * 1.05)).toFixed(2));
+      const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
+
+      results.push({
+        id: `${fixture.id}_nba_banker_ml_away`,
+        fixtureId: fixture.id,
+        espnEventId: resolvedEspnId,
+        sport: 'NBA',
+        matchTitle,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
+        leagueName,
+        matchDate: fixture.date,
+        matchTime: fixture.time,
+        marketKey: 'NBA_ML_AWAY',
+        selectionLabel: `Gana ${awayName} (ML)`,
+        categoryLabel: 'Ganador Directo (Moneyline)',
+        betType: 'BANKER',
+        probability: prob,
+        fairMinOdd,
+        estimatedBookieOdd,
+        valueEdgePct,
+        recommendedKellyStakePct: 4.5,
+        reasoning: `Dominio visitante proyectado (${prob}% anclado al mercado) con ventaja estructural de Net Rating y plantilla sana.`,
+        tacticalFactor: 'Superioridad estructural visitante confirmada por cuotas reales'
+      });
     }
-
-    // D) PLAYER PROPS VERIFICADOS: TRIPLES O PUNTOS DE ESTRELLA TITULAR ACTIVA
-    const nbaLineupProps = getNBALineupData(fixture);
-    const activeStarters = [...nbaLineupProps.homeStarters, ...nbaLineupProps.awayStarters].filter(
-      (p) => !p.isInjured && p.name && !p.name.includes('Titular') && !p.name.includes('Base') && !p.name.includes('Pívot') && !p.name.includes('Escolta')
-    );
-
-    for (const player of activeStarters) {
-      if (player.threePm >= 2.4) {
-        const line3pm = Math.floor(player.threePm - 0.5) + 0.5;
-        const probOver = poissonOver(player.threePm, line3pm) / 100;
-        if (probOver >= 0.76) {
-          const prob = Number((probOver * 100).toFixed(1));
-          const fairMinOdd = Number((1 / probOver).toFixed(2));
-          const estimatedBookieOdd = Number(Math.max(1.36, Math.min(1.55, fairMinOdd * 1.08)).toFixed(2));
-          const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
-
-          results.push({
-            id: `${fixture.id}_nba_prop_3pm_${player.id}`,
-            fixtureId: fixture.id,
-            espnEventId: resolvedEspnId,
-            sport: 'NBA',
-            matchTitle,
-            homeTeamName: homeName,
-            awayTeamName: awayName,
-            leagueName,
-            matchDate: fixture.date,
-            matchTime: fixture.time,
-            marketKey: 'NBA_PLAYER_3PM',
-            selectionLabel: `${player.name}: Más de ${line3pm} Triples`,
-            categoryLabel: 'Triples de Jugador (Props)',
-            betType: 'BANKER',
-            probability: prob,
-            fairMinOdd,
-            estimatedBookieOdd,
-            valueEdgePct,
-            recommendedKellyStakePct: 4.0,
-            reasoning: `Titular activo sin lesiones con promedio de ${player.threePm} triples por partido. El modelo Poisson proyecta ${prob}% de superar la línea ${line3pm}.`,
-            tacticalFactor: 'Volumen perimetral constante y minutos de titularidad asegurados'
-          });
-          break;
-        }
-      } else if (player.ppg >= 22.0) {
-        const safePtsLine = Math.floor(player.ppg - 4.5) + 0.5;
-        const zPts = (safePtsLine - player.ppg) / 5.2;
-        const probPts = Math.max(0.01, Math.min(0.96, 1 - normalCDF(zPts)));
-        if (probPts >= 0.76) {
-          const prob = Number((probPts * 100).toFixed(1));
-          const fairMinOdd = Number((1 / probPts).toFixed(2));
-          const estimatedBookieOdd = Number(Math.max(1.35, Math.min(1.52, fairMinOdd * 1.08)).toFixed(2));
-          const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
-
-          results.push({
-            id: `${fixture.id}_nba_prop_pts_${player.id}`,
-            fixtureId: fixture.id,
-            espnEventId: resolvedEspnId,
-            sport: 'NBA',
-            matchTitle,
-            homeTeamName: homeName,
-            awayTeamName: awayName,
-            leagueName,
-            matchDate: fixture.date,
-            matchTime: fixture.time,
-            marketKey: 'NBA_PLAYER_PTS',
-            selectionLabel: `${player.name}: Más de ${safePtsLine} Puntos`,
-            categoryLabel: 'Puntos de Jugador (Props)',
-            betType: 'BANKER',
-            probability: prob,
-            fairMinOdd,
-            estimatedBookieOdd,
-            valueEdgePct,
-            recommendedKellyStakePct: 4.0,
-            reasoning: `Línea con colchón preventivo de seguridad (-4.5 pts sobre promedio de ${player.ppg} PPG) para la principal referencia ofensiva del equipo.`,
-            tacticalFactor: 'Alto Usage Rate ofensivo y garantía de tiros de campo'
-          });
-          break;
-        }
-      }
-    }
+    // Nota: Player Props (NBA_PLAYER_3PM / NBA_PLAYER_PTS) se excluyen de Bankers auditables
+    // porque no son verificables vía scoreboard oficial (generaban VOID en el ledger).
   }
 
   return results;

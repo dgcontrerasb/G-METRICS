@@ -223,11 +223,30 @@ export function buildGMetricsAdminParlaysWithAnalyzer(
     const { homeTeam, awayTeam, league, derbyOrRivalry } = fixture;
 
     const rankedPicks = analysis.verdict.allRankedPicks || [analysis.verdict.topSafePick];
+    // Priorizar mercados de baja varianza verificables (Doble Oportunidad y Goles Seguros); excluir Tarjetas/Remates en parlays
     const bestPick =
-      rankedPicks.find((p) => p.probability >= 67 && p.fairOdd >= 1.24 && p.category !== '1X2') ||
-      analysis.verdict.topSafePick;
+      rankedPicks.find(
+        (p) =>
+          (p.category === 'DOUBLE_CHANCE' || p.category === 'SAFE_GOALS') &&
+          p.probability >= 72 &&
+          p.fairOdd >= 1.20
+      ) ||
+      rankedPicks.find(
+        (p) =>
+          p.category === 'CORNERS' &&
+          p.probability >= 78 &&
+          p.fairOdd >= 1.22
+      ) ||
+      rankedPicks.find(
+        (p) =>
+          p.category !== 'CARDS' &&
+          p.category !== 'SHOTS' &&
+          p.category !== '1X2' &&
+          p.probability >= 70 &&
+          p.fairOdd >= 1.22
+      );
 
-    if (!bestPick || bestPick.probability < 62) continue;
+    if (!bestPick || bestPick.probability < 70) continue;
 
     // Validación Bayesiana LCB de la selección
     const bayes = evaluateBayesianCredibility({
@@ -236,8 +255,8 @@ export function buildGMetricsAdminParlaysWithAnalyzer(
       derbyOrRivalry
     });
 
-    // Sub-Modelo 1: Dixon-Coles & Poisson
-    const dixonColesApproved = bestPick.probability >= 66;
+    // Sub-Modelo 1: Dixon-Coles & Poisson (umbral estricto >= 70% para evitar parlays de baja probabilidad conjunta)
+    const dixonColesApproved = bestPick.probability >= 70;
 
     // Sub-Modelo 2: Elo & Forma Reciente
     const calcFormPoints = (form: ('W' | 'D' | 'L')[]) =>
@@ -246,22 +265,22 @@ export function buildGMetricsAdminParlaysWithAnalyzer(
     const awayFormScore = calcFormPoints(awayTeam.form);
     const powerConsistency =
       bestPick.category === 'DOUBLE_CHANCE'
-        ? homeFormScore >= 5 || awayFormScore >= 5
-        : homeTeam.attackStrength + awayTeam.attackStrength >= 1.8;
-    const eloFormApproved = powerConsistency && analysis.verdict.closeMatchPercent <= 84;
+        ? Math.max(homeFormScore, awayFormScore) >= 7
+        : homeTeam.attackStrength + awayTeam.attackStrength >= 2.05;
+    const eloFormApproved = powerConsistency && analysis.verdict.closeMatchPercent <= 80;
 
-    // Sub-Modelo 3: Fatiga, Volatilidad y Credibilidad Bayesiana (LCB >= 58)
+    // Sub-Modelo 3: Fatiga, Volatilidad y Credibilidad Bayesiana (LCB >= 64)
     const lowFatigueDistortion =
-      analysis.fatigue.awayPenaltyPercent <= 9.5 && analysis.fatigue.homePenaltyPercent <= 8.0;
+      analysis.fatigue.awayPenaltyPercent <= 9.0 && analysis.fatigue.homePenaltyPercent <= 7.5;
     const lowVolatility =
-      !(derbyOrRivalry && bestPick.category === '1X2') &&
+      !(derbyOrRivalry && (bestPick.category === '1X2' || bestPick.category === 'CORNERS')) &&
       !(analysis.refereeCards.rigor === 'Severo' && bestPick.category === '1X2');
-    const bayesianSolid = bayes.lowerCredibleBound >= 58;
+    const bayesianSolid = bayes.lowerCredibleBound >= 64;
     const fatigueImmunityApproved = lowFatigueDistortion && lowVolatility && bayesianSolid;
 
     const modelsCount =
       (dixonColesApproved ? 1 : 0) + (eloFormApproved ? 1 : 0) + (fatigueImmunityApproved ? 1 : 0);
-    if (modelsCount < 2) continue;
+    if (!dixonColesApproved || !bayesianSolid || modelsCount < 2) continue;
 
     // Ponderar unanimousScore combinando probabilidad puntual, LCB bayesiano y consenso
     const unanimousScore = Math.min(
@@ -484,77 +503,98 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
       });
     };
 
-    // 1. EVALUAR SENCILLAS HIGH_VALUE (+EV)
-    if (analysis.dixonColes.pHomeWin >= 52 && analysis.dixonColes.pHomeWin <= 70) {
+    // 1. EVALUAR SENCILLAS HIGH_VALUE (+EV REAL, con umbrales estrictos de convicción)
+    const realHomeOdd = fixture.externalOdds?.homeOdds;
+    const realAwayOdd = fixture.externalOdds?.awayOdds;
+
+    if (
+      analysis.dixonColes.pHomeWin >= 58 &&
+      analysis.dixonColes.pHomeWin <= 76 &&
+      analysis.dixonColes.lambdaHome - analysis.dixonColes.lambdaAway >= 0.40
+    ) {
       const prob = analysis.dixonColes.pHomeWin;
       const fairMinOdd = Number((100 / prob).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.85, fairMinOdd * 1.12).toFixed(2));
+      const estimatedBookieOdd =
+        typeof realHomeOdd === 'number' && realHomeOdd >= 1.25
+          ? realHomeOdd
+          : Number(Math.max(1.50, fairMinOdd * 1.04).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
-      addSingle({
-        id: `${fixture.id}_single_1x2_home`,
-        fixtureId: fixture.id,
-        sport: 'SOCCER',
-        matchTitle,
-        homeTeamName: homeName,
-        awayTeamName: awayName,
-        leagueName: league.name,
-        matchDate: fixture.date,
-        matchTime: fixture.time,
-        marketKey: '1X2_HOME',
-        selectionLabel: `Gana ${homeName}`,
-        categoryLabel: 'Resultado Final (1X2)',
-        categoryFamily: 'OUTCOME',
-        betType: 'HIGH_VALUE',
-        probability: prob,
-        fairMinOdd,
-        estimatedBookieOdd,
-        valueEdgePct,
-        recommendedKellyStakePct: 2.5,
-        reasoning: `El modelo Dixon-Coles proyecta ${prob}% de victoria local con superioridad en xG (${analysis.dixonColes.lambdaHome.toFixed(2)} vs ${analysis.dixonColes.lambdaAway.toFixed(2)}), superando la probabilidad implícita de la cuota (${(100 / estimatedBookieOdd).toFixed(1)}%).`,
-        tacticalFactor: analysis.verdict.keyTacticalFactor || 'Ventaja de localía y solidez táctica'
-      }, '1X2');
+      if (valueEdgePct >= 2.0) {
+        addSingle({
+          id: `${fixture.id}_single_1x2_home`,
+          fixtureId: fixture.id,
+          sport: 'SOCCER',
+          matchTitle,
+          homeTeamName: homeName,
+          awayTeamName: awayName,
+          leagueName: league.name,
+          matchDate: fixture.date,
+          matchTime: fixture.time,
+          marketKey: '1X2_HOME',
+          selectionLabel: `Gana ${homeName}`,
+          categoryLabel: 'Resultado Final (1X2)',
+          categoryFamily: 'OUTCOME',
+          betType: 'HIGH_VALUE',
+          probability: prob,
+          fairMinOdd,
+          estimatedBookieOdd,
+          valueEdgePct,
+          recommendedKellyStakePct: 2.5,
+          reasoning: `El modelo Dixon-Coles proyecta ${prob}% de victoria local con superioridad clara en xG (${analysis.dixonColes.lambdaHome.toFixed(2)} vs ${analysis.dixonColes.lambdaAway.toFixed(2)}), superando la probabilidad implícita de la cuota (${(100 / estimatedBookieOdd).toFixed(1)}%).`,
+          tacticalFactor: analysis.verdict.keyTacticalFactor || 'Ventaja de localía y solidez táctica'
+        }, '1X2');
+      }
     }
 
-    if (analysis.dixonColes.pAwayWin >= 48 && analysis.dixonColes.pAwayWin <= 66) {
+    if (
+      analysis.dixonColes.pAwayWin >= 56 &&
+      analysis.dixonColes.pAwayWin <= 74 &&
+      analysis.dixonColes.lambdaAway - analysis.dixonColes.lambdaHome >= 0.45
+    ) {
       const prob = analysis.dixonColes.pAwayWin;
       const fairMinOdd = Number((100 / prob).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.90, fairMinOdd * 1.14).toFixed(2));
+      const estimatedBookieOdd =
+        typeof realAwayOdd === 'number' && realAwayOdd >= 1.25
+          ? realAwayOdd
+          : Number(Math.max(1.55, fairMinOdd * 1.04).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
-      addSingle({
-        id: `${fixture.id}_single_1x2_away`,
-        fixtureId: fixture.id,
-        sport: 'SOCCER',
-        matchTitle,
-        homeTeamName: homeName,
-        awayTeamName: awayName,
-        leagueName: league.name,
-        matchDate: fixture.date,
-        matchTime: fixture.time,
-        marketKey: '1X2_AWAY',
-        selectionLabel: `Gana ${awayName}`,
-        categoryLabel: 'Resultado Final (1X2)',
-        categoryFamily: 'OUTCOME',
-        betType: 'HIGH_VALUE',
-        probability: prob,
-        fairMinOdd,
-        estimatedBookieOdd,
-        valueEdgePct,
-        recommendedKellyStakePct: 2.0,
-        reasoning: `El modelo proyecta ${prob}% de triunfo visitante con xG proyectado superior (${analysis.dixonColes.lambdaAway.toFixed(2)} vs ${analysis.dixonColes.lambdaHome.toFixed(2)}), encontrando desajuste en el mercado.`,
-        tacticalFactor: 'Superioridad técnica visitante y transiciones rápidas'
-      }, '1X2');
+      if (valueEdgePct >= 2.0) {
+        addSingle({
+          id: `${fixture.id}_single_1x2_away`,
+          fixtureId: fixture.id,
+          sport: 'SOCCER',
+          matchTitle,
+          homeTeamName: homeName,
+          awayTeamName: awayName,
+          leagueName: league.name,
+          matchDate: fixture.date,
+          matchTime: fixture.time,
+          marketKey: '1X2_AWAY',
+          selectionLabel: `Gana ${awayName}`,
+          categoryLabel: 'Resultado Final (1X2)',
+          categoryFamily: 'OUTCOME',
+          betType: 'HIGH_VALUE',
+          probability: prob,
+          fairMinOdd,
+          estimatedBookieOdd,
+          valueEdgePct,
+          recommendedKellyStakePct: 2.0,
+          reasoning: `El modelo proyecta ${prob}% de triunfo visitante con ventaja clara de xG (${analysis.dixonColes.lambdaAway.toFixed(2)} vs ${analysis.dixonColes.lambdaHome.toFixed(2)}), encontrando valor frente a la cuota de mercado.`,
+          tacticalFactor: 'Superioridad técnica visitante y transiciones rápidas'
+        }, '1X2');
+      }
     }
 
     const dnbDenom = analysis.dixonColes.pHomeWin + analysis.dixonColes.pAwayWin;
     if (dnbDenom > 0) {
       const dnbHome = (analysis.dixonColes.pHomeWin / dnbDenom) * 100;
       const dnbAway = (analysis.dixonColes.pAwayWin / dnbDenom) * 100;
-      if (dnbHome >= 60 && dnbHome <= 74) {
+      if (dnbHome >= 65 && dnbHome <= 78) {
         const prob = Number(dnbHome.toFixed(1));
         const fairMinOdd = Number((100 / prob).toFixed(2));
-        const estimatedBookieOdd = Number(Math.max(1.80, fairMinOdd * 1.10).toFixed(2));
+        const estimatedBookieOdd = Number(Math.max(1.42, fairMinOdd * 1.05).toFixed(2));
         const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
         addSingle({
           id: `${fixture.id}_single_dnb_home`,
@@ -579,10 +619,10 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
           reasoning: `Protección total de reembolso en caso de igualdad, con ${prob}% de probabilidad favorable en tiempo reglamentario.`,
           tacticalFactor: 'Bloque defensivo sólido con bajo riesgo de derrota'
         }, 'DOUBLE_CHANCE');
-      } else if (dnbAway >= 60 && dnbAway <= 74) {
+      } else if (dnbAway >= 65 && dnbAway <= 78) {
         const prob = Number(dnbAway.toFixed(1));
         const fairMinOdd = Number((100 / prob).toFixed(2));
-        const estimatedBookieOdd = Number(Math.max(1.82, fairMinOdd * 1.10).toFixed(2));
+        const estimatedBookieOdd = Number(Math.max(1.44, fairMinOdd * 1.05).toFixed(2));
         const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
         addSingle({
           id: `${fixture.id}_single_dnb_away`,
@@ -610,10 +650,10 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
       }
     }
 
-    if (analysis.goalsMarket.bttsYes >= 56 && analysis.goalsMarket.bttsYes <= 72 && analysis.dixonColes.totalXG >= 2.50) {
+    if (analysis.goalsMarket.bttsYes >= 62 && analysis.goalsMarket.bttsYes <= 76 && analysis.dixonColes.totalXG >= 2.75) {
       const prob = analysis.goalsMarket.bttsYes;
       const fairMinOdd = Number((100 / prob).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.82, fairMinOdd * 1.10).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.55, fairMinOdd * 1.05).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
       addSingle({
@@ -636,15 +676,15 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
         estimatedBookieOdd,
         valueEdgePct,
         recommendedKellyStakePct: 3.0,
-        reasoning: `Ambas defensas conceden oportunidades y el xG global supera 2.50 goles. La probabilidad real calculada (${prob}%) supera la cuota promedio del mercado.`,
+        reasoning: `Ambas defensas conceden oportunidades y el xG global supera 2.75 goles. La probabilidad real calculada (${prob}%) respalda goles de ambos lados.`,
         tacticalFactor: 'Ritmo ofensivo bidireccional y debilidad en transiciones defensivas'
       }, 'BTTS');
     }
 
-    if (analysis.goalsMarket.bttsNo >= 58 && analysis.goalsMarket.bttsNo <= 74 && analysis.dixonColes.totalXG <= 2.20) {
+    if (analysis.goalsMarket.bttsNo >= 64 && analysis.goalsMarket.bttsNo <= 78 && analysis.dixonColes.totalXG <= 2.10) {
       const prob = analysis.goalsMarket.bttsNo;
       const fairMinOdd = Number((100 / prob).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.80, fairMinOdd * 1.10).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.52, fairMinOdd * 1.05).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
       addSingle({
@@ -672,10 +712,10 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
       }, 'BTTS');
     }
 
-    if (analysis.goalsMarket.over25 >= 56 && analysis.goalsMarket.over25 <= 74 && analysis.dixonColes.totalXG >= 2.65) {
+    if (analysis.goalsMarket.over25 >= 62 && analysis.goalsMarket.over25 <= 78 && analysis.dixonColes.totalXG >= 2.85) {
       const prob = analysis.goalsMarket.over25;
       const fairMinOdd = Number((100 / prob).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.88, fairMinOdd * 1.11).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.55, fairMinOdd * 1.05).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
       addSingle({
@@ -698,15 +738,15 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
         estimatedBookieOdd,
         valueEdgePct,
         recommendedKellyStakePct: 2.5,
-        reasoning: `Matriz Poisson proyecta xG conjunto de ${analysis.dixonColes.totalXG.toFixed(2)} goles esperados. El mercado suele sobrecastigar el Under en este perfil de liga.`,
+        reasoning: `Matriz Poisson proyecta xG conjunto elevado de ${analysis.dixonColes.totalXG.toFixed(2)} goles esperados con ${prob}% de probabilidad real.`,
         tacticalFactor: 'Duelo abierto con alto volumen de tiros a puerta'
       }, 'SAFE_GOALS');
     }
 
-    if (analysis.goalsMarket.under25 >= 56 && analysis.goalsMarket.under25 <= 74 && analysis.dixonColes.totalXG <= 2.25) {
+    if (analysis.goalsMarket.under25 >= 62 && analysis.goalsMarket.under25 <= 78 && analysis.dixonColes.totalXG <= 2.15) {
       const prob = analysis.goalsMarket.under25;
       const fairMinOdd = Number((100 / prob).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.80, fairMinOdd * 1.10).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.55, fairMinOdd * 1.05).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
       addSingle({
@@ -734,10 +774,10 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
       }, 'SAFE_GOALS');
     }
 
-    if (analysis.cornersMarket.over95 >= 58 && analysis.cornersMarket.expectedTotalCorners >= 10.2) {
+    if (analysis.cornersMarket.over95 >= 68 && analysis.cornersMarket.expectedTotalCorners >= 11.0) {
       const prob = analysis.cornersMarket.over95;
       const fairMinOdd = Number((100 / prob).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.86, fairMinOdd * 1.09).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.58, fairMinOdd * 1.05).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
       addSingle({
@@ -759,17 +799,17 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
         fairMinOdd,
         estimatedBookieOdd,
         valueEdgePct,
-        recommendedKellyStakePct: 2.5,
-        reasoning: `Expectativa de córners de ${analysis.cornersMarket.expectedTotalCorners.toFixed(1)} basada en centros laterales y disparos bloqueados por defensas pobladas.`,
+        recommendedKellyStakePct: 2.0,
+        reasoning: `Expectativa alta de córners (${analysis.cornersMarket.expectedTotalCorners.toFixed(1)}) basada en presión sostenida por bandas.`,
         tacticalFactor: 'Juego volcado por las bandas con extremos de alto desborde'
       }, 'CORNERS');
     }
 
-    // 2. EVALUAR SENCILLAS BANKER (Base Segura)
-    if (analysis.goalsMarket.doubleChance1X >= 74) {
+    // 2. EVALUAR SENCILLAS BANKER (Base Segura de Alta Tasa de Acierto)
+    if (analysis.goalsMarket.doubleChance1X >= 77) {
       const prob = analysis.goalsMarket.doubleChance1X;
       const fairMinOdd = Number((100 / prob).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.35, fairMinOdd * 1.05).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.24, fairMinOdd * 1.04).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
       addSingle({
@@ -797,10 +837,10 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
       }, 'DOUBLE_CHANCE');
     }
 
-    if (analysis.goalsMarket.doubleChanceX2 >= 74) {
+    if (analysis.goalsMarket.doubleChanceX2 >= 77) {
       const prob = analysis.goalsMarket.doubleChanceX2;
       const fairMinOdd = Number((100 / prob).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.36, fairMinOdd * 1.05).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.26, fairMinOdd * 1.04).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
       addSingle({
@@ -828,10 +868,10 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
       }, 'DOUBLE_CHANCE');
     }
 
-    if (analysis.goalsMarket.over15 >= 76) {
+    if (analysis.goalsMarket.over15 >= 79 && analysis.dixonColes.totalXG >= 2.55) {
       const prob = analysis.goalsMarket.over15;
       const fairMinOdd = Number((100 / prob).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.33, fairMinOdd * 1.04).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.24, fairMinOdd * 1.03).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
       addSingle({
@@ -854,16 +894,16 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
         estimatedBookieOdd,
         valueEdgePct,
         recommendedKellyStakePct: 4.5,
-        reasoning: `La probabilidad Poisson de al menos 2 goles es del ${prob}%. Evita la incertidumbre del tercer gol requerido en el Over 2.5 tradicional.`,
+        reasoning: `La probabilidad Poisson de al menos 2 goles es del ${prob}% con xG combinado de ${analysis.dixonColes.totalXG.toFixed(2)}.`,
         tacticalFactor: 'Generación consistente de xG y ritmo fluido de transiciones'
       }, 'SAFE_GOALS');
     }
 
     const probUnder35 = analysis.goalsMarket.under35 || (100 - (analysis.goalsMarket.over35 || 25));
-    if (probUnder35 >= 78 && analysis.dixonColes.totalXG <= 2.90) {
+    if (probUnder35 >= 80 && analysis.dixonColes.totalXG <= 2.55) {
       const prob = Number(probUnder35.toFixed(1));
       const fairMinOdd = Number((100 / prob).toFixed(2));
-      const estimatedBookieOdd = Number(Math.max(1.34, fairMinOdd * 1.04).toFixed(2));
+      const estimatedBookieOdd = Number(Math.max(1.24, fairMinOdd * 1.03).toFixed(2));
       const valueEdgePct = Number(((estimatedBookieOdd / fairMinOdd - 1) * 100).toFixed(1));
 
       addSingle({
@@ -886,12 +926,12 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
         estimatedBookieOdd,
         valueEdgePct,
         recommendedKellyStakePct: 4.5,
-        reasoning: `Margen elástico de hasta 3 goles totales con ${prob}% de acierto proyectado por el motor Poisson.`,
+        reasoning: `Margen elástico de hasta 3 goles totales con ${prob}% de acierto proyectado (xG ${analysis.dixonColes.totalXG.toFixed(2)}).`,
         tacticalFactor: 'Control posicional y disciplina en transiciones defensivas'
       }, 'SAFE_GOALS');
     }
 
-    if (analysis.cornersMarket.over75 >= 80) {
+    if (analysis.cornersMarket.over75 >= 84 && analysis.cornersMarket.expectedTotalCorners >= 10.6) {
       const prob = analysis.cornersMarket.over75;
       const fairMinOdd = Number((100 / prob).toFixed(2));
       const estimatedBookieOdd = Number(Math.max(1.36, fairMinOdd * 1.05).toFixed(2));
@@ -929,7 +969,7 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
     for (const b of nbaBankers) {
       let categoryFamily: CandidateSingle['categoryFamily'] = 'BASKETBALL_TOTAL';
       let catKey = 'NBA_TOTAL_POINTS';
-      if (b.marketKey === 'NBA_ML_HOME') {
+      if (b.marketKey === 'NBA_ML_HOME' || b.marketKey === 'NBA_ML_AWAY') {
         categoryFamily = 'BASKETBALL_MONEYLINE';
         catKey = 'NBA_MONEYLINE';
       } else if (b.marketKey === 'NBA_PLAYER_3PM' || b.marketKey === 'NBA_PLAYER_PTS') {
@@ -1005,19 +1045,11 @@ export function buildGMetricsSingleValueBetsWithAnalyzer(
         if (selected.length >= limit) break;
         if (selected.some((s) => s.id === cand.id)) continue;
         if (cand.categoryFamily === 'CORNERS' && (familyCounts.get('CORNERS') || 0) >= maxCorners) continue;
-        if (canSelect(cand, false, true)) {
+        if (canSelect(cand, true, false)) {
           selected.push(cand);
           fixtureCounts.set(cand.fixtureId, (fixtureCounts.get(cand.fixtureId) || 0) + 1);
           familyCounts.set(cand.categoryFamily, (familyCounts.get(cand.categoryFamily) || 0) + 1);
         }
-      }
-    }
-
-    if (selected.length < limit) {
-      for (const cand of scoredPool) {
-        if (selected.length >= limit) break;
-        if (selected.some((s) => s.id === cand.id)) continue;
-        selected.push(cand);
       }
     }
 
